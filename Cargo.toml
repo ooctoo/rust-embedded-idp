@@ -1,0 +1,16 @@
+[workspace]
+members = [
+  "crates/embedded-idp-core",
+  "crates/embedded-idp-email",
+  "crates/embedded-idp-axum",
+  "crates/embedded-idp-storage-postgres",
+  "crates/embedded-idp-app"
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+version = "0.1.0"
+license = "MIT"
+publish = false
+repository = "https://github.com/ooctoo/rust-embedded-idp"

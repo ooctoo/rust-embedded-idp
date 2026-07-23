@@ -1,0 +1,54 @@
+@import "tailwindcss";
+@source "./**/*.{ts,tsx}";
+
+:root {
+  color-scheme: dark;
+  font-family:
+    "IBM Plex Sans",
+    "SF Pro Text",
+    "PingFang SC",
+    "Segoe UI",
+    sans-serif;
+  --surface-canvas: #06101c;
+  --surface-elevated: rgba(9, 19, 34, 0.82);
+  --surface-panel: rgba(15, 24, 41, 0.92);
+  --surface-muted: rgba(30, 41, 59, 0.66);
+  --border-subtle: rgba(148, 163, 184, 0.18);
+  --text-primary: #e2e8f0;
+  --text-secondary: #a8b3c7;
+  --text-muted: #7b879d;
+  --accent-strong: #67e8f9;
+  --accent-bright: #38bdf8;
+  --accent-soft: rgba(56, 189, 248, 0.22);
+  --accent-ink: #03131d;
+  --danger-strong: #fb7185;
+  --danger-bright: #f43f5e;
+  --shadow-card: 0 30px 80px rgba(2, 6, 23, 0.45);
+  --shadow-soft: 0 12px 30px rgba(2, 6, 23, 0.18);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(circle at top left, rgba(56, 189, 248, 0.2), transparent 22%),
+    radial-gradient(circle at 80% 0, rgba(45, 212, 191, 0.18), transparent 20%),
+    linear-gradient(180deg, #07111d 0%, #050c16 100%);
+  color: var(--text-primary);
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}

@@ -1,0 +1,17 @@
+.env
+.env.*
+!.env.example
+
+.cargo/
+target/
+.cargo-target/
+
+node_modules/
+dist/
+*.tsbuildinfo
+
+coverage/
+*.log
+.DS_Store
+.idea/
+.vscode/

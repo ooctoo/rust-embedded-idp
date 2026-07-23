@@ -1,0 +1,10 @@
+[package]
+name = "embedded-idp-email"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+description = "Provider-neutral email contracts for rust-embedded-idp"
+
+[dependencies]

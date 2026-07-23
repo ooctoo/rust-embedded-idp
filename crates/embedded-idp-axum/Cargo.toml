@@ -1,0 +1,20 @@
+[package]
+name = "embedded-idp-axum"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+description = "Axum HTTP adapter for rust-embedded-idp"
+
+[dependencies]
+axum = { version = "0.7", default-features = false, features = ["form", "http1", "json", "query", "tokio"] }
+embedded-idp-email = { version = "0.1.0", path = "../embedded-idp-email" }
+embedded-idp-core = { version = "0.1.0", path = "../embedded-idp-core" }
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["rt"] }
+
+[dev-dependencies]
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt"] }
+tower = { version = "0.5", features = ["util"] }

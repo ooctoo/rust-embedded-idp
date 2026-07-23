@@ -1,0 +1,19 @@
+[package]
+name = "embedded-idp-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+description = "Standalone reference host for rust-embedded-idp"
+
+[dependencies]
+axum = { version = "0.7", default-features = false, features = ["form", "http1", "json", "query", "tokio"] }
+embedded-idp-axum = { version = "0.1.0", path = "../embedded-idp-axum" }
+embedded-idp-core = { version = "0.1.0", path = "../embedded-idp-core" }
+embedded-idp-email = { version = "0.1.0", path = "../embedded-idp-email" }
+embedded-idp-storage-postgres = { version = "0.1.0", path = "../embedded-idp-storage-postgres" }
+lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "rustls", "ring", "webpki-roots"] }
+postgres = "0.19"
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }

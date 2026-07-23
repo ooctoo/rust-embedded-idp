@@ -1,0 +1,20 @@
+[package]
+name = "embedded-idp-storage-postgres"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+description = "Postgres storage adapter for rust-embedded-idp"
+
+[dependencies]
+embedded-idp-core = { version = "0.1.0", path = "../embedded-idp-core" }
+native-tls = "0.2"
+postgres = { version = "0.19", features = ["with-uuid-1"] }
+postgres-native-tls = "0.5"
+serde_json = "1"
+uuid = "1"
+
+[[example]]
+name = "bootstrap_local_postgres"
+path = "examples/bootstrap_local_postgres.rs"
