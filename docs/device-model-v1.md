@@ -195,9 +195,9 @@ Fixed routes should evolve to:
 - `GET /devices`
 - `GET /devices/:device_id`
 - `POST /devices/unbind`
-- `POST /devices/disable`
-- `POST /devices/revoke`
 - `POST /devices/heartbeat`
+- `POST /admin/devices/disable`
+- `POST /admin/devices/revoke`
 
 Meaning:
 
@@ -207,9 +207,9 @@ Meaning:
 - `/devices`: list devices, optionally filtered by current account context or explicit `account_id`
 - `/devices/:device_id`: fetch one device and its bindings
 - `/unbind`: remove the account-device relationship without deleting the device
-- `/disable`: temporarily block a device from active use
-- `/revoke`: permanently retire a device from active use
 - `/heartbeat`: update last-seen for an active device
+- `/admin/devices/disable`: temporarily block a device from active use through an admin-only route
+- `/admin/devices/revoke`: permanently retire a device through an admin-only route
 
 ## Management Semantics
 

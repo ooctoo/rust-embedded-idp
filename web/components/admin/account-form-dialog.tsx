@@ -10,12 +10,14 @@ export type AccountFormValue = {
 };
 
 export function AccountFormDialog({
+  error,
   onCancel,
   onChange,
   onSubmit,
   open,
   value,
 }: {
+  error?: string;
   onCancel: () => void;
   onChange: (value: AccountFormValue) => void;
   onSubmit: () => void;
@@ -55,6 +57,15 @@ export function AccountFormDialog({
             />
           </Field>
         </div>
+        {error ? (
+          <p
+            aria-live="polite"
+            className="mt-4 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-200"
+            role="alert"
+          >
+            {error}
+          </p>
+        ) : null}
         <div className="mt-6 flex justify-end gap-3">
           <Button onClick={onCancel} variant="outline">
             Cancel

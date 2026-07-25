@@ -681,8 +681,6 @@ async fn discovery(State(state): State<EmbeddedIdpHttpState>) -> Json<DiscoveryH
         devices_endpoint: route_mount_plan.external_devices_path(),
         device_detail_path_template: route_mount_plan.external_device_detail_path_template(),
         device_unbind_endpoint: route_mount_plan.external_device_unbind_path(),
-        device_disable_endpoint: route_mount_plan.external_device_disable_path(),
-        device_revoke_endpoint: route_mount_plan.external_device_revoke_path(),
         device_heartbeat_endpoint: route_mount_plan.external_device_heartbeat_path(),
         response_types_supported: ["code"],
         grant_types_supported: ["authorization_code"],
