@@ -50,6 +50,9 @@ export function AdminApp() {
   const [passwordDraft, setPasswordDraft] = useState("");
   const [accountForm, setAccountForm] = useState<AccountFormState>(emptyAccountForm());
   const [clientForm, setClientForm] = useState<ClientFormState>(emptyClientForm());
+  const [accountFormError, setAccountFormError] = useState("");
+  const [clientFormError, setClientFormError] = useState("");
+  const [passwordFormError, setPasswordFormError] = useState("");
   const [accounts, setAccounts] = useState<{ items: AccountRecord[]; total: number }>({ items: [], total: 0 });
   const [sessions, setSessions] = useState<{ items: SessionRecord[]; total: number }>({ items: [], total: 0 });
   const [clients, setClients] = useState<{ items: ClientRecord[]; total: number }>({ items: [], total: 0 });
@@ -186,7 +189,10 @@ export function AdminApp() {
           {tab === "accounts" ? (
             <button
               className="min-h-10 rounded-xl bg-[var(--accent-strong)] px-4 text-sm font-medium text-[var(--accent-ink)]"
-              onClick={() => setAccountDialogOpen(true)}
+              onClick={() => {
+                setAccountFormError("");
+                setAccountDialogOpen(true);
+              }}
               type="button"
             >
               Create account
@@ -221,27 +227,47 @@ export function AdminApp() {
           ) : null}
         </div>
         <div className="space-y-6">
-          {tab === "accounts" ? <AccountDetailSection account={selectedAccount} api={api} onFeedback={setFeedback} onOpenPassword={setPasswordDialogOpen} onReload={reloadCurrentTab} /> : null}
+          {tab === "accounts" ? <AccountDetailSection account={selectedAccount} api={api} onFeedback={setFeedback} onOpenPassword={(open) => {
+            if (open) setPasswordFormError("");
+            setPasswordDialogOpen(open);
+          }} onReload={reloadCurrentTab} /> : null}
           {tab === "sessions" ? <SessionDetailSection api={api} onFeedback={setFeedback} onReload={reloadCurrentTab} session={selectedSession} /> : null}
-          {tab === "clients" ? <ClientDetailSection client={selectedClient} onOpenDialog={setClientDialogOpen} /> : null}
+          {tab === "clients" ? <ClientDetailSection client={selectedClient} onOpenDialog={(open) => {
+            if (open) setClientFormError("");
+            setClientDialogOpen(open);
+          }} /> : null}
           {tab === "devices" ? <DeviceDetailSection api={api} detail={selectedDevice} onFeedback={setFeedback} onReload={reloadCurrentTab} /> : null}
         </div>
       </section>
 
       <AccountFormDialog
-        onCancel={() => setAccountDialogOpen(false)}
-        onChange={setAccountForm}
+        error={accountFormError}
+        onCancel={() => {
+          setAccountFormError("");
+          setAccountDialogOpen(false);
+        }}
+        onChange={(value) => {
+          setAccountForm(value);
+          setAccountFormError("");
+        }}
         onSubmit={() =>
-          void submitAccount(api, accountForm, reloadCurrentTab, setAccountDialogOpen, setAccountForm, setFeedback)
+          void submitAccount(api, accountForm, reloadCurrentTab, setAccountDialogOpen, setAccountForm, setAccountFormError, setFeedback)
         }
         open={accountDialogOpen}
         value={accountForm}
       />
 
       <ClientFormDialog
-        onCancel={() => setClientDialogOpen(false)}
-        onChange={setClientForm}
-        onSubmit={() => void submitClient(api, clientForm, reloadCurrentTab, setClientDialogOpen, setFeedback)}
+        error={clientFormError}
+        onCancel={() => {
+          setClientFormError("");
+          setClientDialogOpen(false);
+        }}
+        onChange={(value) => {
+          setClientForm(value);
+          setClientFormError("");
+        }}
+        onSubmit={() => void submitClient(api, clientForm, reloadCurrentTab, setClientDialogOpen, setClientFormError, setFeedback)}
         open={clientDialogOpen}
         value={clientForm}
       />
@@ -251,14 +277,30 @@ export function AdminApp() {
           <div className="w-full max-w-md rounded-[28px] border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-6 shadow-[var(--shadow-card)]">
             <h2 className="text-xl font-semibold text-[var(--text-primary)]">Set Account Password</h2>
             <p className="mt-2 text-sm text-[var(--text-secondary)]">直接调用 `/api/admin/accounts/set-password`。</p>
-            <Input className="mt-4" type="password" value={passwordDraft} onChange={(event) => setPasswordDraft(event.target.value)} />
+            <Input
+              className="mt-4"
+              type="password"
+              value={passwordDraft}
+              onChange={(event) => {
+                setPasswordDraft(event.target.value);
+                setPasswordFormError("");
+              }}
+            />
+            {passwordFormError ? (
+              <p aria-live="polite" className="mt-3 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-200" role="alert">
+                {passwordFormError}
+              </p>
+            ) : null}
             <div className="mt-6 flex justify-end gap-3">
-              <button className="min-h-10 rounded-xl border border-[var(--border-subtle)] px-4 text-sm text-[var(--text-primary)]" onClick={() => setPasswordDialogOpen(false)} type="button">
+              <button className="min-h-10 rounded-xl border border-[var(--border-subtle)] px-4 text-sm text-[var(--text-primary)]" onClick={() => {
+                setPasswordFormError("");
+                setPasswordDialogOpen(false);
+              }} type="button">
                 Cancel
               </button>
               <button
                 className="min-h-10 rounded-xl bg-[var(--accent-strong)] px-4 text-sm font-medium text-[var(--accent-ink)]"
-                onClick={() => void submitPassword(api, selectedAccount, passwordDraft, reloadCurrentTab, setPasswordDialogOpen, setPasswordDraft, setFeedback)}
+                onClick={() => void submitPassword(api, selectedAccount, passwordDraft, reloadCurrentTab, setPasswordDialogOpen, setPasswordDraft, setPasswordFormError, setFeedback)}
                 type="button"
               >
                 Apply
@@ -276,9 +318,11 @@ async function submitClient(
   form: ClientFormState,
   reload: () => Promise<void>,
   setOpen: (open: boolean) => void,
+  setError: (value: string) => void,
   setFeedback: (value: string) => void,
 ) {
-  await runAction(
+  setError("");
+  const error = await runAction(
     () =>
       api.upsertClient({
         client_id: form.clientId,
@@ -291,6 +335,10 @@ async function submitClient(
     reload,
     setFeedback,
   );
+  if (error !== null) {
+    setError(error);
+    return;
+  }
   setOpen(false);
 }
 
@@ -300,9 +348,11 @@ async function submitAccount(
   reload: () => Promise<void>,
   setOpen: (open: boolean) => void,
   setForm: Dispatch<SetStateAction<AccountFormState>>,
+  setError: (value: string) => void,
   setFeedback: (value: string) => void,
 ) {
-  await runAction(
+  setError("");
+  const error = await runAction(
     () =>
       api.createAccount({
         email: form.email,
@@ -312,6 +362,10 @@ async function submitAccount(
     reload,
     setFeedback,
   );
+  if (error !== null) {
+    setError(error);
+    return;
+  }
   setOpen(false);
   setForm(emptyAccountForm());
 }
@@ -323,10 +377,16 @@ async function submitPassword(
   reload: () => Promise<void>,
   setOpen: (open: boolean) => void,
   setPassword: (value: string) => void,
+  setError: (value: string) => void,
   setFeedback: (value: string) => void,
 ) {
   if (!account) return;
-  await runAction(() => api.setAccountPassword(account.account_id, password), reload, setFeedback);
+  setError("");
+  const error = await runAction(() => api.setAccountPassword(account.account_id, password), reload, setFeedback);
+  if (error !== null) {
+    setError(error);
+    return;
+  }
   setOpen(false);
   setPassword("");
 }
@@ -335,13 +395,16 @@ async function runAction(
   action: () => Promise<unknown>,
   reload: () => Promise<void>,
   setFeedback: (value: string) => void,
-) {
+): Promise<string | null> {
   try {
     await action();
     await reload();
     setFeedback("操作已完成。");
+    return null;
   } catch (error) {
-    setFeedback((error as Error).message);
+    const message = (error as Error).message;
+    setFeedback(message);
+    return message;
   }
 }
 

@@ -12,6 +12,9 @@
 This repository is a standalone Cargo workspace. Project design and implementation
 notes live under [docs/](./docs/).
 
+For local development, configuration, host integration, and the complete HTTP
+API reference, see [Developer and Integration Guide](./docs/developer-and-integration-guide.md).
+
 ## Layout
 
 ```text

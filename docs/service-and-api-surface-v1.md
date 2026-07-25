@@ -318,12 +318,6 @@ Access class meanings:
   - maps to `DeviceService::unbind_device_from_account`
   - `access_class = subject_bound`
   - subject account comes from trusted host context, not request body `account_id`
-- `POST /devices/disable`
-  - maps to `DeviceService::disable_device`
-  - `access_class = admin_only`
-- `POST /devices/revoke`
-  - maps to `DeviceService::revoke_device`
-  - `access_class = admin_only`
 - `POST /devices/heartbeat`
   - maps to `DeviceService::heartbeat`
   - `access_class = public`
@@ -417,17 +411,11 @@ When these routes are exposed through the standalone `embedded-idp-app`, the ext
   - maps to `DeviceService::revoke_device`
   - `access_class = admin_only`
 
-Compatibility note:
-
-- `POST /devices/disable`
-  - remains mounted in `admin_router()` as a compatibility alias
-- `POST /devices/revoke`
-  - remains mounted in `admin_router()` as a compatibility alias
-
 #### OIDC Discovery
 
 - `GET /.well-known/openid-configuration`
-  - returns issuer and currently mounted endpoint references
+  - returns issuer and public, subject-bound, token-bound, and client-authenticated endpoint references
+  - does not advertise admin-only device disable or revoke routes
   - `access_class = public`
 
 #### OIDC

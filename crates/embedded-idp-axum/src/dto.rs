@@ -195,8 +195,6 @@ pub(crate) struct DiscoveryHttpResponse {
     pub(crate) devices_endpoint: String,
     pub(crate) device_detail_path_template: String,
     pub(crate) device_unbind_endpoint: String,
-    pub(crate) device_disable_endpoint: String,
-    pub(crate) device_revoke_endpoint: String,
     pub(crate) device_heartbeat_endpoint: String,
     pub(crate) response_types_supported: [&'static str; 1],
     pub(crate) grant_types_supported: [&'static str; 1],

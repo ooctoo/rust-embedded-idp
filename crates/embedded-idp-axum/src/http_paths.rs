@@ -14,8 +14,6 @@ pub const DEVICE_COMPLETE_PATH: &str = "/devices/complete";
 pub const DEVICE_BIND_PATH: &str = "/devices/bind";
 pub const DEVICE_DETAIL_PATH_TEMPLATE: &str = "/devices/:device_id";
 pub const DEVICE_UNBIND_PATH: &str = "/devices/unbind";
-pub const DEVICE_DISABLE_PATH: &str = "/devices/disable";
-pub const DEVICE_REVOKE_PATH: &str = "/devices/revoke";
 pub const DEVICE_HEARTBEAT_PATH: &str = "/devices/heartbeat";
 
 pub const ADMIN_API_PREFIX: &str = "/admin";
@@ -133,14 +131,6 @@ impl RouteMountPlan {
 
     pub fn external_device_unbind_path(&self) -> String {
         self.external_path(DEVICE_UNBIND_PATH)
-    }
-
-    pub fn external_device_disable_path(&self) -> String {
-        self.external_path(DEVICE_DISABLE_PATH)
-    }
-
-    pub fn external_device_revoke_path(&self) -> String {
-        self.external_path(DEVICE_REVOKE_PATH)
     }
 
     pub fn external_device_heartbeat_path(&self) -> String {

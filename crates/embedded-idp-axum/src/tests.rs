@@ -1128,6 +1128,8 @@ async fn discovery_includes_resource_endpoints() {
     );
     assert_eq!(json["devices_endpoint"], "/api/v1/devices");
     assert_eq!(json["device_unbind_endpoint"], "/api/v1/devices/unbind");
+    assert!(json.get("device_disable_endpoint").is_none());
+    assert!(json.get("device_revoke_endpoint").is_none());
 }
 
 #[tokio::test]

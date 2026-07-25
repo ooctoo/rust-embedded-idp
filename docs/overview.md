@@ -13,6 +13,8 @@ It is intended to be linked into a host backend and provide:
 - confidential client authentication hooks with host-owned secret verification
 
 An optional runnable host crate, `embedded-idp-app`, can also be used when this module needs to run as a standalone local service.
+It includes a development-only React admin console for account, session, client,
+and device operations.
 
 ## Design Priorities
 
@@ -55,5 +57,4 @@ An optional runnable host crate, `embedded-idp-app`, can also be used when this 
 - multi-tenant org model
 - SAML
 - social login
-- admin UI
 - multiple storage backends

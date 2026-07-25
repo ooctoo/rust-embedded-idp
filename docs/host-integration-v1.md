@@ -158,7 +158,6 @@ It should classify mounted routes into distinct trust levels:
     - `/api/admin/clients/...`
     - `/api/admin/sessions/...`
     - `/api/admin/devices/...`
-  - compatibility aliases `POST /devices/disable` and `POST /devices/revoke`
 
 Operator list endpoints now support module-owned pagination and basic filtering.
 Current page responses expose `limit`, `offset`, `returned`, `total`, `has_more`, and optional `next_cursor`.
@@ -316,13 +315,11 @@ The module is currently ready for:
 - `userinfo`
 - token introspection
 - static JWKS publication
-- operator admin APIs for account, session, and device management
+- operator admin APIs for account, session, OIDC client, and device management
 - Postgres TLS `require` mode with optional custom CA certificate path
 
-The module does not yet provide:
-
-- OIDC client admin APIs
-- richer Postgres TLS options such as client certificate authentication or `prefer` fallback-to-TLS behavior
+The module does not yet provide richer Postgres TLS options such as client
+certificate authentication or `prefer` fallback-to-TLS behavior.
 
 ## Postgres TLS
 
