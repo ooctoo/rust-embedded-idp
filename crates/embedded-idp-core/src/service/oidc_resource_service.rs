@@ -121,7 +121,8 @@ where
                     command.client_secret.as_deref(),
                     &self.client_secret_verifier,
                 )?;
-                let Some(refresh_token) = tx.find_refresh_token(&command.token)? else {
+                let token_digest = crate::digest_refresh_token(&command.token);
+                let Some(refresh_token) = tx.find_refresh_token(&token_digest)? else {
                     return Ok(None);
                 };
 

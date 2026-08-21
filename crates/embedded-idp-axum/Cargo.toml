@@ -8,13 +8,15 @@ repository.workspace = true
 description = "Axum HTTP adapter for rust-embedded-idp"
 
 [dependencies]
-axum = { version = "0.7", default-features = false, features = ["form", "http1", "json", "query", "tokio"] }
-embedded-idp-email = { version = "0.1.0", path = "../embedded-idp-email" }
-embedded-idp-core = { version = "0.1.0", path = "../embedded-idp-core" }
+axum = { version = "0.7", default-features = false, features = ["form", "http1", "json", "original-uri", "query", "tokio"] }
+base64ct = { version = "1", features = ["alloc"] }
+embedded-idp-email = { version = "0.2.0", path = "../embedded-idp-email" }
+embedded-idp-core = { version = "0.2.0", path = "../embedded-idp-core" }
 serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["raw_value"] }
+sha2 = "0.10"
 tokio = { version = "1", features = ["rt"] }
 
 [dev-dependencies]
-serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt"] }
 tower = { version = "0.5", features = ["util"] }

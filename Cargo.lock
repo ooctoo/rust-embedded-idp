@@ -306,7 +306,7 @@ checksum = "e079f19b08ca6239f47f8ba8509c11cf3ea30095831f7fed61441475edd8c449"
 
 [[package]]
 name = "embedded-idp-app"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "axum",
  "embedded-idp-axum",
@@ -321,20 +321,22 @@ dependencies = [
 
 [[package]]
 name = "embedded-idp-axum"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "axum",
+ "base64ct",
  "embedded-idp-core",
  "embedded-idp-email",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "tokio",
  "tower",
 ]
 
 [[package]]
 name = "embedded-idp-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "argon2",
  "base64ct",
@@ -345,11 +347,24 @@ dependencies = [
 
 [[package]]
 name = "embedded-idp-email"
-version = "0.1.0"
+version = "0.2.0"
+
+[[package]]
+name = "embedded-idp-security"
+version = "0.2.0"
+dependencies = [
+ "base64ct",
+ "embedded-idp-core",
+ "rand_core 0.6.4",
+ "ring",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+]
 
 [[package]]
 name = "embedded-idp-storage-postgres"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "embedded-idp-core",
  "native-tls",

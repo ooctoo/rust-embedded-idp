@@ -30,9 +30,9 @@ pub(crate) struct SetAccountPasswordHttpRequest {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct RevokeAccountSessionsHttpRequest {
     pub(crate) account_id: String,
-    pub(crate) revoked_at_unix_secs: u64,
 }
 
 #[derive(Deserialize)]
@@ -69,9 +69,9 @@ pub(crate) struct DevicesAdminQueryHttpRequest {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct SessionManagementHttpRequest {
     pub(crate) session_id: String,
-    pub(crate) revoked_at_unix_secs: u64,
 }
 
 #[derive(Deserialize)]
@@ -85,10 +85,10 @@ pub(crate) struct UpsertClientHttpRequest {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct UnbindAnyDeviceHttpRequest {
     pub(crate) account_id: String,
     pub(crate) device_id: String,
-    pub(crate) unbound_at_unix_secs: u64,
 }
 
 #[derive(Serialize)]

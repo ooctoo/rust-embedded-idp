@@ -140,7 +140,6 @@ pub struct ResendVerificationCodeResult {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RotateRefreshTokenCommand {
     pub refresh_token: String,
-    pub rotated_at: SystemTime,
 }
 
 impl RotateRefreshTokenCommand {
@@ -162,7 +161,6 @@ pub struct RotateRefreshTokenResult {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LogoutSessionCommand {
     pub refresh_token: String,
-    pub logged_out_at: SystemTime,
 }
 
 impl LogoutSessionCommand {
@@ -651,7 +649,6 @@ mod tests {
     fn rotate_and_device_commands_enforce_identifier_presence() {
         let rotate = RotateRefreshTokenCommand {
             refresh_token: String::new(),
-            rotated_at: SystemTime::UNIX_EPOCH,
         };
         let heartbeat = DeviceHeartbeatCommand {
             device_id: String::new(),
@@ -659,7 +656,6 @@ mod tests {
         };
         let logout = LogoutSessionCommand {
             refresh_token: String::new(),
-            logged_out_at: SystemTime::UNIX_EPOCH,
         };
         assert_eq!(
             rotate.validate(),

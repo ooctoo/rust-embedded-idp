@@ -4,9 +4,12 @@ use embedded_idp_core::{
     Account, AccountDeviceBinding, AccountDeviceBindingStatus, AccountDeviceBindingStore,
     AccountListQuery, AccountStatus, AccountStore, AuthSession, AuthorizationCodeRecord,
     AuthorizationCodeStore, ClientListQuery, ClientStore, DeviceListQuery, DeviceNonceRecord,
-    DeviceNonceStore, DeviceRecord, DeviceStatus, DeviceStore, EmailVerificationCode,
-    EmailVerificationStore, OidcClient, OidcClientType, PkceChallengeMethod, RefreshTokenRecord,
-    RefreshTokenStore, SessionListQuery, SessionStatus, SessionStore, StoreError,
+    DeviceNonceStore, DeviceProofAlgorithm, DeviceProofChallengeRecord, DeviceProofKeyRecord,
+    DeviceProofKeyStatus, DeviceProofPurpose, DeviceRecord, DeviceSecurityTransaction,
+    DeviceStatus, DeviceStore, EmailVerificationCode, EmailVerificationStore, OidcClient,
+    OidcClientType, PkceChallengeMethod, ProofBoundRefreshTransaction, RefreshTokenRecord,
+    RefreshTokenRevocationReason, RefreshTokenStore, SessionListQuery, SessionStatus, SessionStore,
+    StoreError,
 };
 use postgres::{Row, Transaction};
 use uuid::Uuid;
@@ -433,8 +436,8 @@ impl<'a> PostgresStoreTransaction<'a> {
 
     fn query_refresh_token_sql(&self) -> String {
         format!(
-            "select id, session_id, token_value, token_version, issued_at_epoch, expires_at_epoch, revoked_at_epoch \
-             from {}.refresh_tokens where token_value = $1 limit 1",
+            "select id, session_id, token_digest, token_version, issued_at_epoch, expires_at_epoch, revoked_at_epoch, revocation_reason \
+             from {}.refresh_tokens where token_digest = $1 limit 1 for update",
             self.schema_name
         )
     }
@@ -470,9 +473,9 @@ impl<'a> PostgresStoreTransaction<'a> {
     fn insert_refresh_token_sql(&self) -> String {
         format!(
             "insert into {}.refresh_tokens \
-             (id, session_id, token_value, token_version, issued_at_epoch, expires_at_epoch, revoked_at_epoch) \
-             values ($1::uuid, $2::uuid, $3, $4, $5, $6, $7) \
-             returning id, session_id, token_value, token_version, issued_at_epoch, expires_at_epoch, revoked_at_epoch",
+             (id, session_id, token_value, token_digest, token_version, issued_at_epoch, expires_at_epoch, revoked_at_epoch, revocation_reason) \
+             values ($1::uuid, $2::uuid, null, $3, $4, $5, $6, $7, $8) \
+             returning id, session_id, token_digest, token_version, issued_at_epoch, expires_at_epoch, revoked_at_epoch, revocation_reason",
             self.schema_name
         )
     }
@@ -480,9 +483,9 @@ impl<'a> PostgresStoreTransaction<'a> {
     fn revoke_refresh_token_sql(&self) -> String {
         format!(
             "update {}.refresh_tokens \
-             set revoked_at_epoch = $2 \
-             where token_value = $1 and revoked_at_epoch is null \
-             returning id, session_id, token_value, token_version, issued_at_epoch, expires_at_epoch, revoked_at_epoch",
+             set revocation_reason = $2, revoked_at_epoch = $3 \
+             where token_digest = $1 and revoked_at_epoch is null \
+             returning id, session_id, token_digest, token_version, issued_at_epoch, expires_at_epoch, revoked_at_epoch, revocation_reason",
             self.schema_name
         )
     }
@@ -490,9 +493,9 @@ impl<'a> PostgresStoreTransaction<'a> {
     fn revoke_refresh_tokens_for_session_sql(&self) -> String {
         format!(
             "update {}.refresh_tokens \
-             set revoked_at_epoch = $2 \
+             set revocation_reason = $2, revoked_at_epoch = $3 \
              where session_id = $1::uuid and revoked_at_epoch is null \
-             returning id, session_id, token_value, token_version, issued_at_epoch, expires_at_epoch, revoked_at_epoch",
+             returning id, session_id, token_digest, token_version, issued_at_epoch, expires_at_epoch, revoked_at_epoch, revocation_reason",
             self.schema_name
         )
     }
@@ -1315,12 +1318,12 @@ impl EmailVerificationStore for PostgresStoreTransaction<'_> {
 impl RefreshTokenStore for PostgresStoreTransaction<'_> {
     fn find_refresh_token(
         &mut self,
-        token_value: &str,
+        token_digest: &[u8; 32],
     ) -> Result<Option<RefreshTokenRecord>, StoreError> {
         let sql = self.query_refresh_token_sql();
         let row = self
             .tx_mut()
-            .query_opt(&sql, &[&token_value])
+            .query_opt(&sql, &[&token_digest.as_slice()])
             .map_err(|error| StoreError::Backend(format!("query refresh token failed: {error}")))?;
         row.map(decode_refresh_token).transpose()
     }
@@ -1339,29 +1342,40 @@ impl RefreshTokenStore for PostgresStoreTransaction<'_> {
                 &[
                     &refresh_token_id,
                     &session_id,
-                    &token.token_value,
+                    &token.token_digest.as_slice(),
                     &(token.token_version as i64),
                     &to_epoch_secs(token.issued_at),
                     &to_epoch_secs(token.expires_at),
                     &token.revoked_at.map(to_epoch_secs),
+                    &token
+                        .revocation_reason
+                        .map(encode_refresh_revocation_reason),
                 ],
             )
             .map_err(map_write_error(
                 "insert refresh token",
-                Some("refresh_token.value"),
+                Some("refresh_token.digest"),
             ))?;
         decode_refresh_token(row)
     }
 
     fn revoke_refresh_token(
         &mut self,
-        token_value: &str,
+        token_digest: &[u8; 32],
+        reason: RefreshTokenRevocationReason,
         revoked_at: SystemTime,
     ) -> Result<Option<RefreshTokenRecord>, StoreError> {
         let sql = self.revoke_refresh_token_sql();
         let row = self
             .tx_mut()
-            .query_opt(&sql, &[&token_value, &to_epoch_secs(revoked_at)])
+            .query_opt(
+                &sql,
+                &[
+                    &token_digest.as_slice(),
+                    &encode_refresh_revocation_reason(reason),
+                    &to_epoch_secs(revoked_at),
+                ],
+            )
             .map_err(|error| {
                 StoreError::Backend(format!("revoke refresh token failed: {error}"))
             })?;
@@ -1371,17 +1385,365 @@ impl RefreshTokenStore for PostgresStoreTransaction<'_> {
     fn revoke_refresh_tokens_for_session(
         &mut self,
         session_id: &str,
+        reason: RefreshTokenRevocationReason,
         revoked_at: SystemTime,
     ) -> Result<Vec<RefreshTokenRecord>, StoreError> {
         let session_id = parse_uuid(session_id, "auth_session.id")?;
         let sql = self.revoke_refresh_tokens_for_session_sql();
         let rows = self
             .tx_mut()
-            .query(&sql, &[&session_id, &to_epoch_secs(revoked_at)])
+            .query(
+                &sql,
+                &[
+                    &session_id,
+                    &encode_refresh_revocation_reason(reason),
+                    &to_epoch_secs(revoked_at),
+                ],
+            )
             .map_err(|error| {
                 StoreError::Backend(format!("revoke session refresh tokens failed: {error}"))
             })?;
         rows.into_iter().map(decode_refresh_token).collect()
+    }
+}
+
+impl ProofBoundRefreshTransaction for PostgresStoreTransaction<'_> {
+    fn lock_refresh_token(
+        &mut self,
+        digest: &[u8; 32],
+    ) -> Result<Option<RefreshTokenRecord>, StoreError> {
+        RefreshTokenStore::find_refresh_token(self, digest)
+    }
+
+    fn lock_session(&mut self, session_id: &str) -> Result<Option<AuthSession>, StoreError> {
+        let session_id = parse_uuid(session_id, "auth_session.id")?;
+        let sql = format!(
+            "select id, account_id, client_id, device_id, status, created_at_epoch, expires_at_epoch, refresh_token_version \
+             from {}.auth_sessions where id = $1::uuid limit 1 for update",
+            self.schema_name
+        );
+        let row = self
+            .tx_mut()
+            .query_opt(&sql, &[&session_id])
+            .map_err(|error| StoreError::Backend(format!("lock auth session failed: {error}")))?;
+        row.map(decode_session).transpose()
+    }
+
+    fn lock_account(&mut self, account_id: &str) -> Result<Option<Account>, StoreError> {
+        let account_id = parse_uuid(account_id, "account.id")?;
+        let sql = format!(
+            "select id, email, password_hash, display_name, status, created_at_epoch \
+             from {}.accounts where id = $1::uuid limit 1 for update",
+            self.schema_name
+        );
+        let row = self
+            .tx_mut()
+            .query_opt(&sql, &[&account_id])
+            .map_err(|error| StoreError::Backend(format!("lock account failed: {error}")))?;
+        row.map(decode_account).transpose()
+    }
+
+    fn lock_device(&mut self, device_id: &str) -> Result<Option<DeviceRecord>, StoreError> {
+        let device_id = parse_uuid(device_id, "device.id")?;
+        let sql = format!(
+            "select id, client_id, device_name, proof_key_id, status, registered_at_epoch, last_seen_at_epoch \
+             from {}.devices where id = $1::uuid limit 1 for update",
+            self.schema_name
+        );
+        let row = self
+            .tx_mut()
+            .query_opt(&sql, &[&device_id])
+            .map_err(|error| StoreError::Backend(format!("lock device failed: {error}")))?;
+        row.map(decode_device).transpose()
+    }
+
+    fn lock_device_key(
+        &mut self,
+        key_id: &str,
+    ) -> Result<Option<DeviceProofKeyRecord>, StoreError> {
+        let sql = format!(
+            "select key_id, device_id, algorithm, public_jwk, version, status, registered_at_epoch, retired_at_epoch \
+             from {}.device_proof_keys where key_id = $1 limit 1 for update",
+            self.schema_name
+        );
+        let row = self.tx_mut().query_opt(&sql, &[&key_id]).map_err(|error| {
+            StoreError::Backend(format!("lock device proof key failed: {error}"))
+        })?;
+        row.map(decode_device_proof_key).transpose()
+    }
+
+    fn lock_active_binding(
+        &mut self,
+        account_id: &str,
+        device_id: &str,
+    ) -> Result<Option<AccountDeviceBinding>, StoreError> {
+        let account_id = parse_uuid(account_id, "account.id")?;
+        let device_id = parse_uuid(device_id, "device.id")?;
+        let sql = format!(
+            "select id, account_id, device_id, status, bound_at_epoch, unbound_at_epoch, last_authenticated_at_epoch \
+             from {}.account_device_bindings \
+             where account_id = $1::uuid and device_id = $2::uuid and status = 'active' \
+             limit 1 for update",
+            self.schema_name
+        );
+        let row = self
+            .tx_mut()
+            .query_opt(&sql, &[&account_id, &device_id])
+            .map_err(|error| {
+                StoreError::Backend(format!("lock account device binding failed: {error}"))
+            })?;
+        row.map(decode_account_device_binding).transpose()
+    }
+
+    fn lock_challenge(
+        &mut self,
+        digest: &[u8; 32],
+    ) -> Result<Option<DeviceProofChallengeRecord>, StoreError> {
+        let sql = format!(
+            "select id, device_id, purpose, challenge_digest, issued_at_epoch, expires_at_epoch, consumed_at_epoch \
+             from {}.device_nonces where challenge_digest = $1 limit 1 for update",
+            self.schema_name
+        );
+        let row = self
+            .tx_mut()
+            .query_opt(&sql, &[&digest.as_slice()])
+            .map_err(|error| {
+                StoreError::Backend(format!("lock device proof challenge failed: {error}"))
+            })?;
+        row.map(decode_device_proof_challenge).transpose()
+    }
+
+    fn consume_challenge_if_active(
+        &mut self,
+        digest: &[u8; 32],
+        observed_at: SystemTime,
+    ) -> Result<bool, StoreError> {
+        let sql = format!(
+            "update {}.device_nonces set consumed_at_epoch = $2 \
+             where challenge_digest = $1 and consumed_at_epoch is null and expires_at_epoch > $2",
+            self.schema_name
+        );
+        let updated = self
+            .tx_mut()
+            .execute(&sql, &[&digest.as_slice(), &to_epoch_secs(observed_at)])
+            .map_err(|error| {
+                StoreError::Backend(format!("consume device proof challenge failed: {error}"))
+            })?;
+        Ok(updated == 1)
+    }
+
+    fn update_session(&mut self, session: AuthSession) -> Result<AuthSession, StoreError> {
+        SessionStore::update_session(self, session)
+    }
+
+    fn revoke_refresh_token(
+        &mut self,
+        digest: &[u8; 32],
+        reason: RefreshTokenRevocationReason,
+        revoked_at: SystemTime,
+    ) -> Result<(), StoreError> {
+        RefreshTokenStore::revoke_refresh_token(self, digest, reason, revoked_at)?
+            .ok_or(StoreError::NotFound("refresh_token.digest"))?;
+        Ok(())
+    }
+
+    fn insert_refresh_token(&mut self, token: RefreshTokenRecord) -> Result<(), StoreError> {
+        RefreshTokenStore::insert_refresh_token(self, token)?;
+        Ok(())
+    }
+
+    fn revoke_refresh_family(
+        &mut self,
+        session_id: &str,
+        reason: RefreshTokenRevocationReason,
+        revoked_at: SystemTime,
+    ) -> Result<(), StoreError> {
+        RefreshTokenStore::revoke_refresh_tokens_for_session(self, session_id, reason, revoked_at)?;
+        Ok(())
+    }
+}
+
+impl DeviceSecurityTransaction for PostgresStoreTransaction<'_> {
+    fn find_device_for_challenge(
+        &mut self,
+        device_id: &str,
+    ) -> Result<Option<DeviceRecord>, StoreError> {
+        let Ok(device_id) = Uuid::parse_str(device_id) else {
+            return Ok(None);
+        };
+        let sql = format!(
+            "select id, client_id, device_name, proof_key_id, status, registered_at_epoch, last_seen_at_epoch \
+             from {}.devices where id = $1::uuid limit 1 for update",
+            self.schema_name
+        );
+        let row = self
+            .tx_mut()
+            .query_opt(&sql, &[&device_id])
+            .map_err(|error| {
+                StoreError::Backend(format!("lock challenge device failed: {error}"))
+            })?;
+        row.map(decode_device).transpose()
+    }
+
+    fn lock_device(&mut self, device_id: &str) -> Result<Option<DeviceRecord>, StoreError> {
+        ProofBoundRefreshTransaction::lock_device(self, device_id)
+    }
+
+    fn update_device(&mut self, device: DeviceRecord) -> Result<DeviceRecord, StoreError> {
+        DeviceStore::update_device(self, device)
+    }
+
+    fn lock_active_device_key(
+        &mut self,
+        device_id: &str,
+    ) -> Result<Option<DeviceProofKeyRecord>, StoreError> {
+        let device_id = parse_uuid(device_id, "device.id")?;
+        let sql = format!(
+            "select key_id, device_id, algorithm, public_jwk, version, status, registered_at_epoch, retired_at_epoch \
+             from {}.device_proof_keys where device_id = $1::uuid and status = 'active' \
+             limit 1 for update",
+            self.schema_name
+        );
+        let row = self
+            .tx_mut()
+            .query_opt(&sql, &[&device_id])
+            .map_err(|error| {
+                StoreError::Backend(format!("lock active device proof key failed: {error}"))
+            })?;
+        row.map(decode_device_proof_key).transpose()
+    }
+
+    fn lock_device_key(
+        &mut self,
+        key_id: &str,
+    ) -> Result<Option<DeviceProofKeyRecord>, StoreError> {
+        ProofBoundRefreshTransaction::lock_device_key(self, key_id)
+    }
+
+    fn insert_device_key(
+        &mut self,
+        key: DeviceProofKeyRecord,
+    ) -> Result<DeviceProofKeyRecord, StoreError> {
+        key.validate()
+            .map_err(|error| StoreError::Backend(format!("invalid device proof key: {error:?}")))?;
+        let device_id = parse_uuid(&key.device_id, "device.id")?;
+        let status = encode_device_proof_key_status(key.status);
+        let sql = format!(
+            "insert into {}.device_proof_keys \
+             (key_id, device_id, algorithm, public_jwk, version, status, registered_at_epoch, retired_at_epoch) \
+             values ($1, $2::uuid, 'ed25519', $3, $4, $5, $6, $7) \
+             returning key_id, device_id, algorithm, public_jwk, version, status, registered_at_epoch, retired_at_epoch",
+            self.schema_name
+        );
+        let row = self
+            .tx_mut()
+            .query_one(
+                &sql,
+                &[
+                    &key.key_id,
+                    &device_id,
+                    &key.public_jwk,
+                    &(key.version as i64),
+                    &status,
+                    &to_epoch_secs(key.registered_at),
+                    &key.retired_at.map(to_epoch_secs),
+                ],
+            )
+            .map_err(map_write_error(
+                "insert device proof key",
+                Some("device_proof_key.id"),
+            ))?;
+        decode_device_proof_key(row)
+    }
+
+    fn update_device_key(
+        &mut self,
+        key: DeviceProofKeyRecord,
+    ) -> Result<DeviceProofKeyRecord, StoreError> {
+        key.validate()
+            .map_err(|error| StoreError::Backend(format!("invalid device proof key: {error:?}")))?;
+        let status = encode_device_proof_key_status(key.status);
+        let sql = format!(
+            "update {}.device_proof_keys set status = $2, retired_at_epoch = $3 \
+             where key_id = $1 \
+             returning key_id, device_id, algorithm, public_jwk, version, status, registered_at_epoch, retired_at_epoch",
+            self.schema_name
+        );
+        let row = self
+            .tx_mut()
+            .query_opt(
+                &sql,
+                &[&key.key_id, &status, &key.retired_at.map(to_epoch_secs)],
+            )
+            .map_err(|error| {
+                StoreError::Backend(format!("update device proof key failed: {error}"))
+            })?
+            .ok_or(StoreError::NotFound("device_proof_key.id"))?;
+        decode_device_proof_key(row)
+    }
+
+    fn lock_active_binding(
+        &mut self,
+        account_id: &str,
+        device_id: &str,
+    ) -> Result<Option<AccountDeviceBinding>, StoreError> {
+        ProofBoundRefreshTransaction::lock_active_binding(self, account_id, device_id)
+    }
+
+    fn insert_challenge(
+        &mut self,
+        challenge: DeviceProofChallengeRecord,
+    ) -> Result<DeviceProofChallengeRecord, StoreError> {
+        let challenge_id = parse_uuid(&challenge.id, "device_challenge.id")?;
+        let device_id = parse_uuid(&challenge.device_id, "device.id")?;
+        let sql = format!(
+            "insert into {}.device_nonces \
+             (id, device_id, challenge, purpose, challenge_digest, issued_at_epoch, expires_at_epoch, consumed_at_epoch) \
+             values ($1::uuid, $2::uuid, null, $3, $4, $5, $6, $7) \
+             returning id, device_id, purpose, challenge_digest, issued_at_epoch, expires_at_epoch, consumed_at_epoch",
+            self.schema_name
+        );
+        let row = self
+            .tx_mut()
+            .query_one(
+                &sql,
+                &[
+                    &challenge_id,
+                    &device_id,
+                    &challenge.purpose.as_str(),
+                    &challenge.challenge_digest.as_slice(),
+                    &to_epoch_secs(challenge.issued_at),
+                    &to_epoch_secs(challenge.expires_at),
+                    &challenge.consumed_at.map(to_epoch_secs),
+                ],
+            )
+            .map_err(map_write_error(
+                "insert device proof challenge",
+                Some("device_challenge.digest"),
+            ))?;
+        decode_device_proof_challenge(row)
+    }
+
+    fn lock_challenge(
+        &mut self,
+        digest: &[u8; 32],
+    ) -> Result<Option<DeviceProofChallengeRecord>, StoreError> {
+        ProofBoundRefreshTransaction::lock_challenge(self, digest)
+    }
+
+    fn consume_challenge_if_active(
+        &mut self,
+        digest: &[u8; 32],
+        observed_at: SystemTime,
+    ) -> Result<bool, StoreError> {
+        ProofBoundRefreshTransaction::consume_challenge_if_active(self, digest, observed_at)
+    }
+}
+
+fn encode_device_proof_key_status(status: DeviceProofKeyStatus) -> &'static str {
+    match status {
+        DeviceProofKeyStatus::Active => "active",
+        DeviceProofKeyStatus::Retired => "retired",
     }
 }
 
@@ -1449,6 +1811,56 @@ fn decode_device(row: Row) -> Result<DeviceRecord, StoreError> {
         registered_at: from_epoch_secs(row.get("registered_at_epoch")),
         last_seen_at: row
             .get::<_, Option<i64>>("last_seen_at_epoch")
+            .map(from_epoch_secs),
+    })
+}
+
+fn decode_device_proof_key(row: Row) -> Result<DeviceProofKeyRecord, StoreError> {
+    let algorithm: String = row.get("algorithm");
+    if algorithm != "ed25519" {
+        return Err(StoreError::Backend(format!(
+            "unknown device proof algorithm: {algorithm}"
+        )));
+    }
+    let status = match row.get::<_, String>("status").as_str() {
+        "active" => DeviceProofKeyStatus::Active,
+        "retired" => DeviceProofKeyStatus::Retired,
+        value => {
+            return Err(StoreError::Backend(format!(
+                "unknown device proof key status: {value}"
+            )))
+        }
+    };
+    Ok(DeviceProofKeyRecord {
+        key_id: row.get("key_id"),
+        device_id: decode_uuid(&row, "device_id"),
+        algorithm: DeviceProofAlgorithm::Ed25519,
+        public_jwk: row.get("public_jwk"),
+        version: row.get::<_, i64>("version") as u64,
+        status,
+        registered_at: from_epoch_secs(row.get("registered_at_epoch")),
+        retired_at: row
+            .get::<_, Option<i64>>("retired_at_epoch")
+            .map(from_epoch_secs),
+    })
+}
+
+fn decode_device_proof_challenge(row: Row) -> Result<DeviceProofChallengeRecord, StoreError> {
+    let digest: Vec<u8> = row.get("challenge_digest");
+    let challenge_digest: [u8; 32] = digest.try_into().map_err(|_| {
+        StoreError::Backend("device challenge digest must contain exactly 32 bytes".to_string())
+    })?;
+    let purpose = DeviceProofPurpose::new(row.get::<_, String>("purpose"))
+        .map_err(|error| StoreError::Backend(format!("invalid device proof purpose: {error:?}")))?;
+    Ok(DeviceProofChallengeRecord {
+        id: decode_uuid(&row, "id"),
+        device_id: decode_uuid(&row, "device_id"),
+        purpose,
+        challenge_digest,
+        issued_at: from_epoch_secs(row.get("issued_at_epoch")),
+        expires_at: from_epoch_secs(row.get("expires_at_epoch")),
+        consumed_at: row
+            .get::<_, Option<i64>>("consumed_at_epoch")
             .map(from_epoch_secs),
     })
 }
@@ -1528,16 +1940,24 @@ fn decode_authorization_code(row: Row) -> Result<AuthorizationCodeRecord, StoreE
 }
 
 fn decode_refresh_token(row: Row) -> Result<RefreshTokenRecord, StoreError> {
+    let digest: Vec<u8> = row.get("token_digest");
+    let token_digest: [u8; 32] = digest.try_into().map_err(|_| {
+        StoreError::Backend("refresh token digest must contain exactly 32 bytes".to_string())
+    })?;
     Ok(RefreshTokenRecord {
         id: decode_uuid(&row, "id"),
         session_id: decode_uuid(&row, "session_id"),
-        token_value: row.get("token_value"),
+        token_digest,
         token_version: row.get::<_, i64>("token_version") as u64,
         issued_at: from_epoch_secs(row.get("issued_at_epoch")),
         expires_at: from_epoch_secs(row.get("expires_at_epoch")),
         revoked_at: row
             .get::<_, Option<i64>>("revoked_at_epoch")
             .map(from_epoch_secs),
+        revocation_reason: row
+            .get::<_, Option<String>>("revocation_reason")
+            .map(decode_refresh_revocation_reason)
+            .transpose()?,
     })
 }
 
@@ -1633,6 +2053,33 @@ fn decode_account_device_binding_status(
         "suspended" => Ok(AccountDeviceBindingStatus::Suspended),
         _ => Err(StoreError::Backend(format!(
             "unknown account device binding status: {value}"
+        ))),
+    }
+}
+
+fn encode_refresh_revocation_reason(reason: RefreshTokenRevocationReason) -> &'static str {
+    match reason {
+        RefreshTokenRevocationReason::Rotated => "rotated",
+        RefreshTokenRevocationReason::ReuseDetected => "reuse_detected",
+        RefreshTokenRevocationReason::Logout => "logout",
+        RefreshTokenRevocationReason::ClientRevocation => "client_revocation",
+        RefreshTokenRevocationReason::Administrative => "administrative",
+        RefreshTokenRevocationReason::SecurityCutover => "security_cutover",
+    }
+}
+
+fn decode_refresh_revocation_reason(
+    value: String,
+) -> Result<RefreshTokenRevocationReason, StoreError> {
+    match value.as_str() {
+        "rotated" => Ok(RefreshTokenRevocationReason::Rotated),
+        "reuse_detected" => Ok(RefreshTokenRevocationReason::ReuseDetected),
+        "logout" => Ok(RefreshTokenRevocationReason::Logout),
+        "client_revocation" => Ok(RefreshTokenRevocationReason::ClientRevocation),
+        "administrative" => Ok(RefreshTokenRevocationReason::Administrative),
+        "security_cutover" => Ok(RefreshTokenRevocationReason::SecurityCutover),
+        _ => Err(StoreError::Backend(format!(
+            "unknown refresh token revocation reason: {value}"
         ))),
     }
 }

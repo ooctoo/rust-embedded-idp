@@ -195,10 +195,11 @@ async fn revoke_account_sessions(
     Json(request): Json<RevokeAccountSessionsHttpRequest>,
 ) -> Response {
     let admin_service = state.admin_service.clone();
+    let revoked_at = state.clock.now();
     match run_service_call(move || {
         admin_service.revoke_account_sessions(RevokeAccountSessionsCommand {
             account_id: request.account_id,
-            revoked_at: unix_time(request.revoked_at_unix_secs),
+            revoked_at,
         })
     })
     .await
@@ -291,10 +292,11 @@ async fn revoke_session(
     Json(request): Json<SessionManagementHttpRequest>,
 ) -> Response {
     let admin_service = state.admin_service.clone();
+    let revoked_at = state.clock.now();
     match run_service_call(move || {
         admin_service.revoke_session(RevokeSessionCommand {
             session_id: request.session_id,
-            revoked_at: unix_time(request.revoked_at_unix_secs),
+            revoked_at,
         })
     })
     .await
@@ -449,11 +451,12 @@ async fn unbind_device(
     Json(request): Json<UnbindAnyDeviceHttpRequest>,
 ) -> Response {
     let device_service = state.device_service.clone();
+    let unbound_at = state.clock.now();
     match run_service_call(move || {
         device_service.unbind_device_from_account(UnbindDeviceFromAccountCommand {
             account_id: request.account_id,
             device_id: request.device_id,
-            unbound_at: unix_time(request.unbound_at_unix_secs),
+            unbound_at,
         })
     })
     .await

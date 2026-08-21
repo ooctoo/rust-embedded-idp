@@ -197,7 +197,7 @@ pub trait EmailVerificationStore {
 pub trait RefreshTokenStore {
     fn find_refresh_token(
         &mut self,
-        token_value: &str,
+        token_digest: &[u8; 32],
     ) -> Result<Option<RefreshTokenRecord>, StoreError>;
 
     fn insert_refresh_token(
@@ -207,13 +207,15 @@ pub trait RefreshTokenStore {
 
     fn revoke_refresh_token(
         &mut self,
-        token_value: &str,
+        token_digest: &[u8; 32],
+        reason: crate::RefreshTokenRevocationReason,
         revoked_at: SystemTime,
     ) -> Result<Option<RefreshTokenRecord>, StoreError>;
 
     fn revoke_refresh_tokens_for_session(
         &mut self,
         session_id: &str,
+        reason: crate::RefreshTokenRevocationReason,
         revoked_at: SystemTime,
     ) -> Result<Vec<RefreshTokenRecord>, StoreError>;
 }

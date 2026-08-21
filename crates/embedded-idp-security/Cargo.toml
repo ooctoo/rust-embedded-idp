@@ -1,0 +1,17 @@
+[package]
+name = "embedded-idp-security"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+description = "Production cryptography adapters for rust-embedded-idp"
+
+[dependencies]
+base64ct = { version = "1", features = ["alloc"] }
+embedded-idp-core = { version = "0.2.0", path = "../embedded-idp-core" }
+rand_core = { version = "0.6", features = ["getrandom"] }
+ring = "0.17"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"

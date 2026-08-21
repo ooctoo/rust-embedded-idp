@@ -3,31 +3,37 @@ use std::time::SystemTime;
 
 use axum::body::{to_bytes, Body};
 use axum::http::{Request, StatusCode};
+use base64ct::{Base64UrlUnpadded, Encoding};
 use embedded_idp_core::{
     Account, AccountDeviceBinding, AccountDeviceBindingStatus, AccountStatus,
     ActivateAccountCommand, ActivateAccountResult, AdminClientRecord, AdminService, AuthService,
-    AuthSession, BindDeviceToAccountCommand, BindDeviceToAccountResult,
+    AuthSession, BindDeviceToAccountCommand, BindDeviceToAccountResult, CanonicalHttpMethod,
+    CompleteDeviceKeyRegistrationCommand, CompleteDeviceKeyRegistrationResult,
     CompleteDeviceRegistrationCommand, CompleteDeviceRegistrationResult, CreateAccountCommand,
     CreateAccountResult, DeviceHeartbeatCommand, DeviceHeartbeatResult, DeviceNonceRecord,
-    DeviceRecord, DeviceService, DeviceStatus, DisableAccountCommand, DisableAccountResult,
-    DisableDeviceCommand, DisableDeviceResult, ExchangeAuthorizationCodeCommand,
-    ExchangeAuthorizationCodeResult, GetAccountCommand, GetAccountResult, GetClientCommand,
-    GetClientResult, GetDeviceCommand, GetDeviceResult, GetSessionCommand, GetSessionResult,
-    GetUserInfoCommand, GetUserInfoResult, IntrospectTokenCommand, IntrospectTokenResult,
-    IssuedTokenBundle, JsonWebKey, JwksDocument, ListAccountsCommand, ListAccountsResult,
-    ListClientsCommand, ListClientsResult, ListDevicesCommand, ListDevicesResult,
-    ListSessionsCommand, ListSessionsResult, LoginCommand, LoginResult, LogoutSessionCommand,
-    LogoutSessionResult, OidcAuthorizationService, OidcClientType, OidcMetadataService,
-    PageMetadata, PendingEmailVerification, ProvisionDeviceCommand, ProvisionDeviceResult,
-    RegisterAccountCommand, RegisterAccountResult, ResendVerificationCodeCommand,
-    ResendVerificationCodeResult, RevokeAccountSessionsCommand, RevokeAccountSessionsResult,
-    RevokeDeviceCommand, RevokeDeviceResult, RevokeSessionCommand, RevokeSessionResult,
-    RevokeTokenCommand, RevokeTokenResult, RotateRefreshTokenCommand, RotateRefreshTokenResult,
-    ServiceError, SessionStatus, SetAccountPasswordCommand, SetAccountPasswordResult,
-    StartAuthorizationCommand, StartAuthorizationResult, TokenIntrospectionService,
-    TokenManagementService, UnbindDeviceFromAccountCommand, UnbindDeviceFromAccountResult,
-    UpsertClientCommand, UpsertClientResult, UserInfoService, VerifyEmailCommand,
-    VerifyEmailResult,
+    DeviceProofAlgorithm, DeviceProofKeyRecord, DeviceProofKeyStatus, DeviceProofProfile,
+    DeviceRecord, DeviceSecurityError, DeviceSecurityService, DeviceService, DeviceStatus,
+    DisableAccountCommand, DisableAccountResult, DisableDeviceCommand, DisableDeviceResult,
+    ExchangeAuthorizationCodeCommand, ExchangeAuthorizationCodeResult, GetAccountCommand,
+    GetAccountResult, GetClientCommand, GetClientResult, GetDeviceCommand, GetDeviceResult,
+    GetSessionCommand, GetSessionResult, GetUserInfoCommand, GetUserInfoResult,
+    IntrospectTokenCommand, IntrospectTokenResult, IssueDeviceProofChallengeCommand,
+    IssueDeviceProofChallengeResult, IssuedTokenBundle, JsonWebKey, JwksDocument,
+    ListAccountsCommand, ListAccountsResult, ListClientsCommand, ListClientsResult,
+    ListDevicesCommand, ListDevicesResult, ListSessionsCommand, ListSessionsResult, LoginCommand,
+    LoginResult, LogoutSessionCommand, LogoutSessionResult, OidcAuthorizationService,
+    OidcClientType, OidcMetadataService, PageMetadata, PendingEmailVerification,
+    ProofBoundRefreshError, ProofBoundRefreshService, ProvisionDeviceCommand,
+    ProvisionDeviceResult, RegisterAccountCommand, RegisterAccountResult,
+    ResendVerificationCodeCommand, ResendVerificationCodeResult, RevokeAccountSessionsCommand,
+    RevokeAccountSessionsResult, RevokeDeviceCommand, RevokeDeviceResult, RevokeSessionCommand,
+    RevokeSessionResult, RevokeTokenCommand, RevokeTokenResult, RotateDeviceProofKeyCommand,
+    RotateDeviceProofKeyResult, RotateProofBoundRefreshCommand, RotateProofBoundRefreshOutcome,
+    RotateRefreshTokenCommand, RotateRefreshTokenResult, SecretString, ServiceError, SessionStatus,
+    SetAccountPasswordCommand, SetAccountPasswordResult, StartAuthorizationCommand,
+    StartAuthorizationResult, SystemClock, TokenIntrospectionService, TokenManagementService,
+    UnbindDeviceFromAccountCommand, UnbindDeviceFromAccountResult, UpsertClientCommand,
+    UpsertClientResult, UserInfoService, VerifyEmailCommand, VerifyEmailResult,
 };
 use embedded_idp_email::{
     EmailSendError, OutboundEmail, VerificationEmailRequest, VerificationEmailService,
@@ -36,8 +42,82 @@ use tower::ServiceExt;
 
 use super::{
     admin_router, client_authenticated_router, public_router, router, subject_router, token_router,
-    AuthenticatedSubject, EmbeddedIdpHttpState, RouteMountPlan,
+    AuthenticatedSubject, DeviceHttpSecurity, EmbeddedIdpHttpState, ProofBoundRefreshHttpConfig,
+    ProtectedRouteConfig, RefreshHttpSecurity, RouteMountPlan,
 };
+
+struct ReuseProofBoundRefreshService;
+
+impl ProofBoundRefreshService for ReuseProofBoundRefreshService {
+    fn rotate_proof_bound_refresh(
+        &self,
+        command: RotateProofBoundRefreshCommand,
+    ) -> Result<RotateProofBoundRefreshOutcome, ProofBoundRefreshError> {
+        assert_eq!(command.refresh_token.expose_secret(), "refresh-token");
+        assert_eq!(command.binding.external_path, "/auth/refresh");
+        assert_eq!(command.proof.device_id, "device-1");
+        Ok(RotateProofBoundRefreshOutcome::ReuseDetected {
+            session_id: "session-1".to_string(),
+        })
+    }
+}
+
+struct HappyDeviceSecurityService;
+
+impl DeviceSecurityService for HappyDeviceSecurityService {
+    fn issue_device_proof_challenge(
+        &self,
+        command: IssueDeviceProofChallengeCommand,
+    ) -> Result<IssueDeviceProofChallengeResult, DeviceSecurityError> {
+        assert_eq!(command.device_id, "device-1");
+        Ok(IssueDeviceProofChallengeResult {
+            challenge: SecretString::new(Base64UrlUnpadded::encode_string(&[2_u8; 32])),
+            expires_at: SystemTime::UNIX_EPOCH,
+        })
+    }
+
+    fn complete_device_key_registration(
+        &self,
+        command: CompleteDeviceKeyRegistrationCommand,
+    ) -> Result<CompleteDeviceKeyRegistrationResult, DeviceSecurityError> {
+        assert_eq!(command.device_id, "device-1");
+        assert!(command.public_jwk.contains("Ed25519"));
+        Ok(CompleteDeviceKeyRegistrationResult {
+            device: test_device(),
+            key: test_device_key(1, DeviceProofKeyStatus::Active),
+        })
+    }
+
+    fn rotate_device_proof_key(
+        &self,
+        command: RotateDeviceProofKeyCommand,
+    ) -> Result<RotateDeviceProofKeyResult, DeviceSecurityError> {
+        assert_eq!(command.account_id, "acct-1");
+        assert_eq!(command.device_id, "device-1");
+        let mut device = test_device();
+        let active_key = test_device_key(2, DeviceProofKeyStatus::Active);
+        device.proof_key_id = Some(active_key.key_id.clone());
+        Ok(RotateDeviceProofKeyResult {
+            device,
+            retired_key: test_device_key(1, DeviceProofKeyStatus::Retired),
+            active_key,
+        })
+    }
+}
+
+fn test_device_key(version: u64, status: DeviceProofKeyStatus) -> DeviceProofKeyRecord {
+    let byte = version as u8;
+    DeviceProofKeyRecord {
+        key_id: Base64UrlUnpadded::encode_string(&[byte; 32]),
+        device_id: "device-1".to_string(),
+        algorithm: DeviceProofAlgorithm::Ed25519,
+        public_jwk: "{}".to_string(),
+        version,
+        status,
+        registered_at: SystemTime::UNIX_EPOCH,
+        retired_at: (status == DeviceProofKeyStatus::Retired).then_some(SystemTime::UNIX_EPOCH),
+    }
+}
 
 struct HappyAuthService;
 
@@ -492,7 +572,7 @@ impl OidcAuthorizationService for HappyOidcAuthorizationService {
         Ok(ExchangeAuthorizationCodeResult {
             subject_account_id: "acct-1".to_string(),
             tokens: test_tokens(),
-            id_token: Some("id-token-1".to_string()),
+            id_token: Some(SecretString::new("id-token-1")),
             scope: Some("openid profile".to_string()),
             token_type: "Bearer",
         })
@@ -516,6 +596,10 @@ impl OidcMetadataService for HappyOidcMetadataService {
                 y: Some("y-value".to_string()),
             }],
         })
+    }
+
+    fn jwks_etag(&self) -> Option<String> {
+        Some("\"jwks-v1\"".to_string())
     }
 }
 
@@ -623,6 +707,27 @@ fn test_state(auth_service: Arc<dyn AuthService>) -> EmbeddedIdpHttpState {
     test_state_with_admin_service(Arc::new(HappyAdminService), auth_service)
 }
 
+fn proof_bound_refresh_state() -> EmbeddedIdpHttpState {
+    let mut state = test_state(Arc::new(HappyAuthService));
+    state.refresh_security = RefreshHttpSecurity::ProofBound(ProofBoundRefreshHttpConfig::new(
+        Arc::new(ReuseProofBoundRefreshService),
+        ProtectedRouteConfig::new(
+            DeviceProofProfile::new("SUT-DEVICE-PROOF-V1").unwrap(),
+            "sut-api",
+            CanonicalHttpMethod::Post,
+            "/auth/refresh",
+        )
+        .unwrap(),
+    ));
+    state
+}
+
+fn proof_bound_device_state() -> EmbeddedIdpHttpState {
+    let mut state = test_state(Arc::new(HappyAuthService));
+    state.device_security = DeviceHttpSecurity::ProofBound(Arc::new(HappyDeviceSecurityService));
+    state
+}
+
 fn test_state_with_route_mount_plan(
     route_mount_plan: RouteMountPlan,
     auth_service: Arc<dyn AuthService>,
@@ -662,6 +767,9 @@ fn test_state_with_admin_service_and_route_mount_plan(
         token_management_service: Arc::new(HappyTokenManagementService),
         user_info_service: Arc::new(HappyUserInfoService),
         token_introspection_service: Arc::new(HappyTokenIntrospectionService),
+        refresh_security: RefreshHttpSecurity::LegacyDevelopmentOnly,
+        device_security: DeviceHttpSecurity::LegacyDevelopmentOnly,
+        clock: Arc::new(SystemClock),
     }
 }
 
@@ -745,8 +853,8 @@ fn test_page(limit: u32, offset: u64) -> PageMetadata {
 
 fn test_tokens() -> IssuedTokenBundle {
     IssuedTokenBundle {
-        access_token: "access-token".to_string(),
-        refresh_token: "refresh-token".to_string(),
+        access_token: SecretString::new("access-token"),
+        refresh_token: SecretString::new("refresh-token"),
         access_expires_at: SystemTime::UNIX_EPOCH,
         refresh_expires_at: SystemTime::UNIX_EPOCH,
         refresh_token_version: 0,
@@ -832,7 +940,7 @@ async fn device_provision_handler_returns_pending_device_and_challenge() {
         .method("POST")
         .header("content-type", "application/json")
         .body(Body::from(
-            r#"{"client_id":"desktop-app","device_name":"Shared Kiosk","requested_at_unix_secs":0}"#,
+            r#"{"client_id":"desktop-app","device_name":"Shared Kiosk"}"#,
         ))
         .unwrap();
 
@@ -866,9 +974,7 @@ async fn device_complete_and_bind_handlers_use_fixed_paths() {
         .method("POST")
         .extension(AuthenticatedSubject::new("acct-1"))
         .header("content-type", "application/json")
-        .body(Body::from(
-            r#"{"device_id":"dev-1","bound_at_unix_secs":0}"#,
-        ))
+        .body(Body::from(r#"{"device_id":"dev-1"}"#))
         .unwrap();
 
     let bind_response = app.oneshot(bind_request).await.unwrap();
@@ -918,9 +1024,7 @@ async fn device_query_and_management_handlers_use_fixed_paths() {
         .method("POST")
         .extension(AuthenticatedSubject::new("acct-1"))
         .header("content-type", "application/json")
-        .body(Body::from(
-            r#"{"device_id":"dev-1","unbound_at_unix_secs":0}"#,
-        ))
+        .body(Body::from(r#"{"device_id":"dev-1"}"#))
         .unwrap();
     let unbind_response = app.clone().oneshot(unbind_request).await.unwrap();
     assert_eq!(unbind_response.status(), StatusCode::OK);
@@ -1009,14 +1113,201 @@ async fn logout_handler_uses_fixed_auth_path() {
         .uri("/auth/logout")
         .method("POST")
         .header("content-type", "application/json")
+        .body(Body::from(r#"{"refresh_token":"refresh-token"}"#))
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn refresh_rejects_legacy_time_fields_and_oversized_bodies() {
+    let app = token_router(test_state(Arc::new(HappyAuthService)));
+    let legacy_request = Request::builder()
+        .uri("/auth/refresh")
+        .method("POST")
+        .header("content-type", "application/json")
         .body(Body::from(
-            r#"{"refresh_token":"refresh-token","logged_out_at_unix_secs":0}"#,
+            r#"{"refresh_token":"refresh-token","rotated_at_unix_secs":0}"#,
+        ))
+        .unwrap();
+    let legacy_response = app.clone().oneshot(legacy_request).await.unwrap();
+    assert_eq!(legacy_response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+    let oversized = format!(r#"{{"refresh_token":"{}"}}"#, "x".repeat(17 * 1024));
+    let oversized_request = Request::builder()
+        .uri("/auth/refresh")
+        .method("POST")
+        .header("content-type", "application/json")
+        .body(Body::from(oversized))
+        .unwrap();
+    let oversized_response = app.oneshot(oversized_request).await.unwrap();
+    assert_eq!(oversized_response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+}
+
+#[tokio::test]
+async fn production_refresh_requires_the_exact_device_proof_headers() {
+    let app = token_router(proof_bound_refresh_state());
+    let missing_proof = Request::builder()
+        .uri("/auth/refresh")
+        .method("POST")
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"refresh_token":"refresh-token"}"#))
+        .unwrap();
+
+    let response = app.oneshot(missing_proof).await.unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["code"], "device_proof_required");
+}
+
+#[tokio::test]
+async fn production_refresh_maps_committed_reuse_to_the_stable_public_code() {
+    let app = token_router(proof_bound_refresh_state());
+    let request = Request::builder()
+        .uri("/auth/refresh")
+        .method("POST")
+        .header("content-type", "application/json")
+        .header("x-device-id", "device-1")
+        .header(
+            "x-device-key-id",
+            Base64UrlUnpadded::encode_string(&[1_u8; 32]),
+        )
+        .header(
+            "x-device-challenge",
+            Base64UrlUnpadded::encode_string(&[2_u8; 32]),
+        )
+        .header(
+            "x-device-signature",
+            Base64UrlUnpadded::encode_string(&[3_u8; 64]),
+        )
+        .header("x-device-signed-at", "1700000000")
+        .body(Body::from(r#"{"refresh_token":"refresh-token"}"#))
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["code"], "refresh_token_reuse_detected");
+}
+
+#[tokio::test]
+async fn device_challenge_endpoint_returns_the_nondisclosing_success_shape() {
+    let app = public_router(proof_bound_device_state());
+    let request = Request::builder()
+        .uri("/device-proof/challenges")
+        .method("POST")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            r#"{"device_id":"device-1","purpose":"device_registration"}"#,
         ))
         .unwrap();
 
     let response = app.oneshot(request).await.unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["challenge"].as_str().unwrap().len(), 43);
+    assert_eq!(json["expires_at_unix_secs"], 0);
+}
+
+#[tokio::test]
+async fn production_provision_uses_server_time_and_returns_no_legacy_challenge() {
+    let app = public_router(proof_bound_device_state());
+    let request = Request::builder()
+        .uri("/devices/provision")
+        .method("POST")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            r#"{"client_id":"desktop-app","device_name":"Laptop"}"#,
+        ))
+        .unwrap();
+
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(json.get("challenge").is_none());
+
+    let caller_time = Request::builder()
+        .uri("/devices/provision")
+        .method("POST")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            r#"{"client_id":"desktop-app","device_name":"Laptop","requested_at_unix_secs":0}"#,
+        ))
+        .unwrap();
+    assert_eq!(
+        app.oneshot(caller_time).await.unwrap().status(),
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+}
+
+#[tokio::test]
+async fn production_device_registration_uses_public_jwk_without_caller_time() {
+    let app = public_router(proof_bound_device_state());
+    let request = Request::builder()
+        .uri("/devices/complete")
+        .method("POST")
+        .header("content-type", "application/json")
+        .body(Body::from(format!(
+            r#"{{"device_id":"device-1","public_jwk":{{"kty":"OKP","crv":"Ed25519","x":"{}","kid":"{}"}},"challenge":"{}","signature":"{}"}}"#,
+            Base64UrlUnpadded::encode_string(&[7_u8; 32]),
+            Base64UrlUnpadded::encode_string(&[8_u8; 32]),
+            Base64UrlUnpadded::encode_string(&[2_u8; 32]),
+            Base64UrlUnpadded::encode_string(&[3_u8; 64]),
+        )))
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["key_version"], 1);
+    assert_eq!(json["key_status"], "active");
+}
+
+#[tokio::test]
+async fn device_key_rotation_requires_authenticated_account_context() {
+    let app = subject_router(proof_bound_device_state());
+    let body = format!(
+        r#"{{"device_id":"device-1","new_public_jwk":{{"kty":"OKP","crv":"Ed25519","x":"{}","kid":"{}"}},"challenge":"{}","current_key_signature":"{}","new_key_signature":"{}"}}"#,
+        Base64UrlUnpadded::encode_string(&[9_u8; 32]),
+        Base64UrlUnpadded::encode_string(&[10_u8; 32]),
+        Base64UrlUnpadded::encode_string(&[2_u8; 32]),
+        Base64UrlUnpadded::encode_string(&[3_u8; 64]),
+        Base64UrlUnpadded::encode_string(&[4_u8; 64]),
+    );
+    let missing_subject = Request::builder()
+        .uri("/devices/rotate-key")
+        .method("POST")
+        .header("content-type", "application/json")
+        .body(Body::from(body.clone()))
+        .unwrap();
+    assert_eq!(
+        app.clone().oneshot(missing_subject).await.unwrap().status(),
+        StatusCode::UNAUTHORIZED
+    );
+
+    let authenticated = Request::builder()
+        .uri("/devices/rotate-key")
+        .method("POST")
+        .header("content-type", "application/json")
+        .extension(AuthenticatedSubject::new("acct-1"))
+        .body(Body::from(body))
+        .unwrap();
+    let response = app.oneshot(authenticated).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["key_version"], 2);
 }
 
 #[tokio::test]
@@ -1032,6 +1323,7 @@ async fn jwks_handler_returns_json_keyset() {
     let response = app.oneshot(request).await.unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()["etag"], "\"jwks-v1\"");
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["keys"][0]["kid"], "kid-1");
@@ -1047,7 +1339,7 @@ async fn revoke_handler_accepts_form_payload() {
         .method("POST")
         .header("content-type", "application/x-www-form-urlencoded")
         .body(Body::from(
-            "token=refresh-token&token_type_hint=refresh_token&client_id=desktop-app&revoked_at_unix_secs=0",
+            "token=refresh-token&token_type_hint=refresh_token&client_id=desktop-app",
         ))
         .unwrap();
 
@@ -1224,9 +1516,7 @@ async fn token_and_client_routers_are_split_from_public_routes() {
         .uri("/auth/refresh")
         .method("POST")
         .header("content-type", "application/json")
-        .body(Body::from(
-            r#"{"refresh_token":"refresh-token","rotated_at_unix_secs":0}"#,
-        ))
+        .body(Body::from(r#"{"refresh_token":"refresh-token"}"#))
         .unwrap();
     let refresh_response = token_app.clone().oneshot(refresh_request).await.unwrap();
     assert_eq!(refresh_response.status(), StatusCode::OK);
@@ -1326,9 +1616,7 @@ async fn admin_router_exposes_only_management_endpoints() {
         .uri("/admin/devices/unbind")
         .method("POST")
         .header("content-type", "application/json")
-        .body(Body::from(
-            r#"{"account_id":"acct-1","device_id":"dev-1","unbound_at_unix_secs":0}"#,
-        ))
+        .body(Body::from(r#"{"account_id":"acct-1","device_id":"dev-1"}"#))
         .unwrap();
     let unbind_response = app.clone().oneshot(unbind_request).await.unwrap();
     assert_eq!(unbind_response.status(), StatusCode::OK);

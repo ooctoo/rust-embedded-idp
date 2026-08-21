@@ -2,8 +2,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use embedded_idp_core::{
     validate_proof_freshness, AccessTokenValidator, DeviceProof, DeviceProofError,
-    DeviceProofVerifier, IdGenerator, IdTokenClaims, IdTokenIssuer, IssuedTokenBundle, TokenError,
-    TokenIssuer, UuidV7IdGenerator, ValidatedAccessToken,
+    DeviceProofVerifier, IdGenerator, IdTokenClaims, IdTokenIssuer, IssuedTokenBundle,
+    SecretString, TokenError, TokenIssuer, UuidV7IdGenerator, ValidatedAccessToken,
 };
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -44,11 +44,13 @@ impl TokenIssuer for DevTokenIssuer {
         let refresh_expires_at = issued_at + Duration::from_secs(self.refresh_token_ttl_secs);
 
         Ok(IssuedTokenBundle {
-            access_token: format!(
+            access_token: SecretString::new(format!(
                 "access:{session_id}:{account_id}:{client_id}:{issued_at_unix}:{}",
                 unix_secs(access_expires_at)?
-            ),
-            refresh_token: format!("refresh:{session_id}:{refresh_token_version}:{issued_at_unix}"),
+            )),
+            refresh_token: SecretString::new(format!(
+                "refresh:{session_id}:{refresh_token_version}:{issued_at_unix}"
+            )),
             access_expires_at,
             refresh_expires_at,
             refresh_token_version,
@@ -88,7 +90,7 @@ impl AccessTokenValidator for DevAccessTokenValidator {
         };
 
         Ok(Some(ValidatedAccessToken {
-            token: token.to_string(),
+            token: embedded_idp_core::SecretString::new(token),
             subject_account_id: account_id.to_string(),
             session_id: session_id.to_string(),
             client_id: client_id.to_string(),
@@ -103,11 +105,11 @@ impl AccessTokenValidator for DevAccessTokenValidator {
 pub struct DevIdTokenIssuer;
 
 impl IdTokenIssuer for DevIdTokenIssuer {
-    fn issue_id_token(&self, claims: &IdTokenClaims) -> Result<String, TokenError> {
-        Ok(format!(
+    fn issue_id_token(&self, claims: &IdTokenClaims) -> Result<SecretString, TokenError> {
+        Ok(SecretString::new(format!(
             "id:{}:{}:{}",
             claims.subject_account_id, claims.audience, claims.issuer
-        ))
+        )))
     }
 }
 

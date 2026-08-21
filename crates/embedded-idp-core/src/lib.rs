@@ -5,6 +5,8 @@ mod domain;
 mod module;
 mod paging;
 mod paths;
+mod secret;
+mod security;
 mod service;
 mod store;
 mod support;
@@ -18,10 +20,13 @@ pub use device_proof::{
     validate_proof_freshness, DeviceProof, DeviceProofError, DeviceProofVerifier,
 };
 pub use domain::{
-    Account, AccountDeviceBinding, AccountDeviceBindingStatus, AccountStatus, AuthSession,
-    AuthorizationCodeRecord, ClientValidationError, DeviceNonceRecord, DeviceRecord, DeviceStatus,
-    EmailVerificationCode, OidcClient, OidcClientType, PkceChallengeMethod, RefreshTokenRecord,
-    SessionStatus,
+    Account, AccountDeviceBinding, AccountDeviceBindingId, AccountDeviceBindingStatus, AccountId,
+    AccountStatus, AuthSession, AuthorizationCodeId, AuthorizationCodeRecord, ClientId,
+    ClientValidationError, DeviceId, DeviceNonceId, DeviceNonceRecord, DeviceProofAlgorithm,
+    DeviceProofChallengeRecord, DeviceProofKeyRecord, DeviceProofKeyStatus,
+    DeviceProofKeyValidationError, DeviceRecord, DeviceStatus, EmailVerificationCode,
+    EmailVerificationId, OidcClient, OidcClientType, PkceChallengeMethod, RefreshTokenId,
+    RefreshTokenRecord, RefreshTokenRevocationReason, SessionId, SessionStatus,
 };
 pub use module::{DomainScope, ModuleDescriptor};
 pub(crate) use paging::finalize_page;
@@ -30,30 +35,46 @@ pub use paths::{
     OIDC_API_PREFIX, OIDC_AUTHORIZE_PATH, OIDC_DISCOVERY_PATH, OIDC_INTROSPECT_PATH,
     OIDC_JWKS_PATH, OIDC_REVOKE_PATH, OIDC_TOKEN_PATH, OIDC_USERINFO_PATH,
 };
+pub use secret::SecretString;
+pub use security::{
+    build_device_key_rotation_proof_bytes, build_device_registration_proof_bytes,
+    build_request_proof_bytes, decode_device_signature, digest_device_challenge,
+    validate_external_path, CanonicalHttpMethod, DeviceChallengeGenerator, DeviceProofPresentation,
+    DeviceProofProfile, DeviceProofPurpose, DevicePublicJwkParser, DevicePublicJwkValidator,
+    DeviceRequestBinding, DeviceSignatureVerifier, RefreshTokenDigester, RefreshTokenGenerator,
+    SecurityContractError, ValidatedDevicePublicJwk, VerifiedDeviceRequest,
+    DEVICE_KEY_ROTATION_PURPOSE, DEVICE_REGISTRATION_PURPOSE, REFRESH_PURPOSE,
+};
 pub use service::{
     ActivateAccountCommand, ActivateAccountResult, AdminClientRecord, AdminService, AuthService,
-    BindDeviceToAccountCommand, BindDeviceToAccountResult, CompleteDeviceRegistrationCommand,
+    BindDeviceToAccountCommand, BindDeviceToAccountResult, CompleteDeviceKeyRegistrationCommand,
+    CompleteDeviceKeyRegistrationResult, CompleteDeviceRegistrationCommand,
     CompleteDeviceRegistrationResult, ContractValidationError, CoreAdminService, CoreAuthService,
-    CoreDeviceService, CoreOidcResourceService, CoreOidcService, CreateAccountCommand,
-    CreateAccountResult, DeviceHeartbeatCommand, DeviceHeartbeatResult, DeviceService,
+    CoreDeviceSecurityService, CoreDeviceService, CoreOidcResourceService, CoreOidcService,
+    CoreProofBoundRefreshService, CreateAccountCommand, CreateAccountResult,
+    DeviceHeartbeatCommand, DeviceHeartbeatResult, DeviceSecurityError, DeviceSecurityService,
+    DeviceSecurityTransaction, DeviceSecurityTransactionRunner, DeviceService,
     DisableAccountCommand, DisableAccountResult, DisableDeviceCommand, DisableDeviceResult,
     ExchangeAuthorizationCodeCommand, ExchangeAuthorizationCodeResult, GetAccountCommand,
     GetAccountResult, GetClientCommand, GetClientResult, GetDeviceCommand, GetDeviceResult,
     GetSessionCommand, GetSessionResult, GetUserInfoCommand, GetUserInfoResult,
-    IntrospectTokenCommand, IntrospectTokenResult, JsonWebKey, JwksDocument, ListAccountsCommand,
+    IntrospectTokenCommand, IntrospectTokenResult, IssueDeviceProofChallengeCommand,
+    IssueDeviceProofChallengeResult, JsonWebKey, JwksDocument, ListAccountsCommand,
     ListAccountsResult, ListClientsCommand, ListClientsResult, ListDevicesCommand,
     ListDevicesResult, ListSessionsCommand, ListSessionsResult, LoginCommand, LoginResult,
     LogoutSessionCommand, LogoutSessionResult, OidcAuthorizationService, OidcMetadataService,
-    PendingEmailVerification, ProvisionDeviceCommand, ProvisionDeviceResult,
-    RegisterAccountCommand, RegisterAccountResult, ResendVerificationCodeCommand,
-    ResendVerificationCodeResult, RevokeAccountSessionsCommand, RevokeAccountSessionsResult,
-    RevokeDeviceCommand, RevokeDeviceResult, RevokeSessionCommand, RevokeSessionResult,
-    RevokeTokenCommand, RevokeTokenResult, RotateRefreshTokenCommand, RotateRefreshTokenResult,
-    ServiceError, SetAccountPasswordCommand, SetAccountPasswordResult, StartAuthorizationCommand,
-    StartAuthorizationResult, StaticOidcMetadataService, TokenIntrospectionService,
-    TokenManagementService, UnbindDeviceFromAccountCommand, UnbindDeviceFromAccountResult,
-    UpsertClientCommand, UpsertClientResult, UserInfoService, VerifyEmailCommand,
-    VerifyEmailResult,
+    PendingEmailVerification, ProofBoundRefreshError, ProofBoundRefreshService,
+    ProofBoundRefreshTransaction, ProofBoundRefreshTransactionRunner, ProofBoundTokenResult,
+    ProvisionDeviceCommand, ProvisionDeviceResult, RegisterAccountCommand, RegisterAccountResult,
+    ResendVerificationCodeCommand, ResendVerificationCodeResult, RevokeAccountSessionsCommand,
+    RevokeAccountSessionsResult, RevokeDeviceCommand, RevokeDeviceResult, RevokeSessionCommand,
+    RevokeSessionResult, RevokeTokenCommand, RevokeTokenResult, RotateDeviceProofKeyCommand,
+    RotateDeviceProofKeyResult, RotateProofBoundRefreshCommand, RotateProofBoundRefreshOutcome,
+    RotateRefreshTokenCommand, RotateRefreshTokenResult, ServiceError, SetAccountPasswordCommand,
+    SetAccountPasswordResult, StartAuthorizationCommand, StartAuthorizationResult,
+    StaticOidcMetadataService, TokenIntrospectionService, TokenManagementService,
+    UnbindDeviceFromAccountCommand, UnbindDeviceFromAccountResult, UpsertClientCommand,
+    UpsertClientResult, UserInfoService, VerifyEmailCommand, VerifyEmailResult,
 };
 pub use store::{
     AccountDeviceBindingStore, AccountListQuery, AccountStore, AuthorizationCodeStore,
@@ -66,6 +87,7 @@ pub use support::{
     VerificationCodeGenerator,
 };
 pub use token::{
-    next_refresh_token_version, AccessTokenValidator, IdTokenClaims, IdTokenIssuer,
-    IssuedTokenBundle, TokenError, TokenIssuer, ValidatedAccessToken,
+    digest_refresh_token, next_refresh_token_version, AccessTokenIssuer, AccessTokenValidator,
+    IdTokenClaims, IdTokenIssuer, IssuedAccessToken, IssuedTokenBundle, TokenError, TokenIssuer,
+    ValidatedAccessToken,
 };
