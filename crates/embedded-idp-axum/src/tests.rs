@@ -24,16 +24,17 @@ use embedded_idp_core::{
     LoginResult, LogoutSessionCommand, LogoutSessionResult, OidcAuthorizationService,
     OidcClientType, OidcMetadataService, PageMetadata, PendingEmailVerification,
     ProofBoundRefreshError, ProofBoundRefreshService, ProvisionDeviceCommand,
-    ProvisionDeviceResult, RegisterAccountCommand, RegisterAccountResult,
-    ResendVerificationCodeCommand, ResendVerificationCodeResult, RevokeAccountSessionsCommand,
-    RevokeAccountSessionsResult, RevokeDeviceCommand, RevokeDeviceResult, RevokeSessionCommand,
-    RevokeSessionResult, RevokeTokenCommand, RevokeTokenResult, RotateDeviceProofKeyCommand,
-    RotateDeviceProofKeyResult, RotateProofBoundRefreshCommand, RotateProofBoundRefreshOutcome,
-    RotateRefreshTokenCommand, RotateRefreshTokenResult, SecretString, ServiceError, SessionStatus,
-    SetAccountPasswordCommand, SetAccountPasswordResult, StartAuthorizationCommand,
-    StartAuthorizationResult, SystemClock, TokenIntrospectionService, TokenManagementService,
-    UnbindDeviceFromAccountCommand, UnbindDeviceFromAccountResult, UpsertClientCommand,
-    UpsertClientResult, UserInfoService, VerifyEmailCommand, VerifyEmailResult,
+    ProvisionDeviceResult, ProvisionPendingDeviceCommand, ProvisionPendingDeviceResult,
+    RegisterAccountCommand, RegisterAccountResult, ResendVerificationCodeCommand,
+    ResendVerificationCodeResult, RevokeAccountSessionsCommand, RevokeAccountSessionsResult,
+    RevokeDeviceCommand, RevokeDeviceResult, RevokeSessionCommand, RevokeSessionResult,
+    RevokeTokenCommand, RevokeTokenResult, RotateDeviceProofKeyCommand, RotateDeviceProofKeyResult,
+    RotateProofBoundRefreshCommand, RotateProofBoundRefreshOutcome, RotateRefreshTokenCommand,
+    RotateRefreshTokenResult, SecretString, ServiceError, SessionStatus, SetAccountPasswordCommand,
+    SetAccountPasswordResult, StartAuthorizationCommand, StartAuthorizationResult, SystemClock,
+    TokenIntrospectionService, TokenManagementService, UnbindDeviceFromAccountCommand,
+    UnbindDeviceFromAccountResult, UpsertClientCommand, UpsertClientResult, UserInfoService,
+    VerifyEmailCommand, VerifyEmailResult,
 };
 use embedded_idp_email::{
     EmailSendError, OutboundEmail, VerificationEmailRequest, VerificationEmailService,
@@ -65,6 +66,21 @@ impl ProofBoundRefreshService for ReuseProofBoundRefreshService {
 struct HappyDeviceSecurityService;
 
 impl DeviceSecurityService for HappyDeviceSecurityService {
+    fn provision_pending_device(
+        &self,
+        command: ProvisionPendingDeviceCommand,
+    ) -> Result<ProvisionPendingDeviceResult, DeviceSecurityError> {
+        assert_eq!(command.client_id, "desktop-app");
+        assert_eq!(command.device_name, "Laptop");
+        Ok(ProvisionPendingDeviceResult {
+            device: DeviceRecord {
+                status: DeviceStatus::Pending,
+                proof_key_id: None,
+                ..test_device()
+            },
+        })
+    }
+
     fn issue_device_proof_challenge(
         &self,
         command: IssueDeviceProofChallengeCommand,

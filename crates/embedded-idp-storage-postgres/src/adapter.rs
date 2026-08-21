@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use embedded_idp_core::{
+    DeviceRequestVerificationError, DeviceRequestVerificationTransactionRunner,
     DeviceSecurityError, DeviceSecurityTransactionRunner, ProofBoundRefreshError,
     ProofBoundRefreshTransactionRunner, StoreError, StoreTransactionRunner,
 };
@@ -280,6 +281,51 @@ impl ProofBoundRefreshTransactionRunner for PostgresStorageAdapter {
                 tx.rollback().map_err(|rollback_error| {
                     ProofBoundRefreshError::Store(StoreError::Backend(format!(
                         "rollback proof-bound refresh transaction failed: {rollback_error}"
+                    )))
+                })?;
+                Err(error)
+            }
+        }
+    }
+}
+
+impl DeviceRequestVerificationTransactionRunner for PostgresStorageAdapter {
+    type Transaction<'a>
+        = PostgresStoreTransaction<'a>
+    where
+        Self: 'a;
+
+    fn device_request_verification_transaction<R>(
+        &self,
+        run: impl FnOnce(&mut Self::Transaction<'_>) -> Result<R, DeviceRequestVerificationError>,
+    ) -> Result<R, DeviceRequestVerificationError> {
+        let mut client = self
+            .connect()
+            .map_err(DeviceRequestVerificationError::Store)?;
+        let tx = client.transaction().map_err(|error| {
+            DeviceRequestVerificationError::Store(StoreError::Backend(format!(
+                "begin device request verification transaction failed: {error}"
+            )))
+        })?;
+        let mut wrapped = PostgresStoreTransaction::new(self.schema_name(), tx);
+        let result = run(&mut wrapped);
+        let tx = wrapped
+            .into_inner()
+            .expect("postgres transaction should be present");
+
+        match result {
+            Ok(value) => {
+                tx.commit().map_err(|error| {
+                    DeviceRequestVerificationError::Store(StoreError::Backend(format!(
+                        "commit device request verification transaction failed: {error}"
+                    )))
+                })?;
+                Ok(value)
+            }
+            Err(error) => {
+                tx.rollback().map_err(|rollback_error| {
+                    DeviceRequestVerificationError::Store(StoreError::Backend(format!(
+                        "rollback device request verification transaction failed: {rollback_error}"
                     )))
                 })?;
                 Err(error)

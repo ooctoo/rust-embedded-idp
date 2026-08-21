@@ -6,9 +6,20 @@ use crate::{
     AccountDeviceBindingStatus, Clock, DeviceChallengeGenerator, DeviceProofAlgorithm,
     DeviceProofChallengeRecord, DeviceProofKeyRecord, DeviceProofKeyStatus, DeviceProofPurpose,
     DevicePublicJwkParser, DevicePublicJwkValidator, DeviceRecord, DeviceSignatureVerifier,
-    DeviceStatus, IdGenerator, SecretString, StoreError, DEVICE_KEY_ROTATION_PURPOSE,
+    DeviceStatus, IdGenerator, OidcClient, SecretString, StoreError, DEVICE_KEY_ROTATION_PURPOSE,
     DEVICE_REGISTRATION_PURPOSE,
 };
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProvisionPendingDeviceCommand {
+    pub client_id: String,
+    pub device_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProvisionPendingDeviceResult {
+    pub device: DeviceRecord,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IssueDeviceProofChallengeCommand {
@@ -56,6 +67,7 @@ pub struct RotateDeviceProofKeyResult {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DeviceSecurityError {
     InvalidRequest,
+    ClientNotFound,
     InvalidPurpose,
     InvalidChallenge,
     ExpiredChallenge,
@@ -71,6 +83,11 @@ pub enum DeviceSecurityError {
 }
 
 pub trait DeviceSecurityService: Send + Sync {
+    fn provision_pending_device(
+        &self,
+        command: ProvisionPendingDeviceCommand,
+    ) -> Result<ProvisionPendingDeviceResult, DeviceSecurityError>;
+
     fn issue_device_proof_challenge(
         &self,
         command: IssueDeviceProofChallengeCommand,
@@ -88,6 +105,8 @@ pub trait DeviceSecurityService: Send + Sync {
 }
 
 pub trait DeviceSecurityTransaction {
+    fn find_client(&mut self, client_id: &str) -> Result<Option<OidcClient>, StoreError>;
+    fn insert_device(&mut self, device: DeviceRecord) -> Result<DeviceRecord, StoreError>;
     fn find_device_for_challenge(
         &mut self,
         device_id: &str,
@@ -184,6 +203,34 @@ where
     K: Clock + Send + Sync,
     I: IdGenerator + Send + Sync,
 {
+    fn provision_pending_device(
+        &self,
+        command: ProvisionPendingDeviceCommand,
+    ) -> Result<ProvisionPendingDeviceResult, DeviceSecurityError> {
+        validate_identifier(&command.client_id)?;
+        validate_device_name(&command.device_name)?;
+        let observed_at = self.clock.now();
+
+        self.store_runner.device_security_transaction(|tx| {
+            let client = tx
+                .find_client(&command.client_id)
+                .map_err(DeviceSecurityError::Store)?
+                .ok_or(DeviceSecurityError::ClientNotFound)?;
+            let device = tx
+                .insert_device(DeviceRecord {
+                    id: self.id_generator.next_id("dev"),
+                    client_id: client.client_id,
+                    device_name: command.device_name,
+                    proof_key_id: None,
+                    status: DeviceStatus::Pending,
+                    registered_at: observed_at,
+                    last_seen_at: None,
+                })
+                .map_err(DeviceSecurityError::Store)?;
+            Ok(ProvisionPendingDeviceResult { device })
+        })
+    }
+
     fn issue_device_proof_challenge(
         &self,
         command: IssueDeviceProofChallengeCommand,
@@ -431,6 +478,16 @@ fn validate_identifier(value: &str) -> Result<(), DeviceSecurityError> {
     Ok(())
 }
 
+fn validate_device_name(value: &str) -> Result<(), DeviceSecurityError> {
+    if value.trim().is_empty()
+        || value.len() > 256
+        || value.bytes().any(|byte| byte.is_ascii_control())
+    {
+        return Err(DeviceSecurityError::InvalidRequest);
+    }
+    Ok(())
+}
+
 fn device_is_eligible(device: &DeviceRecord, purpose: &DeviceProofPurpose) -> bool {
     match purpose.as_str() {
         DEVICE_REGISTRATION_PURPOSE => device.status == DeviceStatus::Pending,
@@ -474,10 +531,13 @@ mod tests {
     use base64ct::{Base64UrlUnpadded, Encoding};
 
     use super::*;
-    use crate::{AccountDeviceBindingStatus, SecurityContractError, ValidatedDevicePublicJwk};
+    use crate::{
+        AccountDeviceBindingStatus, OidcClientType, SecurityContractError, ValidatedDevicePublicJwk,
+    };
 
     #[derive(Clone, Default)]
     struct TestState {
+        clients: HashMap<String, OidcClient>,
         devices: HashMap<String, DeviceRecord>,
         keys: HashMap<String, DeviceProofKeyRecord>,
         bindings: HashMap<(String, String), AccountDeviceBinding>,
@@ -512,6 +572,15 @@ mod tests {
     }
 
     impl DeviceSecurityTransaction for TestTx<'_> {
+        fn find_client(&mut self, client_id: &str) -> Result<Option<OidcClient>, StoreError> {
+            Ok(self.state.clients.get(client_id).cloned())
+        }
+
+        fn insert_device(&mut self, device: DeviceRecord) -> Result<DeviceRecord, StoreError> {
+            self.state.devices.insert(device.id.clone(), device.clone());
+            Ok(device)
+        }
+
         fn find_device_for_challenge(
             &mut self,
             device_id: &str,
@@ -679,7 +748,7 @@ mod tests {
     struct TestIds;
     impl IdGenerator for TestIds {
         fn next_id(&self, prefix: &str) -> String {
-            format!("{prefix}-1")
+            format!("{prefix}-generated")
         }
     }
 
@@ -704,6 +773,17 @@ mod tests {
             last_seen_at: None,
         };
         let mut state = TestState {
+            clients: HashMap::from([(
+                "desktop-app".to_string(),
+                OidcClient {
+                    client_id: "desktop-app".to_string(),
+                    client_name: "Desktop App".to_string(),
+                    redirect_uris: vec![],
+                    client_type: OidcClientType::PublicDesktop,
+                    pkce_required: true,
+                    client_secret_hash: None,
+                },
+            )]),
             devices: HashMap::from([(device.id.clone(), device)]),
             ..TestState::default()
         };
@@ -761,6 +841,28 @@ mod tests {
             })
             .unwrap()
             .challenge
+    }
+
+    #[test]
+    fn secure_provision_creates_only_a_pending_device() {
+        let service = service(DeviceStatus::Pending, true);
+        let challenge_count = service.store_runner.state.lock().unwrap().challenges.len();
+
+        let result = service
+            .provision_pending_device(ProvisionPendingDeviceCommand {
+                client_id: "desktop-app".to_string(),
+                device_name: "New Laptop".to_string(),
+            })
+            .unwrap();
+
+        assert_eq!(result.device.status, DeviceStatus::Pending);
+        assert_eq!(result.device.proof_key_id, None);
+        assert_eq!(result.device.id, "dev-generated");
+        assert_eq!(service.store_runner.state.lock().unwrap().devices.len(), 2);
+        assert_eq!(
+            service.store_runner.state.lock().unwrap().challenges.len(),
+            challenge_count
+        );
     }
 
     #[test]

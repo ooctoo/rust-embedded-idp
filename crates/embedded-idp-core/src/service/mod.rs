@@ -5,6 +5,7 @@ mod auth_support;
 mod client_auth;
 mod contracts;
 mod device;
+mod device_request;
 mod device_security;
 mod error;
 mod oidc;
@@ -39,11 +40,17 @@ pub use contracts::{
     VerifyEmailResult,
 };
 pub use device::CoreDeviceService;
+pub use device_request::{
+    CoreDeviceRequestVerificationService, DeviceRequestVerificationError,
+    DeviceRequestVerificationService, DeviceRequestVerificationTransaction,
+    DeviceRequestVerificationTransactionRunner, VerifyDeviceRequestCommand,
+};
 pub use device_security::{
     CompleteDeviceKeyRegistrationCommand, CompleteDeviceKeyRegistrationResult,
     CoreDeviceSecurityService, DeviceSecurityError, DeviceSecurityService,
     DeviceSecurityTransaction, DeviceSecurityTransactionRunner, IssueDeviceProofChallengeCommand,
-    IssueDeviceProofChallengeResult, RotateDeviceProofKeyCommand, RotateDeviceProofKeyResult,
+    IssueDeviceProofChallengeResult, ProvisionPendingDeviceCommand, ProvisionPendingDeviceResult,
+    RotateDeviceProofKeyCommand, RotateDeviceProofKeyResult,
 };
 pub use error::ServiceError;
 pub use oidc::{
