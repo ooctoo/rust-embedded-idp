@@ -127,7 +127,7 @@ impl LiveHarness {
     fn new() -> Self {
         let connection_uri = env::var("EMBEDDED_IDP_TEST_PG_CONNECTION_URI")
             .expect("set EMBEDDED_IDP_TEST_PG_CONNECTION_URI");
-        let schema_name = format!("embedded_idp_it_{}", unique_suffix());
+        let schema_name = format!("embedded_idp_it_{}", Uuid::now_v7().simple());
         let adapter = PostgresStorageAdapter::new(PgStorageConfig {
             connection: PgConnectionConfig {
                 connection_uri: connection_uri.clone(),
@@ -215,13 +215,6 @@ impl Drop for LiveHarness {
             let _ = client.batch_execute(&drop_sql);
         }
     }
-}
-
-fn unique_suffix() -> u128 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or(Duration::from_secs(0))
-        .as_nanos()
 }
 
 #[test]
