@@ -5,6 +5,7 @@ mod auth_support;
 mod client_auth;
 mod contracts;
 mod device;
+mod device_security;
 mod error;
 mod oidc;
 mod oidc_resource_service;
@@ -12,6 +13,7 @@ mod oidc_resource_service;
 mod oidc_resource_service_tests;
 mod oidc_service;
 mod password;
+mod proof_bound_refresh;
 
 pub use admin::CoreAdminService;
 pub use admin_contracts::{
@@ -37,6 +39,12 @@ pub use contracts::{
     VerifyEmailResult,
 };
 pub use device::CoreDeviceService;
+pub use device_security::{
+    CompleteDeviceKeyRegistrationCommand, CompleteDeviceKeyRegistrationResult,
+    CoreDeviceSecurityService, DeviceSecurityError, DeviceSecurityService,
+    DeviceSecurityTransaction, DeviceSecurityTransactionRunner, IssueDeviceProofChallengeCommand,
+    IssueDeviceProofChallengeResult, RotateDeviceProofKeyCommand, RotateDeviceProofKeyResult,
+};
 pub use error::ServiceError;
 pub use oidc::{
     ExchangeAuthorizationCodeCommand, ExchangeAuthorizationCodeResult, GetUserInfoCommand,
@@ -47,3 +55,8 @@ pub use oidc::{
 };
 pub use oidc_resource_service::CoreOidcResourceService;
 pub use oidc_service::CoreOidcService;
+pub use proof_bound_refresh::{
+    CoreProofBoundRefreshService, ProofBoundRefreshError, ProofBoundRefreshService,
+    ProofBoundRefreshTransaction, ProofBoundRefreshTransactionRunner, ProofBoundTokenResult,
+    RotateProofBoundRefreshCommand, RotateProofBoundRefreshOutcome,
+};

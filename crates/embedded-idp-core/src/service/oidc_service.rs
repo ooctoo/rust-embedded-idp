@@ -233,7 +233,8 @@ where
                     command.client_secret.as_deref(),
                     &self.client_secret_verifier,
                 )?;
-                let refresh_token = match tx.find_refresh_token(&command.token)? {
+                let token_digest = crate::digest_refresh_token(&command.token);
+                let refresh_token = match tx.find_refresh_token(&token_digest)? {
                     Some(token) => token,
                     None => {
                         return Ok(RevokeTokenResult {
@@ -260,7 +261,11 @@ where
                 }
 
                 let revoked = tx
-                    .revoke_refresh_token(&command.token, command.revoked_at)?
+                    .revoke_refresh_token(
+                        &token_digest,
+                        crate::RefreshTokenRevocationReason::ClientRevocation,
+                        command.revoked_at,
+                    )?
                     .ok_or(StoreError::NotFound("refresh_token.value"))?;
 
                 if session.status == SessionStatus::Active {
@@ -388,11 +393,12 @@ fn insert_refresh_token_record(
     store.insert_refresh_token(RefreshTokenRecord {
         id: id_generator.next_id("rtok"),
         session_id: session_id.to_string(),
-        token_value: tokens.refresh_token.clone(),
+        token_digest: crate::digest_refresh_token(tokens.refresh_token.expose_secret()),
         token_version: tokens.refresh_token_version,
         issued_at,
         expires_at: tokens.refresh_expires_at,
         revoked_at: None,
+        revocation_reason: None,
     })
 }
 
@@ -483,8 +489,12 @@ mod tests {
             issued_at: SystemTime,
         ) -> Result<IssuedTokenBundle, TokenError> {
             Ok(IssuedTokenBundle {
-                access_token: format!("access:{session_id}:{account_id}:{client_id}"),
-                refresh_token: format!("refresh:{session_id}:{refresh_token_version}"),
+                access_token: crate::SecretString::new(format!(
+                    "access:{session_id}:{account_id}:{client_id}"
+                )),
+                refresh_token: crate::SecretString::new(format!(
+                    "refresh:{session_id}:{refresh_token_version}"
+                )),
                 access_expires_at: issued_at,
                 refresh_expires_at: issued_at,
                 refresh_token_version,
@@ -494,11 +504,14 @@ mod tests {
 
     struct TestIdTokenIssuer;
     impl IdTokenIssuer for TestIdTokenIssuer {
-        fn issue_id_token(&self, claims: &IdTokenClaims) -> Result<String, TokenError> {
-            Ok(format!(
+        fn issue_id_token(
+            &self,
+            claims: &IdTokenClaims,
+        ) -> Result<crate::SecretString, TokenError> {
+            Ok(crate::SecretString::new(format!(
                 "id:{}:{}:{}",
                 claims.subject_account_id, claims.audience, claims.issuer
-            ))
+            )))
         }
     }
 
@@ -518,7 +531,7 @@ mod tests {
         accounts: HashMap<String, Account>,
         sessions: HashMap<String, AuthSession>,
         authorization_codes: HashMap<String, AuthorizationCodeRecord>,
-        refresh_tokens: HashMap<String, RefreshTokenRecord>,
+        refresh_tokens: HashMap<[u8; 32], RefreshTokenRecord>,
     }
 
     #[derive(Default)]
@@ -786,9 +799,9 @@ mod tests {
     impl RefreshTokenStore for TestStoreTx<'_> {
         fn find_refresh_token(
             &mut self,
-            token_value: &str,
+            token_digest: &[u8; 32],
         ) -> Result<Option<RefreshTokenRecord>, StoreError> {
-            Ok(self.state.refresh_tokens.get(token_value).cloned())
+            Ok(self.state.refresh_tokens.get(token_digest).cloned())
         }
 
         fn insert_refresh_token(
@@ -797,31 +810,35 @@ mod tests {
         ) -> Result<RefreshTokenRecord, StoreError> {
             self.state
                 .refresh_tokens
-                .insert(token.token_value.clone(), token.clone());
+                .insert(token.token_digest, token.clone());
             Ok(token)
         }
 
         fn revoke_refresh_token(
             &mut self,
-            token_value: &str,
+            token_digest: &[u8; 32],
+            reason: crate::RefreshTokenRevocationReason,
             revoked_at: SystemTime,
         ) -> Result<Option<RefreshTokenRecord>, StoreError> {
-            let Some(token) = self.state.refresh_tokens.get_mut(token_value) else {
+            let Some(token) = self.state.refresh_tokens.get_mut(token_digest) else {
                 return Ok(None);
             };
             token.revoked_at = Some(revoked_at);
+            token.revocation_reason = Some(reason);
             Ok(Some(token.clone()))
         }
 
         fn revoke_refresh_tokens_for_session(
             &mut self,
             session_id: &str,
+            reason: crate::RefreshTokenRevocationReason,
             revoked_at: SystemTime,
         ) -> Result<Vec<RefreshTokenRecord>, StoreError> {
             let mut revoked = Vec::new();
             for token in self.state.refresh_tokens.values_mut() {
                 if token.session_id == session_id && token.revoked_at.is_none() {
                     token.revoked_at = Some(revoked_at);
+                    token.revocation_reason = Some(reason);
                     revoked.push(token.clone());
                 }
             }
@@ -1028,8 +1045,11 @@ mod tests {
         assert_eq!(exchanged.subject_account_id, "acct-1");
         assert_eq!(exchanged.tokens.refresh_token_version, 0);
         assert_eq!(
-            exchanged.id_token,
-            Some("id:acct-1:desktop-app:http://127.0.0.1:8080".to_string())
+            exchanged
+                .id_token
+                .as_ref()
+                .map(crate::SecretString::expose_secret),
+            Some("id:acct-1:desktop-app:http://127.0.0.1:8080")
         );
     }
 
@@ -1138,7 +1158,7 @@ mod tests {
 
         let revoked = service
             .revoke_token(RevokeTokenCommand {
-                token: exchanged.tokens.refresh_token,
+                token: exchanged.tokens.refresh_token.into_exposed(),
                 token_type_hint: Some("refresh_token".to_string()),
                 client_id: "desktop-app".to_string(),
                 client_secret: None,
@@ -1179,7 +1199,7 @@ mod tests {
             .expect("token exchange should succeed");
 
         let result = service.revoke_token(RevokeTokenCommand {
-            token: exchanged.tokens.refresh_token,
+            token: exchanged.tokens.refresh_token.into_exposed(),
             token_type_hint: Some("refresh_token".to_string()),
             client_id: "web-app".to_string(),
             client_secret: Some("wrong-secret".to_string()),

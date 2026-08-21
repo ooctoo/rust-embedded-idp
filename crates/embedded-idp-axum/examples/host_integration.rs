@@ -5,7 +5,10 @@ use axum::extract::Request;
 use axum::middleware::{self, Next};
 use axum::response::Response;
 use axum::Router;
-use embedded_idp_axum::{router, AuthenticatedSubject, EmbeddedIdpHttpState, RouteMountPlan};
+use embedded_idp_axum::{
+    router, AuthenticatedSubject, DeviceHttpSecurity, EmbeddedIdpHttpState, RefreshHttpSecurity,
+    RouteMountPlan,
+};
 use embedded_idp_core::{
     ActivateAccountCommand, ActivateAccountResult, AdminService, AuthService,
     BindDeviceToAccountCommand, BindDeviceToAccountResult, CompleteDeviceRegistrationCommand,
@@ -23,11 +26,11 @@ use embedded_idp_core::{
     ResendVerificationCodeCommand, ResendVerificationCodeResult, RevokeAccountSessionsCommand,
     RevokeAccountSessionsResult, RevokeDeviceCommand, RevokeDeviceResult, RevokeSessionCommand,
     RevokeSessionResult, RevokeTokenCommand, RevokeTokenResult, RotateRefreshTokenCommand,
-    RotateRefreshTokenResult, ServiceError, SetAccountPasswordCommand, SetAccountPasswordResult,
-    StartAuthorizationCommand, StartAuthorizationResult, StaticOidcMetadataService,
-    TokenIntrospectionService, TokenManagementService, UnbindDeviceFromAccountCommand,
-    UnbindDeviceFromAccountResult, UpsertClientCommand, UpsertClientResult, UserInfoService,
-    VerifyEmailCommand, VerifyEmailResult,
+    RotateRefreshTokenResult, SecretString, ServiceError, SetAccountPasswordCommand,
+    SetAccountPasswordResult, StartAuthorizationCommand, StartAuthorizationResult,
+    StaticOidcMetadataService, SystemClock, TokenIntrospectionService, TokenManagementService,
+    UnbindDeviceFromAccountCommand, UnbindDeviceFromAccountResult, UpsertClientCommand,
+    UpsertClientResult, UserInfoService, VerifyEmailCommand, VerifyEmailResult,
 };
 use embedded_idp_email::{EmailSendError, VerificationEmailRequest, VerificationEmailService};
 
@@ -56,6 +59,9 @@ fn main() {
         token_management_service: Arc::new(StubTokenManagementService),
         user_info_service: Arc::new(StubUserInfoService),
         token_introspection_service: Arc::new(StubTokenIntrospectionService),
+        refresh_security: RefreshHttpSecurity::LegacyDevelopmentOnly,
+        device_security: DeviceHttpSecurity::LegacyDevelopmentOnly,
+        clock: Arc::new(SystemClock),
     };
 
     let _host_router = Router::new()
@@ -294,13 +300,13 @@ impl OidcAuthorizationService for StubOidcAuthorizationService {
         Ok(ExchangeAuthorizationCodeResult {
             subject_account_id: "acct-host-user-1".to_string(),
             tokens: IssuedTokenBundle {
-                access_token: "access-token".to_string(),
-                refresh_token: "refresh-token".to_string(),
+                access_token: SecretString::new("access-token"),
+                refresh_token: SecretString::new("refresh-token"),
                 access_expires_at: SystemTime::UNIX_EPOCH,
                 refresh_expires_at: SystemTime::UNIX_EPOCH,
                 refresh_token_version: 0,
             },
-            id_token: Some("id-token".to_string()),
+            id_token: Some(SecretString::new("id-token")),
             scope: Some("openid profile".to_string()),
             token_type: "Bearer",
         })

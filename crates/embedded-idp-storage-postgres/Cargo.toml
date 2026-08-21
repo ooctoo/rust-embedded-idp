@@ -8,7 +8,7 @@ repository.workspace = true
 description = "Postgres storage adapter for rust-embedded-idp"
 
 [dependencies]
-embedded-idp-core = { version = "0.1.0", path = "../embedded-idp-core" }
+embedded-idp-core = { version = "0.2.0", path = "../embedded-idp-core" }
 native-tls = "0.2"
 postgres = { version = "0.19", features = ["with-uuid-1"] }
 postgres-native-tls = "0.5"

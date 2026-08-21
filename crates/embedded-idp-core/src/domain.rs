@@ -50,6 +50,57 @@ pub struct DeviceRecord {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeviceProofKeyRecord {
+    pub key_id: String,
+    pub device_id: DeviceId,
+    pub algorithm: DeviceProofAlgorithm,
+    pub public_jwk: String,
+    pub version: u64,
+    pub status: DeviceProofKeyStatus,
+    pub registered_at: SystemTime,
+    pub retired_at: Option<SystemTime>,
+}
+
+impl DeviceProofKeyRecord {
+    pub fn validate(&self) -> Result<(), DeviceProofKeyValidationError> {
+        if self.key_id.len() != 43 {
+            return Err(DeviceProofKeyValidationError::InvalidKeyId);
+        }
+        if self.device_id.trim().is_empty() {
+            return Err(DeviceProofKeyValidationError::MissingDeviceId);
+        }
+        if self.version == 0 {
+            return Err(DeviceProofKeyValidationError::InvalidVersion);
+        }
+        match (&self.status, self.retired_at) {
+            (DeviceProofKeyStatus::Active, None) | (DeviceProofKeyStatus::Retired, Some(_)) => {
+                Ok(())
+            }
+            _ => Err(DeviceProofKeyValidationError::InvalidRetirementState),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeviceProofAlgorithm {
+    Ed25519,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeviceProofKeyStatus {
+    Active,
+    Retired,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DeviceProofKeyValidationError {
+    InvalidKeyId,
+    MissingDeviceId,
+    InvalidVersion,
+    InvalidRetirementState,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DeviceStatus {
     Pending,
     Active,
@@ -86,6 +137,17 @@ pub struct DeviceNonceRecord {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeviceProofChallengeRecord {
+    pub id: DeviceNonceId,
+    pub device_id: DeviceId,
+    pub purpose: crate::DeviceProofPurpose,
+    pub challenge_digest: [u8; 32],
+    pub issued_at: SystemTime,
+    pub expires_at: SystemTime,
+    pub consumed_at: Option<SystemTime>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthSession {
     pub id: SessionId,
     pub account_id: AccountId,
@@ -109,11 +171,22 @@ pub enum SessionStatus {
 pub struct RefreshTokenRecord {
     pub id: RefreshTokenId,
     pub session_id: SessionId,
-    pub token_value: String,
+    pub token_digest: [u8; 32],
     pub token_version: u64,
     pub issued_at: SystemTime,
     pub expires_at: SystemTime,
     pub revoked_at: Option<SystemTime>,
+    pub revocation_reason: Option<RefreshTokenRevocationReason>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RefreshTokenRevocationReason {
+    Rotated,
+    ReuseDetected,
+    Logout,
+    ClientRevocation,
+    Administrative,
+    SecurityCutover,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

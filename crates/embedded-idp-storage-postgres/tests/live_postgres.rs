@@ -9,9 +9,9 @@ use embedded_idp_core::{
     IssuedTokenBundle, ListAccountsCommand, ListClientsCommand, ListDevicesCommand,
     ListSessionsCommand, LoginCommand, LogoutSessionCommand, OidcAuthorizationService,
     OidcClientType, OidcConfig, PageRequest, PhcClientSecretCodec, RegisterAccountCommand,
-    RevokeTokenCommand, RotateRefreshTokenCommand, SessionStatus, StartAuthorizationCommand,
-    TimePageCursor, TokenError, TokenIssuer, TokenManagementService, UuidV7IdGenerator,
-    VerificationCodeGenerator, VerifyEmailCommand,
+    RevokeTokenCommand, RotateRefreshTokenCommand, SecretString, SessionStatus,
+    StartAuthorizationCommand, TimePageCursor, TokenError, TokenIssuer, TokenManagementService,
+    UuidV7IdGenerator, VerificationCodeGenerator, VerifyEmailCommand,
 };
 use embedded_idp_storage_postgres::{
     DbPoolConfig, PgConnectionConfig, PgStorageConfig, PgTlsMode, PostgresStorageAdapter,
@@ -65,8 +65,12 @@ impl TokenIssuer for TestTokenIssuer {
         issued_at: SystemTime,
     ) -> Result<IssuedTokenBundle, TokenError> {
         Ok(IssuedTokenBundle {
-            access_token: format!("access:{session_id}:{account_id}:{client_id}"),
-            refresh_token: format!("refresh:{session_id}:{refresh_token_version}"),
+            access_token: SecretString::new(format!(
+                "access:{session_id}:{account_id}:{client_id}"
+            )),
+            refresh_token: SecretString::new(format!(
+                "refresh:{session_id}:{refresh_token_version}"
+            )),
             access_expires_at: issued_at + Duration::from_secs(900),
             refresh_expires_at: issued_at + Duration::from_secs(86_400),
             refresh_token_version,
@@ -93,11 +97,11 @@ impl DeviceProofVerifier for TestDeviceProofVerifier {
 struct TestIdTokenIssuer;
 
 impl IdTokenIssuer for TestIdTokenIssuer {
-    fn issue_id_token(&self, claims: &IdTokenClaims) -> Result<String, TokenError> {
-        Ok(format!(
+    fn issue_id_token(&self, claims: &IdTokenClaims) -> Result<SecretString, TokenError> {
+        Ok(SecretString::new(format!(
             "id:{}:{}:{}",
             claims.subject_account_id, claims.audience, claims.issuer
-        ))
+        )))
     }
 }
 
@@ -222,6 +226,80 @@ fn unique_suffix() -> u128 {
 
 #[test]
 #[ignore = "requires a live local postgres instance"]
+fn security_cutover_enforces_schema_and_is_idempotent_against_live_postgres() {
+    let harness = LiveHarness::new();
+    let account_id = Uuid::now_v7();
+    let device_id = Uuid::now_v7();
+    let session_id = Uuid::now_v7();
+    let refresh_id = Uuid::now_v7();
+    let nonce_id = Uuid::now_v7();
+    let mut client =
+        Client::connect(&harness.connection_uri, NoTls).expect("connect fixture client");
+    let sql = format!(
+        "insert into {schema}.accounts (id, email, password_hash, status, created_at_epoch) values ('{account_id}', 'legacy@example.com', 'hash', 'active', 1); \
+         insert into {schema}.devices (id, client_id, device_name, status, registered_at_epoch) values ('{device_id}', 'desktop-app', 'Legacy device', 'active', 1); \
+         insert into {schema}.auth_sessions (id, account_id, client_id, device_id, status, created_at_epoch, expires_at_epoch, refresh_token_version) values ('{session_id}', '{account_id}', 'desktop-app', '{device_id}', 'active', 1, 100, 0); \
+         insert into {schema}.refresh_tokens (id, session_id, token_value, token_version, issued_at_epoch, expires_at_epoch) values ('{refresh_id}', '{session_id}', 'legacy-refresh', 0, 1, 100); \
+         insert into {schema}.device_nonces (id, device_id, challenge, issued_at_epoch, expires_at_epoch) values ('{nonce_id}', '{device_id}', 'legacy-challenge', 1, 100); \
+         insert into {schema}.authorization_codes (code, account_id, client_id, redirect_uri, created_at_epoch, expires_at_epoch) values ('legacy-code', '{account_id}', 'desktop-app', 'http://127.0.0.1:49152/callback', 1, 100)",
+        schema = harness.schema_name,
+    );
+    client
+        .batch_execute(&sql)
+        .expect("insert legacy security state");
+    drop(client);
+
+    harness
+        .adapter
+        .apply_security_cutover()
+        .expect("apply security cutover");
+    harness
+        .adapter
+        .apply_security_cutover()
+        .expect("repeat security cutover");
+    let facts = harness
+        .adapter
+        .verify_online_schema()
+        .expect("verify enforced online schema");
+    assert_eq!(facts.observed_schema.as_deref(), Some("0003_enforce"));
+    assert!(facts.security_cutover_present);
+    assert!(facts.invariants_valid);
+
+    let mut client = Client::connect(&harness.connection_uri, NoTls).expect("connect probe client");
+    let state_sql = format!(
+        "select \
+            (select status from {schema}.auth_sessions where id = $1), \
+            (select status from {schema}.devices where id = $2), \
+            (select count(*) from {schema}.refresh_tokens), \
+            (select count(*) from {schema}.device_nonces), \
+            (select consumed_at_epoch is not null from {schema}.authorization_codes where code = 'legacy-code')",
+        schema = harness.schema_name,
+    );
+    let row = client
+        .query_one(&state_sql, &[&session_id, &device_id])
+        .expect("read cutover state");
+    assert_eq!(row.get::<_, String>(0), "revoked");
+    assert_eq!(row.get::<_, String>(1), "revoked");
+    assert_eq!(row.get::<_, i64>(2), 0);
+    assert_eq!(row.get::<_, i64>(3), 0);
+    assert!(row.get::<_, bool>(4));
+
+    let invalid_refresh_sql = format!(
+        "insert into {}.refresh_tokens \
+         (id, session_id, token_digest, token_version, issued_at_epoch, expires_at_epoch, revoked_at_epoch, revocation_reason) \
+         values ($1, $2, $3, 1, 1, 100, 2, null)",
+        harness.schema_name
+    );
+    assert!(client
+        .execute(
+            &invalid_refresh_sql,
+            &[&Uuid::now_v7(), &session_id, &&[7_u8; 32][..]],
+        )
+        .is_err());
+}
+
+#[test]
+#[ignore = "requires a live local postgres instance"]
 fn runs_auth_and_device_flow_against_live_postgres() {
     let harness = LiveHarness::new();
     let auth_service = CoreAuthService::new(
@@ -276,7 +354,7 @@ fn runs_auth_and_device_flow_against_live_postgres() {
     let registered = auth_service
         .register_account(RegisterAccountCommand {
             email: "user@example.com".to_string(),
-            password: "demo-password".to_string(),
+            password: "demo-password1".to_string(),
             display_name: Some("Demo User".to_string()),
             client_id: "desktop-app".to_string(),
             device_id: None,
@@ -325,7 +403,7 @@ fn runs_auth_and_device_flow_against_live_postgres() {
     let logged_in = auth_service
         .login(LoginCommand {
             email: "user@example.com".to_string(),
-            password: "demo-password".to_string(),
+            password: "demo-password1".to_string(),
             client_id: "desktop-app".to_string(),
             device_id: Some(login_device.device.id.clone()),
         })
@@ -338,8 +416,7 @@ fn runs_auth_and_device_flow_against_live_postgres() {
 
     let rotated = auth_service
         .rotate_refresh_token(RotateRefreshTokenCommand {
-            refresh_token: logged_in.tokens.refresh_token.clone(),
-            rotated_at: FixedClock.now(),
+            refresh_token: logged_in.tokens.refresh_token.clone().into_exposed(),
         })
         .expect("rotate refresh token");
     assert_eq!(rotated.session.refresh_token_version, 1);
@@ -475,16 +552,17 @@ fn runs_auth_and_device_flow_against_live_postgres() {
         .expect("exchange authorization code");
     assert_eq!(exchanged.subject_account_id, registered.account.id);
     assert_eq!(
-        exchanged.id_token,
+        exchanged.id_token.as_ref().map(SecretString::expose_secret),
         Some(format!(
             "id:{}:desktop-app:http://127.0.0.1:8080",
             registered.account.id
         ))
+        .as_deref()
     );
 
     let revoked = oidc_service
         .revoke_token(RevokeTokenCommand {
-            token: exchanged.tokens.refresh_token,
+            token: exchanged.tokens.refresh_token.into_exposed(),
             token_type_hint: Some("refresh_token".to_string()),
             client_id: "desktop-app".to_string(),
             client_secret: None,
@@ -495,8 +573,7 @@ fn runs_auth_and_device_flow_against_live_postgres() {
 
     let logged_out = auth_service
         .logout(LogoutSessionCommand {
-            refresh_token: rotated.tokens.refresh_token,
-            logged_out_at: FixedClock.now(),
+            refresh_token: rotated.tokens.refresh_token.into_exposed(),
         })
         .expect("logout");
     assert_eq!(
@@ -551,7 +628,7 @@ fn confidential_client_flow_requires_secret_against_live_postgres() {
     let registered = auth_service
         .register_account(RegisterAccountCommand {
             email: "confidential@example.com".to_string(),
-            password: "demo-password".to_string(),
+            password: "demo-password1".to_string(),
             display_name: Some("Confidential User".to_string()),
             client_id: "desktop-app".to_string(),
             device_id: None,
@@ -606,11 +683,12 @@ fn confidential_client_flow_requires_secret_against_live_postgres() {
         .expect("confidential token exchange should succeed");
 
     assert_eq!(
-        exchanged.id_token,
+        exchanged.id_token.as_ref().map(SecretString::expose_secret),
         Some(format!(
             "id:{}:web-app:http://127.0.0.1:8080",
             registered.account.id
         ))
+        .as_deref()
     );
 }
 
@@ -638,7 +716,7 @@ fn duplicate_email_hits_real_storage_constraint_path() {
     auth_service
         .register_account(RegisterAccountCommand {
             email: "duplicate@example.com".to_string(),
-            password: "demo-password".to_string(),
+            password: "demo-password1".to_string(),
             display_name: None,
             client_id: "desktop-app".to_string(),
             device_id: None,
@@ -647,7 +725,7 @@ fn duplicate_email_hits_real_storage_constraint_path() {
 
     let duplicate = auth_service.register_account(RegisterAccountCommand {
         email: "duplicate@example.com".to_string(),
-        password: "demo-password".to_string(),
+        password: "demo-password1".to_string(),
         display_name: None,
         client_id: "desktop-app".to_string(),
         device_id: None,
@@ -697,7 +775,7 @@ fn admin_list_queries_support_filters_and_paging_against_live_postgres() {
     let first = auth_service
         .register_account(RegisterAccountCommand {
             email: "alpha@example.com".to_string(),
-            password: "demo-password".to_string(),
+            password: "demo-password1".to_string(),
             display_name: Some("Alpha".to_string()),
             client_id: "desktop-app".to_string(),
             device_id: None,
@@ -714,7 +792,7 @@ fn admin_list_queries_support_filters_and_paging_against_live_postgres() {
     let second = auth_service
         .register_account(RegisterAccountCommand {
             email: "beta@example.com".to_string(),
-            password: "demo-password".to_string(),
+            password: "demo-password1".to_string(),
             display_name: Some("Beta".to_string()),
             client_id: "desktop-app".to_string(),
             device_id: None,

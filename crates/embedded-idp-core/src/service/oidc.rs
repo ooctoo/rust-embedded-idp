@@ -80,7 +80,7 @@ impl ExchangeAuthorizationCodeCommand {
 pub struct ExchangeAuthorizationCodeResult {
     pub subject_account_id: String,
     pub tokens: IssuedTokenBundle,
-    pub id_token: Option<String>,
+    pub id_token: Option<crate::SecretString>,
     pub scope: Option<String>,
     pub token_type: &'static str,
 }
@@ -207,6 +207,10 @@ pub trait OidcAuthorizationService: Send + Sync {
 
 pub trait OidcMetadataService: Send + Sync {
     fn jwks_document(&self) -> Result<JwksDocument, ServiceError>;
+
+    fn jwks_etag(&self) -> Option<String> {
+        None
+    }
 }
 
 pub trait TokenManagementService: Send + Sync {
@@ -300,13 +304,13 @@ mod tests {
         let token = ExchangeAuthorizationCodeResult {
             subject_account_id: "acct-1".to_string(),
             tokens: IssuedTokenBundle {
-                access_token: "access".to_string(),
-                refresh_token: "refresh".to_string(),
+                access_token: crate::SecretString::new("access"),
+                refresh_token: crate::SecretString::new("refresh"),
                 access_expires_at: std::time::SystemTime::UNIX_EPOCH,
                 refresh_expires_at: std::time::SystemTime::UNIX_EPOCH,
                 refresh_token_version: 0,
             },
-            id_token: Some("id-token".to_string()),
+            id_token: Some(crate::SecretString::new("id-token")),
             scope: Some("openid profile".to_string()),
             token_type: "Bearer",
         };

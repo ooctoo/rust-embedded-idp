@@ -9,7 +9,8 @@ use axum::routing::get;
 use axum::{Json, Router};
 use embedded_idp_axum::{
     admin_router, client_authenticated_router, public_router, subject_router, token_router,
-    AuthenticatedSubject, EmbeddedIdpHttpState, RouteMountPlan,
+    AuthenticatedSubject, DeviceHttpSecurity, EmbeddedIdpHttpState, RefreshHttpSecurity,
+    RouteMountPlan,
 };
 use embedded_idp_core::{
     ClientSecretHasher, CoreAdminService, CoreAuthService, CoreDeviceService,
@@ -46,13 +47,13 @@ pub fn build_app(config: &EmbeddedIdpAppConfig) -> Result<Router, String> {
         config.embedded_idp.auth.refresh_token_ttl_secs,
     );
     let client_secret_codec = PhcClientSecretCodec;
-    let id_generator = DevIdGenerator::default();
+    let id_generator = DevIdGenerator;
     let auth_service = Arc::new(CoreAuthService::new(
         config.embedded_idp.auth.clone(),
         adapter.clone(),
         token_issuer.clone(),
         SystemClock,
-        id_generator.clone(),
+        id_generator,
         NumericVerificationCodeGenerator,
     ));
     let admin_service = Arc::new(CoreAdminService::new(
@@ -64,7 +65,7 @@ pub fn build_app(config: &EmbeddedIdpAppConfig) -> Result<Router, String> {
         config.embedded_idp.device.clone(),
         adapter.clone(),
         DevDeviceProofVerifier,
-        id_generator.clone(),
+        id_generator,
     ));
     let oidc_service = Arc::new(CoreOidcService::new(
         config.embedded_idp.issuer.clone(),
@@ -103,6 +104,9 @@ pub fn build_app(config: &EmbeddedIdpAppConfig) -> Result<Router, String> {
         token_management_service: oidc_service,
         user_info_service: oidc_resource_service.clone(),
         token_introspection_service: oidc_resource_service,
+        refresh_security: RefreshHttpSecurity::LegacyDevelopmentOnly,
+        device_security: DeviceHttpSecurity::LegacyDevelopmentOnly,
+        clock: Arc::new(SystemClock),
     };
 
     let subject_header = config.dev_subject_header.clone();

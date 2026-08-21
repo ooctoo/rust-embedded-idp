@@ -17,7 +17,7 @@ use crate::{
 struct TestStoreState {
     accounts: HashMap<String, Account>,
     sessions: HashMap<String, AuthSession>,
-    refresh_tokens: HashMap<String, RefreshTokenRecord>,
+    refresh_tokens: HashMap<[u8; 32], RefreshTokenRecord>,
 }
 
 #[derive(Default)]
@@ -354,9 +354,9 @@ impl EmailVerificationStore for TestStoreTx<'_> {
 impl RefreshTokenStore for TestStoreTx<'_> {
     fn find_refresh_token(
         &mut self,
-        token_value: &str,
+        token_digest: &[u8; 32],
     ) -> Result<Option<RefreshTokenRecord>, StoreError> {
-        Ok(self.state.refresh_tokens.get(token_value).cloned())
+        Ok(self.state.refresh_tokens.get(token_digest).cloned())
     }
 
     fn insert_refresh_token(
@@ -368,7 +368,8 @@ impl RefreshTokenStore for TestStoreTx<'_> {
 
     fn revoke_refresh_token(
         &mut self,
-        _token_value: &str,
+        _token_digest: &[u8; 32],
+        _reason: crate::RefreshTokenRevocationReason,
         _revoked_at: SystemTime,
     ) -> Result<Option<RefreshTokenRecord>, StoreError> {
         unreachable!("not needed in resource service tests")
@@ -377,6 +378,7 @@ impl RefreshTokenStore for TestStoreTx<'_> {
     fn revoke_refresh_tokens_for_session(
         &mut self,
         _session_id: &str,
+        _reason: crate::RefreshTokenRevocationReason,
         _revoked_at: SystemTime,
     ) -> Result<Vec<RefreshTokenRecord>, StoreError> {
         unreachable!("not needed in resource service tests")
@@ -537,7 +539,7 @@ fn confidential_introspection_requires_valid_client_secret() {
         test_store_runner(observed_at),
         TestAccessTokenValidator {
             result: Ok(Some(ValidatedAccessToken {
-                token: "web-access-token".to_string(),
+                token: crate::SecretString::new("web-access-token"),
                 subject_account_id: "acct-1".to_string(),
                 session_id: "sess-web-1".to_string(),
                 client_id: "web-app".to_string(),
@@ -600,27 +602,29 @@ fn test_store_runner(observed_at: SystemTime) -> TestStoreRunner {
         },
     );
     state.refresh_tokens.insert(
-        "refresh-token".to_string(),
+        crate::digest_refresh_token("refresh-token"),
         RefreshTokenRecord {
             id: "rtok-1".to_string(),
             session_id: "sess-1".to_string(),
-            token_value: "refresh-token".to_string(),
+            token_digest: crate::digest_refresh_token("refresh-token"),
             token_version: 0,
             issued_at: observed_at,
             expires_at: observed_at + Duration::from_secs(120),
             revoked_at: None,
+            revocation_reason: None,
         },
     );
     state.refresh_tokens.insert(
-        "web-refresh-token".to_string(),
+        crate::digest_refresh_token("web-refresh-token"),
         RefreshTokenRecord {
             id: "rtok-web-1".to_string(),
             session_id: "sess-web-1".to_string(),
-            token_value: "web-refresh-token".to_string(),
+            token_digest: crate::digest_refresh_token("web-refresh-token"),
             token_version: 0,
             issued_at: observed_at,
             expires_at: observed_at + Duration::from_secs(120),
             revoked_at: None,
+            revocation_reason: None,
         },
     );
 
@@ -631,7 +635,7 @@ fn test_store_runner(observed_at: SystemTime) -> TestStoreRunner {
 
 fn test_access_token(expires_at: SystemTime) -> ValidatedAccessToken {
     ValidatedAccessToken {
-        token: "access-token".to_string(),
+        token: crate::SecretString::new("access-token"),
         subject_account_id: "acct-1".to_string(),
         session_id: "sess-1".to_string(),
         client_id: "desktop-app".to_string(),

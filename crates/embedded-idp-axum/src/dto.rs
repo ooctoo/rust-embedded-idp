@@ -31,26 +31,27 @@ pub(crate) struct LoginHttpRequest {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct RefreshHttpRequest {
     pub(crate) refresh_token: String,
-    pub(crate) rotated_at_unix_secs: u64,
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct LogoutHttpRequest {
     pub(crate) refresh_token: String,
-    pub(crate) logged_out_at_unix_secs: u64,
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct ProvisionDeviceHttpRequest {
     pub(crate) client_id: String,
     pub(crate) device_name: String,
-    pub(crate) requested_at_unix_secs: u64,
 }
 
 #[derive(Deserialize)]
-pub(crate) struct CompleteDeviceRegistrationHttpRequest {
+#[serde(deny_unknown_fields)]
+pub(crate) struct LegacyCompleteDeviceRegistrationHttpRequest {
     pub(crate) device_id: String,
     pub(crate) proof_key_id: String,
     pub(crate) proof_challenge: String,
@@ -60,15 +61,41 @@ pub(crate) struct CompleteDeviceRegistrationHttpRequest {
 }
 
 #[derive(Deserialize)]
-pub(crate) struct BindDeviceHttpRequest {
+#[serde(deny_unknown_fields)]
+pub(crate) struct IssueDeviceProofChallengeHttpRequest {
     pub(crate) device_id: String,
-    pub(crate) bound_at_unix_secs: u64,
+    pub(crate) purpose: String,
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct CompleteDeviceKeyRegistrationHttpRequest {
+    pub(crate) device_id: String,
+    pub(crate) public_jwk: Box<serde_json::value::RawValue>,
+    pub(crate) challenge: String,
+    pub(crate) signature: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RotateDeviceProofKeyHttpRequest {
+    pub(crate) device_id: String,
+    pub(crate) new_public_jwk: Box<serde_json::value::RawValue>,
+    pub(crate) challenge: String,
+    pub(crate) current_key_signature: String,
+    pub(crate) new_key_signature: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct BindDeviceHttpRequest {
+    pub(crate) device_id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct UnbindDeviceHttpRequest {
     pub(crate) device_id: String,
-    pub(crate) unbound_at_unix_secs: u64,
 }
 
 #[derive(Deserialize)]
@@ -77,9 +104,9 @@ pub(crate) struct DeviceManagementHttpRequest {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct DeviceHeartbeatHttpRequest {
     pub(crate) device_id: String,
-    pub(crate) observed_at_unix_secs: u64,
 }
 
 #[derive(Deserialize)]
@@ -105,12 +132,12 @@ pub(crate) struct TokenHttpRequest {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct RevokeTokenHttpRequest {
     pub(crate) token: String,
     pub(crate) token_type_hint: Option<String>,
     pub(crate) client_id: String,
     pub(crate) client_secret: Option<String>,
-    pub(crate) revoked_at_unix_secs: u64,
 }
 
 #[derive(Deserialize)]
@@ -130,6 +157,20 @@ pub(crate) struct AuthHttpResponse {
     pub(crate) access_token: String,
     pub(crate) refresh_token: String,
     pub(crate) refresh_token_version: u64,
+}
+
+#[derive(Serialize)]
+pub(crate) struct DeviceProofChallengeHttpResponse {
+    pub(crate) challenge: String,
+    pub(crate) expires_at_unix_secs: u64,
+}
+
+#[derive(Serialize)]
+pub(crate) struct DeviceKeyHttpResponse {
+    pub(crate) device_id: String,
+    pub(crate) key_id: String,
+    pub(crate) key_version: u64,
+    pub(crate) key_status: &'static str,
 }
 
 #[derive(Serialize)]
@@ -163,6 +204,11 @@ pub(crate) struct ProvisionDeviceHttpResponse {
     pub(crate) device: DeviceHttpResponse,
     pub(crate) challenge: String,
     pub(crate) expires_at_unix_secs: u64,
+}
+
+#[derive(Serialize)]
+pub(crate) struct SecureProvisionDeviceHttpResponse {
+    pub(crate) device: DeviceHttpResponse,
 }
 
 #[derive(Serialize)]

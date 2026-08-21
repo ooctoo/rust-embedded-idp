@@ -11,6 +11,8 @@ pub const AUTH_LOGOUT_PATH: &str = "/auth/logout";
 pub const DEVICE_API_PREFIX: &str = "/devices";
 pub const DEVICE_PROVISION_PATH: &str = "/devices/provision";
 pub const DEVICE_COMPLETE_PATH: &str = "/devices/complete";
+pub const DEVICE_ROTATE_KEY_PATH: &str = "/devices/rotate-key";
+pub const DEVICE_PROOF_CHALLENGE_PATH: &str = "/device-proof/challenges";
 pub const DEVICE_BIND_PATH: &str = "/devices/bind";
 pub const DEVICE_DETAIL_PATH_TEMPLATE: &str = "/devices/:device_id";
 pub const DEVICE_UNBIND_PATH: &str = "/devices/unbind";
@@ -115,6 +117,14 @@ impl RouteMountPlan {
 
     pub fn external_device_complete_path(&self) -> String {
         self.external_path(DEVICE_COMPLETE_PATH)
+    }
+
+    pub fn external_device_rotate_key_path(&self) -> String {
+        self.external_path(DEVICE_ROTATE_KEY_PATH)
+    }
+
+    pub fn external_device_proof_challenge_path(&self) -> String {
+        self.external_path(DEVICE_PROOF_CHALLENGE_PATH)
     }
 
     pub fn external_device_bind_path(&self) -> String {

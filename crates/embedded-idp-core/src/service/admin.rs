@@ -285,7 +285,11 @@ fn revoke_session_record(
         session.status = SessionStatus::Revoked;
         session = tx.update_session(session)?;
     }
-    tx.revoke_refresh_tokens_for_session(&session.id, revoked_at)?;
+    tx.revoke_refresh_tokens_for_session(
+        &session.id,
+        crate::RefreshTokenRevocationReason::Administrative,
+        revoked_at,
+    )?;
     Ok(session)
 }
 
@@ -396,18 +400,18 @@ mod tests {
 
     use super::*;
     use crate::{
-        Account, AccountDeviceBinding, AccountDeviceBindingStore, AuthSession,
-        AuthorizationCodeRecord, AuthorizationCodeStore, ClientSecretError, ClientSecretHasher,
-        ClientStore, DeviceNonceRecord, DeviceNonceStore, DeviceRecord, DeviceStore,
-        EmailVerificationCode, EmailVerificationStore, OidcClient, OidcClientType, PageRequest,
-        RefreshTokenRecord,
+        digest_refresh_token, Account, AccountDeviceBinding, AccountDeviceBindingStore,
+        AuthSession, AuthorizationCodeRecord, AuthorizationCodeStore, ClientSecretError,
+        ClientSecretHasher, ClientStore, DeviceNonceRecord, DeviceNonceStore, DeviceRecord,
+        DeviceStore, EmailVerificationCode, EmailVerificationStore, OidcClient, OidcClientType,
+        PageRequest, RefreshTokenRecord, RefreshTokenRevocationReason,
     };
 
     #[derive(Default)]
     struct TestStoreState {
         accounts: HashMap<String, Account>,
         sessions: HashMap<String, AuthSession>,
-        refresh_tokens: HashMap<String, RefreshTokenRecord>,
+        refresh_tokens: HashMap<[u8; 32], RefreshTokenRecord>,
         clients: HashMap<String, OidcClient>,
     }
 
@@ -674,9 +678,9 @@ mod tests {
     impl RefreshTokenStore for TestStoreTx<'_> {
         fn find_refresh_token(
             &mut self,
-            token_value: &str,
+            token_digest: &[u8; 32],
         ) -> Result<Option<RefreshTokenRecord>, StoreError> {
-            Ok(self.state.refresh_tokens.get(token_value).cloned())
+            Ok(self.state.refresh_tokens.get(token_digest).cloned())
         }
 
         fn insert_refresh_token(
@@ -685,31 +689,35 @@ mod tests {
         ) -> Result<RefreshTokenRecord, StoreError> {
             self.state
                 .refresh_tokens
-                .insert(token.token_value.clone(), token.clone());
+                .insert(token.token_digest, token.clone());
             Ok(token)
         }
 
         fn revoke_refresh_token(
             &mut self,
-            token_value: &str,
+            token_digest: &[u8; 32],
+            reason: RefreshTokenRevocationReason,
             revoked_at: SystemTime,
         ) -> Result<Option<RefreshTokenRecord>, StoreError> {
-            let Some(token) = self.state.refresh_tokens.get_mut(token_value) else {
+            let Some(token) = self.state.refresh_tokens.get_mut(token_digest) else {
                 return Ok(None);
             };
             token.revoked_at = Some(revoked_at);
+            token.revocation_reason = Some(reason);
             Ok(Some(token.clone()))
         }
 
         fn revoke_refresh_tokens_for_session(
             &mut self,
             session_id: &str,
+            reason: RefreshTokenRevocationReason,
             revoked_at: SystemTime,
         ) -> Result<Vec<RefreshTokenRecord>, StoreError> {
             let mut revoked = Vec::new();
             for token in self.state.refresh_tokens.values_mut() {
                 if token.session_id == session_id {
                     token.revoked_at = Some(revoked_at);
+                    token.revocation_reason = Some(reason);
                     revoked.push(token.clone());
                 }
             }
@@ -1005,15 +1013,16 @@ mod tests {
             state.accounts.insert("acct-2".to_string(), older_account());
             state.sessions.insert("sess-1".to_string(), session());
             state.refresh_tokens.insert(
-                "refresh-1".to_string(),
+                digest_refresh_token("refresh-1"),
                 RefreshTokenRecord {
                     id: "rtok-1".to_string(),
                     session_id: "sess-1".to_string(),
-                    token_value: "refresh-1".to_string(),
+                    token_digest: digest_refresh_token("refresh-1"),
                     token_version: 0,
                     issued_at: SystemTime::UNIX_EPOCH,
                     expires_at: SystemTime::UNIX_EPOCH,
                     revoked_at: None,
+                    revocation_reason: None,
                 },
             );
             state.clients.insert(

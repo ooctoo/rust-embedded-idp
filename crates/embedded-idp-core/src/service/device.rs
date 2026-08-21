@@ -858,7 +858,7 @@ mod tests {
     impl RefreshTokenStore for TestStoreTx<'_> {
         fn find_refresh_token(
             &mut self,
-            _token_value: &str,
+            _token_digest: &[u8; 32],
         ) -> Result<Option<RefreshTokenRecord>, StoreError> {
             Ok(None)
         }
@@ -872,7 +872,8 @@ mod tests {
 
         fn revoke_refresh_token(
             &mut self,
-            _token_value: &str,
+            _token_digest: &[u8; 32],
+            _reason: crate::RefreshTokenRevocationReason,
             _revoked_at: SystemTime,
         ) -> Result<Option<RefreshTokenRecord>, StoreError> {
             Ok(None)
@@ -881,6 +882,7 @@ mod tests {
         fn revoke_refresh_tokens_for_session(
             &mut self,
             _session_id: &str,
+            _reason: crate::RefreshTokenRevocationReason,
             _revoked_at: SystemTime,
         ) -> Result<Vec<RefreshTokenRecord>, StoreError> {
             Ok(Vec::new())
