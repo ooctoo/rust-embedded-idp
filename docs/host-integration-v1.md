@@ -33,6 +33,9 @@ The host application owns:
    - `CoreAdminService`
    - `CoreAuthService`
    - `CoreDeviceService`
+   - `CoreDeviceSecurityService` for challenge, pending-device provisioning, registration, and key rotation
+   - `CoreDeviceRequestVerificationService` for host protected-resource proof verification
+   - `CoreProofBoundRefreshService` when refresh tokens require device proof
    - `CoreOidcService`
    - `CoreOidcResourceService`
    - `StaticOidcMetadataService` or a host-provided metadata service
@@ -86,6 +89,29 @@ Reason:
 - the host still decides whether client creation happens directly in bootstrap code or through trusted admin endpoint exposure
 - `embedded-idp-axum` exports module-local admin routes under `/admin/...`
 - the standalone `embedded-idp-app` currently nests those admin routes under `/api/admin/...`
+
+### Protected Host Resources
+
+For a host-owned resource route, construct `CoreDeviceRequestVerificationService`
+with the storage adapter, Ed25519 public-key parser and signature verifier, server
+clock, and allowed proof clock skew. Build `VerifyDeviceRequestCommand` from:
+
+- the trusted account ID established by access-token middleware;
+- the route's configured proof purpose;
+- the untrusted five-header `DeviceProofPresentation`;
+- a trusted `DeviceRequestBinding` containing the configured profile and audience,
+  actual method and external path, and exact request-body digest.
+
+`verify_device_request` checks the device, exact active key, account binding,
+purpose-bound challenge, time window, and request-bound signature in one
+transaction. A successful call consumes the challenge and returns
+`VerifiedDeviceRequest`; the host must not perform a separate precheck or consume
+the challenge itself.
+
+When `DeviceHttpSecurity::ProofBound` is selected, `POST /devices/provision`
+calls `CoreDeviceSecurityService::provision_pending_device`. It creates only the
+pending device. Registration challenges are obtained separately from
+`POST /device-proof/challenges`; no legacy nonce is created or discarded.
 
 ### JWKS Publication
 

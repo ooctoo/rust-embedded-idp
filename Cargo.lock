@@ -367,6 +367,7 @@ name = "embedded-idp-storage-postgres"
 version = "0.2.0"
 dependencies = [
  "embedded-idp-core",
+ "embedded-idp-security",
  "native-tls",
  "postgres",
  "postgres-native-tls",

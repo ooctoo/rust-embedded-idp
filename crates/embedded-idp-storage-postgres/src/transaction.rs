@@ -5,11 +5,11 @@ use embedded_idp_core::{
     AccountListQuery, AccountStatus, AccountStore, AuthSession, AuthorizationCodeRecord,
     AuthorizationCodeStore, ClientListQuery, ClientStore, DeviceListQuery, DeviceNonceRecord,
     DeviceNonceStore, DeviceProofAlgorithm, DeviceProofChallengeRecord, DeviceProofKeyRecord,
-    DeviceProofKeyStatus, DeviceProofPurpose, DeviceRecord, DeviceSecurityTransaction,
-    DeviceStatus, DeviceStore, EmailVerificationCode, EmailVerificationStore, OidcClient,
-    OidcClientType, PkceChallengeMethod, ProofBoundRefreshTransaction, RefreshTokenRecord,
-    RefreshTokenRevocationReason, RefreshTokenStore, SessionListQuery, SessionStatus, SessionStore,
-    StoreError,
+    DeviceProofKeyStatus, DeviceProofPurpose, DeviceRecord, DeviceRequestVerificationTransaction,
+    DeviceSecurityTransaction, DeviceStatus, DeviceStore, EmailVerificationCode,
+    EmailVerificationStore, OidcClient, OidcClientType, PkceChallengeMethod,
+    ProofBoundRefreshTransaction, RefreshTokenRecord, RefreshTokenRevocationReason,
+    RefreshTokenStore, SessionListQuery, SessionStatus, SessionStore, StoreError,
 };
 use postgres::{Row, Transaction};
 use uuid::Uuid;
@@ -1563,7 +1563,51 @@ impl ProofBoundRefreshTransaction for PostgresStoreTransaction<'_> {
     }
 }
 
+impl DeviceRequestVerificationTransaction for PostgresStoreTransaction<'_> {
+    fn lock_device(&mut self, device_id: &str) -> Result<Option<DeviceRecord>, StoreError> {
+        ProofBoundRefreshTransaction::lock_device(self, device_id)
+    }
+
+    fn lock_device_key(
+        &mut self,
+        key_id: &str,
+    ) -> Result<Option<DeviceProofKeyRecord>, StoreError> {
+        ProofBoundRefreshTransaction::lock_device_key(self, key_id)
+    }
+
+    fn lock_active_binding(
+        &mut self,
+        account_id: &str,
+        device_id: &str,
+    ) -> Result<Option<AccountDeviceBinding>, StoreError> {
+        ProofBoundRefreshTransaction::lock_active_binding(self, account_id, device_id)
+    }
+
+    fn lock_challenge(
+        &mut self,
+        digest: &[u8; 32],
+    ) -> Result<Option<DeviceProofChallengeRecord>, StoreError> {
+        ProofBoundRefreshTransaction::lock_challenge(self, digest)
+    }
+
+    fn consume_challenge_if_active(
+        &mut self,
+        digest: &[u8; 32],
+        observed_at: SystemTime,
+    ) -> Result<bool, StoreError> {
+        ProofBoundRefreshTransaction::consume_challenge_if_active(self, digest, observed_at)
+    }
+}
+
 impl DeviceSecurityTransaction for PostgresStoreTransaction<'_> {
+    fn find_client(&mut self, client_id: &str) -> Result<Option<OidcClient>, StoreError> {
+        ClientStore::find_client(self, client_id)
+    }
+
+    fn insert_device(&mut self, device: DeviceRecord) -> Result<DeviceRecord, StoreError> {
+        DeviceStore::insert_device(self, device)
+    }
+
     fn find_device_for_challenge(
         &mut self,
         device_id: &str,

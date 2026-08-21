@@ -39,10 +39,10 @@ use embedded_idp_core::{
     ExchangeAuthorizationCodeCommand, GetDeviceCommand, GetUserInfoCommand, IntrospectTokenCommand,
     IssueDeviceProofChallengeCommand, ListDevicesCommand, LogoutSessionCommand,
     OidcAuthorizationService, OidcMetadataService, ProofBoundRefreshError,
-    ProofBoundRefreshService, RegisterAccountCommand, ResendVerificationCodeCommand,
-    RevokeTokenCommand, RotateDeviceProofKeyCommand, RotateProofBoundRefreshCommand,
-    RotateProofBoundRefreshOutcome, RotateRefreshTokenCommand, SecretString,
-    StartAuthorizationCommand, TokenIntrospectionService, TokenManagementService,
+    ProofBoundRefreshService, ProvisionPendingDeviceCommand, RegisterAccountCommand,
+    ResendVerificationCodeCommand, RevokeTokenCommand, RotateDeviceProofKeyCommand,
+    RotateProofBoundRefreshCommand, RotateProofBoundRefreshOutcome, RotateRefreshTokenCommand,
+    SecretString, StartAuthorizationCommand, TokenIntrospectionService, TokenManagementService,
     UnbindDeviceFromAccountCommand, UserInfoService, VerifyEmailCommand, OIDC_AUTHORIZE_PATH,
     OIDC_INTROSPECT_PATH, OIDC_JWKS_PATH, OIDC_REVOKE_PATH, OIDC_TOKEN_PATH, OIDC_USERINFO_PATH,
 };
@@ -544,6 +544,11 @@ fn map_device_security_error(error: DeviceSecurityError) -> Response {
             "invalid_contract",
             "request contract is invalid",
         ),
+        DeviceSecurityError::ClientNotFound => (
+            StatusCode::NOT_FOUND,
+            "client_not_found",
+            "client was not found",
+        ),
         DeviceSecurityError::InvalidPurpose => (
             StatusCode::BAD_REQUEST,
             "invalid_device_proof_purpose",
@@ -657,35 +662,50 @@ async fn provision_device(
     State(state): State<EmbeddedIdpHttpState>,
     Json(request): Json<ProvisionDeviceHttpRequest>,
 ) -> Response {
-    let device_service = state.device_service.clone();
-    let requested_at = state.clock.now();
-    let secure_response = matches!(state.device_security, DeviceHttpSecurity::ProofBound(_));
-    match run_service_call(move || {
-        device_service.provision_device(embedded_idp_core::ProvisionDeviceCommand {
-            client_id: request.client_id,
-            device_name: request.device_name,
-            requested_at,
-        })
-    })
-    .await
-    {
-        Ok(result) if secure_response => (
-            StatusCode::CREATED,
-            Json(SecureProvisionDeviceHttpResponse {
-                device: device_response(result.device),
-            }),
-        )
-            .into_response(),
-        Ok(result) => (
-            StatusCode::CREATED,
-            Json(ProvisionDeviceHttpResponse {
-                device: device_response(result.device),
-                challenge: result.nonce.challenge,
-                expires_at_unix_secs: unix_time_secs(result.nonce.expires_at),
-            }),
-        )
-            .into_response(),
-        Err(error) => map_service_error(error),
+    match state.device_security {
+        DeviceHttpSecurity::LegacyDevelopmentOnly => {
+            let device_service = state.device_service;
+            let requested_at = state.clock.now();
+            match run_service_call(move || {
+                device_service.provision_device(embedded_idp_core::ProvisionDeviceCommand {
+                    client_id: request.client_id,
+                    device_name: request.device_name,
+                    requested_at,
+                })
+            })
+            .await
+            {
+                Ok(result) => (
+                    StatusCode::CREATED,
+                    Json(ProvisionDeviceHttpResponse {
+                        device: device_response(result.device),
+                        challenge: result.nonce.challenge,
+                        expires_at_unix_secs: unix_time_secs(result.nonce.expires_at),
+                    }),
+                )
+                    .into_response(),
+                Err(error) => map_service_error(error),
+            }
+        }
+        DeviceHttpSecurity::ProofBound(service) => {
+            let command = ProvisionPendingDeviceCommand {
+                client_id: request.client_id,
+                device_name: request.device_name,
+            };
+            match tokio::task::spawn_blocking(move || service.provision_pending_device(command))
+                .await
+            {
+                Ok(Ok(result)) => (
+                    StatusCode::CREATED,
+                    Json(SecureProvisionDeviceHttpResponse {
+                        device: device_response(result.device),
+                    }),
+                )
+                    .into_response(),
+                Ok(Err(error)) => map_device_security_error(error),
+                Err(_) => internal_error_response(),
+            }
+        }
     }
 }
 

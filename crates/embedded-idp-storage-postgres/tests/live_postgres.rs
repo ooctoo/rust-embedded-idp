@@ -3,15 +3,19 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use embedded_idp_core::{
     AccountStatus, AdminService, AuthConfig, AuthService, ClientSecretError, ClientSecretVerifier,
-    Clock, CoreAdminService, CoreAuthService, CoreDeviceService, CoreOidcService, DeviceConfig,
-    DeviceHeartbeatCommand, DeviceProof, DeviceProofError, DeviceProofVerifier, DeviceService,
-    DeviceStatus, ExchangeAuthorizationCodeCommand, IdGenerator, IdTokenClaims, IdTokenIssuer,
-    IssuedTokenBundle, ListAccountsCommand, ListClientsCommand, ListDevicesCommand,
-    ListSessionsCommand, LoginCommand, LogoutSessionCommand, OidcAuthorizationService,
-    OidcClientType, OidcConfig, PageRequest, PhcClientSecretCodec, RegisterAccountCommand,
+    Clock, CoreAdminService, CoreAuthService, CoreDeviceSecurityService, CoreDeviceService,
+    CoreOidcService, DeviceConfig, DeviceHeartbeatCommand, DeviceProof, DeviceProofError,
+    DeviceProofPurpose, DeviceProofVerifier, DeviceSecurityService, DeviceService, DeviceStatus,
+    ExchangeAuthorizationCodeCommand, IdGenerator, IdTokenClaims, IdTokenIssuer, IssuedTokenBundle,
+    ListAccountsCommand, ListClientsCommand, ListDevicesCommand, ListSessionsCommand, LoginCommand,
+    LogoutSessionCommand, OidcAuthorizationService, OidcClientType, OidcConfig, PageRequest,
+    PhcClientSecretCodec, ProvisionPendingDeviceCommand, RegisterAccountCommand,
     RevokeTokenCommand, RotateRefreshTokenCommand, SecretString, SessionStatus,
     StartAuthorizationCommand, TimePageCursor, TokenError, TokenIssuer, TokenManagementService,
-    UuidV7IdGenerator, VerificationCodeGenerator, VerifyEmailCommand,
+    UuidV7IdGenerator, VerificationCodeGenerator, VerifyEmailCommand, DEVICE_REGISTRATION_PURPOSE,
+};
+use embedded_idp_security::{
+    Ed25519PublicJwkParser, RingEd25519Verifier, SecureDeviceChallengeGenerator,
 };
 use embedded_idp_storage_postgres::{
     DbPoolConfig, PgConnectionConfig, PgStorageConfig, PgTlsMode, PostgresStorageAdapter,
@@ -215,6 +219,45 @@ impl Drop for LiveHarness {
             let _ = client.batch_execute(&drop_sql);
         }
     }
+}
+
+#[test]
+#[ignore = "requires a live local postgres instance"]
+fn secure_provision_creates_pending_device_without_nonce_against_live_postgres() {
+    let harness = LiveHarness::new();
+    let service = CoreDeviceSecurityService::new(
+        harness.adapter(),
+        SecureDeviceChallengeGenerator,
+        Ed25519PublicJwkParser,
+        RingEd25519Verifier,
+        FixedClock,
+        AtomicIds::new(),
+        300,
+        vec![DeviceProofPurpose::new(DEVICE_REGISTRATION_PURPOSE).unwrap()],
+    );
+
+    let provisioned = service
+        .provision_pending_device(ProvisionPendingDeviceCommand {
+            client_id: "desktop-app".to_string(),
+            device_name: "Secure Device".to_string(),
+        })
+        .expect("secure provision pending device");
+
+    let device_id = Uuid::parse_str(&provisioned.device.id).expect("device UUID");
+    let mut client = Client::connect(&harness.connection_uri, NoTls).expect("connect probe client");
+    let query = format!(
+        "select d.status, count(n.id) \
+         from {schema}.devices d \
+         left join {schema}.device_nonces n on n.device_id = d.id \
+         where d.id = $1 \
+         group by d.status",
+        schema = harness.schema_name,
+    );
+    let row = client
+        .query_one(&query, &[&device_id])
+        .expect("read secure provision state");
+    assert_eq!(row.get::<_, String>(0), "pending");
+    assert_eq!(row.get::<_, i64>(1), 0);
 }
 
 #[test]
