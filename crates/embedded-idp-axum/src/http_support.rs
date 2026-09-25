@@ -133,10 +133,12 @@ pub(crate) fn authorization_redirect_location(
     state: Option<&str>,
 ) -> String {
     let separator = if redirect_uri.contains('?') { '&' } else { '?' };
-    match state {
-        Some(state) => format!("{redirect_uri}{separator}code={authorization_code}&state={state}"),
-        None => format!("{redirect_uri}{separator}code={authorization_code}"),
+    let mut query = form_urlencoded::Serializer::new(String::new());
+    query.append_pair("code", authorization_code);
+    if let Some(state) = state {
+        query.append_pair("state", state);
     }
+    format!("{redirect_uri}{separator}{}", query.finish())
 }
 
 pub(crate) fn jwks_response(document: JwksDocument) -> JwksHttpResponse {
@@ -195,12 +197,16 @@ pub(crate) fn missing_bearer_token_response() -> Response {
 }
 
 pub(crate) fn bearer_token(headers: &HeaderMap) -> Option<&str> {
-    headers
-        .get(header::AUTHORIZATION)?
-        .to_str()
-        .ok()?
-        .strip_prefix("Bearer ")
-        .filter(|value| !value.trim().is_empty())
+    let mut values = headers.get_all(header::AUTHORIZATION).iter();
+    let value = values.next()?.to_str().ok()?;
+    if values.next().is_some() {
+        return None;
+    }
+    let (scheme, token) = value.split_once(' ')?;
+    (scheme.eq_ignore_ascii_case("Bearer")
+        && !token.is_empty()
+        && !token.bytes().any(|b| b.is_ascii_whitespace() || b == b','))
+    .then_some(token)
 }
 
 pub(crate) async fn run_service_call<R>(

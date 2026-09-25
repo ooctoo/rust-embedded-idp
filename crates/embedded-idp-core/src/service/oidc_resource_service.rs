@@ -8,6 +8,8 @@ use crate::{
 use super::auth_support::{map_account_status_conflict, require_active_account_status};
 use super::{auth, client_auth};
 
+/// Currently uses the single-domain persistence contracts and only domain `0`.
+/// Do not mount this service for Enabled tenancy before the tenant storage cutover.
 pub struct CoreOidcResourceService<S, V, C> {
     store_runner: S,
     access_token_validator: V,
@@ -40,7 +42,11 @@ where
             .access_token_validator
             .validate_access_token(&command.access_token, command.observed_at)
             .map_err(ServiceError::Token)?
-            .filter(|value| value.expires_at > command.observed_at)
+            .filter(|value| {
+                value.purpose == crate::AccessTokenPurpose::Business
+                    && value.tenant_id == crate::access::SYSTEM_TENANT_ID
+                    && value.expires_at > command.observed_at
+            })
         else {
             return Err(ServiceError::InvalidToken);
         };
@@ -178,7 +184,12 @@ where
             return Err(ServiceError::InvalidClientAuthentication);
         }
 
-        if token.expires_at <= command.observed_at {
+        // This service still uses the single-domain storage contracts. Do not let
+        // a tenant token resolve coincident account/session IDs in that store.
+        if token.purpose != crate::AccessTokenPurpose::Business
+            || token.tenant_id != crate::access::SYSTEM_TENANT_ID
+            || token.expires_at <= command.observed_at
+        {
             return Ok(inactive_token_result());
         }
 
@@ -225,7 +236,8 @@ fn access_token_is_active(
     session: &AuthSession,
     observed_at: std::time::SystemTime,
 ) -> bool {
-    token.subject_account_id == session.account_id
+    token.tenant_id == crate::access::SYSTEM_TENANT_ID
+        && token.subject_account_id == session.account_id
         && token.client_id == session.client_id
         && session.status == SessionStatus::Active
         && session.expires_at > observed_at

@@ -539,6 +539,8 @@ fn confidential_introspection_requires_valid_client_secret() {
         test_store_runner(observed_at),
         TestAccessTokenValidator {
             result: Ok(Some(ValidatedAccessToken {
+                purpose: crate::AccessTokenPurpose::Business,
+                tenant_id: "0".to_owned(),
                 token: crate::SecretString::new("web-access-token"),
                 subject_account_id: "acct-1".to_string(),
                 session_id: "sess-web-1".to_string(),
@@ -635,6 +637,8 @@ fn test_store_runner(observed_at: SystemTime) -> TestStoreRunner {
 
 fn test_access_token(expires_at: SystemTime) -> ValidatedAccessToken {
     ValidatedAccessToken {
+        purpose: crate::AccessTokenPurpose::Business,
+        tenant_id: "0".to_owned(),
         token: crate::SecretString::new("access-token"),
         subject_account_id: "acct-1".to_string(),
         session_id: "sess-1".to_string(),
@@ -642,5 +646,49 @@ fn test_access_token(expires_at: SystemTime) -> ValidatedAccessToken {
         scope: Some("openid profile".to_string()),
         issued_at: SystemTime::UNIX_EPOCH,
         expires_at,
+    }
+}
+
+#[test]
+fn single_domain_resources_reject_other_tenants_and_management_purpose_even_with_matching_identity()
+{
+    let observed_at = SystemTime::UNIX_EPOCH;
+    for (tenant_id, purpose) in [
+        ("tenant-a", crate::AccessTokenPurpose::Business),
+        ("", crate::AccessTokenPurpose::Business),
+        ("00", crate::AccessTokenPurpose::Business),
+        ("0", crate::AccessTokenPurpose::Management),
+    ] {
+        let mut token = test_access_token(observed_at + Duration::from_secs(60));
+        token.tenant_id = tenant_id.to_owned();
+        token.purpose = purpose;
+        let service = CoreOidcResourceService::new(
+            test_store_runner(observed_at),
+            TestAccessTokenValidator {
+                result: Ok(Some(token)),
+            },
+            TestClientSecretVerifier,
+        );
+        assert_eq!(
+            service.get_user_info(GetUserInfoCommand {
+                access_token: "access-token".to_owned(),
+                observed_at,
+            }),
+            Err(ServiceError::InvalidToken)
+        );
+        for hint in [None, Some("access_token".to_owned())] {
+            let result = service
+                .introspect_token(IntrospectTokenCommand {
+                    token: "access-token".to_owned(),
+                    token_type_hint: hint,
+                    client_id: "desktop-app".to_owned(),
+                    client_secret: None,
+                    observed_at,
+                })
+                .unwrap();
+            assert!(!result.active);
+            assert!(result.subject_account_id.is_none());
+            assert!(result.session_id.is_none());
+        }
     }
 }

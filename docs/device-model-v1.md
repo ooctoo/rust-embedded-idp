@@ -1,5 +1,7 @@
 # Device Model v1
 
+> 历史文档：早期设备模型背景。当前设备归属租户；设备、密钥、绑定、证明和会话都须保持同租户，以租户/角色/权限设计和当前实现为准。
+
 ## Purpose
 
 This document defines the device domain model and registration flows for `rust-embedded-idp`.

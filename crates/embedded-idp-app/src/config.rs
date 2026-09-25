@@ -1,3 +1,4 @@
+use embedded_idp_core::access::{LoginTenantPolicy, TenancyMode};
 use std::env;
 use std::net::SocketAddr;
 
@@ -15,8 +16,11 @@ pub struct EmbeddedIdpAppConfig {
     pub email_delivery: EmailDeliveryConfig,
     pub public_client: SeedClientConfig,
     pub confidential_client: Option<SeedConfidentialClientConfig>,
-    pub dev_subject_header: String,
-    pub admin_api_key: Option<String>,
+    pub tenancy_mode: TenancyMode,
+    pub login_policy: LoginTenantPolicy,
+    pub management_policy: LoginTenantPolicy,
+    pub signing_key_file: String,
+    pub allow_device_provisioning: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -69,6 +73,14 @@ pub enum SmtpTlsMode {
 
 impl EmbeddedIdpAppConfig {
     pub fn from_env() -> Result<Self, String> {
+        let tenancy_mode = match env::var("EMBEDDED_IDP_APP_TENANCY_MODE") {
+            Ok(value) => value,
+            Err(env::VarError::NotPresent) => "disabled".to_string(),
+            Err(_) => return Err("invalid EMBEDDED_IDP_APP_TENANCY_MODE encoding".to_string()),
+        };
+        let tenancy_mode = validate_tenancy_mode(&tenancy_mode)?;
+        let login_policy = login_policy_from_env(tenancy_mode, false)?;
+        let management_policy = login_policy_from_env(tenancy_mode, true)?;
         let bind_addr = env_var("EMBEDDED_IDP_APP_BIND_ADDR", "127.0.0.1:9100")
             .parse::<SocketAddr>()
             .map_err(|error| format!("invalid EMBEDDED_IDP_APP_BIND_ADDR: {error}"))?;
@@ -84,21 +96,7 @@ impl EmbeddedIdpAppConfig {
         };
         let embedded_idp = EmbeddedIdpConfig {
             issuer,
-            auth: AuthConfig {
-                allow_local_registration: env_flag(
-                    "EMBEDDED_IDP_APP_ALLOW_LOCAL_REGISTRATION",
-                    true,
-                )?,
-                access_token_ttl_secs: env_u64("EMBEDDED_IDP_APP_ACCESS_TOKEN_TTL_SECS", 900)?,
-                refresh_token_ttl_secs: env_u64("EMBEDDED_IDP_APP_REFRESH_TOKEN_TTL_SECS", 86_400)?,
-                session_ttl_secs: env_u64("EMBEDDED_IDP_APP_SESSION_TTL_SECS", 604_800)?,
-                verification_code_ttl_secs: env_u64(
-                    "EMBEDDED_IDP_APP_VERIFICATION_CODE_TTL_SECS",
-                    900,
-                )?,
-                password_min_length: env_usize("EMBEDDED_IDP_APP_PASSWORD_MIN_LENGTH", 8)?,
-                password_max_length: env_usize("EMBEDDED_IDP_APP_PASSWORD_MAX_LENGTH", 128)?,
-            },
+            auth: auth_config_from_env()?,
             device: DeviceConfig {
                 nonce_ttl_secs: env_u64("EMBEDDED_IDP_APP_DEVICE_NONCE_TTL_SECS", 300)?,
                 proof_clock_skew_secs: env_u64(
@@ -125,25 +123,7 @@ impl EmbeddedIdpAppConfig {
             .validate()
             .map_err(|error| format_embedded_idp_config_error(&embedded_idp, error))?;
 
-        let postgres = PgStorageConfig {
-            connection: PgConnectionConfig {
-                connection_uri: env_var(
-                    "EMBEDDED_IDP_APP_PG_URI",
-                    "postgres://127.0.0.1:5432/postgres",
-                ),
-                schema_name: env_var("EMBEDDED_IDP_APP_PG_SCHEMA", "embedded_idp"),
-                tls_mode: env_tls_mode("EMBEDDED_IDP_APP_PG_TLS_MODE")?,
-                tls_ca_cert_path: env::var("EMBEDDED_IDP_APP_PG_TLS_CA_CERT_PATH").ok(),
-            },
-            pool: DbPoolConfig {
-                application_name: env_var("EMBEDDED_IDP_APP_PG_APP_NAME", "embedded-idp-app"),
-                max_connections: env_u32("EMBEDDED_IDP_APP_PG_MAX_CONNECTIONS", 10)?,
-                connect_timeout_secs: env_u64("EMBEDDED_IDP_APP_PG_CONNECT_TIMEOUT_SECS", 5)?,
-            },
-        };
-        postgres
-            .validate()
-            .map_err(|error| format!("invalid postgres config: {error:?}"))?;
+        let postgres = postgres_config_from_env()?;
         let email_delivery = EmailDeliveryConfig {
             mode: env_email_delivery_mode("EMBEDDED_IDP_APP_EMAIL_DELIVERY_MODE")?,
             sendmail_command: env_var(
@@ -213,13 +193,77 @@ impl EmbeddedIdpAppConfig {
             email_delivery,
             public_client,
             confidential_client,
-            dev_subject_header: env_var(
-                "EMBEDDED_IDP_APP_DEV_SUBJECT_HEADER",
-                "x-embedded-idp-account-id",
+            tenancy_mode,
+            login_policy,
+            management_policy,
+            signing_key_file: env_var(
+                "EMBEDDED_IDP_APP_SIGNING_KEY_FILE",
+                ".local/idp-signing-key.der",
             ),
-            admin_api_key: env::var("EMBEDDED_IDP_APP_ADMIN_API_KEY").ok(),
+            allow_device_provisioning: env_flag(
+                "EMBEDDED_IDP_APP_ALLOW_DEVICE_PROVISIONING",
+                false,
+            )?,
         })
     }
+}
+
+fn validate_tenancy_mode(value: &str) -> Result<TenancyMode, String> {
+    match value {
+        "disabled" => Ok(TenancyMode::Disabled),
+        "enabled" => Ok(TenancyMode::Enabled),
+        _ => Err("invalid EMBEDDED_IDP_APP_TENANCY_MODE: expected disabled|enabled".into()),
+    }
+}
+
+fn login_policy_from_env(mode: TenancyMode, management: bool) -> Result<LoginTenantPolicy, String> {
+    let (policy_key, tenant_key) = if management {
+        (
+            "EMBEDDED_IDP_APP_MANAGEMENT_LOGIN_POLICY",
+            "EMBEDDED_IDP_APP_MANAGEMENT_TENANT_ID",
+        )
+    } else {
+        (
+            "EMBEDDED_IDP_APP_LOGIN_POLICY",
+            "EMBEDDED_IDP_APP_LOGIN_TENANT_ID",
+        )
+    };
+    let default = if mode == TenancyMode::Disabled || management {
+        "fixed"
+    } else {
+        "choose"
+    };
+    let selected = env_var(policy_key, default);
+    let tenant = env::var(tenant_key).ok();
+    parse_login_policy(mode, management, &selected, tenant.as_deref())
+        .map_err(|_| format!("invalid {policy_key}/{tenant_key} for selected tenancy mode"))
+}
+fn parse_login_policy(
+    mode: TenancyMode,
+    management: bool,
+    selected: &str,
+    tenant: Option<&str>,
+) -> Result<LoginTenantPolicy, ()> {
+    let policy = match selected {
+        "fixed" => LoginTenantPolicy::Fixed {
+            tenant_id: tenant
+                .or_else(|| (management || mode == TenancyMode::Disabled).then_some("0"))
+                .ok_or(())?
+                .into(),
+        },
+        "choose" if tenant.is_none() => LoginTenantPolicy::ChooseAfterAuthentication,
+        _ => return Err(()),
+    };
+    if management
+        && policy
+            == (LoginTenantPolicy::Fixed {
+                tenant_id: "0".into(),
+            })
+    {
+        return Ok(policy);
+    }
+    policy.validate(mode).map_err(|_| ())?;
+    Ok(policy)
 }
 
 fn env_var(name: &str, default: &str) -> String {
@@ -344,7 +388,38 @@ fn normalize_admin_ui_base_path(value: &str) -> Result<String, String> {
         return Ok("/".to_string());
     }
 
-    Ok(trimmed.trim_end_matches('/').to_string())
+    let normalized = trimmed.trim_end_matches('/');
+    if normalized.is_empty()
+        || normalized.split('/').skip(1).any(|part| {
+            part.is_empty()
+                || part == "."
+                || part == ".."
+                || !part
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+        })
+    {
+        return Err(
+            "invalid EMBEDDED_IDP_APP_ADMIN_UI_BASE_PATH: use literal path segments".into(),
+        );
+    }
+    if [
+        "api",
+        "auth",
+        "devices",
+        "oidc",
+        "assets",
+        ".well-known",
+        "healthz",
+        "readyz",
+    ]
+    .contains(&normalized.split('/').nth(1).unwrap_or(""))
+    {
+        return Err(
+            "invalid EMBEDDED_IDP_APP_ADMIN_UI_BASE_PATH: conflicts with an API route".into(),
+        );
+    }
+    Ok(normalized.to_string())
 }
 
 #[cfg(test)]
@@ -356,8 +431,33 @@ mod tests {
     };
 
     use super::{
-        format_embedded_idp_config_error, normalize_admin_ui_base_path, EmbeddedIdpAppConfig,
+        format_embedded_idp_config_error, normalize_admin_ui_base_path, validate_tenancy_mode,
+        EmbeddedIdpAppConfig,
     };
+
+    #[test]
+    fn tenancy_mode_cannot_silently_disable_isolation() {
+        assert!(validate_tenancy_mode("disabled").is_ok());
+        assert!(validate_tenancy_mode("enabled").is_ok());
+        for value in ["", "true", "enable", "ENABLED"] {
+            assert!(validate_tenancy_mode(value).is_err());
+        }
+    }
+
+    #[test]
+    fn login_policies_keep_platform_and_business_domains_separate() {
+        use super::parse_login_policy as parse;
+        use embedded_idp_core::access::TenancyMode::{Disabled, Enabled};
+        assert!(parse(Enabled, true, "fixed", None).is_ok());
+        assert!(parse(Enabled, false, "fixed", None).is_err());
+        assert!(parse(Enabled, false, "fixed", Some("0")).is_err());
+        assert!(parse(Enabled, false, "fixed", Some("tenant-a")).is_ok());
+        assert!(parse(Enabled, false, "choose", None).is_ok());
+        assert!(parse(Enabled, true, "choose", Some("tenant-a")).is_err());
+        assert!(parse(Disabled, false, "choose", None).is_err());
+        assert!(parse(Disabled, true, "fixed", Some("tenant-a")).is_err());
+        assert!(parse(Disabled, false, "fixed", None).is_ok());
+    }
 
     #[test]
     fn config_uses_defaults() {
@@ -408,9 +508,58 @@ mod tests {
 
     #[test]
     fn admin_ui_base_path_trims_trailing_slash() {
+        for path in [
+            "//",
+            "/api",
+            "/auth/login",
+            "/admin/:id",
+            "/admin/*path",
+            "/admin/../",
+            "/admin//x",
+            "/admin/\"x",
+            "/.well-known",
+        ] {
+            assert!(normalize_admin_ui_base_path(path).is_err(), "{path}");
+        }
+
         assert_eq!(
             normalize_admin_ui_base_path("/admin-console/"),
             Ok("/admin-console".to_string())
         );
     }
+}
+
+pub(crate) fn auth_config_from_env() -> Result<AuthConfig, String> {
+    Ok(AuthConfig {
+        allow_local_registration: env_flag("EMBEDDED_IDP_APP_ALLOW_LOCAL_REGISTRATION", true)?,
+        access_token_ttl_secs: env_u64("EMBEDDED_IDP_APP_ACCESS_TOKEN_TTL_SECS", 900)?,
+        refresh_token_ttl_secs: env_u64("EMBEDDED_IDP_APP_REFRESH_TOKEN_TTL_SECS", 86_400)?,
+        session_ttl_secs: env_u64("EMBEDDED_IDP_APP_SESSION_TTL_SECS", 604_800)?,
+        verification_code_ttl_secs: env_u64("EMBEDDED_IDP_APP_VERIFICATION_CODE_TTL_SECS", 900)?,
+        password_min_length: env_usize("EMBEDDED_IDP_APP_PASSWORD_MIN_LENGTH", 8)?,
+        password_max_length: env_usize("EMBEDDED_IDP_APP_PASSWORD_MAX_LENGTH", 128)?,
+    })
+}
+
+pub(crate) fn postgres_config_from_env() -> Result<PgStorageConfig, String> {
+    let postgres = PgStorageConfig {
+        connection: PgConnectionConfig {
+            connection_uri: env_var(
+                "EMBEDDED_IDP_APP_PG_URI",
+                "postgres://127.0.0.1:5432/postgres",
+            ),
+            schema_name: env_var("EMBEDDED_IDP_APP_PG_SCHEMA", "embedded_idp"),
+            tls_mode: env_tls_mode("EMBEDDED_IDP_APP_PG_TLS_MODE")?,
+            tls_ca_cert_path: env::var("EMBEDDED_IDP_APP_PG_TLS_CA_CERT_PATH").ok(),
+        },
+        pool: DbPoolConfig {
+            application_name: env_var("EMBEDDED_IDP_APP_PG_APP_NAME", "embedded-idp-app"),
+            max_connections: env_u32("EMBEDDED_IDP_APP_PG_MAX_CONNECTIONS", 10)?,
+            connect_timeout_secs: env_u64("EMBEDDED_IDP_APP_PG_CONNECT_TIMEOUT_SECS", 5)?,
+        },
+    };
+    postgres
+        .validate()
+        .map_err(|error| format!("invalid postgres config: {error:?}"))?;
+    Ok(postgres)
 }

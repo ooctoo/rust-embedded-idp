@@ -3,6 +3,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use base64ct::{Base64, Base64UrlUnpadded, Encoding};
 use embedded_idp_core::{
     AccessTokenIssuer, AccessTokenValidator, IdTokenClaims, IdTokenIssuer, OidcMetadataService,
+    TokenIssuer,
 };
 use embedded_idp_security::{
     JwtConfigurationError, ProductionJwtConfig, Rs256JwtService, RsaPublicKeyConfig,
@@ -50,10 +51,55 @@ fn jwt_part(token: &str, index: usize) -> Value {
 }
 
 #[test]
+fn management_credentials_require_both_purpose_and_audience_even_with_shared_keys() {
+    let business = service(config(), key_one());
+    // Same audience deliberately isolates the purpose check in this test.
+    let management = Rs256JwtService::new_management(config(), key_one(), vec![]).unwrap();
+    let issue = |s: &Rs256JwtService| {
+        s.issue_access_token("0", "session", "user", "web", now())
+            .unwrap()
+            .token
+    };
+    let business_token = issue(&business);
+    let management_token = issue(&management);
+    assert_eq!(
+        jwt_part(management_token.expose_secret(), 1)["token_use"],
+        "management_access"
+    );
+    assert!(business
+        .validate_access_token(management_token.expose_secret(), now())
+        .unwrap()
+        .is_none());
+    assert!(management
+        .validate_access_token(business_token.expose_secret(), now())
+        .unwrap()
+        .is_none());
+    assert_eq!(
+        management
+            .validate_access_token(management_token.expose_secret(), now())
+            .unwrap()
+            .unwrap()
+            .purpose,
+        embedded_idp_core::AccessTokenPurpose::Management
+    );
+    let mut separate = config();
+    separate.audience = "management-api".into();
+    let separate = Rs256JwtService::new_management(separate, key_one(), vec![]).unwrap();
+    assert!(separate
+        .validate_access_token(management_token.expose_secret(), now())
+        .unwrap()
+        .is_none());
+    assert!(management
+        .validate_access_token(issue(&separate).expose_secret(), now())
+        .unwrap()
+        .is_none());
+}
+
+#[test]
 fn access_tokens_use_exact_rs256_header_and_required_claims() {
     let service = service(config(), key_one());
     let issued = service
-        .issue_access_token("session-1", "account-1", "desktop-app", now())
+        .issue_access_token("t1", "session-1", "account-1", "desktop-app", now())
         .unwrap();
     let token = issued.token.expose_secret();
 
@@ -63,6 +109,7 @@ fn access_tokens_use_exact_rs256_header_and_required_claims() {
     );
     let claims = jwt_part(token, 1);
     assert_eq!(claims["iss"], "https://idp.example.test");
+    assert_eq!(claims["tenant_id"], "t1");
     assert_eq!(claims["sub"], "account-1");
     assert_eq!(claims["aud"], "embedded-api");
     assert_eq!(claims["exp"], NOW_SECS + 300);
@@ -79,6 +126,7 @@ fn access_tokens_use_exact_rs256_header_and_required_claims() {
         .unwrap()
         .unwrap();
     assert_eq!(validated.subject_account_id, "account-1");
+    assert_eq!(validated.tenant_id, "t1");
     assert_eq!(validated.session_id, "session-1");
     assert_eq!(validated.client_id, "desktop-app");
     assert_eq!(validated.scope.as_deref(), Some("openid profile"));
@@ -90,6 +138,7 @@ fn id_tokens_preserve_nonce_and_validate_expected_audience() {
     let service = service(config(), key_one());
     let token = service
         .issue_id_token(&IdTokenClaims {
+            tenant_id: "t1".to_string(),
             issuer: "https://idp.example.test".to_string(),
             subject_account_id: "account-1".to_string(),
             audience: "desktop-app".to_string(),
@@ -102,6 +151,7 @@ fn id_tokens_preserve_nonce_and_validate_expected_audience() {
 
     let claims = jwt_part(token.expose_secret(), 1);
     assert_eq!(claims["auth_time"], NOW_SECS - 10);
+    assert_eq!(claims["tenant_id"], "t1");
     assert_eq!(claims["nonce"], "nonce-1");
     assert_eq!(claims["token_use"], "id");
     assert!(service
@@ -126,10 +176,131 @@ fn id_tokens_preserve_nonce_and_validate_expected_audience() {
 }
 
 #[test]
+fn tenant_ids_round_trip_and_session_bundles_forward_the_exact_value() {
+    let service = service(config(), key_one());
+    let maximum_length = "a".repeat(128);
+    for tenant_id in ["0", "tenant_1.alpha", maximum_length.as_str()] {
+        let access = service
+            .issue_access_token(tenant_id, "session-1", "account-1", "desktop-app", now())
+            .unwrap();
+        assert_eq!(
+            service
+                .validate_access_token(access.token.expose_secret(), now())
+                .unwrap()
+                .unwrap()
+                .tenant_id,
+            tenant_id
+        );
+        let id = service
+            .issue_id_token(&IdTokenClaims {
+                tenant_id: tenant_id.to_string(),
+                issuer: "https://idp.example.test".to_string(),
+                subject_account_id: "account-1".to_string(),
+                audience: "desktop-app".to_string(),
+                nonce: None,
+                issued_at: now(),
+                expires_at: now() + Duration::from_secs(300),
+                auth_time: now(),
+            })
+            .unwrap();
+        assert_eq!(
+            service
+                .validate_id_token(id.expose_secret(), now(), "desktop-app", None)
+                .unwrap()
+                .tenant_id,
+            tenant_id
+        );
+    }
+    let bundle = service
+        .issue_session_tokens(
+            "tenant_1.alpha",
+            "session-1",
+            "account-1",
+            "desktop-app",
+            1,
+            now(),
+        )
+        .unwrap();
+    assert_eq!(
+        service
+            .validate_access_token(bundle.access_token.expose_secret(), now())
+            .unwrap()
+            .unwrap()
+            .tenant_id,
+        "tenant_1.alpha"
+    );
+}
+
+#[test]
+fn issuance_rejects_empty_or_invalid_tenant_ids_and_id_token_tampering() {
+    let service = service(config(), key_one());
+    let too_long = "a".repeat(129);
+    for tenant_id in [
+        "",
+        "bad tenant",
+        "tenant:1",
+        "tenant/1",
+        "租户",
+        too_long.as_str(),
+    ] {
+        assert!(service
+            .issue_access_token(tenant_id, "session-1", "account-1", "desktop-app", now())
+            .is_err());
+        assert!(service
+            .issue_id_token(&IdTokenClaims {
+                tenant_id: tenant_id.into(),
+                issuer: "https://idp.example.test".into(),
+                subject_account_id: "account-1".into(),
+                audience: "desktop-app".into(),
+                nonce: None,
+                issued_at: now(),
+                expires_at: now() + Duration::from_secs(300),
+                auth_time: now(),
+            })
+            .is_err());
+    }
+    let access = service
+        .issue_access_token("t1", "session-1", "account-1", "desktop-app", now())
+        .unwrap()
+        .token
+        .into_exposed();
+    let mut access_parts = access.split('.').map(str::to_string).collect::<Vec<_>>();
+    let mut access_claims = jwt_part(&access, 1);
+    access_claims["tenant_id"] = Value::String("t2".into());
+    access_parts[1] =
+        Base64UrlUnpadded::encode_string(&serde_json::to_vec(&access_claims).unwrap());
+    assert!(service
+        .validate_access_token(&access_parts.join("."), now())
+        .unwrap()
+        .is_none());
+
+    let id = service
+        .issue_id_token(&IdTokenClaims {
+            tenant_id: "t1".into(),
+            issuer: "https://idp.example.test".into(),
+            subject_account_id: "account-1".into(),
+            audience: "desktop-app".into(),
+            nonce: None,
+            issued_at: now(),
+            expires_at: now() + Duration::from_secs(300),
+            auth_time: now(),
+        })
+        .unwrap()
+        .into_exposed();
+    let mut parts = id.split('.').map(str::to_string).collect::<Vec<_>>();
+    let mut claims = jwt_part(&id, 1);
+    claims["tenant_id"] = Value::String("t2".into());
+    parts[1] = Base64UrlUnpadded::encode_string(&serde_json::to_vec(&claims).unwrap());
+    assert!(service
+        .validate_id_token(&parts.join("."), now(), "desktop-app", None)
+        .is_none());
+}
+
+#[test]
 fn access_validation_rejects_tampering_and_algorithm_substitution() {
     let service = service(config(), key_one());
     let token = service
-        .issue_access_token("session-1", "account-1", "desktop-app", now())
+        .issue_access_token("t1", "session-1", "account-1", "desktop-app", now())
         .unwrap()
         .token
         .into_exposed();
@@ -182,7 +353,7 @@ fn access_validation_enforces_issuer_audience_scope_and_time() {
     for (issuer_config, issued_at) in cases {
         let untrusted = service(issuer_config, key_one());
         let token = untrusted
-            .issue_access_token("session-1", "account-1", "desktop-app", issued_at)
+            .issue_access_token("t1", "session-1", "account-1", "desktop-app", issued_at)
             .unwrap()
             .token
             .into_exposed();
@@ -198,7 +369,7 @@ fn rotation_overlap_accepts_old_tokens_until_public_key_is_retired() {
     let old = service(config(), key_one());
     let old_public_key = old.active_public_key_config();
     let old_token = old
-        .issue_access_token("session-1", "account-1", "desktop-app", now())
+        .issue_access_token("t1", "session-1", "account-1", "desktop-app", now())
         .unwrap()
         .token
         .into_exposed();
@@ -287,7 +458,44 @@ fn debug_output_redacts_private_and_token_material() {
 
     let service = service(config(), key);
     let issued = service
-        .issue_access_token("session-1", "account-1", "desktop-app", now())
+        .issue_access_token("t1", "session-1", "account-1", "desktop-app", now())
         .unwrap();
     assert!(!format!("{issued:?}").contains(issued.token.expose_secret()));
+}
+
+#[test]
+fn delegated_scope_is_signed_validated_and_cannot_exceed_issuer_policy() {
+    use embedded_idp_core::{normalize_oauth_scope, ScopedAccessTokenIssuer};
+    let svc = service(config(), key_one());
+    for scope in ["", "openid", "profile", "openid profile"] {
+        let token = svc
+            .issue_scoped_access_token("t1", "session", "account", "client", now(), scope)
+            .unwrap();
+        assert_eq!(
+            svc.validate_access_token(token.token.expose_secret(), now())
+                .unwrap()
+                .unwrap()
+                .scope
+                .as_deref(),
+            Some(scope)
+        );
+    }
+    for scope in [
+        "admin",
+        "openid admin",
+        "openid\nprofile",
+        "openid\tprofile",
+        "a\\b",
+        "a\"b",
+        "身份",
+    ] {
+        assert!(svc
+            .issue_scoped_access_token("t1", "session", "account", "client", now(), scope)
+            .is_err());
+    }
+    assert_eq!(
+        normalize_oauth_scope(" profile  openid profile ").unwrap(),
+        "openid profile"
+    );
+    assert!(normalize_oauth_scope(&"a".repeat(1025)).is_err());
 }

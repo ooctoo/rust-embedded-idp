@@ -289,7 +289,9 @@ does not replace it with database `now()`.
 - unique, non-reused `kid` values matching public material;
 - fixed `alg=RS256`; `none` and algorithm substitution are rejected;
 - access claims `iss`, `sub`, `aud`, `exp`, `iat`, `nbf`, `jti`, `sid`,
-  `client_id`, `scope`, and `token_use=access`;
+  `client_id`, `scope`, and `token_use=access` for business credentials;
+  independently constructed management issuers/validators use `token_use=management_access`
+  and a dedicated audience. `ValidatedAccessToken.purpose` reports that verified purpose;
 - ID claims `iss`, `sub`, client `aud`, `exp`, `iat`, `auth_time`, exact
   `nonce`, and `token_use=id`;
 - issuer, audience, time, token-use, and host-configured scope validation;
@@ -318,14 +320,17 @@ verifier checks a server-constructed canonical byte string; it never parses
 signed semantics from model- or caller-produced JSON.
 
 Registration and rotation use an upstream-owned domain separator. Resource
-requests use a configured proof profile so SUT can retain its frozen
-`SUT-DEVICE-PROOF-V1` separator without making SUT semantics part of the core.
-The profile is fixed at service construction and rejects control characters.
+requests use a configured proof profile, such as `SUT-DEVICE-PROOF-V2`,
+without making SUT semantics part of the core. Under the tenant design §13.5,
+profiles must end in `-V2`; old or unversioned profiles are rejected. The profile
+is fixed at service construction and rejects whitespace/control characters.
+The standard request profile is `EMBEDDED-IDP-DEVICE-REQUEST-V2`.
 
 Registration proof-of-possession bytes are:
 
 ```text
-EMBEDDED-IDP-DEVICE-REGISTRATION-V1\n
+EMBEDDED-IDP-DEVICE-REGISTRATION-V2\n
+tenant-id:<tenant-id>\n
 device-id:<device-id>\n
 key-id:<derived-new-key-id>\n
 challenge:<base64url-nonce>\n
@@ -334,7 +339,8 @@ challenge:<base64url-nonce>\n
 Key rotation uses one byte string signed by both the current and proposed keys:
 
 ```text
-EMBEDDED-IDP-DEVICE-KEY-ROTATION-V1\n
+EMBEDDED-IDP-DEVICE-KEY-ROTATION-V2\n
+tenant-id:<tenant-id>\n
 device-id:<device-id>\n
 old-key-id:<active-key-id>\n
 new-key-id:<derived-new-key-id>\n
@@ -404,10 +410,11 @@ is not generalized in this revision.
 
 ### 7.3 Canonical bytes
 
-For the SUT profile, canonical UTF-8 bytes remain:
+For the SUT V2 profile, canonical UTF-8 bytes are:
 
 ```text
-SUT-DEVICE-PROOF-V1\n
+SUT-DEVICE-PROOF-V2\n
+tenant-id:<tenant-id>\n
 audience:<configured-api-audience>\n
 method:<uppercase-method>\n
 path:<external-path>\n
@@ -426,6 +433,10 @@ Rules:
 - protected mutation routes reject query parameters until a separate canonical
   query contract exists;
 - the audience and profile come from trusted service configuration;
+- tenant comes from verified identity/session and matching stored device ownership,
+  not an unchecked header; it uses the same 1–128 byte ASCII identifier syntax as Access;
+- all three proof formats include tenant immediately after the domain separator;
+  no old-format signature fallback is allowed;
 - identifiers cannot contain whitespace or control characters;
 - the final newline is mandatory;
 - signed time is checked against the injected server clock and configured skew;

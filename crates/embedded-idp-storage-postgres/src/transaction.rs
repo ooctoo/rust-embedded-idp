@@ -1938,7 +1938,7 @@ fn decode_device_nonce(row: Row) -> Result<DeviceNonceRecord, StoreError> {
     })
 }
 
-fn decode_client(row: Row) -> Result<OidcClient, StoreError> {
+pub(crate) fn decode_client(row: Row) -> Result<OidcClient, StoreError> {
     let redirect_uris_json: String = row.get("redirect_uris_json");
     let redirect_uris =
         serde_json::from_str::<Vec<String>>(&redirect_uris_json).map_err(|error| {
@@ -2101,7 +2101,9 @@ fn decode_account_device_binding_status(
     }
 }
 
-fn encode_refresh_revocation_reason(reason: RefreshTokenRevocationReason) -> &'static str {
+pub(crate) fn encode_refresh_revocation_reason(
+    reason: RefreshTokenRevocationReason,
+) -> &'static str {
     match reason {
         RefreshTokenRevocationReason::Rotated => "rotated",
         RefreshTokenRevocationReason::ReuseDetected => "reuse_detected",
@@ -2112,7 +2114,7 @@ fn encode_refresh_revocation_reason(reason: RefreshTokenRevocationReason) -> &'s
     }
 }
 
-fn decode_refresh_revocation_reason(
+pub(crate) fn decode_refresh_revocation_reason(
     value: String,
 ) -> Result<RefreshTokenRevocationReason, StoreError> {
     match value.as_str() {

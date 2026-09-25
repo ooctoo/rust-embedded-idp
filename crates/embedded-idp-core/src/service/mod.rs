@@ -3,7 +3,7 @@ mod admin_contracts;
 mod auth;
 mod auth_support;
 mod client_auth;
-mod contracts;
+pub(crate) mod contracts;
 mod device;
 mod device_request;
 mod device_security;
@@ -13,7 +13,7 @@ mod oidc_resource_service;
 #[cfg(test)]
 mod oidc_resource_service_tests;
 mod oidc_service;
-mod password;
+pub(crate) mod password;
 mod proof_bound_refresh;
 
 pub use admin::CoreAdminService;
@@ -67,3 +67,6 @@ pub use proof_bound_refresh::{
     ProofBoundRefreshTransaction, ProofBoundRefreshTransactionRunner, ProofBoundTokenResult,
     RotateProofBoundRefreshCommand, RotateProofBoundRefreshOutcome,
 };
+
+pub(crate) use client_auth::authenticate_client;
+pub(crate) use oidc_service::pkce_matches;

@@ -8,15 +8,23 @@ repository.workspace = true
 description = "Postgres storage adapter for rust-embedded-idp"
 
 [dependencies]
-embedded-idp-core = { version = "0.2.0", path = "../embedded-idp-core" }
+embedded-idp-core = { version = "1.0.0", path = "../embedded-idp-core" }
 native-tls = "0.2"
 postgres = { version = "0.19", features = ["with-uuid-1"] }
 postgres-native-tls = "0.5"
+r2d2_postgres = "0.18"
 serde_json = "1"
 uuid = "1"
 
 [dev-dependencies]
-embedded-idp-security = { version = "0.2.0", path = "../embedded-idp-security" }
+embedded-idp-email = { version = "1.0.0", path = "../embedded-idp-email" }
+ring = "0.17"
+base64ct = { version = "1", features = ["alloc"] }
+embedded-idp-axum = { version = "1.0.0", path = "../embedded-idp-axum" }
+axum = { version = "0.7", default-features = false, features = ["json", "tokio"] }
+tokio = { version = "1", features = ["rt"] }
+tower = { version = "0.5", features = ["util"] }
+embedded-idp-security = { version = "1.0.0", path = "../embedded-idp-security" }
 
 [[example]]
 name = "bootstrap_local_postgres"

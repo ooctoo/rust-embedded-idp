@@ -1,0 +1,50 @@
+# React 管理后台与宿主嵌入组件
+
+更新时间：2026-09-25。Web 工程有两个交付面：参考服务使用的独立管理后台，以及宿主可本地导入的 `@embedded-idp/react` 组件包。源码和构建产物在同一工程，均未发布到 npm。
+
+| 入口 | 内容 | 主要依赖 |
+| --- | --- | --- |
+| `web/management` | 管理登录、租户目标选择、租户/成员/角色/权限、账号、设备、会话、客户端、审计与权限诊断 | React 19、Ant Design 5 |
+| `@embedded-idp/react` | 业务登录、固定/选择租户、当前身份与本人角色 | 宿主 React 19；局部 CSS，无 Ant Design |
+| `@embedded-idp/react/admin` | 可嵌入的权限目录组件及管理客户端 | 宿主 React 19、Ant Design 5、React 19 兼容补丁 |
+
+## 身份和安全边界
+
+管理后台先读取 `/admin/auth/capabilities`，再使用独立管理登录与管理用途 JWT；业务组件只调用公开 `/auth` 和本人接口。两种凭证不能互换。当前管理客户端只接受同源绝对 API 前缀，令牌和选择票据保存在客户端实例内存，不进入 URL、本地存储或 React 状态。业务组件的请求适配器可由宿主提供，以承载其设备证明；真实签名和业务资源授权始终由宿主服务端负责。
+
+Disabled 模式固定域 `0`，不展示租户管理或切换。Enabled 模式的业务登录遵循服务端 Fixed/Choose 策略；管理平台 `0` 选择业务租户时，目标域通过专用管理 Header 传递，管理身份并不变成目标租户的业务身份。界面隐藏或显示操作只是交互提示，Core 与管理服务每次写入仍复查实时权限。管理写入遇到冲突或结果不确定时不自动重放，需重新读取核对。
+
+权限目录只定义 `(tenant_id, resource_type, action)`。管理页面支持创建、查询、修改说明、启停和归档业务权限；创建定义不会自动加入角色。角色页面维护权限集合，成员页面把角色按资源类型或具体资源 ID 分配给用户。是否真的允许读取某份报告，由宿主在已验证租户和业务资源后调用授权服务决定。
+
+## 构建与本地使用
+
+`pnpm --dir web build` 生成管理应用 `web/dist/management`、业务组件 `web/embedded/dist/embedded-idp.*` 和管理组件 `web/embedded/dist/admin.*`。Rust 参考服务编译时嵌入管理应用；先构建 Web，再编译 Rust。`pnpm --dir web dev` 在 `127.0.0.1:4179` 预览管理源码，需要同源管理 API；真实本地体验使用[参考服务的两种模式](standalone-app-v1.md)。`web/embedded/demo.html` 仅用模拟响应验证组件交互，不是真实业务宿主。
+
+宿主完成本地包构建/安装后导入业务组件：
+
+```tsx
+import { EmbeddedAuth, EmbeddedIdentityClient } from "@embedded-idp/react";
+import "@embedded-idp/react/style.css";
+
+const identity = new EmbeddedIdentityClient("/api");
+export function Login() { return <EmbeddedAuth client={identity} language="zh-CN" />; }
+```
+
+管理控制台如需嵌入权限目录，使用独立入口：
+
+```tsx
+import { PermissionDirectory, type PermissionDirectoryClient } from "@embedded-idp/react/admin";
+import "@embedded-idp/react/admin/style.css";
+
+export function PermissionSettings({ client, tenantId }: {
+  client: PermissionDirectoryClient; tenantId: string;
+}) {
+  return <PermissionDirectory key={tenantId} client={client} tenant={tenantId} />;
+}
+```
+
+`PermissionDirectoryClient` 可由导出的 `ManagementClient` 实现，也可由宿主实现同一组管理 API 方法。使用 `ManagementClient` 时，先调用 `loadCapabilities()` 并完成管理登录/选租户。组件不代办管理登录，不接受业务 access token；Enabled 平台 `0` 仅显示受保护权限，业务权限必须在真实目标租户创建。角色关联仍通过角色管理界面或 API。管理组件使用 Ant Design 默认弹层 portal，嵌入宿主需验证遮罩层级和焦点行为；CSS 不导入旧后台全局样式或 Tailwind。
+
+## 验证边界
+
+`pnpm --dir web test` 覆盖管理和业务客户端协议；`pnpm --dir web build` 检查类型与产物；`pnpm --dir web test:embedded-bundle` 验证组件包入口、样式边界和宿主 React 复用。参考服务和 PostgreSQL 的实际接口另由 Rust 集成测试覆盖。这些检查不替代真实业务宿主中的设备证明、报告资源授权或全部管理页面的浏览器验收；剩余工作见[当前交付与验收](tenant-access-execution-plan.md)。

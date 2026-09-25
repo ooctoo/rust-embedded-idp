@@ -114,6 +114,8 @@ pub trait ProofBoundRefreshTransactionRunner {
     ) -> Result<R, ProofBoundRefreshError>;
 }
 
+/// Currently uses the single-domain persistence contracts and only domain `0`.
+/// Do not mount this service for Enabled tenancy before the tenant storage cutover.
 pub struct CoreProofBoundRefreshService<S, D, G, V, J, A, K, I> {
     store_runner: S,
     digester: D,
@@ -172,6 +174,11 @@ where
         &self,
         command: RotateProofBoundRefreshCommand,
     ) -> Result<RotateProofBoundRefreshOutcome, ProofBoundRefreshError> {
+        // This adapter still uses single-domain records; never authenticate a
+        // real tenant through storage that cannot enforce its ownership.
+        if command.binding.tenant_id != "0" {
+            return Err(ProofBoundRefreshError::InvalidProof);
+        }
         command
             .proof
             .validate()
@@ -261,6 +268,7 @@ where
             let access_token = self
                 .access_token_issuer
                 .issue_access_token(
+                    crate::access::SYSTEM_TENANT_ID,
                     &session.id,
                     &session.account_id,
                     &session.client_id,
@@ -615,11 +623,13 @@ mod tests {
     impl AccessTokenIssuer for TestAccessIssuer {
         fn issue_access_token(
             &self,
+            tenant_id: &str,
             _session_id: &str,
             _account_id: &str,
             _client_id: &str,
             issued_at: SystemTime,
         ) -> Result<IssuedAccessToken, TokenError> {
+            assert_eq!(tenant_id, "0");
             Ok(IssuedAccessToken {
                 token: SecretString::new("signed-access-token"),
                 expires_at: issued_at + Duration::from_secs(900),
@@ -787,7 +797,8 @@ mod tests {
                 signed_at: TestClock.now(),
             },
             binding: DeviceRequestBinding::new(
-                DeviceProofProfile::new("SUT-DEVICE-PROOF-V1").unwrap(),
+                "0",
+                DeviceProofProfile::new("SUT-DEVICE-PROOF-V2").unwrap(),
                 "sut-api",
                 CanonicalHttpMethod::Post,
                 "/api/auth/refresh",
@@ -829,6 +840,24 @@ mod tests {
             .challenges
             .values()
             .all(|challenge| challenge.consumed_at.is_some()));
+    }
+
+    #[test]
+    fn real_tenant_cannot_use_single_domain_refresh_or_trigger_reuse_revocation() {
+        let service = service(true, true);
+        let mut request = command();
+        request.binding.tenant_id = "t1".into();
+        assert_eq!(
+            service.rotate_proof_bound_refresh(request),
+            Err(ProofBoundRefreshError::InvalidProof)
+        );
+        let state = service.store_runner.state.lock().unwrap();
+        assert_eq!(state.sessions["session-1"].status, SessionStatus::Active);
+        assert!(state.challenges.values().all(|c| c.consumed_at.is_none()));
+        assert!(state
+            .refresh_tokens
+            .values()
+            .any(|t| t.revoked_at.is_none()));
     }
 
     #[test]

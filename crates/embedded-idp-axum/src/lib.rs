@@ -1,3 +1,25 @@
+mod management_auth;
+pub use management_auth::management_router;
+mod access_diagnostic;
+pub use access_diagnostic::access_diagnostic_router;
+mod audit_admin;
+pub use audit_admin::audit_admin_router;
+mod security_admin;
+pub use security_admin::security_admin_router;
+mod permission_admin;
+pub use permission_admin::permission_admin_router;
+mod role_binding_admin;
+pub use role_binding_admin::role_binding_admin_router;
+mod role_admin;
+pub use role_admin::role_admin_router;
+mod tenant_management_admin;
+pub use tenant_management_admin::tenant_management_admin_router;
+mod account_security_admin;
+pub use account_security_admin::account_security_admin_router;
+mod account_admin;
+pub use account_admin::account_admin_router;
+mod client_admin;
+pub use client_admin::client_admin_router;
 mod admin_api;
 mod admin_dto;
 mod admin_paging;
@@ -5,6 +27,16 @@ mod dto;
 mod http_paths;
 mod http_support;
 mod proof_http;
+mod tenant_admin;
+mod tenant_auth;
+mod tenant_device_admin;
+mod tenant_device_auth;
+mod tenant_devices;
+mod tenant_oidc_authorization;
+mod tenant_oidc_resource;
+mod tenant_registration;
+mod tenant_self;
+mod tenant_session_admin;
 
 #[cfg(test)]
 mod tests;
@@ -66,15 +98,26 @@ pub use proof_http::{
 };
 use serde::de::DeserializeOwned;
 use sha2::{Digest, Sha256};
+pub use tenant_auth::tenant_auth_router;
+pub use tenant_device_admin::tenant_device_admin_router;
+pub use tenant_device_auth::{tenant_device_auth_router, TenantDeviceAuthHttpConfig};
+pub use tenant_devices::{tenant_device_router, TenantDeviceHttpConfig};
+pub use tenant_oidc_authorization::{tenant_oidc_authorization_router, TenantOidcHttpConfig};
+pub use tenant_oidc_resource::tenant_oidc_resource_router;
+pub use tenant_registration::tenant_registration_router;
+pub use tenant_self::tenant_self_router;
+pub use tenant_session_admin::tenant_session_admin_router;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthenticatedSubject {
+    pub tenant_id: String,
     pub account_id: String,
 }
 
 impl AuthenticatedSubject {
-    pub fn new(account_id: impl Into<String>) -> Self {
+    pub fn new(tenant_id: impl Into<String>, account_id: impl Into<String>) -> Self {
         Self {
+            tenant_id: tenant_id.into(),
             account_id: account_id.into(),
         }
     }
@@ -384,14 +427,15 @@ async fn rotate_refresh_token(
     let Some((config, proof)) = proof_bound else {
         return rotate_legacy_refresh(state.auth_service, request).await;
     };
-    let binding =
-        match config
-            .route
-            .binding_for_request(&method, &original_uri, Sha256::digest(&body).into())
-        {
-            Ok(binding) => binding,
-            Err(error) => return map_proof_http_error(error),
-        };
+    let binding = match config.route.binding_for_request(
+        "0",
+        &method,
+        &original_uri,
+        Sha256::digest(&body).into(),
+    ) {
+        Ok(binding) => binding,
+        Err(error) => return map_proof_http_error(error),
+    };
     let command = RotateProofBoundRefreshCommand {
         refresh_token: SecretString::new(request.refresh_token),
         proof,
@@ -841,8 +885,9 @@ async fn rotate_device_proof_key(
     subject: Option<Extension<AuthenticatedSubject>>,
     Json(request): Json<RotateDeviceProofKeyHttpRequest>,
 ) -> Response {
-    let Ok(account_id) = subject_account_id(subject) else {
-        return missing_authenticated_subject_response();
+    let account_id = match subject_account_id(subject) {
+        Ok(account_id) => account_id,
+        Err(response) => return response,
     };
     let DeviceHttpSecurity::ProofBound(service) = state.device_security else {
         return error_response(
@@ -880,8 +925,9 @@ async fn bind_device_to_account(
     subject: Option<Extension<AuthenticatedSubject>>,
     Json(request): Json<BindDeviceHttpRequest>,
 ) -> Response {
-    let Ok(account_id) = subject_account_id(subject) else {
-        return missing_authenticated_subject_response();
+    let account_id = match subject_account_id(subject) {
+        Ok(account_id) => account_id,
+        Err(response) => return response,
     };
 
     let device_service = state.device_service.clone();
@@ -904,8 +950,9 @@ async fn list_devices(
     State(state): State<EmbeddedIdpHttpState>,
     subject: Option<Extension<AuthenticatedSubject>>,
 ) -> Response {
-    let Ok(account_id) = subject_account_id(subject) else {
-        return missing_authenticated_subject_response();
+    let account_id = match subject_account_id(subject) {
+        Ok(account_id) => account_id,
+        Err(response) => return response,
     };
 
     let device_service = state.device_service.clone();
@@ -933,8 +980,9 @@ async fn get_device(
     subject: Option<Extension<AuthenticatedSubject>>,
     Path(device_id): Path<String>,
 ) -> Response {
-    let Ok(account_id) = subject_account_id(subject) else {
-        return missing_authenticated_subject_response();
+    let account_id = match subject_account_id(subject) {
+        Ok(account_id) => account_id,
+        Err(response) => return response,
     };
 
     let device_service = state.device_service.clone();
@@ -960,8 +1008,9 @@ async fn unbind_device_from_account(
     subject: Option<Extension<AuthenticatedSubject>>,
     Json(request): Json<UnbindDeviceHttpRequest>,
 ) -> Response {
-    let Ok(account_id) = subject_account_id(subject) else {
-        return missing_authenticated_subject_response();
+    let account_id = match subject_account_id(subject) {
+        Ok(account_id) => account_id,
+        Err(response) => return response,
     };
 
     let device_service = state.device_service.clone();
@@ -1004,14 +1053,15 @@ async fn authorize(
     subject: Option<Extension<AuthenticatedSubject>>,
     Query(request): Query<AuthorizeHttpRequest>,
 ) -> Response {
-    let Some(Extension(subject)) = subject else {
-        return missing_authenticated_subject_response();
+    let account_id = match subject_account_id(subject) {
+        Ok(account_id) => account_id,
+        Err(response) => return response,
     };
 
     let oidc_authorization_service = state.oidc_authorization_service.clone();
     match run_service_call(move || {
         oidc_authorization_service.start_authorization(StartAuthorizationCommand {
-            subject_account_id: subject.account_id,
+            subject_account_id: account_id,
             response_type: request.response_type,
             client_id: request.client_id,
             redirect_uri: request.redirect_uri,
@@ -1223,9 +1273,17 @@ fn binding_response(binding: AccountDeviceBinding) -> DeviceBindingHttpResponse 
 fn subject_account_id(
     subject: Option<Extension<AuthenticatedSubject>>,
 ) -> Result<String, Response> {
-    subject
-        .map(|Extension(subject)| subject.account_id)
-        .ok_or_else(missing_authenticated_subject_response)
+    let Some(Extension(subject)) = subject else {
+        return Err(missing_authenticated_subject_response());
+    };
+    if subject.tenant_id != "0" {
+        return Err(error_response(
+            StatusCode::UNAUTHORIZED,
+            "unsupported_tenant",
+            "these single-domain handlers only support tenant 0",
+        ));
+    }
+    Ok(subject.account_id)
 }
 
 fn subject_scoped_bindings(

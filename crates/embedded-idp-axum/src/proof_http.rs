@@ -74,6 +74,7 @@ impl ProtectedRouteConfig {
         let audience = audience.into();
         let external_path = external_path.into();
         DeviceRequestBinding::new(
+            "0", // Validate static route fields; runtime tenant is supplied separately.
             profile.clone(),
             audience.clone(),
             method,
@@ -89,8 +90,13 @@ impl ProtectedRouteConfig {
         })
     }
 
+    /// Use verified tenant context for protected business requests. At a login
+    /// boundary it may be a tenant assertion ONLY when the Core authentication
+    /// transaction resolves the selected/session tenant and checks equality
+    /// before nonce consumption. This builder never authenticates a tenant.
     pub fn binding_for_request(
         &self,
+        trusted_tenant_id: &str,
         actual_method: &Method,
         original_uri: &Uri,
         body_sha256: [u8; 32],
@@ -105,6 +111,7 @@ impl ProtectedRouteConfig {
             return Err(ProofHttpError::PathMismatch);
         }
         DeviceRequestBinding::new(
+            trusted_tenant_id,
             self.profile.clone(),
             self.audience.clone(),
             self.method,
@@ -209,22 +216,28 @@ mod tests {
     #[test]
     fn route_binding_uses_literal_original_uri() {
         let route = ProtectedRouteConfig::new(
-            DeviceProofProfile::new("SUT-DEVICE-PROOF-V1").unwrap(),
+            DeviceProofProfile::new("SUT-DEVICE-PROOF-V2").unwrap(),
             "sut-api",
             CanonicalHttpMethod::Post,
             "/api/auth/refresh",
         )
         .unwrap();
 
-        assert!(route
-            .binding_for_request(
-                &Method::POST,
-                &Uri::from_static("/api/auth/refresh"),
-                [0_u8; 32],
-            )
-            .is_ok());
+        assert_eq!(
+            route
+                .binding_for_request(
+                    "t1",
+                    &Method::POST,
+                    &Uri::from_static("/api/auth/refresh"),
+                    [0_u8; 32],
+                )
+                .unwrap()
+                .tenant_id,
+            "t1"
+        );
         assert_eq!(
             route.binding_for_request(
+                "t1",
                 &Method::POST,
                 &Uri::from_static("/auth/refresh"),
                 [0_u8; 32],
@@ -233,6 +246,7 @@ mod tests {
         );
         assert_eq!(
             route.binding_for_request(
+                "t1",
                 &Method::POST,
                 &Uri::from_static("/api/auth/refresh?retry=1"),
                 [0_u8; 32],

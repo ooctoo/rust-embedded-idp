@@ -289,6 +289,7 @@ where
         let signature = decode_device_signature(command.signature.expose_secret())
             .map_err(|_| DeviceSecurityError::InvalidProof)?;
         let canonical = build_device_registration_proof_bytes(
+            "0", // Explicit single-domain adapter until tenant storage is integrated.
             &command.device_id,
             &proposed.key_id,
             command.challenge.expose_secret(),
@@ -391,6 +392,7 @@ where
                 .checked_add(1)
                 .ok_or(DeviceSecurityError::KeyVersionOverflow)?;
             let canonical = build_device_key_rotation_proof_bytes(
+                "0",
                 &device.id,
                 &current_key.key_id,
                 &proposed.key_id,

@@ -3,10 +3,12 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use base64ct::{Base64UrlUnpadded, Encoding};
+use embedded_idp_core::access::validate_tenant_id;
 use embedded_idp_core::{
-    AccessTokenIssuer, AccessTokenValidator, IdTokenClaims, IdTokenIssuer, IssuedAccessToken,
-    IssuedTokenBundle, JsonWebKey, JwksDocument, OidcMetadataService, RefreshTokenGenerator,
-    SecretString, ServiceError, TokenError, TokenIssuer, ValidatedAccessToken,
+    normalize_oauth_scope, AccessTokenIssuer, AccessTokenPurpose, AccessTokenValidator,
+    IdTokenClaims, IdTokenIssuer, IssuedAccessToken, IssuedTokenBundle, JsonWebKey, JwksDocument,
+    OidcMetadataService, RefreshTokenGenerator, ScopedAccessTokenIssuer, SecretString,
+    ServiceError, TokenError, TokenIssuer, ValidatedAccessToken,
 };
 use rand_core::{OsRng, RngCore};
 use ring::rand::SystemRandom;
@@ -83,6 +85,7 @@ pub enum JwtConfigurationError {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValidatedIdToken {
+    pub tenant_id: String,
     pub subject_account_id: String,
     pub audience: String,
     pub nonce: Option<String>,
@@ -99,6 +102,7 @@ struct RsaPublicKey {
 }
 
 pub struct Rs256JwtService {
+    purpose: AccessTokenPurpose,
     config: ProductionJwtConfig,
     active_key: Arc<RsaKeyPair>,
     active_key_id: String,
@@ -112,6 +116,7 @@ impl std::fmt::Debug for Rs256JwtService {
         formatter
             .debug_struct("Rs256JwtService")
             .field("config", &self.config)
+            .field("purpose", &self.purpose)
             .field("active_key_id", &self.active_key_id)
             .field("verification_key_count", &self.verification_keys.len())
             .field("jwks_etag", &self.jwks_etag)
@@ -120,6 +125,24 @@ impl std::fmt::Debug for Rs256JwtService {
 }
 
 impl Rs256JwtService {
+    fn access_token_use(&self) -> &'static str {
+        match self.purpose {
+            AccessTokenPurpose::Business => "access",
+            AccessTokenPurpose::Management => "management_access",
+        }
+    }
+    /// Separate management credential purpose. Supply a dedicated management
+    /// audience; sharing signing keys does not make business tokens acceptable.
+    pub fn new_management(
+        config: ProductionJwtConfig,
+        active: RsaSigningKeyConfig,
+        overlap: Vec<RsaPublicKeyConfig>,
+    ) -> Result<Self, JwtConfigurationError> {
+        let mut service = Self::new(config, active, overlap)?;
+        service.purpose = AccessTokenPurpose::Management;
+        Ok(service)
+    }
+
     pub fn new(
         config: ProductionJwtConfig,
         active: RsaSigningKeyConfig,
@@ -153,6 +176,7 @@ impl Rs256JwtService {
         let jwks_etag = jwks_etag(&verification_keys);
 
         Ok(Self {
+            purpose: AccessTokenPurpose::Business,
             config,
             active_key: Arc::new(active_key),
             active_key_id: active_public.key_id,
@@ -175,6 +199,7 @@ impl Rs256JwtService {
             || claims.aud != expected_audience
             || claims.token_use != "id"
             || claims.sub.is_empty()
+            || validate_tenant_id(&claims.tenant_id).is_err()
             || claims.exp <= observed.saturating_sub(self.config.clock_skew_secs)
             || claims.iat > observed.saturating_add(self.config.clock_skew_secs)
             || claims.exp <= claims.iat
@@ -184,6 +209,7 @@ impl Rs256JwtService {
             return None;
         }
         Some(ValidatedIdToken {
+            tenant_id: claims.tenant_id,
             subject_account_id: claims.sub,
             audience: claims.aud,
             nonce: claims.nonce,
@@ -282,15 +308,54 @@ impl Rs256JwtService {
     }
 }
 
+fn scope_allowed(requested: &str, allowed: &str) -> bool {
+    let (Ok(requested), Ok(allowed)) = (
+        normalize_oauth_scope(requested),
+        normalize_oauth_scope(allowed),
+    ) else {
+        return false;
+    };
+    requested
+        .split_whitespace()
+        .all(|scope| allowed.split_whitespace().any(|a| a == scope))
+}
+
 impl AccessTokenIssuer for Rs256JwtService {
     fn issue_access_token(
         &self,
+        tenant_id: &str,
         session_id: &str,
         account_id: &str,
         client_id: &str,
         issued_at: SystemTime,
     ) -> Result<IssuedAccessToken, TokenError> {
-        if !valid_claim_value(session_id, 256)
+        self.issue_scoped_access_token(
+            tenant_id,
+            session_id,
+            account_id,
+            client_id,
+            issued_at,
+            &self.config.scope,
+        )
+    }
+}
+impl ScopedAccessTokenIssuer for Rs256JwtService {
+    fn issue_scoped_access_token(
+        &self,
+        tenant_id: &str,
+        session_id: &str,
+        account_id: &str,
+        client_id: &str,
+        issued_at: SystemTime,
+        scope: &str,
+    ) -> Result<IssuedAccessToken, TokenError> {
+        if !scope_allowed(scope, &self.config.scope) {
+            return Err(TokenError::IssuerRejected(
+                "scope exceeds issuer policy".into(),
+            ));
+        }
+        if validate_tenant_id(tenant_id).is_err()
+            || !valid_claim_value(session_id, 256)
             || !valid_claim_value(account_id, 256)
             || !valid_claim_value(client_id, 256)
         {
@@ -303,6 +368,7 @@ impl AccessTokenIssuer for Rs256JwtService {
             .checked_add(Duration::from_secs(self.config.access_token_ttl_secs))
             .ok_or_else(|| TokenError::IssuerRejected("access expiry overflow".to_string()))?;
         let claims = AccessClaims {
+            tenant_id: tenant_id.to_string(),
             iss: self.config.issuer.clone(),
             sub: account_id.to_string(),
             aud: self.config.audience.clone(),
@@ -312,8 +378,8 @@ impl AccessTokenIssuer for Rs256JwtService {
             jti: random_jti()?,
             sid: session_id.to_string(),
             client_id: client_id.to_string(),
-            scope: self.config.scope.clone(),
-            token_use: "access".to_string(),
+            scope: scope.to_owned(),
+            token_use: self.access_token_use().to_string(),
         };
         Ok(IssuedAccessToken {
             token: self.sign(&claims)?,
@@ -334,8 +400,8 @@ impl AccessTokenValidator for Rs256JwtService {
         let observed = unix_secs(observed_at)?;
         if claims.iss != self.config.issuer
             || claims.aud != self.config.audience
-            || claims.scope != self.config.scope
-            || claims.token_use != "access"
+            || !scope_allowed(&claims.scope, &self.config.scope)
+            || claims.token_use != self.access_token_use()
             || claims.exp <= observed.saturating_sub(self.config.clock_skew_secs)
             || claims.nbf > observed.saturating_add(self.config.clock_skew_secs)
             || claims.iat > observed.saturating_add(self.config.clock_skew_secs)
@@ -345,10 +411,13 @@ impl AccessTokenValidator for Rs256JwtService {
             || claims.sid.is_empty()
             || claims.client_id.is_empty()
             || claims.sub.is_empty()
+            || validate_tenant_id(&claims.tenant_id).is_err()
         {
             return Ok(None);
         }
         Ok(Some(ValidatedAccessToken {
+            purpose: self.purpose,
+            tenant_id: claims.tenant_id,
             token: SecretString::new(token),
             subject_account_id: claims.sub,
             session_id: claims.sid,
@@ -368,6 +437,7 @@ impl IdTokenIssuer for Rs256JwtService {
         let expires_at = unix_secs(claims.expires_at)?;
         let auth_time = unix_secs(claims.auth_time)?;
         if claims.issuer != self.config.issuer
+            || validate_tenant_id(&claims.tenant_id).is_err()
             || !valid_claim_value(&claims.subject_account_id, 256)
             || !valid_claim_value(&claims.audience, 256)
             || claims
@@ -382,6 +452,7 @@ impl IdTokenIssuer for Rs256JwtService {
             ));
         }
         self.sign(&IdClaims {
+            tenant_id: claims.tenant_id.clone(),
             iss: claims.issuer.clone(),
             sub: claims.subject_account_id.clone(),
             aud: claims.audience.clone(),
@@ -397,13 +468,15 @@ impl IdTokenIssuer for Rs256JwtService {
 impl TokenIssuer for Rs256JwtService {
     fn issue_session_tokens(
         &self,
+        tenant_id: &str,
         session_id: &str,
         account_id: &str,
         client_id: &str,
         refresh_token_version: u64,
         issued_at: SystemTime,
     ) -> Result<IssuedTokenBundle, TokenError> {
-        let access = self.issue_access_token(session_id, account_id, client_id, issued_at)?;
+        let access =
+            self.issue_access_token(tenant_id, session_id, account_id, client_id, issued_at)?;
         let refresh = crate::SecureRefreshTokenGenerator.generate_refresh_token()?;
         let refresh_expires_at = issued_at
             .checked_add(Duration::from_secs(self.config.refresh_token_ttl_secs))
@@ -446,6 +519,7 @@ struct OwnedJwtHeader {
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct AccessClaims {
+    tenant_id: String,
     iss: String,
     sub: String,
     aud: String,
@@ -462,6 +536,7 @@ struct AccessClaims {
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct IdClaims {
+    tenant_id: String,
     iss: String,
     sub: String,
     aud: String,
@@ -479,7 +554,7 @@ fn validate_config(config: &ProductionJwtConfig) -> Result<(), JwtConfigurationE
     if !valid_claim_value(&config.audience, 256) {
         return Err(JwtConfigurationError::InvalidAudience);
     }
-    if !valid_claim_value(&config.scope, 1024) {
+    if !valid_claim_value(&config.scope, 1024) || normalize_oauth_scope(&config.scope).is_err() {
         return Err(JwtConfigurationError::InvalidScope);
     }
     if config.access_token_ttl_secs == 0
@@ -652,6 +727,7 @@ mod tests {
 
     fn claims() -> AccessClaims {
         AccessClaims {
+            tenant_id: "t1".to_string(),
             iss: "https://idp.example.test".to_string(),
             sub: "account-1".to_string(),
             aud: "embedded-api".to_string(),
@@ -663,6 +739,20 @@ mod tests {
             client_id: "desktop-app".to_string(),
             scope: "openid profile".to_string(),
             token_use: "access".to_string(),
+        }
+    }
+
+    fn id_claims() -> IdClaims {
+        IdClaims {
+            tenant_id: "t1".to_string(),
+            iss: "https://idp.example.test".to_string(),
+            sub: "account-1".to_string(),
+            aud: "desktop-app".to_string(),
+            exp: NOW + 300,
+            iat: NOW,
+            auth_time: NOW - 1,
+            nonce: Some("nonce-1".to_string()),
+            token_use: "id".to_string(),
         }
     }
 
@@ -726,5 +816,44 @@ mod tests {
             .validate_access_token(&token, UNIX_EPOCH + Duration::from_secs(NOW))
             .unwrap()
             .is_none());
+    }
+
+    #[test]
+    fn validly_signed_access_and_id_tokens_require_a_valid_tenant_id() {
+        let service = service();
+        for value in [
+            None,
+            Some(serde_json::Value::String("".to_string())),
+            Some(serde_json::Value::String("bad tenant".to_string())),
+            Some(serde_json::Value::Null),
+            Some(serde_json::json!(7)),
+        ] {
+            let mut access = serde_json::to_value(claims()).unwrap();
+            let mut id = serde_json::to_value(id_claims()).unwrap();
+            if let Some(value) = value {
+                access["tenant_id"] = value.clone();
+                id["tenant_id"] = value;
+            } else {
+                access.as_object_mut().unwrap().remove("tenant_id");
+                id.as_object_mut().unwrap().remove("tenant_id");
+            }
+            let access = service.sign(&access).unwrap();
+            let id = service.sign(&id).unwrap();
+            assert!(service
+                .validate_access_token(
+                    access.expose_secret(),
+                    UNIX_EPOCH + Duration::from_secs(NOW)
+                )
+                .unwrap()
+                .is_none());
+            assert!(service
+                .validate_id_token(
+                    id.expose_secret(),
+                    UNIX_EPOCH + Duration::from_secs(NOW),
+                    "desktop-app",
+                    Some("nonce-1")
+                )
+                .is_none());
+        }
     }
 }

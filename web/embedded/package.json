@@ -1,0 +1,23 @@
+{
+  "name": "@embedded-idp/react",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "files": ["dist"],
+  "exports": {
+    ".": { "types": "./dist/types/index.d.ts", "import": "./dist/embedded-idp.js" },
+    "./style.css": "./dist/embedded-idp.css",
+    "./admin": { "types": "./dist/admin-types/embedded/admin.d.ts", "import": "./dist/admin.js" },
+    "./admin/style.css": "./dist/admin.css"
+  },
+  "peerDependencies": {
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "antd": "^5.29.3",
+    "@ant-design/v5-patch-for-react-19": "^1.0.3"
+  },
+  "peerDependenciesMeta": {
+    "antd": { "optional": true },
+    "@ant-design/v5-patch-for-react-19": { "optional": true }
+  }
+}

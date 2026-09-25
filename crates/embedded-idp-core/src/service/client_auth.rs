@@ -1,6 +1,6 @@
 use crate::{ClientSecretError, ClientSecretVerifier, OidcClient, OidcClientType, StoreError};
 
-pub(super) fn authenticate_client(
+pub(crate) fn authenticate_client(
     client: &OidcClient,
     provided_secret: Option<&str>,
     verifier: &impl ClientSecretVerifier,

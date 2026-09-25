@@ -444,7 +444,7 @@ fn validate_page_request(page: &PageRequest) -> Result<(), ContractValidationErr
     Ok(())
 }
 
-fn is_valid_email(value: &str) -> bool {
+pub(crate) fn is_valid_email(value: &str) -> bool {
     let email = value.trim();
     let Some((local, domain)) = email.split_once('@') else {
         return false;

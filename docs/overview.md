@@ -1,60 +1,26 @@
-# Overview
+# 项目概览
 
-`rust-embedded-idp` is designed as an embeddable identity module for Rust backends.
+`rust-embedded-idp` 是可嵌入 Rust 宿主的身份与访问控制模块，不以通用云 IAM 平台为目标。当前两种租户模式均基于 `tenant_v2`：Disabled 使用业务域 `0`，Enabled 使用真实业务租户并把 `0` 留给平台管理。账号创建时必须有初始成员关系；同一用户可凭同一 user ID 和凭证加入多个租户。
 
-The module goal is not to become a full standalone cloud IAM product.
-It is intended to be linked into a host backend and provide:
+模块能力包括账号与会话、租户成员关系、角色及资源类型/实例授权、设备证明、OAuth/OIDC，以及独立的管理认证。管理端和业务接口可在一个参考服务中部署；嵌入时管理服务可独立运行、由宿主挂载或不启用，宿主控制台也可复用 IdP 管理接口。所有启用的 IdP 入口共用同一个 IdP 数据库；业务数据库由宿主单独管理。
 
-- auth APIs
-- device APIs
-- admin APIs
-- OIDC provider endpoints
-- database-backed persistence
-- confidential client authentication hooks with host-owned secret verification
+## 边界
 
-An optional runnable host crate, `embedded-idp-app`, can also be used when this module needs to run as a standalone local service.
-It includes a development-only React admin console for account, session, client,
-and device operations.
+- `embedded-idp-core`：领域规则、服务/存储契约、权限检查。
+- `embedded-idp-axum`：模块本地 HTTP 路由和薄适配器。
+- `embedded-idp-storage-postgres`：配置注入的 PostgreSQL 连接池、SQL 与显式 schema 初始化。
+- `embedded-idp-security`：生产密码学适配器；`embedded-idp-email`：邮件契约。
+- `embedded-idp-app`：开发参考服务、管理后台与本地启动命令，不是生产宿主。
 
-## Design Priorities
+IdP Core 已按租户提供业务权限定义的动态创建、读取、修改、启停和归档；同名权限在不同租户是独立记录，可由目标域管理员在 IdP 独立后台或宿主控制台手动维护。IdP 保存标识、说明和授权关系，不定义该标识的具体业务含义；宿主决定何处检查，并验证报告等业务资源的存在和租户归属。
 
-1. Embeddable first
-2. Desktop public client and confidential web client support
-3. Deterministic API paths
-4. Postgres-first storage
-5. Future standalone repo extraction
+## 当前状态与文档入口
 
-## Host Integration Rule
+参考服务的两模式、管理后台和宿主嵌入登录/本人角色组件已接通。独立真实业务宿主示例、可嵌入权限管理组件、设备自助界面及性能验收尚未完成；`web/embedded/demo.html` 是模拟交互页面。当前操作方式见 [README](../README.md) 和 [参考服务指南](standalone-app-v1.md)。
 
-- storage adapters receive database configuration from the host application
-- environment variables may be used by the host to build config, but the module should consume typed config rather than read globals directly
-- provider selection should happen in the host composition root; this module should not branch on a provider enum across business logic
+- [租户/角色/权限设计](tenant-role-permission-design-v1.md)：当前目标与授权语义。
+- [执行计划](tenant-access-execution-plan.md)：当前边界及按阶段历史验证记录。
+- [宿主集成说明](host-integration-v1.md)：注入、管理认证和 HTTP 边界；旧 v1 示例已标为历史。
+- [生产安全要求](rust-embedded-idp-production-security-delivery-v2.md)：上线前的安全边界。
 
-## Identifier Rule
-
-- host-facing identifiers such as `account_id`, `device_id`, and `session_id` stay opaque strings at the Rust and HTTP boundary
-- the recommended identifier value is a UUIDv7 string
-- hosts and adapters should not expose sequential database row ids as module business identifiers
-
-## Storage Design Doc
-
-- Postgres schema planning is tracked in [postgres-schema-design-v1.md](./postgres-schema-design-v1.md)
-- service and HTTP surface planning is tracked in [service-and-api-surface-v1.md](./service-and-api-surface-v1.md)
-- host composition guidance is tracked in [host-integration-v1.md](./host-integration-v1.md)
-- device domain and registration flow design is tracked in [device-model-v1.md](./device-model-v1.md)
-
-## Initial Domains
-
-- accounts
-- sessions
-- OAuth/OIDC clients
-- device registry
-- account-device bindings
-- device proof
-
-## Non-goals for v0.1
-
-- multi-tenant org model
-- SAML
-- social login
-- multiple storage backends
+`module-architecture-v1.md`、`service-and-api-surface-v1.md`、`postgres-schema-design-v1.md`、`device-model-v1.md` 和 `implementation-slices-v1.md` 保留早期设计背景，其中无租户、共享设备或旧 API 的描述不是当前运行契约。

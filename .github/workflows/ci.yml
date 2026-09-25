@@ -23,8 +23,12 @@ jobs:
           node-version: 22
       - run: corepack enable
       - run: corepack prepare pnpm@10.30.1 --activate
+      - run: node scripts/test_dev_env.mjs
+      - run: node scripts/test_device_proof_vectors.mjs
       - run: pnpm --dir web install --frozen-lockfile
+      - run: pnpm --dir web test
       - run: pnpm --dir web build
+      - run: pnpm --dir web test:embedded-bundle
       - run: rustup component add rustfmt
       - run: cargo fmt --all -- --check
       - run: cargo check --workspace --all-targets --locked

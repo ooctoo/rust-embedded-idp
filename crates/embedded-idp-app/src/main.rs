@@ -1,9 +1,9 @@
 use std::error::Error;
 
 mod admin_ui;
+mod administrator_init;
 mod bootstrap;
 mod config;
-mod dev_security;
 mod email_sender;
 
 use tokio::net::TcpListener;
@@ -13,6 +13,20 @@ use crate::bootstrap::build_app;
 use crate::config::EmbeddedIdpAppConfig;
 
 fn main() -> Result<(), Box<dyn Error>> {
+    let mut args = std::env::args().skip(1);
+    if let Some(command) = args.next() {
+        return match command.as_str() {
+            "bootstrap-admin" => administrator_init::run(args.collect()).map_err(Into::into),
+            "--help" if args.next().is_none() => {
+                println!(
+                    "Run with no arguments to start the reference host.\n{}",
+                    administrator_init::USAGE
+                );
+                Ok(())
+            }
+            _ => Err("unknown command; use --help".into()),
+        };
+    }
     let config = EmbeddedIdpAppConfig::from_env()?;
     let app = build_app(&config)?;
     let runtime = Builder::new_multi_thread().enable_all().build()?;
@@ -32,16 +46,12 @@ fn main() -> Result<(), Box<dyn Error>> {
             "public client: {} -> {}",
             config.public_client.client_id, config.public_client.redirect_uri
         );
-        println!("subject header: {}", config.dev_subject_header);
         println!(
             "admin console: {}{}",
             config.embedded_idp.issuer, config.admin_ui_base_path
         );
-        if config.admin_api_key.is_some() {
-            println!("admin routes enabled with header: x-embedded-idp-admin-key");
-        } else {
-            println!("admin routes disabled; set EMBEDDED_IDP_APP_ADMIN_API_KEY to enable");
-        }
+        println!("management authentication: /api/admin/auth/login");
+        println!("tenancy mode: {:?}", config.tenancy_mode);
 
         axum::serve(listener, app).await?;
         Ok(())

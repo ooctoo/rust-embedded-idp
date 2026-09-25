@@ -1,3 +1,4 @@
+pub mod access;
 mod client_secret;
 mod config;
 mod device_proof;
@@ -91,7 +92,7 @@ pub use support::{
     VerificationCodeGenerator,
 };
 pub use token::{
-    digest_refresh_token, next_refresh_token_version, AccessTokenIssuer, AccessTokenValidator,
-    IdTokenClaims, IdTokenIssuer, IssuedAccessToken, IssuedTokenBundle, TokenError, TokenIssuer,
-    ValidatedAccessToken,
+    digest_refresh_token, next_refresh_token_version, normalize_oauth_scope, AccessTokenIssuer,
+    AccessTokenPurpose, AccessTokenValidator, IdTokenClaims, IdTokenIssuer, IssuedAccessToken,
+    IssuedTokenBundle, ScopedAccessTokenIssuer, TokenError, TokenIssuer, ValidatedAccessToken,
 };

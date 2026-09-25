@@ -1,4 +1,8 @@
-use std::time::Duration;
+use std::{
+    fmt,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use embedded_idp_core::{
     DeviceRequestVerificationError, DeviceRequestVerificationTransactionRunner,
@@ -6,8 +10,12 @@ use embedded_idp_core::{
     ProofBoundRefreshTransactionRunner, StoreError, StoreTransactionRunner,
 };
 use native_tls::{Certificate, TlsConnector};
-use postgres::{Client, Config as PgClientConfig, NoTls};
+use postgres::{config::SslMode, Client, Config as PgClientConfig};
 use postgres_native_tls::MakeTlsConnector;
+use r2d2_postgres::{
+    r2d2::{ManageConnection, NopErrorHandler, Pool, PooledConnection},
+    PostgresConnectionManager,
+};
 
 use crate::{
     MigrationPlan, PgStorageConfig, PgStorageConfigError, PgTlsMode, PostgresStoreTransaction,
@@ -15,15 +23,43 @@ use crate::{
     MINIMUM_ONLINE_SCHEMA_VERSION, PRODUCTION_SECURITY_CUTOVER_ID,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// A checked-out Postgres connection. Dropping it returns it to the adapter's pool.
+pub type PgPooledConnection = PooledConnection<PostgresConnectionManager<MakeTlsConnector>>;
+
+type PgPool = Pool<PostgresConnectionManager<MakeTlsConnector>>;
+
+#[derive(Clone)]
 pub struct PostgresStorageAdapter {
     config: PgStorageConfig,
+    pool: Arc<Mutex<Option<PgPool>>>,
 }
+
+impl fmt::Debug for PostgresStorageAdapter {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PostgresStorageAdapter")
+            .field("schema_name", &self.config.connection.schema_name)
+            .field("application_name", &self.config.pool.application_name)
+            .field("max_connections", &self.config.pool.max_connections)
+            .finish_non_exhaustive()
+    }
+}
+
+impl PartialEq for PostgresStorageAdapter {
+    fn eq(&self, other: &Self) -> bool {
+        self.config == other.config
+    }
+}
+
+impl Eq for PostgresStorageAdapter {}
 
 impl PostgresStorageAdapter {
     pub fn new(config: PgStorageConfig) -> Result<Self, PgStorageConfigError> {
         config.validate()?;
-        Ok(Self { config })
+        Ok(Self {
+            config,
+            pool: Arc::new(Mutex::new(None)),
+        })
     }
 
     pub fn config(&self) -> &PgStorageConfig {
@@ -38,24 +74,76 @@ impl PostgresStorageAdapter {
         SecurityCutoverPlan::for_schema(self.config.connection.schema_name.clone())
     }
 
-    pub fn connect(&self) -> Result<Client, StoreError> {
+    pub fn connect(&self) -> Result<PgPooledConnection, StoreError> {
+        self.pool()?
+            .get()
+            .map_err(|_| StoreError::Backend("postgres connection unavailable".to_string()))
+    }
+
+    fn pool(&self) -> Result<PgPool, StoreError> {
+        let mut slot = self
+            .pool
+            .lock()
+            .map_err(|_| StoreError::Backend("postgres connection pool unavailable".to_string()))?;
+        if let Some(pool) = slot.as_ref() {
+            return Ok(pool.clone());
+        }
+
+        let manager = self.connection_manager()?;
+        let pool = Pool::builder()
+            .max_size(self.config.pool.max_connections)
+            .min_idle(Some(0))
+            .connection_timeout(Duration::from_secs(self.config.pool.connect_timeout_secs))
+            .error_handler(Box::new(NopErrorHandler))
+            // Authorization checks own their single SQL round trip; readiness uses
+            // `inspect_schema_health` rather than a pool checkout ping.
+            .test_on_check_out(false)
+            .build_unchecked(manager);
+        *slot = Some(pool.clone());
+        Ok(pool)
+    }
+
+    fn connection_manager(
+        &self,
+    ) -> Result<PostgresConnectionManager<MakeTlsConnector>, StoreError> {
         let mut config = self
             .config
             .connection
             .connection_uri
             .parse::<PgClientConfig>()
-            .map_err(|error| StoreError::Backend(format!("invalid postgres uri: {error}")))?;
+            .map_err(|_| StoreError::Backend("invalid postgres configuration".to_string()))?;
         config.application_name(&self.config.pool.application_name);
         config.connect_timeout(Duration::from_secs(self.config.pool.connect_timeout_secs));
+        config.ssl_mode(match self.config.connection.tls_mode {
+            PgTlsMode::Disable => SslMode::Disable,
+            PgTlsMode::Prefer => SslMode::Prefer,
+            PgTlsMode::Require => SslMode::Require,
+        });
 
-        match self.config.connection.tls_mode {
-            PgTlsMode::Disable | PgTlsMode::Prefer => config
-                .connect(NoTls)
-                .map_err(|error| StoreError::Backend(format!("postgres connect failed: {error}"))),
-            PgTlsMode::Require => config.connect(self.tls_connector()?).map_err(|error| {
-                StoreError::Backend(format!("postgres tls connect failed: {error}"))
-            }),
-        }
+        let tls_connector = if self.config.connection.tls_mode == PgTlsMode::Disable {
+            MakeTlsConnector::new(TlsConnector::builder().build().map_err(|_| {
+                StoreError::Backend("build postgres tls connector failed".to_string())
+            })?)
+        } else {
+            self.tls_connector()?
+        };
+        Ok(PostgresConnectionManager::new(config, tls_connector))
+    }
+
+    // Legacy SQL scripts own BEGIN/COMMIT and session advisory locks. Dedicated
+    // initialization connections close on every exit, including cleanup failures.
+    // Online transactions and Access initialization use the pool + Rust transactions.
+    fn legacy_initialization_connection(&self) -> Result<Client, StoreError> {
+        let mut client = self.connection_manager()?.connect().map_err(|_| {
+            StoreError::Backend("postgres initialization connection unavailable".into())
+        })?;
+        client
+            .query_one(
+                "select pg_advisory_lock(hashtext($1))",
+                &[&format!("{}:embedded-idp-migration", self.schema_name())],
+            )
+            .map_err(|_| StoreError::Backend("postgres initialization lock unavailable".into()))?;
+        Ok(client)
     }
 
     pub fn schema_name(&self) -> &str {
@@ -63,11 +151,15 @@ impl PostgresStorageAdapter {
     }
 
     pub fn apply_migrations(&self) -> Result<(), StoreError> {
-        let mut client = self.connect()?;
+        let mut client = self.legacy_initialization_connection()?;
+        self.reject_access_schema_target(&mut client)?;
         for step in self.migration_plan().steps {
-            client.batch_execute(&step.sql).map_err(|error| {
-                StoreError::Backend(format!("apply migration {} failed: {error}", step.version))
-            })?;
+            if client.batch_execute(&step.sql).is_err() {
+                return Err(StoreError::Backend(format!(
+                    "apply migration {} failed",
+                    step.version
+                )));
+            }
         }
         Ok(())
     }
@@ -78,14 +170,16 @@ impl PostgresStorageAdapter {
     /// calling this operation. It is intentionally separate from additive
     /// migrations and is idempotent after its durable marker commits.
     pub fn apply_security_cutover(&self) -> Result<(), StoreError> {
-        let mut client = self.connect()?;
+        let mut client = self.legacy_initialization_connection()?;
+        self.reject_access_schema_target(&mut client)?;
         let plan = self.security_cutover_plan();
-        client.batch_execute(&plan.sql).map_err(|error| {
-            StoreError::Backend(format!(
-                "apply security cutover {} failed: {error}",
+        if client.batch_execute(&plan.sql).is_err() {
+            return Err(StoreError::Backend(format!(
+                "apply security cutover {} failed",
                 plan.version
-            ))
-        })
+            )));
+        }
+        Ok(())
     }
 
     pub fn inspect_schema_health(&self) -> Result<SchemaHealthFacts, StoreError> {
@@ -197,6 +291,24 @@ impl PostgresStorageAdapter {
             StoreError::Backend(format!("build postgres tls connector failed: {error}"))
         })?;
         Ok(MakeTlsConnector::new(connector))
+    }
+
+    fn reject_access_schema_target(&self, client: &mut Client) -> Result<(), StoreError> {
+        let has_access_state = client
+            .query_one(
+                "select exists (select 1 from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname=$1 and c.relname='access_state')",
+                &[&self.config.connection.schema_name],
+            )
+            .map_err(|_| {
+                StoreError::Backend("inspect postgres schema target failed".to_string())
+            })?
+            .get::<_, bool>(0);
+        if has_access_state {
+            return Err(StoreError::Backend(
+                "tenant access schema cannot use legacy migrations".to_string(),
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -379,6 +491,8 @@ impl DeviceSecurityTransactionRunner for PostgresStorageAdapter {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use embedded_idp_core::StoreError;
 
     use crate::{DbPoolConfig, PgConnectionConfig, PgStorageConfig, PgTlsMode};
@@ -410,6 +524,18 @@ mod tests {
             adapter.config().connection.connection_uri,
             "postgres://localhost:5432/embedded_idp"
         );
+    }
+
+    #[test]
+    fn adapter_construction_is_lazy_and_clones_share_a_pool_slot() {
+        let mut lazy_config = config();
+        lazy_config.connection.connection_uri = "postgres://%".to_string();
+        let adapter = PostgresStorageAdapter::new(lazy_config)
+            .expect("new should validate host config without connecting or parsing it");
+        let clone = adapter.clone();
+
+        assert!(Arc::ptr_eq(&adapter.pool, &clone.pool));
+        assert!(!format!("{adapter:?}").contains("postgres://%"));
     }
 
     #[test]

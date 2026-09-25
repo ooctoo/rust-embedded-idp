@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "outDir": "embedded/dist/types",
+    "rootDir": "embedded",
+    "types": ["vite/client"]
+  },
+  "include": ["embedded/index.ts", "embedded/auth.tsx", "embedded/client.ts"]
+}

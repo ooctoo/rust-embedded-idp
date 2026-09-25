@@ -8,9 +8,9 @@ security and device-proof documents; older v1 material is historical context
 unless a current document explicitly references it.
 
 This repository is an embeddable identity module plus a development/reference
-host. `embedded-idp-app` is not a production host. Do not treat its development
-subject header, empty JWKS behavior, or local security adapters as production
-defaults.
+host. `embedded-idp-app` is not a production host. Historical development
+subject headers, empty JWKS and local security adapters are not current
+reference-host behavior or production defaults.
 
 ## Crate boundaries
 
@@ -39,9 +39,9 @@ the primary module boundary.
 Preserve module-local route roots: `/auth`, `/devices`, `/admin`, `/oidc`, and
 `/.well-known/openid-configuration`. The embedding host owns any outer prefix.
 
-`embedded-idp-app` embeds `web/dist` at Rust compile time. Build the Web app
-before compiling the Rust reference host, and never commit generated `web/dist`
-or dependency directories.
+`embedded-idp-app` embeds `web/dist/management` at Rust compile time. Build the
+Web app before compiling the Rust reference host, and never commit generated
+`web/dist`, `web/embedded/dist` or dependency directories.
 
 ## Security and secrets
 
@@ -67,7 +67,7 @@ Live Postgres checks are optional and require an explicit
 `EMBEDDED_IDP_TEST_PG_CONNECTION_URI`:
 
 ```sh
-./scripts/run_live_postgres_checks.sh
+./scripts/run_live_postgres_checks.sh disabled
 ```
 
 Do not make ordinary offline tests depend on a live database.
