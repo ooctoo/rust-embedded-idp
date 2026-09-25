@@ -62,12 +62,14 @@ struct TestTokenIssuer;
 impl TokenIssuer for TestTokenIssuer {
     fn issue_session_tokens(
         &self,
+        tenant_id: &str,
         session_id: &str,
         account_id: &str,
         client_id: &str,
         refresh_token_version: u64,
         issued_at: SystemTime,
     ) -> Result<IssuedTokenBundle, TokenError> {
+        assert_eq!(tenant_id, "0");
         Ok(IssuedTokenBundle {
             access_token: SecretString::new(format!(
                 "access:{session_id}:{account_id}:{client_id}"

@@ -24,8 +24,19 @@ impl std::fmt::Debug for IssuedTokenBundle {
     }
 }
 
+/// Credential purpose is authenticated by the host's token adapter, never by a
+/// caller-supplied header. Management and business credentials are not interchangeable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AccessTokenPurpose {
+    Business,
+    Management,
+}
+
 #[derive(Clone, PartialEq, Eq)]
 pub struct ValidatedAccessToken {
+    pub purpose: AccessTokenPurpose,
+    /// Signed tenant identity; never inferred from a request header or default.
+    pub tenant_id: String,
     pub token: crate::SecretString,
     pub subject_account_id: String,
     pub session_id: String,
@@ -39,6 +50,8 @@ impl std::fmt::Debug for ValidatedAccessToken {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("ValidatedAccessToken")
+            .field("purpose", &self.purpose)
+            .field("tenant_id", &self.tenant_id)
             .field("token", &self.token)
             .field("subject_account_id", &self.subject_account_id)
             .field("session_id", &self.session_id)
@@ -59,9 +72,12 @@ pub enum TokenError {
     IssuerRejected(String),
 }
 
+/// Tenant is mandatory, including the explicit system/disabled domain `0`.
+/// The caller must authorize this tenant against current session state.
 pub trait TokenIssuer {
     fn issue_session_tokens(
         &self,
+        tenant_id: &str,
         session_id: &str,
         account_id: &str,
         client_id: &str,
@@ -89,6 +105,7 @@ impl std::fmt::Debug for IssuedAccessToken {
 pub trait AccessTokenIssuer {
     fn issue_access_token(
         &self,
+        tenant_id: &str,
         session_id: &str,
         account_id: &str,
         client_id: &str,
@@ -96,6 +113,39 @@ pub trait AccessTokenIssuer {
     ) -> Result<IssuedAccessToken, TokenError>;
 }
 
+/// Explicit delegated scope, used by OIDC and retained on refresh. Implementations
+/// must never replace this scope with their deployment default.
+pub trait ScopedAccessTokenIssuer: AccessTokenIssuer {
+    fn issue_scoped_access_token(
+        &self,
+        tenant_id: &str,
+        session_id: &str,
+        account_id: &str,
+        client_id: &str,
+        issued_at: SystemTime,
+        scope: &str,
+    ) -> Result<IssuedAccessToken, TokenError>;
+}
+/// RFC 6749 scope-token syntax; canonical sets have one space and stable order.
+pub fn normalize_oauth_scope(scope: &str) -> Result<String, TokenError> {
+    if scope.len() > 1024
+        || !scope.bytes().all(|b| {
+            b == b' ' || b == 0x21 || (0x23..=0x5b).contains(&b) || (0x5d..=0x7e).contains(&b)
+        })
+    {
+        return Err(TokenError::IssuerRejected("invalid OAuth scope".into()));
+    }
+    Ok(scope
+        .split(' ')
+        .filter(|s| !s.is_empty())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>()
+        .join(" "))
+}
+
+/// Validates cryptography and required identity claims. Hosts must additionally
+/// check current tenant, account, membership and session state before access.
 pub trait AccessTokenValidator {
     fn validate_access_token(
         &self,
@@ -106,6 +156,7 @@ pub trait AccessTokenValidator {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IdTokenClaims {
+    pub tenant_id: String,
     pub issuer: String,
     pub subject_account_id: String,
     pub audience: String,

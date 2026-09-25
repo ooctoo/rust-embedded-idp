@@ -1,5 +1,7 @@
 # Postgres Schema Design v1
 
+> 历史文档：早期无租户 PostgreSQL 设计。当前新部署使用 tenant_v2（crates/embedded-idp-storage-postgres/src/sql/tenant_v2.sql），不使用本文的无租户表集和默认 schema 作为新环境基线。
+
 ## Purpose
 
 This document defines the planned Postgres storage shape for `rust-embedded-idp` before concrete DDL is added.

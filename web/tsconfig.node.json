@@ -5,7 +5,13 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "allowSyntheticDefaultImports": true,
-    "types": ["node"]
+    "types": [
+      "node"
+    ]
   },
-  "include": ["vite.config.ts"]
+  "include": [
+    "vite.management.config.ts",
+    "vite.embedded.config.ts",
+    "vite.embedded-admin.config.ts"
+  ]
 }

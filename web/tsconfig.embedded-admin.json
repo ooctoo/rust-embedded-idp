@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "outDir": "embedded/dist/admin-types",
+    "rootDir": ".",
+    "types": ["vite/client"]
+  },
+  "include": ["embedded/admin.ts"]
+}

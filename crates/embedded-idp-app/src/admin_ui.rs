@@ -1,4 +1,4 @@
-use axum::extract::State;
+use axum::extract::{Path as AxumPath, State};
 use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE};
 use axum::http::{HeaderValue, StatusCode};
 use axum::response::Redirect;
@@ -6,27 +6,24 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::Router;
 
-const ADMIN_CONSOLE_INDEX: &str = include_str!("../../../web/dist/index.html");
-const ADMIN_CONSOLE_CSS: &str = include_str!("../../../web/dist/assets/admin-app.css");
-const ADMIN_CONSOLE_JS: &str = include_str!("../../../web/dist/assets/admin-app.js");
+include!(concat!(env!("OUT_DIR"), "/management_assets.rs"));
 
 #[derive(Clone)]
 struct AdminUiState {
-    static_prefix: String,
+    asset_prefix: String,
 }
 
 pub fn admin_console_router(base_path: &str) -> Router {
-    let static_prefix = if base_path == "/" {
-        "/static".to_string()
+    let asset_prefix = if base_path == "/" {
+        "/assets".to_string()
     } else {
-        format!("{base_path}/static")
+        format!("{base_path}/assets")
     };
     let state = AdminUiState {
-        static_prefix: static_prefix.clone(),
+        asset_prefix: asset_prefix.clone(),
     };
-    let router = Router::new()
-        .route(&format!("{static_prefix}/admin-app.css"), get(css))
-        .route(&format!("{static_prefix}/admin-app.js"), get(js));
+    let assets_route = format!("{asset_prefix}/*path");
+    let router = Router::new().route(&assets_route, get(asset));
 
     if base_path == "/" {
         router.route("/", get(index))
@@ -44,32 +41,53 @@ pub fn admin_console_router(base_path: &str) -> Router {
 }
 
 async fn index(State(state): State<AdminUiState>) -> Response {
-    static_response(
-        "text/html; charset=utf-8",
-        ADMIN_CONSOLE_INDEX
-            .replace(
-                "./assets/admin-app.js",
-                &format!("{}/admin-app.js", state.static_prefix),
-            )
-            .replace(
-                "./assets/admin-app.css",
-                &format!("{}/admin-app.css", state.static_prefix),
-            ),
-    )
+    let html = asset_bytes("index.html").expect("management distribution must contain index.html");
+    let html =
+        String::from_utf8_lossy(html).replace("./assets/", &format!("{}/", state.asset_prefix));
+    static_response("text/html; charset=utf-8", html.into_bytes())
 }
 
-async fn css() -> Response {
-    static_response("text/css; charset=utf-8", ADMIN_CONSOLE_CSS.to_string())
+async fn asset(AxumPath(path): AxumPath<String>) -> Response {
+    if !valid_asset_path(&path) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let Some(bytes) = asset_bytes(&format!("assets/{path}")) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    static_response(content_type(&path), bytes.to_vec())
 }
 
-async fn js() -> Response {
-    static_response(
-        "application/javascript; charset=utf-8",
-        ADMIN_CONSOLE_JS.to_string(),
-    )
+fn asset_bytes(path: &str) -> Option<&'static [u8]> {
+    MANAGEMENT_ASSETS
+        .iter()
+        .find_map(|(name, bytes)| (*name == path).then_some(*bytes))
 }
 
-fn static_response(content_type: &'static str, body: String) -> Response {
+fn valid_asset_path(path: &str) -> bool {
+    !path.is_empty()
+        && !path.starts_with('/')
+        && !path.contains('\\')
+        && path
+            .split('/')
+            .all(|segment| !segment.is_empty() && segment != "." && segment != "..")
+}
+
+fn content_type(path: &str) -> &'static str {
+    match path.rsplit('.').next() {
+        Some("css") => "text/css; charset=utf-8",
+        Some("js") => "application/javascript; charset=utf-8",
+        Some("json") => "application/json; charset=utf-8",
+        Some("svg") => "image/svg+xml",
+        Some("woff") => "font/woff",
+        Some("woff2") => "font/woff2",
+        Some("png") => "image/png",
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        _ => "application/octet-stream",
+    }
+}
+
+fn static_response(content_type: &'static str, body: Vec<u8>) -> Response {
     let mut response = (StatusCode::OK, body).into_response();
     response
         .headers_mut()
@@ -84,15 +102,17 @@ fn static_response(content_type: &'static str, body: String) -> Response {
 #[cfg(test)]
 mod tests {
     use axum::body::to_bytes;
+    use axum::body::Body;
     use axum::extract::State;
-    use axum::http::header::CONTENT_TYPE;
+    use axum::http::{header::CONTENT_TYPE, Request, StatusCode};
+    use tower::ServiceExt;
 
-    use super::{index, AdminUiState};
+    use super::{admin_console_router, index, valid_asset_path, AdminUiState, MANAGEMENT_ASSETS};
 
     #[tokio::test]
-    async fn index_serves_built_html_shell() {
+    async fn index_serves_management_html_with_hashed_assets() {
         let response = index(State(AdminUiState {
-            static_prefix: "/static".to_string(),
+            asset_prefix: "/assets".to_string(),
         }))
         .await;
 
@@ -109,7 +129,77 @@ mod tests {
             .expect("body should collect");
         let html = String::from_utf8(body.to_vec()).expect("body should be utf-8");
 
-        assert!(html.contains("Embedded IDP Admin"));
-        assert!(html.contains("/static/admin-app.js"));
+        assert!(html.contains("身份管理控制台"));
+        assert!(html.contains("/assets/index-"));
+        assert!(html.contains(".js"));
+        assert!(html.contains("/api"));
+    }
+
+    #[test]
+    fn asset_paths_reject_traversal() {
+        assert!(valid_asset_path("assets/index.js"));
+        assert!(!valid_asset_path("../index.html"));
+        assert!(!valid_asset_path("assets/../index.html"));
+        assert!(!valid_asset_path("assets\\index.js"));
+    }
+
+    #[tokio::test]
+    async fn router_serves_root_management_assets_and_rejects_unknown_paths() {
+        let app = admin_console_router("/");
+        let response = app
+            .clone()
+            .oneshot(Request::get("/").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let role_asset = MANAGEMENT_ASSETS
+            .iter()
+            .find(|(name, _)| name.starts_with("assets/roles-") && name.ends_with(".js"))
+            .expect("role chunk")
+            .0;
+        let response = app
+            .clone()
+            .oneshot(
+                Request::get(format!("/{role_asset}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let response = app
+            .oneshot(Request::get("/assets/nope.js").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn router_preserves_nested_base_redirect_and_assets() {
+        let app = admin_console_router("/admin");
+        let response = app
+            .clone()
+            .oneshot(Request::get("/admin").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::PERMANENT_REDIRECT);
+        assert_eq!(response.headers().get("location").unwrap(), "/admin/");
+
+        let entry_asset = MANAGEMENT_ASSETS
+            .iter()
+            .find(|(name, _)| name.starts_with("assets/index-") && name.ends_with(".js"))
+            .expect("entry chunk")
+            .0;
+        let response = app
+            .oneshot(
+                Request::get(format!("/admin/{entry_asset}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
     }
 }

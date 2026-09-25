@@ -1,6 +1,9 @@
 .env
 .env.*
 !.env.example
+!.env.disabled.example
+!.env.enabled.example
+.local/
 
 .cargo/
 target/

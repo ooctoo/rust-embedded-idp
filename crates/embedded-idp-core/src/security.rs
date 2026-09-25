@@ -35,7 +35,7 @@ pub struct DeviceProofProfile(String);
 impl DeviceProofProfile {
     pub fn new(value: impl Into<String>) -> Result<Self, SecurityContractError> {
         let value = value.into();
-        if value.is_empty()
+        if !value.ends_with("-V2")
             || value.len() > 64
             || !value.is_ascii()
             || value
@@ -75,6 +75,8 @@ impl CanonicalHttpMethod {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeviceRequestBinding {
+    /// Supplied by trusted tenant/session context, never inferred from proof headers.
+    pub tenant_id: String,
     pub profile: DeviceProofProfile,
     pub audience: String,
     pub method: CanonicalHttpMethod,
@@ -84,12 +86,15 @@ pub struct DeviceRequestBinding {
 
 impl DeviceRequestBinding {
     pub fn new(
+        tenant_id: impl Into<String>,
         profile: DeviceProofProfile,
         audience: impl Into<String>,
         method: CanonicalHttpMethod,
         external_path: impl Into<String>,
         body_sha256: [u8; 32],
     ) -> Result<Self, SecurityContractError> {
+        let tenant_id = tenant_id.into();
+        validate_proof_tenant(&tenant_id)?;
         let audience = audience.into();
         if !valid_line_value(&audience, 256) {
             return Err(SecurityContractError::InvalidAudience);
@@ -97,6 +102,7 @@ impl DeviceRequestBinding {
         let external_path = external_path.into();
         validate_external_path(&external_path)?;
         Ok(Self {
+            tenant_id,
             profile,
             audience,
             method,
@@ -151,6 +157,7 @@ impl DeviceProofPresentation {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VerifiedDeviceRequest {
+    pub tenant_id: String,
     pub account_id: String,
     pub device_id: DeviceId,
     pub key_id: String,
@@ -164,6 +171,7 @@ pub struct VerifiedDeviceRequest {
 pub enum SecurityContractError {
     InvalidPurpose,
     InvalidProfile,
+    InvalidTenantId,
     InvalidAudience,
     InvalidExternalPath,
     InvalidDeviceId,
@@ -222,28 +230,32 @@ pub fn decode_device_signature(signature: &str) -> Result<[u8; 64], SecurityCont
 }
 
 pub fn build_device_registration_proof_bytes(
+    tenant_id: &str,
     device_id: &str,
     key_id: &str,
     challenge: &str,
 ) -> Result<Vec<u8>, SecurityContractError> {
+    validate_proof_tenant(tenant_id)?;
     if !valid_line_value(device_id, 128) {
         return Err(SecurityContractError::InvalidDeviceId);
     }
     decode_fixed::<32>(key_id, 43).map_err(|_| SecurityContractError::InvalidKeyId)?;
     decode_fixed::<32>(challenge, 43).map_err(|_| SecurityContractError::InvalidChallenge)?;
     Ok(format!(
-        "EMBEDDED-IDP-DEVICE-REGISTRATION-V1\ndevice-id:{device_id}\nkey-id:{key_id}\nchallenge:{challenge}\n"
+        "EMBEDDED-IDP-DEVICE-REGISTRATION-V2\ntenant-id:{tenant_id}\ndevice-id:{device_id}\nkey-id:{key_id}\nchallenge:{challenge}\n"
     )
     .into_bytes())
 }
 
 pub fn build_device_key_rotation_proof_bytes(
+    tenant_id: &str,
     device_id: &str,
     old_key_id: &str,
     new_key_id: &str,
     new_key_version: u64,
     challenge: &str,
 ) -> Result<Vec<u8>, SecurityContractError> {
+    validate_proof_tenant(tenant_id)?;
     if !valid_line_value(device_id, 128) {
         return Err(SecurityContractError::InvalidDeviceId);
     }
@@ -254,7 +266,7 @@ pub fn build_device_key_rotation_proof_bytes(
     decode_fixed::<32>(new_key_id, 43).map_err(|_| SecurityContractError::InvalidKeyId)?;
     decode_fixed::<32>(challenge, 43).map_err(|_| SecurityContractError::InvalidChallenge)?;
     Ok(format!(
-        "EMBEDDED-IDP-DEVICE-KEY-ROTATION-V1\ndevice-id:{device_id}\nold-key-id:{old_key_id}\nnew-key-id:{new_key_id}\nnew-key-version:{new_key_version}\nchallenge:{challenge}\n"
+        "EMBEDDED-IDP-DEVICE-KEY-ROTATION-V2\ntenant-id:{tenant_id}\ndevice-id:{device_id}\nold-key-id:{old_key_id}\nnew-key-id:{new_key_id}\nnew-key-version:{new_key_version}\nchallenge:{challenge}\n"
     )
     .into_bytes())
 }
@@ -271,6 +283,12 @@ pub fn build_request_proof_bytes(
     binding: &DeviceRequestBinding,
     presentation: &DeviceProofPresentation,
 ) -> Result<Vec<u8>, SecurityContractError> {
+    // Fields are public for host composition; revalidate at the signing boundary.
+    validate_proof_tenant(&binding.tenant_id)?;
+    if !valid_line_value(&binding.audience, 256) {
+        return Err(SecurityContractError::InvalidAudience);
+    }
+    validate_external_path(&binding.external_path)?;
     presentation.validate()?;
     let signed_at = presentation
         .signed_at
@@ -279,8 +297,9 @@ pub fn build_request_proof_bytes(
         .as_secs();
     let body_digest = Base64UrlUnpadded::encode_string(&binding.body_sha256);
     Ok(format!(
-        "{}\naudience:{}\nmethod:{}\npath:{}\nbody-sha256:{}\nchallenge:{}\ndevice-id:{}\nkey-id:{}\nsigned-at:{}\n",
+        "{}\ntenant-id:{}\naudience:{}\nmethod:{}\npath:{}\nbody-sha256:{}\nchallenge:{}\ndevice-id:{}\nkey-id:{}\nsigned-at:{}\n",
         binding.profile.as_str(),
+        binding.tenant_id,
         binding.audience,
         binding.method.as_str(),
         binding.external_path,
@@ -296,6 +315,9 @@ pub fn build_request_proof_bytes(
 pub fn validate_external_path(path: &str) -> Result<(), SecurityContractError> {
     let invalid = !path.starts_with('/')
         || !path.is_ascii()
+        || path
+            .bytes()
+            .any(|byte| byte.is_ascii_whitespace() || byte.is_ascii_control())
         || path.contains('?')
         || path.contains('#')
         || path.contains('%')
@@ -308,6 +330,10 @@ pub fn validate_external_path(path: &str) -> Result<(), SecurityContractError> {
         return Err(SecurityContractError::InvalidExternalPath);
     }
     Ok(())
+}
+
+fn validate_proof_tenant(value: &str) -> Result<(), SecurityContractError> {
+    crate::access::validate_tenant_id(value).map_err(|_| SecurityContractError::InvalidTenantId)
 }
 
 fn valid_line_value(value: &str, max_len: usize) -> bool {
@@ -396,7 +422,8 @@ mod tests {
     #[test]
     fn request_bytes_match_frozen_field_order() {
         let binding = DeviceRequestBinding::new(
-            DeviceProofProfile::new("SUT-DEVICE-PROOF-V1").unwrap(),
+            "0",
+            DeviceProofProfile::new("SUT-DEVICE-PROOF-V2").unwrap(),
             "sut-api",
             CanonicalHttpMethod::Post,
             "/api/auth/refresh",
@@ -406,7 +433,9 @@ mod tests {
         let bytes = build_request_proof_bytes(&binding, &presentation()).unwrap();
         let text = String::from_utf8(bytes).unwrap();
 
-        assert!(text.starts_with("SUT-DEVICE-PROOF-V1\naudience:sut-api\nmethod:POST\n"));
+        assert!(
+            text.starts_with("SUT-DEVICE-PROOF-V2\ntenant-id:0\naudience:sut-api\nmethod:POST\n")
+        );
         assert!(text.contains("\npath:/api/auth/refresh\nbody-sha256:"));
         assert!(text.ends_with("signed-at:1700000000\n"));
     }
@@ -419,16 +448,17 @@ mod tests {
 
         assert_eq!(
             String::from_utf8(
-                build_device_registration_proof_bytes("device-1", &new_key, &challenge).unwrap()
+                build_device_registration_proof_bytes("0", "device-1", &new_key, &challenge).unwrap()
             )
             .unwrap(),
             format!(
-                "EMBEDDED-IDP-DEVICE-REGISTRATION-V1\ndevice-id:device-1\nkey-id:{new_key}\nchallenge:{challenge}\n"
+                "EMBEDDED-IDP-DEVICE-REGISTRATION-V2\ntenant-id:0\ndevice-id:device-1\nkey-id:{new_key}\nchallenge:{challenge}\n"
             )
         );
         assert_eq!(
             String::from_utf8(
                 build_device_key_rotation_proof_bytes(
+                    "0",
                     "device-1",
                     &old_key,
                     &new_key,
@@ -439,8 +469,83 @@ mod tests {
             )
             .unwrap(),
             format!(
-                "EMBEDDED-IDP-DEVICE-KEY-ROTATION-V1\ndevice-id:device-1\nold-key-id:{old_key}\nnew-key-id:{new_key}\nnew-key-version:2\nchallenge:{challenge}\n"
+                "EMBEDDED-IDP-DEVICE-KEY-ROTATION-V2\ntenant-id:0\ndevice-id:device-1\nold-key-id:{old_key}\nnew-key-id:{new_key}\nnew-key-version:2\nchallenge:{challenge}\n"
             )
+        );
+    }
+
+    #[test]
+    fn tenant_and_profile_validation_prevents_ambiguous_proof_bytes() {
+        for old in [
+            "SUT-DEVICE-PROOF-V1",
+            "EMBEDDED-IDP-DEVICE-REQUEST-V1",
+            "unversioned",
+        ] {
+            assert_eq!(
+                DeviceProofProfile::new(old),
+                Err(SecurityContractError::InvalidProfile)
+            );
+        }
+        let proof = presentation();
+        let profile = DeviceProofProfile::new("EMBEDDED-IDP-DEVICE-REQUEST-V2").unwrap();
+        for tenant in ["", "a/b", "t:1", "t\n1", "租户", &"a".repeat(129)] {
+            assert_eq!(
+                build_device_registration_proof_bytes(
+                    tenant,
+                    &proof.device_id,
+                    &proof.key_id,
+                    &proof.challenge
+                ),
+                Err(SecurityContractError::InvalidTenantId)
+            );
+            assert_eq!(
+                build_device_key_rotation_proof_bytes(
+                    tenant,
+                    &proof.device_id,
+                    &proof.key_id,
+                    &proof.key_id,
+                    2,
+                    &proof.challenge
+                ),
+                Err(SecurityContractError::InvalidTenantId)
+            );
+            assert_eq!(
+                DeviceRequestBinding::new(
+                    tenant,
+                    profile.clone(),
+                    "api",
+                    CanonicalHttpMethod::Get,
+                    "/reports",
+                    [0; 32]
+                ),
+                Err(SecurityContractError::InvalidTenantId)
+            );
+        }
+        let mut binding = DeviceRequestBinding::new(
+            "t1",
+            profile,
+            "api",
+            CanonicalHttpMethod::Get,
+            "/reports",
+            [0; 32],
+        )
+        .unwrap();
+        binding.tenant_id = "t1\naudience:other".into();
+        assert_eq!(
+            build_request_proof_bytes(&binding, &proof),
+            Err(SecurityContractError::InvalidTenantId)
+        );
+        binding.tenant_id = "t1".into();
+        binding.audience = "api\nmethod:POST".into();
+        assert_eq!(
+            build_request_proof_bytes(&binding, &proof),
+            Err(SecurityContractError::InvalidAudience)
+        );
+        binding.audience = "api".into();
+        binding.external_path = "/reports\nchallenge:other".into();
+        assert_eq!(
+            build_request_proof_bytes(&binding, &proof),
+            Err(SecurityContractError::InvalidExternalPath)
         );
     }
 

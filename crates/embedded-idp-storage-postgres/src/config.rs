@@ -90,9 +90,12 @@ pub enum PgStorageConfigError {
 }
 
 fn is_valid_schema_name(value: &str) -> bool {
-    value
-        .chars()
-        .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '_')
+    !value.is_empty()
+        && value.len() <= 63
+        && (value.as_bytes()[0].is_ascii_lowercase() || value.as_bytes()[0] == b'_')
+        && value
+            .chars()
+            .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '_')
 }
 
 #[cfg(test)]
@@ -164,6 +167,13 @@ mod tests {
             config.validate(),
             Err(PgStorageConfigError::InvalidSchemaName)
         );
+        for name in ["1tenant".to_string(), "a".repeat(64)] {
+            config.connection.schema_name = name;
+            assert_eq!(
+                config.validate(),
+                Err(PgStorageConfigError::InvalidSchemaName)
+            );
+        }
     }
 
     #[test]

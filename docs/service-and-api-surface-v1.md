@@ -1,5 +1,7 @@
 # Service and API Surface v1
 
+> 历史文档：早期单域 API 草图。当前租户感知服务和路由以 docs/host-integration-v1.md、实际代码及测试为准；本文件不能用作现行接口清单。
+
 ## Purpose
 
 This document defines the host-facing capability surface for `rust-embedded-idp`.

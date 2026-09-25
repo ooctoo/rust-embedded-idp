@@ -9,9 +9,10 @@ description = "Axum HTTP adapter for rust-embedded-idp"
 
 [dependencies]
 axum = { version = "0.7", default-features = false, features = ["form", "http1", "json", "original-uri", "query", "tokio"] }
+form_urlencoded = "1"
 base64ct = { version = "1", features = ["alloc"] }
-embedded-idp-email = { version = "0.2.0", path = "../embedded-idp-email" }
-embedded-idp-core = { version = "0.2.0", path = "../embedded-idp-core" }
+embedded-idp-email = { version = "1.0.0", path = "../embedded-idp-email" }
+embedded-idp-core = { version = "1.0.0", path = "../embedded-idp-core" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }
 sha2 = "0.10"

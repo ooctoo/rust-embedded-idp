@@ -105,6 +105,11 @@ where
         command: VerifyDeviceRequestCommand,
     ) -> Result<VerifiedDeviceRequest, DeviceRequestVerificationError> {
         validate_identifier(&command.account_id)?;
+        // This adapter still uses single-domain records; never authenticate a
+        // real tenant through storage that cannot enforce its ownership.
+        if command.binding.tenant_id != "0" {
+            return Err(DeviceRequestVerificationError::InvalidRequest);
+        }
         command
             .proof
             .validate()
@@ -186,6 +191,7 @@ where
                 }
 
                 Ok(VerifiedDeviceRequest {
+                    tenant_id: command.binding.tenant_id,
                     account_id: command.account_id,
                     device_id: device.id,
                     key_id: key.key_id,
@@ -371,7 +377,8 @@ mod tests {
             account_id: "account-1".to_string(),
             expected_purpose: DeviceProofPurpose::new("llm_invoke").unwrap(),
             binding: DeviceRequestBinding::new(
-                DeviceProofProfile::new("SUT-DEVICE-PROOF-V1").unwrap(),
+                "0",
+                DeviceProofProfile::new("SUT-DEVICE-PROOF-V2").unwrap(),
                 "sut-api",
                 CanonicalHttpMethod::Post,
                 "/api/llm/invoke",
@@ -444,6 +451,7 @@ mod tests {
 
         let verified = service.verify_device_request(command()).unwrap();
 
+        assert_eq!(verified.tenant_id, "0");
         assert_eq!(verified.account_id, "account-1");
         assert_eq!(verified.device_id, "device-1");
         assert_eq!(verified.key_version, 1);
@@ -460,6 +468,25 @@ mod tests {
             service.verify_device_request(command()),
             Err(DeviceRequestVerificationError::ReplayedProof)
         );
+    }
+
+    #[test]
+    fn single_domain_service_rejects_real_tenant_before_consuming_nonce() {
+        let service = service(true);
+        let mut request = command();
+        request.binding.tenant_id = "t1".into();
+        assert_eq!(
+            service.verify_device_request(request),
+            Err(DeviceRequestVerificationError::InvalidRequest)
+        );
+        assert!(service
+            .store_runner
+            .state
+            .lock()
+            .unwrap()
+            .challenge
+            .consumed_at
+            .is_none());
     }
 
     #[test]

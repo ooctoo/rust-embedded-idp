@@ -1,10 +1,16 @@
+mod access;
 mod adapter;
 mod config;
 mod migration;
 mod sql;
 mod transaction;
 
-pub use adapter::PostgresStorageAdapter;
+pub use access::{
+    AccessSchemaFacts, PostgresAccessAdminTransaction, PostgresAccessStore,
+    PostgresTenantAuthTransaction, PostgresTenantEmailVerificationTransaction,
+    ACCESS_SCHEMA_VERSION,
+};
+pub use adapter::{PgPooledConnection, PostgresStorageAdapter};
 pub use config::{
     DbPoolConfig, PgConnectionConfig, PgStorageConfig, PgStorageConfigError, PgTlsMode,
 };

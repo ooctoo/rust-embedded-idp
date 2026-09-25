@@ -3,23 +3,11 @@ set -euo pipefail
 umask 077
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-MODULE_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-ENV_FILE="${MODULE_ROOT}/.env"
-
-if [[ -f "${ENV_FILE}" ]]; then
-  set -a
-  # shellcheck disable=SC1090
-  source "${ENV_FILE}"
-  set +a
-else
-  echo "missing ${ENV_FILE}"
-  echo "copy ${MODULE_ROOT}/.env.example to ${ENV_FILE} and adjust values first"
-  exit 1
-fi
+source "${SCRIPT_DIR}/load_dev_env.sh"
+load_dev_env "${1:-}"
 
 ISSUER="${EMBEDDED_IDP_APP_ISSUER:-http://127.0.0.1:9100}"
 ADMIN_UI_BASE_PATH="${EMBEDDED_IDP_APP_ADMIN_UI_BASE_PATH:-/}"
-ADMIN_KEY="${EMBEDDED_IDP_APP_ADMIN_API_KEY:-}"
 
 normalize_base_path() {
   local value="${1:-/}"
@@ -33,36 +21,39 @@ normalize_base_path() {
 }
 
 UI_BASE_PATH="$(normalize_base_path "${ADMIN_UI_BASE_PATH}")"
-STATIC_BASE_PATH="${UI_BASE_PATH%/}/static"
 TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/embedded-idp-smoke.XXXXXX")"
 trap 'rm -rf -- "${TEMP_DIR}"' EXIT
-UNAUTHORIZED_OUTPUT="${TEMP_DIR}/admin-unauth.json"
-AUTHORIZED_OUTPUT="${TEMP_DIR}/admin-auth.json"
+INDEX_OUTPUT="${TEMP_DIR}/index.html"
 
 echo "smoke check issuer: ${ISSUER}"
 echo "smoke check admin ui path: ${UI_BASE_PATH}"
-echo "smoke check static path: ${STATIC_BASE_PATH}"
 
-curl -fsS "${ISSUER}${UI_BASE_PATH}" >/dev/null
+curl -fsS "${ISSUER}${UI_BASE_PATH}" -o "${INDEX_OUTPUT}"
 echo "ok: admin ui shell"
 
-curl -fsS "${ISSUER}${STATIC_BASE_PATH}/admin-app.js" >/dev/null
-echo "ok: admin static js"
+asset_path="$(sed -nE 's/.*(assets\/[^" ]+\.(js|css)).*/\1/p' "${INDEX_OUTPUT}" | head -n 1)"
+if [[ -z "${asset_path}" ]]; then
+  echo "admin ui shell did not reference a JS or CSS asset"
+  exit 1
+fi
+curl -fsS "${ISSUER}${UI_BASE_PATH}${asset_path}" >/dev/null
+echo "ok: admin management asset"
 
-unauthorized_status="$(curl -s -o "${UNAUTHORIZED_OUTPUT}" -w '%{http_code}' "${ISSUER}/api/admin/accounts?limit=1")"
+curl -fsS "${ISSUER}/healthz" >/dev/null
+echo "ok: healthz"
+
+curl -fsS "${ISSUER}/readyz" >/dev/null
+echo "ok: readyz"
+
+curl -fsS "${ISSUER}/auth/access/capabilities" >/dev/null
+echo "ok: public login capabilities"
+
+curl -fsS "${ISSUER}/api/admin/auth/capabilities" >/dev/null
+echo "ok: management login capabilities"
+
+unauthorized_status="$(curl -s -o /dev/null -w '%{http_code}' "${ISSUER}/api/admin/accounts?limit=1")"
 if [[ "${unauthorized_status}" != "401" ]]; then
   echo "expected 401 from unauthenticated admin API, got ${unauthorized_status}"
   exit 1
 fi
-echo "ok: admin api rejects missing key"
-
-if [[ -n "${ADMIN_KEY}" ]]; then
-  authorized_status="$(curl -s -o "${AUTHORIZED_OUTPUT}" -w '%{http_code}' -H "x-embedded-idp-admin-key: ${ADMIN_KEY}" "${ISSUER}/api/admin/accounts?limit=1")"
-  if [[ "${authorized_status}" != "200" ]]; then
-    echo "expected 200 from authenticated admin API, got ${authorized_status}"
-    exit 1
-  fi
-  echo "ok: admin api accepts configured key"
-else
-  echo "skip: EMBEDDED_IDP_APP_ADMIN_API_KEY not set"
-fi
+echo "ok: management api rejects unauthenticated request"

@@ -419,3 +419,49 @@ The upstream work is complete only when the module owns every identity-state
 mutation atomically, SUT owns no duplicate identity state machine, production
 tokens and proofs are cryptographically verifiable, raw refresh tokens are
 absent from persistence, and all rejection and concurrency tests pass.
+
+
+## Tenant proof protocol cutover (P3)
+
+The tenant design §13.5 supersedes the original device-proof byte format. Registration
+and key rotation use `EMBEDDED-IDP-DEVICE-REGISTRATION-V2` and
+`EMBEDDED-IDP-DEVICE-KEY-ROTATION-V2`; requests use
+`EMBEDDED-IDP-DEVICE-REQUEST-V2` or a configured custom profile ending in `-V2`.
+All formats put `tenant-id:<tenant_id>` immediately after the separator and retain
+the terminal newline. Old or unversioned profiles are rejected; no fallback or
+migration path is provided.
+
+`DeviceRequestBinding::new` now requires tenant as its first argument.
+`ProtectedRouteConfig::binding_for_request` also requires an explicit trusted tenant;
+headers/URI do not choose it. `VerifyDeviceRequestCommand` carries that tenant in its
+binding, and `VerifiedDeviceRequest` returns it. Registration/rotation byte builders
+also require tenant explicitly. Builders revalidate public binding fields before
+producing bytes, rejecting malformed tenants and line injection.
+
+Current single-domain device/refresh services explicitly use `0`. Request verification
+and proof-bound refresh reject real tenants before storage or nonce consumption.
+The separate `access` tenant services now implement device persistence,
+provisioning/activation, rotation, atomic first binding with proof login, and tenant
+refresh rotation/reuse transactions. Full HTTP integration remains pending; Enabled reference-host
+startup remains blocked. See the current [execution plan](tenant-access-execution-plan.md).
+
+Password login, tenant selection, tenant proof-bound refresh and code exchange use `EMBEDDED-IDP-DEVICE-AUTH-V2` with the
+ordinary request fields followed by `credential-sha256:<base64url>\n`. Core derives
+that digest from actual credentials and trusted client/login entry. This covers
+selection credentials carried in Authorization headers as well as the raw-body
+hash, preventing proof transplantation to a different valid ticket or refresh token. Exact context
+serialization and helpers are in the [tenant design §13.5](tenant-role-permission-design-v1.md#135-设备证明与租户绑定).
+
+Shared frozen vectors are in
+[`tenant_device_proof_v2.json`](../crates/embedded-idp-security/tests/fixtures/tenant_device_proof_v2.json).
+Rust uses the production Ring verifier and Node uses its built-in crypto module to
+check identical bytes, SHA-256 and deterministic Ed25519 signatures for registration,
+rotation, refresh, a bodyless request, a custom profile in domain `0`, password login
+and tenant selection, plus credential-bound tenant refresh and authorization-code exchange (nine vectors). Fixtures use
+an explicitly public synthetic seed. Both checks reject changed/missing tenants,
+old-format bytes and missing terminal newlines. CI runs both:
+
+```sh
+node scripts/test_device_proof_vectors.mjs
+cargo test -p embedded-idp-security --test tenant_device_proof_v2 --locked
+```

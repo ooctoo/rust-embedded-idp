@@ -1,5 +1,7 @@
 # Module Architecture v1
 
+> 历史文档：早期架构草图。当前 crate 边界和部署方式见 README 与 docs/overview.md；本文提到的在线迁移/旧路由装配不作为现行接入说明。
+
 ## Workspace Shape
 
 ```text

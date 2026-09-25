@@ -728,7 +728,7 @@ fn proof_bound_refresh_state() -> EmbeddedIdpHttpState {
     state.refresh_security = RefreshHttpSecurity::ProofBound(ProofBoundRefreshHttpConfig::new(
         Arc::new(ReuseProofBoundRefreshService),
         ProtectedRouteConfig::new(
-            DeviceProofProfile::new("SUT-DEVICE-PROOF-V1").unwrap(),
+            DeviceProofProfile::new("SUT-DEVICE-PROOF-V2").unwrap(),
             "sut-api",
             CanonicalHttpMethod::Post,
             "/auth/refresh",
@@ -988,7 +988,7 @@ async fn device_complete_and_bind_handlers_use_fixed_paths() {
     let bind_request = Request::builder()
         .uri("/devices/bind")
         .method("POST")
-        .extension(AuthenticatedSubject::new("acct-1"))
+        .extension(AuthenticatedSubject::new("0", "acct-1"))
         .header("content-type", "application/json")
         .body(Body::from(r#"{"device_id":"dev-1"}"#))
         .unwrap();
@@ -1010,7 +1010,7 @@ async fn device_query_and_management_handlers_use_fixed_paths() {
     let list_request = Request::builder()
         .uri("/devices")
         .method("GET")
-        .extension(AuthenticatedSubject::new("acct-1"))
+        .extension(AuthenticatedSubject::new("0", "acct-1"))
         .body(Body::empty())
         .unwrap();
     let list_response = app.clone().oneshot(list_request).await.unwrap();
@@ -1024,7 +1024,7 @@ async fn device_query_and_management_handlers_use_fixed_paths() {
     let get_request = Request::builder()
         .uri("/devices/dev-1")
         .method("GET")
-        .extension(AuthenticatedSubject::new("acct-1"))
+        .extension(AuthenticatedSubject::new("0", "acct-1"))
         .body(Body::empty())
         .unwrap();
     let get_response = app.clone().oneshot(get_request).await.unwrap();
@@ -1038,7 +1038,7 @@ async fn device_query_and_management_handlers_use_fixed_paths() {
     let unbind_request = Request::builder()
         .uri("/devices/unbind")
         .method("POST")
-        .extension(AuthenticatedSubject::new("acct-1"))
+        .extension(AuthenticatedSubject::new("0", "acct-1"))
         .header("content-type", "application/json")
         .body(Body::from(r#"{"device_id":"dev-1"}"#))
         .unwrap();
@@ -1086,7 +1086,7 @@ async fn authorize_handler_uses_fixed_oidc_path() {
     let request = Request::builder()
         .uri("/oidc/authorize?response_type=code&client_id=desktop-app&redirect_uri=http://127.0.0.1:49152/callback&state=state-1")
         .method("GET")
-        .extension(AuthenticatedSubject::new("acct-1"))
+        .extension(AuthenticatedSubject::new("0", "acct-1"))
         .body(Body::empty())
         .unwrap();
 
@@ -1316,7 +1316,7 @@ async fn device_key_rotation_requires_authenticated_account_context() {
         .uri("/devices/rotate-key")
         .method("POST")
         .header("content-type", "application/json")
-        .extension(AuthenticatedSubject::new("acct-1"))
+        .extension(AuthenticatedSubject::new("0", "acct-1"))
         .body(Body::from(body))
         .unwrap();
     let response = app.oneshot(authenticated).await.unwrap();
@@ -1498,7 +1498,7 @@ async fn subject_router_exposes_subject_bound_endpoints() {
     let list_request = Request::builder()
         .uri("/devices")
         .method("GET")
-        .extension(AuthenticatedSubject::new("acct-1"))
+        .extension(AuthenticatedSubject::new("0", "acct-1"))
         .body(Body::empty())
         .unwrap();
     let list_response = app.clone().oneshot(list_request).await.unwrap();
@@ -1507,7 +1507,7 @@ async fn subject_router_exposes_subject_bound_endpoints() {
     let authorize_request = Request::builder()
         .uri("/oidc/authorize?response_type=code&client_id=desktop-app&redirect_uri=http://127.0.0.1:49152/callback&state=state-1")
         .method("GET")
-        .extension(AuthenticatedSubject::new("acct-1"))
+        .extension(AuthenticatedSubject::new("0", "acct-1"))
         .body(Body::empty())
         .unwrap();
     let authorize_response = app.clone().oneshot(authorize_request).await.unwrap();
@@ -1523,6 +1523,35 @@ async fn subject_router_exposes_subject_bound_endpoints() {
         .unwrap();
     let token_response = app.oneshot(token_request).await.unwrap();
     assert_eq!(token_response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn subject_router_rejects_nonzero_legacy_tenant_context() {
+    let app = subject_router(test_state(Arc::new(HappyAuthService)));
+    let request = Request::builder()
+        .uri("/devices")
+        .method("GET")
+        .extension(AuthenticatedSubject::new("tenant-a", "acct-1"))
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["code"], "unsupported_tenant");
+
+    let app = subject_router(test_state(Arc::new(HappyAuthService)));
+    let authorize = Request::builder()
+        .uri("/oidc/authorize?response_type=code&client_id=desktop-app&redirect_uri=http://127.0.0.1:49152/callback")
+        .method("GET")
+        .extension(AuthenticatedSubject::new("tenant-a", "acct-1"))
+        .body(Body::empty())
+        .unwrap();
+    assert_eq!(
+        app.oneshot(authorize).await.unwrap().status(),
+        StatusCode::UNAUTHORIZED
+    );
 }
 
 #[tokio::test]

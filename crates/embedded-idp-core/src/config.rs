@@ -31,7 +31,7 @@ pub struct AuthConfig {
 }
 
 impl AuthConfig {
-    fn validate(&self) -> Result<(), ConfigValidationError> {
+    pub(crate) fn validate(&self) -> Result<(), ConfigValidationError> {
         if self.access_token_ttl_secs == 0 {
             return Err(ConfigValidationError::AccessTokenTtlMustBePositive);
         }
@@ -92,7 +92,7 @@ pub struct OidcConfig {
 }
 
 impl OidcConfig {
-    fn validate(&self) -> Result<(), ConfigValidationError> {
+    pub(crate) fn validate(&self) -> Result<(), ConfigValidationError> {
         if self.authorization_code_ttl_secs == 0 {
             return Err(ConfigValidationError::AuthorizationCodeTtlMustBePositive);
         }
@@ -121,7 +121,7 @@ pub enum ConfigValidationError {
     AuthorizationCodeTtlTooLarge,
 }
 
-fn is_supported_issuer(value: &str) -> bool {
+pub(crate) fn is_supported_issuer(value: &str) -> bool {
     value.starts_with("https://")
         || value.starts_with("http://localhost")
         || value.starts_with("http://127.0.0.1")

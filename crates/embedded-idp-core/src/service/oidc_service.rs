@@ -16,6 +16,8 @@ use crate::{
 use super::auth_support::{map_account_status_conflict, require_active_account_status};
 use super::{auth, client_auth, ServiceError};
 
+/// Currently uses the single-domain persistence contracts and only domain `0`.
+/// Do not mount this service for Enabled tenancy before the tenant storage cutover.
 pub struct CoreOidcService<S, T, J, C, K, I> {
     issuer: String,
     auth_config: AuthConfig,
@@ -175,6 +177,7 @@ where
                 ))?;
                 let tokens = token_issuer
                     .issue_session_tokens(
+                        crate::access::SYSTEM_TENANT_ID,
                         &session.id,
                         &account.id,
                         &client.client_id,
@@ -187,6 +190,7 @@ where
                     Some(
                         id_token_issuer
                             .issue_id_token(&IdTokenClaims {
+                                tenant_id: crate::access::SYSTEM_TENANT_ID.to_owned(),
                                 issuer: issuer.clone(),
                                 subject_account_id: account.id.clone(),
                                 audience: client.client_id.clone(),
@@ -329,13 +333,7 @@ fn validate_pkce_on_exchange(
             let method = code
                 .code_challenge_method
                 .unwrap_or(PkceChallengeMethod::Plain);
-            let matches = match method {
-                PkceChallengeMethod::Plain => code_verifier == code_challenge,
-                PkceChallengeMethod::S256 => {
-                    Base64UrlUnpadded::encode_string(&Sha256::digest(code_verifier.as_bytes()))
-                        == code_challenge
-                }
-            };
+            let matches = pkce_matches(method, code_challenge, code_verifier);
             if matches {
                 Ok(())
             } else {
@@ -346,6 +344,15 @@ fn validate_pkce_on_exchange(
             Err(StoreError::Conflict("authorization_code.pkce_required"))
         }
         None => Ok(()),
+    }
+}
+
+pub(crate) fn pkce_matches(method: PkceChallengeMethod, challenge: &str, verifier: &str) -> bool {
+    match method {
+        PkceChallengeMethod::Plain => verifier == challenge,
+        PkceChallengeMethod::S256 => {
+            Base64UrlUnpadded::encode_string(&Sha256::digest(verifier.as_bytes())) == challenge
+        }
     }
 }
 
@@ -482,12 +489,14 @@ mod tests {
     impl TokenIssuer for TestTokenIssuer {
         fn issue_session_tokens(
             &self,
+            tenant_id: &str,
             session_id: &str,
             account_id: &str,
             client_id: &str,
             refresh_token_version: u64,
             issued_at: SystemTime,
         ) -> Result<IssuedTokenBundle, TokenError> {
+            assert_eq!(tenant_id, "0");
             Ok(IssuedTokenBundle {
                 access_token: crate::SecretString::new(format!(
                     "access:{session_id}:{account_id}:{client_id}"

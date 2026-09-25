@@ -20,6 +20,8 @@ use super::{
     ServiceError,
 };
 
+/// Currently uses the single-domain persistence contracts and only domain `0`.
+/// Do not mount this service for Enabled tenancy before the tenant storage cutover.
 pub struct CoreAuthService<S, T, K, I, V> {
     config: AuthConfig,
     store_runner: S,
@@ -145,6 +147,7 @@ where
                 ))?;
                 let tokens = token_issuer
                     .issue_session_tokens(
+                        crate::access::SYSTEM_TENANT_ID,
                         &session.id,
                         &account.id,
                         &client.client_id,
@@ -219,6 +222,7 @@ where
                 ))?;
                 let tokens = token_issuer
                     .issue_session_tokens(
+                        crate::access::SYSTEM_TENANT_ID,
                         &session.id,
                         &account.id,
                         &client.client_id,
@@ -316,6 +320,7 @@ where
                 tx.revoke_refresh_token(&token_digest, RefreshTokenRevocationReason::Rotated, now)?;
                 let tokens = token_issuer
                     .issue_session_tokens(
+                        crate::access::SYSTEM_TENANT_ID,
                         &session.id,
                         &session.account_id,
                         &session.client_id,
@@ -610,12 +615,14 @@ mod tests {
     impl TokenIssuer for TestTokenIssuer {
         fn issue_session_tokens(
             &self,
+            tenant_id: &str,
             session_id: &str,
             _account_id: &str,
             _client_id: &str,
             refresh_token_version: u64,
             issued_at: SystemTime,
         ) -> Result<IssuedTokenBundle, TokenError> {
+            assert_eq!(tenant_id, "0");
             Ok(IssuedTokenBundle {
                 access_token: crate::SecretString::new(format!("access-{session_id}")),
                 refresh_token: crate::SecretString::new(format!(

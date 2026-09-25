@@ -1,0 +1,5 @@
+.embedded-idp-permission-directory { min-width: 0; }
+.embedded-idp-permission-directory .ant-card-body { padding: 24px; }
+.embedded-idp-permission-directory .management-filter { row-gap: 16px; margin-bottom: 24px; }
+.embedded-idp-permission-directory .management-pagination { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 20px; }
+.embedded-idp-permission-overlay { overflow-wrap: anywhere; }

@@ -1,9 +1,10 @@
+use embedded_idp_core::access::{PermissionCatalog, TenancyMode};
 use std::env;
 
 use embedded_idp_storage_postgres::{
     DbPoolConfig, PgConnectionConfig, PgStorageConfig, PgTlsMode, PostgresStorageAdapter,
 };
-use postgres::{Client, NoTls};
+use postgres::Client;
 
 fn main() {
     if let Err(error) = run() {
@@ -13,23 +14,38 @@ fn main() {
 }
 
 fn run() -> Result<(), String> {
-    let mut args = env::args().skip(1);
+    let mut args = env::args().skip(1).peekable();
+    let schema_only = args.peek().is_some_and(|value| value == "--schema-only");
+    let access_schema = args.peek().is_some_and(|value| value == "--access-schema");
+    if schema_only || access_schema {
+        args.next();
+    }
     let connection_uri = args
         .next()
-        .ok_or_else(|| usage("missing <postgres-connection-uri> argument"))?;
-    let schema_name = args.next().unwrap_or_else(|| "embedded_idp".to_string());
+        .or_else(|| env::var("EMBEDDED_IDP_APP_PG_URI").ok())
+        .ok_or_else(|| usage("missing connection URI argument or EMBEDDED_IDP_APP_PG_URI"))?;
+    let schema_name = args
+        .next()
+        .or_else(|| env::var("EMBEDDED_IDP_APP_PG_SCHEMA").ok())
+        .unwrap_or_else(|| "embedded_idp".to_string());
     let client_id = args.next().unwrap_or_else(|| "desktop-app".to_string());
 
     if args.next().is_some() {
         return Err(usage("received unexpected extra arguments"));
     }
 
+    let tls_mode = match env::var("EMBEDDED_IDP_APP_PG_TLS_MODE").as_deref() {
+        Ok("require") => PgTlsMode::Require,
+        Ok("prefer") => PgTlsMode::Prefer,
+        Ok("disable") | Err(env::VarError::NotPresent) => PgTlsMode::Disable,
+        _ => return Err("invalid EMBEDDED_IDP_APP_PG_TLS_MODE".to_string()),
+    };
     let adapter = PostgresStorageAdapter::new(PgStorageConfig {
         connection: PgConnectionConfig {
-            connection_uri: connection_uri.clone(),
+            connection_uri,
             schema_name: schema_name.clone(),
-            tls_mode: PgTlsMode::Disable,
-            tls_ca_cert_path: None,
+            tls_mode,
+            tls_ca_cert_path: env::var("EMBEDDED_IDP_APP_PG_TLS_CA_CERT_PATH").ok(),
         },
         pool: DbPoolConfig {
             application_name: "embedded-idp-bootstrap".to_string(),
@@ -39,13 +55,37 @@ fn run() -> Result<(), String> {
     })
     .map_err(|error| format!("invalid postgres config: {error:?}"))?;
 
-    let mut client = Client::connect(&connection_uri, NoTls)
-        .map_err(|error| format!("failed to connect postgres bootstrap client: {error:?}"))?;
-    for step in adapter.migration_plan().steps {
-        client
-            .batch_execute(&step.sql)
-            .map_err(|error| format!("failed to apply migration {}: {error:?}", step.version))?;
+    if access_schema {
+        let mode = match env::var("EMBEDDED_IDP_APP_TENANCY_MODE").as_deref() {
+            Ok("disabled") => TenancyMode::Disabled,
+            Ok("enabled") => TenancyMode::Enabled,
+            _ => return Err("explicit EMBEDDED_IDP_APP_TENANCY_MODE is required".into()),
+        };
+        let catalog = PermissionCatalog::new(vec![]).map_err(|_| "invalid permission catalog")?;
+        let facts = adapter
+            .initialize_access_schema(mode, &catalog)
+            .map_err(|error| format!("access schema initialization failed: {error:?}"))?;
+        println!(
+            "prepared {schema_name} version {}; administrator bootstrap complete: {}",
+            facts.version, facts.bootstrap_completed
+        );
+        return Ok(());
     }
+    if schema_only {
+        adapter
+            .connect()
+            .map_err(|error| format!("postgres connection failed: {error:?}"))?
+            .batch_execute(&format!("create schema if not exists \"{schema_name}\""))
+            .map_err(|error| format!("failed to prepare schema: {error}"))?;
+        println!("prepared schema {schema_name}; no application tables or seed data created");
+        return Ok(());
+    }
+    adapter
+        .apply_migrations()
+        .map_err(|error| format!("legacy initialization failed: {error:?}"))?;
+    let mut client = adapter
+        .connect()
+        .map_err(|error| format!("postgres connection failed: {error:?}"))?;
 
     seed_default_desktop_client(&mut client, &schema_name, &client_id)?;
 
@@ -95,6 +135,6 @@ fn seed_default_desktop_client(
 
 fn usage(reason: &str) -> String {
     format!(
-        "{reason}\nusage: cargo run -p embedded-idp-storage-postgres --example bootstrap_local_postgres -- <postgres-connection-uri> [schema-name] [client-id]"
+        "{reason}\nusage: cargo run -p embedded-idp-storage-postgres --example bootstrap_local_postgres -- [--schema-only|--access-schema] [postgres-connection-uri] [schema-name] [client-id]\nConnection URI and schema may also come from EMBEDDED_IDP_APP_PG_URI and EMBEDDED_IDP_APP_PG_SCHEMA."
     )
 }

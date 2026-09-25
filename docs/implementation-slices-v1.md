@@ -1,5 +1,7 @@
 # Implementation Slices v1
 
+> 历史文档：早期实施切片记录。当前进度和剩余工作以 docs/tenant-access-execution-plan.md 开头的交付边界为准。
+
 ## Slice 1
 
 - define core configuration
