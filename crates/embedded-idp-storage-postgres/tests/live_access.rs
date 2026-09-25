@@ -148,7 +148,7 @@ impl Drop for Db {
 
 #[test]
 #[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
-fn access_initialization_is_atomic_idempotent_and_rejects_other_modes_or_legacy() {
+fn access_initialization_is_atomic_idempotent_and_allows_host_tables() {
     for mode in [TenancyMode::Disabled, TenancyMode::Enabled] {
         let db = Db::new(mode);
         assert!(PostgresAccessStore::new(db.adapter.clone(), mode).is_err());
@@ -201,19 +201,58 @@ fn access_initialization_is_atomic_idempotent_and_rejects_other_modes_or_legacy(
         }
     }
     let db = Db::new(TenancyMode::Enabled);
-    // Own temporary schema only: simulate an occupied legacy namespace.
+    // A host-owned table may coexist with IdP tables in the same schema.
     let mut c = db.adapter.connect().unwrap();
     c.batch_execute(&format!("drop schema {0} cascade; create schema {0}; create table {0}.legacy_data(id int); insert into {0}.legacy_data values(7)",db.schema())).unwrap();
-    assert!(db
+    let facts = db
         .adapter
         .initialize_access_schema(TenancyMode::Enabled, &catalog())
-        .is_err());
+        .unwrap();
+    assert!(!facts.bootstrap_completed);
     assert_eq!(
         c.query_one(&format!("select id from {}.legacy_data", db.schema()), &[])
             .unwrap()
             .get::<_, i32>(0),
         7
     );
+    // A conflicting IdP table must fail before creating any of the others.
+    c.batch_execute(&format!("drop schema {0} cascade; create schema {0}; create table {0}.legacy_data(id int); create table {0}.accounts(id int)",db.schema())).unwrap();
+    assert!(matches!(
+        db.adapter
+            .initialize_access_schema(TenancyMode::Enabled, &catalog()),
+        Err(embedded_idp_core::StoreError::Conflict(
+            "access.schema_object_conflict"
+        ))
+    ));
+    assert!(c
+        .query_one(
+            "select to_regclass($1) is null",
+            &[&format!("{}.access_tenants", db.schema())]
+        )
+        .unwrap()
+        .get::<_, bool>(0));
+    assert!(c
+        .query_one(
+            &format!("select count(*) from {}.accounts", db.schema()),
+            &[]
+        )
+        .is_ok());
+    // Non-table name collisions are also rolled back by PostgreSQL.
+    c.batch_execute(&format!("drop schema {0} cascade; create schema {0}; create table {0}.legacy_data(id int); create index access_memberships_by_account on {0}.legacy_data(id)",db.schema())).unwrap();
+    assert!(matches!(
+        db.adapter
+            .initialize_access_schema(TenancyMode::Enabled, &catalog()),
+        Err(embedded_idp_core::StoreError::Conflict(
+            "access.schema_object_conflict"
+        ))
+    ));
+    assert!(c
+        .query_one(
+            "select to_regclass($1) is null",
+            &[&format!("{}.access_state", db.schema())]
+        )
+        .unwrap()
+        .get::<_, bool>(0));
 }
 
 #[test]

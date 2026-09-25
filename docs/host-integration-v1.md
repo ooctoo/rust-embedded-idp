@@ -30,8 +30,9 @@ reference-process integration tests in `live_reference_host.rs`.
 The older single-domain composition examples below describe the legacy crate
 surface, not the current reference executable. Use the tenant-aware sections and
 the reference composition when implementing new hosts; no old-token or schema
-compatibility layer is installed. A real business-resource host example,
-embedded device self-service UI and performance acceptance remain separate work.
+compatibility layer is installed. A minimal, independent [no-tenant host example](../examples/no-tenant-host/README.md)
+now demonstrates an actual business-resource check. Embedded device self-service
+UI and performance acceptance remain separate work.
 
 ## Historical v1 composition example (not the current integration contract)
 
@@ -64,9 +65,11 @@ The host application owns:
 The module supports two composition shapes. In an independent deployment, one
 IdP service owns the management surface, public IdP API, and one IdP database.
 In an embedded deployment, the management service and the host's IdP-facing
-API are separate services, but they share the same IdP database; the host's
-business database remains separate and may be on the same PostgreSQL instance
-or on another server.
+API are separate services, but they share the same IdP database and schema.
+The host owns its business tables and may place them in the same schema, a
+different schema in that database, or a separate database. Shared-schema
+initialization preserves unrelated host objects and rejects conflicting IdP
+object names atomically; it does not migrate legacy IdP tables in place.
 
 These shapes do not imply two copies of the IdP schema. The existing route
 groups are exposure boundaries, not database boundaries. The reference app's
@@ -81,7 +84,11 @@ to the same authoritative IdP database. Legacy initialization scripts use a
 dedicated connection because they own session locks and transaction statements;
 online transactions and new Access operations use the pool.
 
-For the new schema, the offline host first calls `initialize_access_schema`,
+The host reads its own runtime configuration (including database URI, schema,
+TLS, pool, issuer, signing keys and client policy) and injects typed values;
+`EMBEDDED_IDP_APP_*` names belong to the reference app, not the module API.
+The same database configuration is needed by offline initialization and each
+running process. The offline host first calls `initialize_access_schema`,
 then `CoreAccessBootstrapService::initialize` using that adapter. The host supplies
 an explicitly selected, active `Account` with a validated identity and a securely
 hashed credential; Core supplies the server timestamp and generated role/binding/audit
@@ -126,7 +133,7 @@ flows described in the companion [tenant and access design](./tenant-role-permis
 are provided by the tenant-aware integration surface described later in this document. The first Core Access
 models, matching rules, read services and transactional management services exist,
 with PostgreSQL Access reads, atomic registration, transactional management,
-offline administrator bootstrap and explicit fresh-schema initialization available.
+offline administrator bootstrap and explicit conflict-checked initialization available.
 Tenant lifecycle and explicit catalog synchronization are implemented through
 `CoreAccessAdminService`; HTTP and identity flow integration are connected in the reference host (see the [execution plan](./tenant-access-execution-plan.md)). The reference host now uses production cryptographic adapters, but production operational controls remain host-owned.
 

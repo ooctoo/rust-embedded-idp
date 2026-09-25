@@ -27,9 +27,10 @@ load `.env` and then `.env.<mode>`; the mode file overrides shared settings.
 They require an explicit mode so the mode and schema cannot be selected by an
 incoming request.
 
-`db-init` creates a fresh Access schema with its selected mode, or validates an
-already prepared matching schema without changing its data. It refuses an
-occupied legacy or incompatible schema. `bootstrap-admin` creates the first
+`db-init` creates fresh Access objects in its selected schema, or validates an
+already prepared matching layout without changing its data. Unrelated host
+objects may remain; conflicting IdP names and legacy or incompatible IdP
+layouts are rejected. `bootstrap-admin` creates the first
 platform administrator in the prepared schema. It does not listen, migrate,
 seed clients, or create a session. A repeat only verifies the existing
 effective administrator; it is not a repair or password-reset command.
@@ -38,7 +39,7 @@ effective administrator; it is not a repair or password-reset command.
 Use a pipe or a private input file; never put a password in a command argument
 or environment variable. A bare terminal is rejected to avoid echoed input.
 
-To run both modes on one machine, initialize the other empty schema and its
+To run both modes on one machine, initialize the other schema and its
 administrator, then keep each server in its own terminal:
 
 ```bash

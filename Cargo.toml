@@ -5,7 +5,8 @@ members = [
   "crates/embedded-idp-email",
   "crates/embedded-idp-axum",
   "crates/embedded-idp-storage-postgres",
-  "crates/embedded-idp-app"
+  "crates/embedded-idp-app",
+  "examples/no-tenant-host"
 ]
 resolver = "2"
 

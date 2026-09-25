@@ -1,4 +1,4 @@
--- Fresh-schema tenant model. Applied in ONE explicit initialization transaction.
+-- Tenant model. Applied atomically beside non-conflicting host objects.
 create table __SCHEMA__.access_state (
     singleton boolean primary key default true check (singleton),
     tenancy_mode text not null check (tenancy_mode in ('disabled', 'enabled')),

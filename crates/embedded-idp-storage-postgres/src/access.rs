@@ -25,29 +25,29 @@ use crate::PostgresStorageAdapter;
 
 pub const ACCESS_SCHEMA_VERSION: &str = "tenant_v2";
 const DDL: &str = include_str!("sql/tenant_v2.sql");
+const ACCESS_TABLES: &[&str] = &[
+    "access_state",
+    "access_tenants",
+    "accounts",
+    "access_memberships",
+    "access_permissions",
+    "access_roles",
+    "access_role_permissions",
+    "access_role_bindings",
+    "access_audit_events",
+    "oidc_clients",
+    "devices",
+    "auth_sessions",
+    "account_device_bindings",
+    "refresh_tokens",
+    "authorization_codes",
+    "email_verification_codes",
+    "auth_tenant_selections",
+    "device_proof_keys",
+    "device_nonces",
+];
 
 fn validate_layout(client: &mut impl GenericClient, schema: &str) -> Result<(), StoreError> {
-    let tables = [
-        "access_state",
-        "access_tenants",
-        "accounts",
-        "access_memberships",
-        "access_permissions",
-        "access_roles",
-        "access_role_permissions",
-        "access_role_bindings",
-        "access_audit_events",
-        "oidc_clients",
-        "devices",
-        "auth_sessions",
-        "account_device_bindings",
-        "refresh_tokens",
-        "authorization_codes",
-        "email_verification_codes",
-        "auth_tenant_selections",
-        "device_proof_keys",
-        "device_nonces",
-    ];
     let triggers = [
         "account_requires_membership",
         "account_status_requires_membership",
@@ -73,7 +73,7 @@ fn validate_layout(client: &mut impl GenericClient, schema: &str) -> Result<(), 
         "select not exists(select 1 from unnest($2::text[]) t(name) where not exists(select 1 from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname=$1 and c.relname=t.name and c.relkind='r'))
          and not exists(select 1 from unnest($3::text[]) t(name) where not exists(select 1 from pg_trigger g join pg_class c on c.oid=g.tgrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname=$1 and g.tgname=t.name and g.tgenabled in ('O','A')))
          and not exists(select 1 from unnest($4::text[]) t(name) where not exists(select 1 from pg_constraint c join pg_namespace n on n.oid=c.connamespace where n.nspname=$1 and c.conname=t.name and c.convalidated))",
-        &[&schema, &&tables[..], &&triggers[..], &&constraints[..]],
+        &[&schema, &ACCESS_TABLES, &&triggers[..], &&constraints[..]],
     ).map_err(access_db_error)?;
     if !row.get::<_, bool>(0) {
         return Err(StoreError::Backend(
@@ -96,6 +96,7 @@ pub(crate) fn access_db_error(error: postgres::Error) -> StoreError {
         Some("23505") => StoreError::Conflict("access.unique"),
         Some("23503" | "23514" | "23502") => StoreError::Conflict("access.constraint"),
         Some("40001" | "40P01") => StoreError::Conflict("access.concurrent_write"),
+        Some("42P07" | "42723" | "42710") => StoreError::Conflict("access.schema_object_conflict"),
         _ => StoreError::Backend("postgres access operation failed".into()),
     }
 }
@@ -150,8 +151,8 @@ fn schema_facts(
 }
 
 impl PostgresStorageAdapter {
-    /// Explicit empty-schema initialization. Never migrates, resets or rewrites
-    /// an existing schema or re-enables permissions on repeated calls.
+    /// Explicit initialization in a schema without conflicting IdP objects.
+    /// Never migrates, resets or rewrites existing objects or permissions.
     pub fn initialize_access_schema(
         &self,
         mode: TenancyMode,
@@ -176,9 +177,12 @@ impl PostgresStorageAdapter {
             tx.commit().map_err(access_db_error)?;
             return Ok(facts);
         }
-        let occupied: bool = tx.query_one("select exists(select 1 from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname=$1) or exists(select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname=$1)", &[&schema]).map_err(access_db_error)?.get(0);
-        if occupied {
-            return Err(StoreError::Conflict("access.requires_empty_schema"));
+        let conflicting_table = tx.query_opt(
+            "select c.relname from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname=$1 and c.relname=any($2::text[]) limit 1",
+            &[&schema, &ACCESS_TABLES],
+        ).map_err(access_db_error)?;
+        if conflicting_table.is_some() {
+            return Err(StoreError::Conflict("access.schema_object_conflict"));
         }
         // schema is validated by PgStorageConfig; no business input enters SQL text.
         tx.batch_execute(&format!("create schema if not exists {schema}"))

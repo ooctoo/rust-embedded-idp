@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Added a no-tenant Axum host example with its own configuration and startup script; it embeds IdP business routes and React login while authorizing reads against host-owned report data.
+- Access initialization now permits unrelated host objects in the selected PostgreSQL schema, while rejecting conflicting IdP objects atomically. The host still supplies runtime database and security configuration.
+
 ## 1.0.0 — 2026-09-25
 
 This is a breaking contract release of the embeddable IdP workspace. The Rust workspace moves from `0.2.0` to `1.0.0`; the local Web packages move from `0.1.0` to `1.0.0`. The version does not turn `embedded-idp-app` into a production host.

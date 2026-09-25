@@ -11,6 +11,7 @@
 | HTTP | 可选 Axum 业务与管理路由；管理登录令牌与业务令牌用途分离，管理操作在服务端复查身份和权限 |
 | 参考服务 | 单进程组合管理 UI 与对外 API；`disabled` 和 `enabled` 使用独立 schema；显式离线建库、签名密钥与管理员初始化，在线启动只读核验身份状态 |
 | React | 独立管理后台；本地 `@embedded-idp/react` 登录/选租户/本人角色入口及 `/admin` 权限目录入口 |
+| 无租户嵌入宿主示例 | `examples/no-tenant-host` 是单独的 Axum 业务进程；只使用 Disabled 模式，报告表可与 IdP 同库同 schema 或分开放置，读取时执行实例级权限检查 |
 
 `disabled` 仅使用业务域 `0`；`enabled` 的 `0` 是平台域，真实业务权限属于具体租户。权限定义的主键是 `(tenant_id, resource_type, action)`；用户对某个资源 ID 的权限来自同域角色、角色权限和类型/实例范围绑定。IdP 只保存标识与授权，不判断报告等业务对象是否存在或属于该租户。创建权限不会自动授予任何用户。
 
@@ -18,13 +19,13 @@
 
 ## 本地验证入口
 
-三个模板统一位于仓库根目录：[共享配置](../.env.example)、[无租户模式](../.env.disabled.example)、[带租户模式](../.env.enabled.example)。`./scripts/dev_env.sh <mode> init` 只复制缺失配置，不覆盖本机文件。两模式可共用一个 PostgreSQL 数据库，但必须使用不同 schema 和端口；本地默认 schema 为 `embedded_idp_disabled_v2` / `embedded_idp_enabled_v2`。schema 名的 `_v2` 是开发脚本防误用约束，数据库结构版本写在 `access_state.module_version` 中。不要把旧 schema 的表删除视作自动迁移。
+参考服务的三个模板统一位于仓库根目录：[共享配置](../.env.example)、[无租户模式](../.env.disabled.example)、[带租户模式](../.env.enabled.example)。`./scripts/dev_env.sh <mode> init` 只复制缺失配置，不覆盖本机文件。两模式可共用一个 PostgreSQL 数据库，但必须使用不同 schema 和端口；参考服务默认 schema 为 `embedded_idp_disabled_v2` / `embedded_idp_enabled_v2`。schema 名的 `_v2` 是参考服务开发脚本防误用约束，数据库结构版本写在 `access_state.module_version` 中。不要把旧 schema 的表删除视作自动迁移。无租户嵌入宿主示例使用[自己的配置和启动命令](../examples/no-tenant-host/README.md)，不读取这些根目录配置；带租户嵌入体验留待后续。
 
 先运行 `pnpm --dir web install --frozen-lockfile`，再按[参考服务启动步骤](standalone-app-v1.md)准备密钥、两个 schema 和各自管理员。开发脚本启动前会构建 Web；参考服务的管理页分别位于 `127.0.0.1:9100` 和 `127.0.0.1:9200`。构建与回归命令见 [README](../README.md#验证与文档)。实时 PostgreSQL 测试只使用显式的 `EMBEDDED_IDP_TEST_PG_CONNECTION_URI`，在随机临时 schema 运行，不修改应用 schema。
 
 ## 仍需完成
 
-- 增加可运行的真实业务宿主示例，证明其用可信租户、用户和实际报告 ID 执行授权；报告列表需在分页前结合业务数据库过滤。
+- 扩展示例中的报告列表与分页：必须先按业务数据库和授权范围过滤，再分页；当前示例只提供单份报告读取。
 - 完成宿主中的设备自助 UI、真实设备证明接入，以及部分管理页面的浏览器交互补验。
 - 测量资源授权和管理查询的 SQL 计划、连接池等待、吞吐与 p95/p99，并验证并发撤权边界。现有离线和集成测试不等于生产性能验收。
 - 生产宿主仍需按[安全要求](rust-embedded-idp-production-security-delivery-v2.md)负责限流、密钥轮换、设备准入及运维；`embedded-idp-app` 是开发参考宿主。

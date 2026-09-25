@@ -28,6 +28,7 @@ jobs:
       - run: pnpm --dir web install --frozen-lockfile
       - run: pnpm --dir web test
       - run: pnpm --dir web build
+      - run: ./examples/no-tenant-host/run.sh build-web
       - run: pnpm --dir web test:embedded-bundle
       - run: rustup component add rustfmt
       - run: cargo fmt --all -- --check
