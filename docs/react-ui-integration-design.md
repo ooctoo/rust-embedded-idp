@@ -18,7 +18,7 @@ Disabled 模式固定域 `0`，不展示租户管理或切换。Enabled 模式�
 
 ## 构建与本地使用
 
-`pnpm --dir web build` 生成管理应用 `web/dist/management`、业务组件 `web/embedded/dist/embedded-idp.*` 和管理组件 `web/embedded/dist/admin.*`。Rust 参考服务编译时嵌入管理应用；先构建 Web，再编译 Rust。`pnpm --dir web dev` 在 `127.0.0.1:4179` 预览管理源码，需要同源管理 API；真实本地体验使用[参考服务的两种模式](standalone-app-v1.md)。`web/embedded/demo.html` 仅用模拟响应验证组件交互，不是真实业务宿主。
+`pnpm --dir web build` 生成管理应用 `web/dist/management`、业务组件 `web/embedded/dist/embedded-idp.*` 和管理组件 `web/embedded/dist/admin.*`。Rust 参考服务编译时嵌入管理应用；先构建 Web，再编译 Rust。`pnpm --dir web dev` 在 `127.0.0.1:4179` 预览管理源码，需要同源管理 API；真实本地体验使用[参考服务的两种模式](standalone-app-v1.md)。`web/embedded/demo.html` 仅用模拟响应验证组件交互；[无租户嵌入宿主](../examples/no-tenant-host/README.md)的页面源码和构建配置位于示例目录，通过 `./examples/no-tenant-host/run.sh build-web` 构建。
 
 宿主完成本地包构建/安装后导入业务组件：
 

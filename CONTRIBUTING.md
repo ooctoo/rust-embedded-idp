@@ -48,9 +48,12 @@ its database and administrator before starting:
 
 `key-init` creates one shared RSA3072 PKCS#8 DER signing key at
 `.local/idp-signing-key.der`; both modes use that path from the shared `.env`.
-The key is created only when absent and is never printed. All local startup and
-test scripts require a mode and load `.env` followed by `.env.<mode>`; mode
-settings override shared settings. Management APIs use JWT authentication under
+The key is created only when absent and is never printed. The reference-host
+`scripts/dev_env.sh` and `scripts/run_live_postgres_checks.sh` require a mode
+and load `.env` followed by
+`.env.<mode>`; mode settings override shared settings. The separate
+`examples/no-tenant-host/run.sh` uses only its own example configuration.
+Management APIs use JWT authentication under
 `/api/admin`; legacy API-key and subject-header development switches are not
 part of the local workflow.
 

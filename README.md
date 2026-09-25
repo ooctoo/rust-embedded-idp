@@ -10,7 +10,7 @@
 - **租户内业务权限动态管理**：IdP Core 按 `(tenant_id, resource_type, action)` 管理业务权限定义；Enabled 模式中相同的 `report::read` 在不同租户是独立记录，可有不同的说明和启停状态，Disabled 模式固定在 `0`。具备目标域管理权限的人可手动创建权限、维护角色与分配，既可使用 IdP 独立管理后台，也可使用宿主控制台。IdP 只管理标识与授权，具体业务含义和实际检查位置由宿主决定。
 - **管理与业务隔离**：管理登录、令牌用途和路由独立；管理 API 只服务管理端。参考服务使用真实 RS256/Ed25519 适配器，不把开发身份 Header、旧 API key 或空 JWKS 作为生产默认值。
 
-独立部署使用一个 IdP 数据库和一个服务（管理端 + 对外 API）。嵌入部署时，宿主组合 Core、存储和所需的 Axum 路由；IdP 管理端可独立运行、由宿主挂载，或不对外提供。需要在宿主控制台管理权限时，可复用 IdP 的管理接口与前端能力。两边始终使用**同一 IdP 数据库**，业务数据库由宿主单独管理。见[宿主集成说明](docs/host-integration-v1.md)。
+独立部署使用一个 IdP 数据库和一个服务（管理端 + 对外 API）。嵌入部署时，宿主组合 Core、存储和所需的 Axum 路由；IdP 管理端可独立运行、由宿主挂载，或不对外提供。需要在宿主控制台管理权限时，可复用 IdP 的管理接口与前端能力。管理端与宿主中的 IdP 模块始终连接**同一 IdP 数据库和 schema**；宿主自行选择业务表所在数据库和 schema，只要不与 IdP 对象重名，也可与 IdP 共用 schema。见[宿主集成说明](docs/host-integration-v1.md)。
 
 | Crate | 职责 |
 | --- | --- |
@@ -25,7 +25,7 @@
 
 两种模式均使用 `tenant_v2`。已接通注册与邮箱验证、登录与选租户、会话/refresh、OIDC、租户设备、角色与资源授权，以及租户/成员/角色/权限目录/设备/会话/客户端/审计管理。业务权限定义可按租户创建、读取、修改、启停和归档，并与本租户角色关联。React 管理后台接入真实 API；本地 `@embedded-idp/react` 主入口提供登录、租户选择和本人角色列表，`/admin` 子入口提供权限目录组件，React 19 由宿主提供。
 
-**尚未提供可运行的独立业务宿主示例**。`web/embedded/demo.html` 使用模拟响应，只验证组件交互，不证明真实宿主授权。要做报告实例端到端验收，先在目标租户创建 `report::read` 等业务权限、关联角色并分配用户，再由宿主在真实报告接口中执行检查。设备自助界面、部分管理页面浏览器补验和性能验收也未完成。
+仓库提供[无租户嵌入宿主示例](examples/no-tenant-host/README.md)：另起 Axum 业务进程，复用 IdP 业务路由和 React 登录组件，并在宿主报告接口中检查 `report::read::<id>`。该示例的配置模板和启动命令均在 `examples/no-tenant-host` 内，不依赖根目录的开发环境脚本；带租户的嵌入体验留待后续。`web/embedded/demo.html` 仍只使用模拟响应。设备自助界面、部分管理页面浏览器补验和性能验收仍未完成。
 
 业务权限目录已按租户隔离；内置管理权限受保护。宿主可调用 Core 服务或选装 Axum 管理路由。独立管理应用提供完整页面；本地 `@embedded-idp/react/admin` 入口提供可嵌入的权限目录组件，尚未发布到 npm。组件使用独立的管理会话与管理 API，不使用业务登录令牌；接入方式见 [React 集成说明](docs/react-ui-integration-design.md)。
 
@@ -55,7 +55,7 @@ pnpm --dir web build
 ./scripts/dev_env.sh enabled db-init
 ```
 
-`key-init` 只在密钥不存在时创建 `.local/idp-signing-key.der`，不会覆盖。`db-init` 创建空的 `tenant_v2` schema；重复执行只核对同模式的现有结构和状态，不清除数据，也不创建管理员。旧版或不兼容 schema 会被拒绝；本次不自动迁移旧开发 schema。
+`key-init` 只在密钥不存在时创建 `.local/idp-signing-key.der`，不会覆盖。`db-init` 在目标 schema 中创建 `tenant_v2` 的 IdP 对象，允许保留不冲突的宿主对象；重复执行只核对同模式的现有结构和状态，不清除数据，也不创建管理员。对象重名、旧版或不兼容的 IdP 结构会被拒绝；本次不自动迁移旧开发 schema。
 
 每个模式需单独执行一次**离线管理员初始化**，邮箱由你指定，密码只能通过标准输入传入，不能放进命令参数或 `.env`。下面是在 zsh/bash 中输入不回显密码的示例：
 
@@ -105,6 +105,7 @@ cargo test --workspace --locked
 - [1.0.0 破坏性升级记录](CHANGELOG.md)
 - [当前进度与历史验证记录](docs/tenant-access-execution-plan.md)
 - [React 管理与嵌入组件](docs/react-ui-integration-design.md)
+- [无租户嵌入宿主示例](examples/no-tenant-host/README.md)
 - [生产安全要求](docs/rust-embedded-idp-production-security-delivery-v2.md)
 
 `docs/*-v1.md` 中的早期模型和切片文档保留作历史背景；以当前设计、执行计划、代码和测试为准，不把旧开发适配器示例用于生产接入。

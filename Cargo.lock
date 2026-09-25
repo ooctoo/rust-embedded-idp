@@ -354,6 +354,21 @@ name = "embedded-idp-email"
 version = "1.0.0"
 
 [[package]]
+name = "embedded-idp-no-tenant-host"
+version = "1.0.0"
+dependencies = [
+ "axum",
+ "embedded-idp-axum",
+ "embedded-idp-core",
+ "embedded-idp-security",
+ "embedded-idp-storage-postgres",
+ "postgres",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "embedded-idp-security"
 version = "1.0.0"
 dependencies = [

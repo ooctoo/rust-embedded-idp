@@ -82,7 +82,7 @@ function basePath(value: string) {
     if ((url.protocol === "https:" || url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) &&
         !url.username && !url.password && !url.search && !url.hash && !url.pathname.split("/").includes("..")) return url.href.replace(/\/$/, "");
   } catch { /* Invalid URLs use the same public error. */ }
-  throw new Error("身份服务地址必须是绝对路径或安全的 HTTPS 地址。");
+  throw new Error("身份服务地址必须是以 / 开头的路径或 HTTPS 地址；本机 localhost 可使用 HTTP。");
 }
 
 /** Keeps public identity credentials in memory; callers may replace fetch to attach host device proof. */

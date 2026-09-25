@@ -46,7 +46,8 @@ Use `enabled` for the corresponding tenant-enabled schema. Scripts load `.env`
 first and then `.env.<mode>`; mode settings override shared ones. `init` does
 not overwrite existing local configuration.
 
-`db-init` creates only an empty, mode-bound schema. `bootstrap-admin` is a
+`db-init` creates the mode-bound IdP objects in the selected schema, preserving
+unrelated host objects and rejecting IdP name conflicts. `bootstrap-admin` is a
 separate offline operation that creates the first platform administrator. It
 requires a pipe or private password file on standard input and rejects a bare
 terminal. Neither command starts the service. Online startup does not apply
@@ -134,6 +135,7 @@ The live suite uses random disposable schemas. It does not fall back to the
 application connection URI.
 
 The reference host still lacks production rate limiting, signing-key rotation,
-host-specific device admission, a real business-resource host example, device
-self-service UI, and performance acceptance. Those gaps are not removed by
-using the reference runtime in Enabled mode.
+host-specific device admission, device self-service UI, and performance
+acceptance. A separate [no-tenant host example](../examples/no-tenant-host/README.md)
+demonstrates business-resource authorization, but does not supply those
+production controls.

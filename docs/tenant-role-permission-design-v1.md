@@ -2,7 +2,7 @@
 
 设计基线：2026-09-18（提交 `87c386d`）；实施状态核对：2026-09-25。
 
-状态：Core Access、PostgreSQL `tenant_v2`、认证/OIDC、租户设备、管理 HTTP、React 管理后台及参考服务两模式装配已接通；租户内业务权限定义可手动创建、查询、更新、启停、归档。宿主嵌入登录、本人角色和权限目录组件已提供。独立真实业务宿主示例、设备自助界面与性能验收仍待完成。本文部分旧实施记录仅供历史对照；当前边界见[当前交付与验收](tenant-access-execution-plan.md)和[README](../README.md)。
+状态：Core Access、PostgreSQL `tenant_v2`、认证/OIDC、租户设备、管理 HTTP、React 管理后台及参考服务两模式装配已接通；租户内业务权限定义可手动创建、查询、更新、启停、归档。宿主嵌入登录、本人角色和权限目录组件已提供，[无租户嵌入宿主示例](../examples/no-tenant-host/README.md)可验证业务资源读取；带租户嵌入体验尚未提供。设备自助界面、报告列表过滤与性能验收仍待完成。本文部分旧实施记录仅供历史对照；当前边界见[当前交付与验收](tenant-access-execution-plan.md)和[README](../README.md)。
 
 **当前权限模型**：业务权限定义由 IdP Core 按租户提供动态管理，以数据库中的 `(tenant_id, resource_type, action)` 目录作为授权判断依据。IdP 保存标识和管理信息，不规定宿主操作的业务含义；相同 key 在不同租户是独立实体。宿主静态 `PermissionCatalog` 只可作为可选初始化模板，不能替代手工管理，也不是业务授权检查的运行时白名单。内置平台/租户管理权限仍受保护，宿主仍负责在业务操作中调用权限检查。
 
@@ -66,7 +66,7 @@
 | 参考宿主曾用开发 Header 和统一 Admin API Key | [bootstrap.rs](../crates/embedded-idp-app/src/bootstrap.rs)、已删除的旧 Web API 客户端 | API Key 不能被直接当作某个人的超级管理员身份 |
 | 审计基线每次 transaction 新建连接；P2 已改为共享有界池 | [adapter.rs](../crates/embedded-idp-storage-postgres/src/adapter.rs) | 现已使用 r2d2_postgres；clone 共享连接数上限 |
 | 现有分页元数据要求 total，PageRequest 支持 offset | [paging.rs](../crates/embedded-idp-core/src/paging.rs) | 新模块使用独立游标结果，避免热路径 COUNT 和深 OFFSET |
-| schema 健康检查只接受当前版本和不变量 | [migration.rs](../crates/embedded-idp-storage-postgres/src/migration.rs)、[adapter.rs](../crates/embedded-idp-storage-postgres/src/adapter.rs) | 直接更新新空库 schema 和检查项，不维护历史版本转换 |
+| schema 健康检查只接受当前版本和不变量 | [migration.rs](../crates/embedded-idp-storage-postgres/src/migration.rs)、[adapter.rs](../crates/embedded-idp-storage-postgres/src/adapter.rs) | 初始化新的 IdP 对象并检查冲突，不维护历史版本转换 |
 
 安全不变量沿用 [Production Security Extension v2](./rust-embedded-idp-production-security-extension-design-v2.md) 和 [Delivery v2](./rust-embedded-idp-production-security-delivery-v2.md)：refresh 原子事务、密钥验证、nonce 防重放和宿主可信认证仍必须成立。本文将租户加入 Token、关联约束和设备签名格式；涉及的旧接口和协议字节直接更新，不沿用历史交付文档的数据迁移安排。
 
@@ -167,7 +167,7 @@ pub enum LoginTenantPolicy {
 
 初始化管理员的输入单独交给 bootstrap 操作，不把永久超级管理员名单写成每次启动都强制覆盖的运行配置。宿主解析环境变量，再传入类型化配置；Core 不读取进程环境。
 
-数据库保存已激活的 tenancy mode 和模块 schema 版本。启动参数必须与持久化状态一致；不一致拒绝 readiness，首版不提供模式转换。首次空库初始化在锁保护下写入模式。
+数据库保存已激活的 tenancy mode 和模块 schema 版本。启动参数必须与持久化状态一致；不一致拒绝 readiness，首版不提供模式转换。首次初始化在锁保护下写入模式；目标 schema 可包含不与 IdP 对象冲突的宿主表。
 
 | 行为 | Disabled | Enabled |
 | --- | --- | --- |
@@ -334,7 +334,7 @@ IdP Core 定义**租户内**业务权限目录的创建、读取/列表、元数
 
 业务权限定义的唯一键是 `(tenant_id, resource_type, action)`。同一个 `resource_type::action` 在两个租户中可以有不同的展示名称、说明、启停状态与角色关联，互不继承、互不回退；Enabled 的平台 `0` 不作为真实租户业务目录。IdP 不解释某个标识代表读取报告还是其他操作，创建权限也不会自动保护宿主接口。宿主/业务调用方自行约定该标识的含义，并以可信的租户、用户和实际资源调用授权检查。
 
-落地时使用同一张 `access_permissions` 表，以 `(tenant_id, resource_type, action)` 为主键；角色权限通过同域复合外键引用。内置 `idp.platform` 仅位于 `0`，内置 `idp.tenant` 随真实租户创建受保护的同域记录；Disabled 模式的管理定义位于 `0`。业务权限在 Enabled 的真实租户中手动创建，Disabled 固定在 `0`。不再从平台目录或其他租户回退读取业务定义。为避免旧结构被误当成新版，改变表结构时提升 schema 版本；旧开发 schema 不原地改写，需显式准备新空 schema。
+落地时使用同一张 `access_permissions` 表，以 `(tenant_id, resource_type, action)` 为主键；角色权限通过同域复合外键引用。内置 `idp.platform` 仅位于 `0`，内置 `idp.tenant` 随真实租户创建受保护的同域记录；Disabled 模式的管理定义位于 `0`。业务权限在 Enabled 的真实租户中手动创建，Disabled 固定在 `0`。不再从平台目录或其他租户回退读取业务定义。为避免旧结构被误当成新版，改变表结构时提升 schema 版本；旧开发 IdP 结构不原地改写，需显式准备不与新版 IdP 对象冲突的 schema。
 
 写接口需要带可信管理上下文和明确目标域：创建业务权限、读取单条/游标列表、更新展示信息及启停状态、归档删除。权限键和租户归属不可编辑；每次修改带读取时版本，写入在同域事务内重验管理员身份与权限并审计。租户安全管理员持受保护的 `permissions.manage` 能力管理本域业务定义；平台管理员经 `access.manage` 可显式选择目标域，不能把平台会话当作业务租户会话。归档是不可恢复的逻辑删除：保留标识与审计，立即拒绝授权，不能被普通创建重用；停用可恢复，界面必须说明恢复可能让旧角色授权重新生效。
 
