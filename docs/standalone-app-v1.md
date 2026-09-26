@@ -153,3 +153,11 @@ business-resource host example, embedded device self-service UI, remaining
 browser interaction checks, and performance acceptance are still pending.
 For API contracts and embedding guidance, use the current
 [host integration guide](host-integration-v1.md).
+
+## Browser sessions
+
+The management page now uses the optional same-origin [browser session adapter](browser-session-design.md). The reference host also mounts business browser routes. Set `EMBEDDED_IDP_APP_BROWSER_ORIGIN` to the exact externally visible origin (scheme, host, optional port; no trailing slash) when it differs from the default `http://<bind_addr>`. Non-loopback origins must use HTTPS. The origin is trusted configuration, not inferred from forwarded headers or the token issuer.
+
+Cookies are host-only and named `idp_<bind-port>_business` and `idp_<bind-port>_management`, scoped to `/auth/browser` and `/api/admin/auth/browser`. The port suffix separates the local profiles because cookies themselves are not port-scoped. Production embedding hosts choose their own unique names and external paths. Serving the UI under another base path does not move these API paths. A Vite development reverse proxy must use the page's origin in this configuration.
+
+The original explicit-token login/refresh/logout and device-proof routes remain available. Browser cookies never authenticate ordinary business or management APIs; those still require the appropriate Bearer token.

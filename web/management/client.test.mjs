@@ -5,12 +5,14 @@ import ts from "typescript";
 
 // Use the installed compiler so these checks also run on Node 22 without TS loaders.
 const source = await readFile(new URL("./client.ts", import.meta.url), "utf8");
-const { outputText } = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } });
+const browserSource = await readFile(new URL("../embedded/browser-session.ts", import.meta.url), "utf8");
+const browserModule = ts.transpileModule(browserSource, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
+const { outputText } = ts.transpileModule(source.replace('import { BrowserSessionCoordinator } from "../embedded/browser-session";', browserModule), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } });
 const { ManagementClient } = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString("base64")}`);
 const fixed = { tenancy_enabled: false, login_tenant_policy: "fixed", fixed_tenant_id: "0" };
 const choose = { tenancy_enabled: true, login_tenant_policy: "choose_after_authentication" };
 const ticket = { status: "tenant_selection_required", selection_ticket: "synthetic-ticket", expires_in: 300 };
-const identity = (tenant = "0") => ({ tenant_id: tenant, account_id: "synthetic-user", session_id: "synthetic-session" });
+const identity = (tenant = "0") => ({ tenant_id: tenant, account_id: "synthetic-user", session_id: "synthetic-session", client_id: "management-app" });
 const authenticated = (tenant = "0", ttl = 3600, suffix = "") => ({
   status: "authenticated", session: identity(tenant), tokens: {
     access_token: `synthetic-access${suffix}`, refresh_token: `synthetic-refresh${suffix}`,
@@ -36,6 +38,52 @@ function setup(t, handler) {
   });
   return { client: new ManagementClient("/host/idp"), calls };
 }
+
+function cookieEnvironment(t) {
+  const values = new Map(), listeners = new Set(), tails = new Map();
+  const events = [];
+  const storage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => { values.set(key, value); events.push({ key, newValue: value }); }, removeItem: key => { values.delete(key); } };
+  const oldStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+  const oldNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  const oldWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  Object.defineProperty(globalThis, "localStorage", { configurable: true, value: storage });
+  Object.defineProperty(globalThis, "navigator", { configurable: true, value: { locks: { request: async (key, _options, operation) => {
+    const previous = tails.get(key) ?? Promise.resolve(); let release;
+    const current = new Promise(resolve => { release = resolve; }); tails.set(key, current); await previous;
+    try { return await operation(); } finally { release(); if (tails.get(key) === current) tails.delete(key); }
+  } } } });
+  Object.defineProperty(globalThis, "window", { configurable: true, value: { addEventListener: (_type, listener) => listeners.add(listener), removeEventListener: (_type, listener) => listeners.delete(listener) } });
+  t.after(() => { for (const [key, descriptor] of [["localStorage", oldStorage], ["navigator", oldNavigator], ["window", oldWindow]]) descriptor ? Object.defineProperty(globalThis, key, descriptor) : delete globalThis[key]; });
+  return { values, events, emitStorage() { while (events.length) { const event = events.shift(); listeners.forEach(listener => listener(event)); } } };
+}
+
+test("management cookie mode restores without refresh tokens and keeps path namespaces isolated", async t => {
+  const environment = cookieEnvironment(t);
+  const calls = [];
+  const handler = async (url, init) => {
+    const path = new URL(url, "https://host.test").pathname;
+    calls.push({ path, init });
+    if (path.endsWith("/auth/capabilities")) return json(fixed);
+    if (path.endsWith("/admin/auth/browser/login") || path.endsWith("/admin/auth/browser/restore")) {
+      const value = authenticated(); delete value.tokens.refresh_token; return json(value);
+    }
+    if (path.endsWith("/admin/auth/browser/logout")) return new Response(null, { status: 204 });
+    throw new Error(path);
+  };
+  t.mock.method(globalThis, "fetch", handler);
+  const first = new ManagementClient("/host/idp", { mode: "cookie" });
+  const second = new ManagementClient("/host/idp", { mode: "cookie" });
+  const otherPath = new ManagementClient("/other/idp", { mode: "cookie" });
+  await first.loadCapabilities(); await first.login("admin@example.test", "password");
+  assert.equal(environment.values.size, 1);
+  await second.loadCapabilities(); await second.restore();
+  assert.equal(second.getSnapshot().session.client_id, "management-app");
+  assert.equal(calls.filter(call => call.path.endsWith("/admin/auth/browser/restore")).length, 1);
+  await first.logout();
+  assert.equal(first.getSnapshot().session, undefined);
+  await otherPath.loadCapabilities(); await otherPath.login("admin@example.test", "password");
+  assert.equal(environment.values.size, 2);
+});
 
 test("disabled and fixed login obey server capabilities, keep credentials out of snapshots", async t => {
   for (const capabilities of [fixed, { ...fixed, tenancy_enabled: true, fixed_tenant_id: "tenant-a" }, { ...fixed, tenancy_enabled: true }]) {

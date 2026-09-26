@@ -1,5 +1,7 @@
 # rust-embedded-idp Production Security Delivery and Verification v2
 
+> 浏览器 Cookie 接入的新增契约见[浏览器会话设计](browser-session-design.md)。原显式令牌与设备证明接口继续适用；本期不支持跨标签页同时使用不同业务租户。
+
 Updated: 2026-08-07
 
 ## 1. Authority

@@ -1,3 +1,4 @@
+mod browser;
 mod management;
 use super::*;
 use crate::{digest_refresh_token, service::password::hash_password, *};

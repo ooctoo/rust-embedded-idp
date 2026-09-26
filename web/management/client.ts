@@ -4,10 +4,13 @@ export interface Capabilities {
   fixed_tenant_id?: string;
 }
 
+import { BrowserSessionCoordinator } from "../embedded/browser-session";
+
 export interface Session {
   tenant_id: string;
   account_id: string;
   session_id: string;
+  client_id?: string;
 }
 
 interface Credentials {
@@ -38,6 +41,7 @@ export interface AuthState {
   session?: Session;
   selecting: boolean;
   accessExpiresAt?: number;
+  sessionChanged?: boolean;
 }
 
 export interface AdminPage<T> { items: T[]; has_more: boolean; next_cursor?: string | null }
@@ -315,7 +319,8 @@ function sessionFrom(value: unknown): Session {
   if (![s.tenant_id, s.account_id, s.session_id].every(v => typeof v === "string" && v.length)) {
     throw invalidResponse();
   }
-  return { tenant_id: s.tenant_id as string, account_id: s.account_id as string, session_id: s.session_id as string };
+  return { tenant_id: s.tenant_id as string, account_id: s.account_id as string, session_id: s.session_id as string,
+    ...(typeof s.client_id === "string" && s.client_id.length ? { client_id: s.client_id } : {}) };
 }
 
 // Credentials never enter React state, browser storage or the legacy API-key client.
@@ -327,12 +332,20 @@ export class ManagementClient {
   private refreshing?: Promise<Credentials>;
   private listeners = new Set<() => void>();
   private state: AuthState = { selecting: false };
+  private sessionChanged = false;
+  private readonly browser?: BrowserSessionCoordinator;
+  private restoring?: Promise<Session | undefined>;
 
-  constructor(basePath = "/api") {
+  constructor(basePath = "/api", options: { mode?: "token" | "cookie" } = {}) {
     if (!/^\/(?!\/)[\w/.-]*$/.test(basePath) || basePath.split("/").includes("..")) {
       throw new Error("管理 API 前缀必须是同源绝对路径。");
     }
     this.basePath = basePath.replace(/\/$/, "");
+    if (options.mode === "cookie") {
+      this.basePath = new URL(this.basePath || "/", "https://embedded-idp.invalid").pathname.replace(/\/$/, "");
+      this.browser = new BrowserSessionCoordinator(`${this.basePath}/admin/auth/browser`, "management");
+      this.browser.subscribe(() => { this.sessionChanged = true; this.clear(); });
+    }
   }
 
   getSnapshot = () => this.state;
@@ -345,6 +358,7 @@ export class ManagementClient {
     this.state = {
       capabilities: this.state.capabilities,
       session: this.credentials?.session,
+      ...(this.sessionChanged ? { sessionChanged: true } : {}),
       selecting: !!this.selection,
       accessExpiresAt: this.credentials?.tokens.access_expires_at_unix_secs,
     };
@@ -395,6 +409,27 @@ export class ManagementClient {
     try { return await response.json(); } catch { throw invalidResponse(); }
   }
 
+  isCookieMode() { return !!this.browser; }
+  private expectedSession() {
+    const session = this.credentials?.session;
+    return session && { expected_session: session };
+  }
+  private async browserRequest(path: string, body: Record<string, unknown> = {}, authorization?: string): Promise<unknown> {
+    if (!this.browser) throw new ManagementError("当前客户端未启用 Cookie 会话。", 400);
+    let response: Response;
+    try {
+      response = await fetch(`${this.basePath}/admin/auth/browser${path}`, { method: "POST",
+        headers: { Accept: "application/json", "Content-Type": "application/json", "X-Embedded-Idp-Browser": "1", ...(authorization ? { Authorization: authorization } : {}) },
+        body: JSON.stringify(body), credentials: "same-origin", cache: "no-store", redirect: "error", signal: AbortSignal.timeout(15_000) });
+    } catch { throw new ManagementError("无法连接管理服务，请检查网络后重试。"); }
+    if (!response.ok) {
+      const messages: Record<number, string> = { 400: "请求无效，请重新操作。", 401: "凭证无效或已过期，请重新登录。", 403: "当前账号无权执行此操作。", 409: "浏览器会话已被其他页面替换，请重新加载。", 429: "操作过于频繁，请稍后重试。" };
+      throw new ManagementError(messages[response.status] ?? "管理服务暂时不可用，请稍后重试。", response.status);
+    }
+    if (response.status === 204) return undefined;
+    try { return await response.json(); } catch { throw invalidResponse(); }
+  }
+
   async loadCapabilities() {
     const c = object(await this.request("/auth/capabilities"));
     if (typeof c.tenancy_enabled !== "boolean" ||
@@ -406,6 +441,7 @@ export class ManagementClient {
   }
 
   private accept(value: unknown, allowSelection: boolean) {
+    this.sessionChanged = false;
     const result = object(value);
     if (allowSelection && result.status === "tenant_selection_required" && this.canChoose()) {
       if (typeof result.selection_ticket !== "string" || !/^[\w-]+$/.test(result.selection_ticket) ||
@@ -414,8 +450,10 @@ export class ManagementClient {
     } else {
       if (result.status !== "authenticated") throw invalidResponse();
       const session = sessionFrom(result.session);
+      if (this.browser && !session.client_id) throw invalidResponse();
       const tokens = object(result.tokens);
-      if (![tokens.access_token, tokens.refresh_token].every(v => typeof v === "string" && v.length) ||
+      if (this.browser && (tokens.refresh_token !== undefined || !session.client_id)) throw invalidResponse();
+      if (!(typeof tokens.access_token === "string" && tokens.access_token.length) || (!this.browser && !(typeof tokens.refresh_token === "string" && tokens.refresh_token.length)) ||
           ![tokens.access_expires_at_unix_secs, tokens.refresh_expires_at_unix_secs].every(v => typeof v === "number" && Number.isSafeInteger(v) && v > Date.now() / 1000)) throw invalidResponse();
       const c = this.state.capabilities;
       if (!c || (c.login_tenant_policy === "fixed" && session.tenant_id !== c.fixed_tenant_id) ||
@@ -434,14 +472,81 @@ export class ManagementClient {
     if (!this.state.capabilities) throw invalidResponse();
     this.clear();
     const revision = this.revision;
+    if (this.browser) {
+      await this.browser.run(async () => {
+        this.current(revision);
+        try {
+          const result = await this.browserRequest("/login", { email, password });
+          this.current(revision);
+          this.browser!.mark("changed");
+          this.accept(result, true);
+        } catch (error) { this.browserFailure(error, revision, false); throw error; }
+      });
+      return;
+    }
     const result = await this.request("/auth/login", "POST", { email, password });
-    this.current(revision);
-    this.accept(result, true);
+    this.current(revision); this.accept(result, true);
+  }
+
+  private browserFailure(error: unknown, revision: number, readsCookie = true) {
+    if (revision !== this.revision) return;
+    this.clear();
+    const status = error instanceof ManagementError ? error.status : 0;
+    if (status === 401 && readsCookie) this.browser!.mark("changed");
+    else if (!status || status >= 500) this.browser!.mark("blocked");
+  }
+
+  async restore() {
+    if (!this.browser) throw new ManagementError("当前客户端未启用 Cookie 会话。", 400);
+    if (this.restoring) return this.restoring;
+    const revision = this.revision;
+    const expected = this.expectedSession();
+    const pending = this.browser.run(async () => {
+      this.browser!.check();
+      this.current(revision);
+      try {
+        const value = await this.browserRequest("/restore", expected);
+        this.current(revision);
+        const restored = sessionFrom(object(value).session);
+        const original = expected?.expected_session;
+        if (original && (restored.tenant_id !== original.tenant_id || restored.account_id !== original.account_id ||
+            restored.session_id !== original.session_id || restored.client_id !== original.client_id)) throw invalidResponse();
+        this.accept(value, false);
+        return this.state.session;
+      } catch (error) { this.browserFailure(error, revision); throw error; }
+    });
+    this.restoring = pending;
+    try { return await pending; } finally { if (this.restoring === pending) this.restoring = undefined; }
   }
 
   private async access(): Promise<Credentials> {
+    if (this.browser && this.selection) throw new ManagementError("请先完成或取消租户切换。", 409);
     const credentials = this.credentials;
     if (!credentials) throw new ManagementError("请先登录。", 401);
+    if (this.browser) {
+      this.browser.check();
+      if (this.refreshing) return this.refreshing;
+      if (credentials.tokens.access_expires_at_unix_secs > Date.now() / 1000 + 30) return credentials;
+      const revision = this.revision;
+      const expected = this.expectedSession();
+      const pending = this.browser.run(async () => {
+        this.browser!.check();
+        this.current(revision);
+        try {
+          const result = await this.browserRequest("/refresh", expected);
+          this.current(revision);
+          const s = sessionFrom(object(result).session);
+          if (s.account_id !== credentials.session.account_id || s.tenant_id !== credentials.session.tenant_id || s.session_id !== credentials.session.session_id || s.client_id !== credentials.session.client_id) throw invalidResponse();
+          this.accept(result, false);
+          return this.credentials!;
+        } catch (error) {
+          this.browserFailure(error, revision);
+          throw error;
+        } finally { if (revision === this.revision) this.refreshing = undefined; }
+      });
+      this.refreshing = pending;
+      return pending;
+    }
     if (this.refreshing) return this.refreshing;
     if (credentials.tokens.access_expires_at_unix_secs > Date.now() / 1000 + 30) return credentials;
     const revision = this.revision;
@@ -1043,6 +1148,24 @@ export class ManagementClient {
   }
 
   async selectTenant(tenantId: string) {
+    if (this.browser) {
+      const selection = this.selection;
+      if (!selection || selection.expiresAt <= Date.now()) throw new ManagementError("请重新登录以选择租户。", 401);
+      const revision = this.revision;
+      const original = this.credentials?.session;
+      await this.browser.run(async () => {
+        this.browser!.check(); this.current(revision);
+        try {
+          const result = await this.browserRequest("/tenant-selection/complete", { tenant_id: tenantId }, `TenantSelection ${selection.ticket}`);
+          this.current(revision);
+          const session = sessionFrom(object(result).session);
+          if (session.tenant_id !== tenantId || original && session.account_id !== original.account_id) throw invalidResponse();
+          this.browser!.mark("changed");
+          this.accept(result, false); this.revision++; this.refreshing = undefined;
+        } catch (error) { this.browserFailure(error, revision, false); throw error; }
+      });
+      return;
+    }
     const result = await this.withSelection("/tenant-selection/complete", { tenant_id: tenantId });
     const session = sessionFrom(object(result).session);
     if (session.tenant_id !== tenantId || (this.credentials && session.account_id !== this.credentials.session.account_id)) {
@@ -1055,6 +1178,20 @@ export class ManagementClient {
   }
 
   async logout() {
+    if (this.browser) {
+      const expected = this.expectedSession();
+      this.clear();
+      const revision = this.revision;
+      await this.browser.run(async () => {
+        this.browser!.check(); this.current(revision);
+        try {
+          await this.browserRequest("/logout", expected);
+          this.current(revision);
+          this.browser!.mark("changed");
+        } catch (error) { this.browserFailure(error, revision); throw error; }
+      });
+      return;
+    }
     const token = this.credentials?.tokens.access_token;
     this.clear();
     if (token) {

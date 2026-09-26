@@ -1,3 +1,5 @@
+mod browser_session;
+pub use browser_session::{browser_session_router, BrowserSessionHttpConfig};
 mod management_auth;
 pub use management_auth::management_router;
 mod access_diagnostic;

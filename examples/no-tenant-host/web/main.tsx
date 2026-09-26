@@ -3,11 +3,12 @@ import { createRoot } from "react-dom/client";
 import { EmbeddedAuth, EmbeddedIdentityClient } from "../../../web/embedded";
 import "./styles.css";
 
-const identity = new EmbeddedIdentityClient("/");
+const identity = new EmbeddedIdentityClient("/", undefined, { mode: "cookie" });
 type Report = { tenant_id: string; report_id: string; title: string; body: string };
 
 function App() {
-  const session = useSyncExternalStore(identity.subscribe, identity.getSnapshot, identity.getSnapshot).session;
+  const state = useSyncExternalStore(identity.subscribe, identity.getSnapshot, identity.getSnapshot);
+  const session = state.selecting ? undefined : state.session;
   const sessionKey = session ? `${session.tenant_id}/${session.account_id}/${session.session_id}` : "";
   const [reportId, setReportId] = useState("r001");
   const [report, setReport] = useState<Report>();

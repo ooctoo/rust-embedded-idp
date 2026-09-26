@@ -1,6 +1,6 @@
 use super::*;
 
-struct ManagementTokens;
+pub(super) struct ManagementTokens;
 impl AccessTokenIssuer for ManagementTokens {
     fn issue_access_token(
         &self,
@@ -59,7 +59,7 @@ impl AccessTokenValidator for ManagementTokens {
         }))
     }
 }
-fn management(
+pub(super) fn management(
     mode: TenancyMode,
     policy: LoginTenantPolicy,
     s: S,

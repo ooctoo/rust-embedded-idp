@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Added optional same-origin browser login, restore, refresh and logout with HttpOnly refresh cookies, separate business/management purposes and expected-session checks. Explicit-token and device-proof routes remain available; no schema migration is required.
+- React clients support opt-in Cookie restoration and serialized cross-tab session changes. This release permits one current business tenant per browser entry, while Core continues to support independent tenant sessions. The reference management page and no-tenant host use Cookie mode.
+
 - Management lists support `sort_order=asc|desc`, defaulting to newest-first time/ID pagination, including permission catalogs embedded in host applications. Tenant members use join time; devices use registration time; audit uses event time.
 - Management cursors are v2 and bind the chosen direction; changing direction requires a fresh first page. Existing v2 cursors without a direction remain descending; v1 management cursors must restart. Rust `AccessPageRequest` and `AccessCursor` now carry optional `sort_order`. Rust role, binding and tenant records now include `created_at`; permission and client projections carry optional creation metadata. JSON item shapes are unchanged.
 - Existing `tenant_v2` schemas require the explicit, repeatable `scripts/migrate_list_time_desc.sql` upgrade for permission creation metadata and time pagination indexes. Unknown historical permission times remain null. Initialization and startup do not run this upgrade automatically.

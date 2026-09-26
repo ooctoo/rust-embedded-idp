@@ -9,6 +9,7 @@ use embedded_idp_storage_postgres::{DbPoolConfig, PgConnectionConfig, PgStorageC
 pub struct Config {
     pub mode: TenancyMode,
     pub bind_addr: SocketAddr,
+    pub browser_origin: String,
     pub issuer: String,
     pub idp: PgStorageConfig,
     pub business_uri: String,
@@ -126,6 +127,10 @@ impl Config {
         };
         Ok(Self {
             mode,
+            browser_origin: value(
+                "NO_TENANT_HOST_BROWSER_ORIGIN",
+                &format!("http://{bind_addr}"),
+            ),
             bind_addr,
             issuer,
             idp,
