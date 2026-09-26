@@ -1,5 +1,8 @@
 use super::*;
-use crate::access::{service::finish_page, AccessListScope, AccessPage, AccessPageRequest};
+use crate::access::{
+    service::{finish_page, time_page_key},
+    AccessListScope, AccessPage, AccessPageRequest,
+};
 use crate::{AdminClientRecord, ClientSecretHasher, OidcClient, OidcClientType, SecretString};
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -126,7 +129,12 @@ impl<
             if rows.iter().any(|c| !filter.matches(c)) {
                 return Err(AccessError::InvalidStoreResponse);
             }
-            finish_page(rows, page, scope, |c| vec![c.client_id.clone()])
+            finish_page(rows, page, scope, |c| {
+                time_page_key(
+                    c.created_at.unwrap_or(SystemTime::UNIX_EPOCH),
+                    c.client_id.clone(),
+                )
+            })
         })
     }
     fn get_client(
@@ -227,5 +235,6 @@ pub fn client_metadata(client: OidcClient) -> AdminClientRecord {
         client_secret_configured: client
             .client_secret_hash
             .is_some_and(|s| !s.trim().is_empty()),
+        created_at: None,
     }
 }

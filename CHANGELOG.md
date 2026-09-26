@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Management lists now use newest-first time/ID pagination, including permission catalogs embedded in host applications. Tenant members use join time; devices use registration time; audit uses event time.
+- Management cursors are v2; old cursors must restart at the first page. Rust role, binding and tenant records now include `created_at`; permission and client projections carry optional creation metadata. JSON item shapes are unchanged.
+- Existing `tenant_v2` schemas require the explicit, repeatable `scripts/migrate_list_time_desc.sql` upgrade for permission creation metadata and time pagination indexes. Unknown historical permission times remain null. Initialization and startup do not run this upgrade automatically.
+
 - Added a no-tenant Axum host example with its own configuration and startup script; it embeds IdP business routes and React login while authorizing reads against host-owned report data.
 - Access initialization now permits unrelated host objects in the selected PostgreSQL schema, while rejecting conflicting IdP objects atomically. The host still supplies runtime database and security configuration.
 

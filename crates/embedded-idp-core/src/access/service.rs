@@ -4,6 +4,7 @@ use super::{
     PermissionDefinition, Role, SubjectTenant, TenancyMode, SYSTEM_TENANT_ID,
 };
 use crate::{DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AccessListScope {
@@ -58,12 +59,39 @@ pub enum AccessListScope {
     },
 }
 
+impl AccessListScope {
+    fn is_management(&self) -> bool {
+        matches!(
+            self,
+            Self::AdminAudit { .. }
+                | Self::AdminPermissions { .. }
+                | Self::AdminRoleBindings { .. }
+                | Self::AdminRoles { .. }
+                | Self::AdminTenants { .. }
+                | Self::AdminAccounts { .. }
+                | Self::AdminClients { .. }
+                | Self::AdminSessions { .. }
+                | Self::AdminDevices { .. }
+        )
+    }
+
+    fn cursor_version(&self) -> u8 {
+        if self.is_management() {
+            2
+        } else {
+            1
+        }
+    }
+}
+
 /// Typed library cursor. An HTTP adapter can encode it; it is never authority.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccessCursor {
     pub version: u8,
     pub scope: AccessListScope,
-    /// Entity ID, (resource_type, action), or (fixed-width epoch seconds, audit UUID).
+    /// V2 management cursors use `[19-digit epoch seconds, stable_id]`; permissions
+    /// use `[19-digit epoch seconds, resource_type, action]`. V1 scopes retain
+    /// their existing ascending keys.
     pub after: Vec<String>,
 }
 
@@ -92,33 +120,47 @@ impl AccessPageRequest {
             return Err(AccessError::InvalidInput("page_limit"));
         }
         if let Some(cursor) = &self.cursor {
-            let expected = if matches!(
-                scope,
-                AccessListScope::RolePermissions { .. }
-                    | AccessListScope::AdminPermissions { .. }
-                    | AccessListScope::AdminAudit { .. }
-            ) {
-                2
-            } else {
-                1
+            let management = scope.is_management();
+            let expected = match scope {
+                AccessListScope::AdminPermissions { .. } => 3,
+                AccessListScope::RolePermissions { .. } => 2,
+                _ if management => 2,
+                _ => 1,
             };
-            if cursor.version != 1 || &cursor.scope != scope || cursor.after.len() != expected {
+            if cursor.version != scope.cursor_version()
+                || &cursor.scope != scope
+                || cursor.after.len() != expected
+            {
                 return Err(AccessError::InvalidCursor);
             }
             for key in &cursor.after {
                 validate_id(key, 128, "cursor_key").map_err(|_| AccessError::InvalidCursor)?;
             }
-            if matches!(scope, AccessListScope::AdminAudit { .. }) {
+            if management {
                 let timestamp = &cursor.after[0];
                 if timestamp.len() != 19
                     || !timestamp.bytes().all(|b| b.is_ascii_digit())
-                    || timestamp.parse::<i64>().is_err()
-                    || uuid::Uuid::parse_str(&cursor.after[1])
-                        .map_or(true, |id| id.to_string() != cursor.after[1])
+                    || timestamp
+                        .parse::<u64>()
+                        .map_or(true, |value| value > i64::MAX as u64)
                 {
                     return Err(AccessError::InvalidCursor);
                 }
-            } else if expected == 2 {
+            }
+            if matches!(scope, AccessListScope::AdminAudit { .. })
+                && uuid::Uuid::parse_str(&cursor.after[1])
+                    .map_or(true, |id| id.to_string() != cursor.after[1])
+            {
+                return Err(AccessError::InvalidCursor);
+            }
+            if matches!(scope, AccessListScope::AdminPermissions { .. }) {
+                super::PermissionKey {
+                    resource_type: cursor.after[1].clone(),
+                    action: cursor.after[2].clone(),
+                }
+                .validate()
+                .map_err(|_| AccessError::InvalidCursor)?;
+            } else if matches!(scope, AccessListScope::RolePermissions { .. }) {
                 super::PermissionKey {
                     resource_type: cursor.after[0].clone(),
                     action: cursor.after[1].clone(),
@@ -486,7 +528,12 @@ pub(super) fn finish_page<T>(
     let mut previous = page.cursor.as_ref().map(|c| c.after.clone());
     for row in &rows {
         let current = key(row);
-        if previous.as_ref().is_some_and(|last| last >= &current) {
+        let unordered = if scope.is_management() {
+            previous.as_ref().is_some_and(|last| last <= &current)
+        } else {
+            previous.as_ref().is_some_and(|last| last >= &current)
+        };
+        if unordered {
             return Err(AccessError::InvalidStoreResponse);
         }
         previous = Some(current);
@@ -495,7 +542,7 @@ pub(super) fn finish_page<T>(
     rows.truncate(page.limit as usize);
     let next_cursor = if has_more {
         rows.last().map(|last| AccessCursor {
-            version: 1,
+            version: scope.cursor_version(),
             scope,
             after: key(last),
         })
@@ -507,6 +554,84 @@ pub(super) fn finish_page<T>(
         next_cursor,
         has_more,
     })
+}
+
+pub(crate) fn time_page_key(time: SystemTime, entity_id: String) -> Vec<String> {
+    vec![
+        format!(
+            "{:019}",
+            time.duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs()
+        ),
+        entity_id,
+    ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn device_scope() -> AccessListScope {
+        AccessListScope::AdminDevices {
+            tenant_id: "tenant".into(),
+            filter: super::super::AdminDeviceFilter::default(),
+        }
+    }
+
+    #[test]
+    fn management_pages_are_newest_first_and_use_stable_ties() {
+        let scope = device_scope();
+        let rows = vec![
+            vec!["0000000000000000002".into(), "a".into()],
+            vec!["0000000000000000001".into(), "z".into()],
+            vec!["0000000000000000001".into(), "a".into()],
+        ];
+        let first = finish_page(
+            rows[..].to_vec(),
+            AccessPageRequest {
+                limit: 2,
+                cursor: None,
+            },
+            scope.clone(),
+            Clone::clone,
+        )
+        .unwrap();
+        assert_eq!(first.items, rows[..2]);
+        let second = finish_page(
+            rows[2..].to_vec(),
+            AccessPageRequest {
+                limit: 2,
+                cursor: first.next_cursor,
+            },
+            scope,
+            Clone::clone,
+        )
+        .unwrap();
+        assert_eq!(second.items, rows[2..]);
+    }
+
+    #[test]
+    fn management_cursors_reject_v1_and_invalid_epoch_seconds() {
+        let scope = device_scope();
+        for (version, after) in [
+            (1, vec!["0000000000000000001".into(), "id".into()]),
+            (2, vec!["9999999999999999999".into(), "id".into()]),
+        ] {
+            assert_eq!(
+                AccessPageRequest {
+                    limit: 1,
+                    cursor: Some(AccessCursor {
+                        version,
+                        scope: scope.clone(),
+                        after,
+                    }),
+                }
+                .validate(&scope),
+                Err(AccessError::InvalidCursor)
+            );
+        }
+    }
 }
 
 // Shared eligibility gate for host authorization and audited management diagnosis.

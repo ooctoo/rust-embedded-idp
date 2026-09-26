@@ -93,6 +93,7 @@ fn version(value: u64) -> Result<i64, StoreError> {
 }
 fn decode_admin_tenant(row: &postgres::Row) -> Result<AccessTenantRecord, StoreError> {
     Ok(AccessTenantRecord {
+        created_at: time(row.get("created_at_epoch"))?,
         tenant: decode_tenant(row)?,
         version: u64::try_from(row.get::<_, i64>("version")).map_err(|_| invalid())?,
     })
@@ -161,6 +162,7 @@ fn decode_member(row: &Row) -> Result<TenantMembership, StoreError> {
 }
 fn decode_binding(row: &Row) -> Result<RoleBinding, StoreError> {
     Ok(RoleBinding {
+        created_at: time(row.get("created_at_epoch"))?,
         id: row.get::<_, Uuid>("id").to_string(),
         tenant_id: row.get("tenant_id"),
         subject_id: row.get::<_, Uuid>("account_id").to_string(),
@@ -298,10 +300,20 @@ impl AccessAdminTransaction for PostgresAccessAdminTransaction<'_> {
             filter: filter.clone(),
         })
         .map_err(|_| invalid())?;
-        let after = page.cursor.as_ref().map(|c| &c.after[0]);
+        let after_time = page
+            .cursor
+            .as_ref()
+            .map(|c| c.after[0].parse::<i64>().map_err(|_| invalid()))
+            .transpose()?;
+        let after = page.cursor.as_ref().map(|c| &c.after[1]);
         let kind = filter.client_type.map(admin_client_type);
-        self.tx.query(&format!("select * from {}.oidc_clients where ($1::text is null or client_id collate \"C\">$1 collate \"C\") and ($2::text is null or client_type=$2) and ($3::boolean is null or pkce_required=$3) order by client_id collate \"C\" limit $4", self.schema), &[&after, &kind, &filter.pkce_required, &(page.fetch_limit() as i64)])
-            .map_err(access_db_error)?.into_iter().map(|r| crate::transaction::decode_client(r).map(client_metadata)).collect()
+        self.tx.query(&format!("select * from {}.oidc_clients where ($1::text is null or (created_at_epoch,client_id collate \"C\")<($5,$1 collate \"C\")) and ($2::text is null or client_type=$2) and ($3::boolean is null or pkce_required=$3) order by created_at_epoch desc,client_id collate \"C\" desc limit $4", self.schema), &[&after, &kind, &filter.pkce_required, &(page.fetch_limit() as i64), &after_time])
+            .map_err(access_db_error)?.into_iter().map(|r| {
+                let created_at = time(r.get("created_at_epoch"))?;
+                let mut record = client_metadata(crate::transaction::decode_client(r)?);
+                record.created_at = Some(created_at);
+                Ok(record)
+            }).collect()
     }
     fn upsert_admin_client(
         &mut self,
@@ -347,6 +359,11 @@ impl AccessAdminTransaction for PostgresAccessAdminTransaction<'_> {
             filter: filter.clone(),
         })
         .map_err(|_| invalid())?;
+        let after_time = page
+            .cursor
+            .as_ref()
+            .map(|c| c.after[0].parse::<i64>().map_err(|_| invalid()))
+            .transpose()?;
         let Ok(account) = filter
             .account_id
             .as_deref()
@@ -361,12 +378,12 @@ impl AccessAdminTransaction for PostgresAccessAdminTransaction<'_> {
         let after = page
             .cursor
             .as_ref()
-            .map(|c| uuid(&c.after[0]))
+            .map(|c| uuid(&c.after[1]))
             .transpose()?;
         let status = filter.status.as_ref().map(admin_session_status);
         let created_after = filter.created_after.map(epoch).transpose()?;
         let created_before = filter.created_before.map(epoch).transpose()?;
-        self.tx.query(&format!("select * from {}.auth_sessions where tenant_id=$1 and ($2::uuid is null or id>$2) and ($3::uuid is null or account_id=$3) and ($4::text is null or client_id=$4) and ($5::uuid is null or device_id=$5) and ($6::text is null or status=$6) and ($7::bigint is null or created_at_epoch>=$7) and ($8::bigint is null or created_at_epoch<=$8) order by id limit $9",self.schema),&[&tenant,&after,&account,&filter.client_id,&device,&status,&created_after,&created_before,&(page.fetch_limit() as i64)]).map_err(access_db_error)?.iter().map(super::authentication::decode_session).collect()
+        self.tx.query(&format!("select * from {}.auth_sessions where tenant_id=$1 and ($2::uuid is null or (created_at_epoch,id)<($10,$2)) and ($3::uuid is null or account_id=$3) and ($4::text is null or client_id=$4) and ($5::uuid is null or device_id=$5) and ($6::text is null or status=$6) and ($7::bigint is null or created_at_epoch>=$7) and ($8::bigint is null or created_at_epoch<=$8) order by created_at_epoch desc,id desc limit $9",self.schema),&[&tenant,&after,&account,&filter.client_id,&device,&status,&created_after,&created_before,&(page.fetch_limit() as i64), &after_time]).map_err(access_db_error)?.iter().map(super::authentication::decode_session).collect()
     }
     fn active_subject_session_count(
         &mut self,
@@ -410,6 +427,11 @@ impl AccessAdminTransaction for PostgresAccessAdminTransaction<'_> {
             filter: filter.clone(),
         })
         .map_err(|_| invalid())?;
+        let after_time = page
+            .cursor
+            .as_ref()
+            .map(|c| c.after[0].parse::<i64>().map_err(|_| invalid()))
+            .transpose()?;
         let Ok(account) = filter
             .account_id
             .as_deref()
@@ -421,25 +443,25 @@ impl AccessAdminTransaction for PostgresAccessAdminTransaction<'_> {
         let after = page
             .cursor
             .as_ref()
-            .map(|c| uuid(&c.after[0]))
+            .map(|c| uuid(&c.after[1]))
             .transpose()?;
         let status = filter.status.as_ref().map(device_status);
         let registered_after = filter.registered_after.map(epoch).transpose()?;
         let registered_before = filter.registered_before.map(epoch).transpose()?;
         let s = self.schema;
-        // ponytail: status/time filters can scan a tenant's ID range; add a
+        // ponytail: optional filters can scan a tenant's time range; add a
         // measured composite index when acceptance benchmarks justify it.
         self.tx.query(&format!(
             "select d.* from {s}.devices d where d.tenant_id=$1
-             and ($2::uuid is null or d.id>$2)
+             and ($2::uuid is null or (d.registered_at_epoch,d.id)<($9,$2))
              and ($3::uuid is null or exists(select 1 from {s}.account_device_bindings b
                  where b.tenant_id=d.tenant_id and b.device_id=d.id and b.account_id=$3 and b.status='active'))
              and ($4::text is null or d.client_id=$4)
              and ($5::text is null or d.status=$5)
              and ($6::bigint is null or d.registered_at_epoch>=$6)
              and ($7::bigint is null or d.registered_at_epoch<=$7)
-             order by d.id limit $8"
-        ), &[&tenant, &after, &account, &filter.client_id, &status, &registered_after, &registered_before, &(page.fetch_limit() as i64)])
+             order by d.registered_at_epoch desc,d.id desc limit $8"
+        ), &[&tenant, &after, &account, &filter.client_id, &status, &registered_after, &registered_before, &(page.fetch_limit() as i64), &after_time])
             .map_err(access_db_error)?.iter().map(super::device_management::decode_admin_device).collect()
     }
 
@@ -546,19 +568,24 @@ impl AccessAdminTransaction for PostgresAccessAdminTransaction<'_> {
             filter: filter.clone(),
         })
         .map_err(|_| invalid())?;
-        let after = page.cursor.as_ref().map(|c| &c.after[0]);
+        let after_time = page
+            .cursor
+            .as_ref()
+            .map(|c| c.after[0].parse::<i64>().map_err(|_| invalid()))
+            .transpose()?;
+        let after = page.cursor.as_ref().map(|c| &c.after[1]);
         let name = filter.name.as_ref().map(|s| s.to_ascii_lowercase());
         let status = filter.status.map(tenant_status);
         // ponytail: literal name search can scan real tenants; measure before
-        // adding a search index or changing the ID pagination contract.
+        // adding a search index.
         self.tx.query(&format!(
             "select * from {}.access_tenants where id<>'0'
-             and ($1::text is null or id>$1 collate \"C\")
+             and ($1::text is null or (created_at_epoch,id)<($6,$1 collate \"C\"))
              and ($2::text is null or id=$2)
              and ($3::text is null or strpos(translate(name,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),$3)>0)
              and ($4::text is null or status=$4)
-             order by id limit $5", self.schema),
-            &[&after, &filter.tenant_id, &name, &status, &(page.fetch_limit() as i64)])
+             order by created_at_epoch desc,id desc limit $5", self.schema),
+            &[&after, &filter.tenant_id, &name, &status, &(page.fetch_limit() as i64), &after_time])
             .map_err(access_db_error)?.iter().map(decode_admin_tenant).collect()
     }
     fn resource_category(
@@ -663,12 +690,17 @@ impl AccessAdminTransaction for PostgresAccessAdminTransaction<'_> {
             tenant_id: tenant.into(),
         })
         .map_err(|_| invalid())?;
+        let after_time = page
+            .cursor
+            .as_ref()
+            .map(|c| c.after[0].parse::<i64>().map_err(|_| invalid()))
+            .transpose()?;
         let after = page
             .cursor
             .as_ref()
-            .map(|c| uuid(&c.after[0]))
+            .map(|c| uuid(&c.after[1]))
             .transpose()?;
-        self.tx.query(&format!("select * from {}.access_roles where tenant_id=$1 and ($2::uuid is null or id>$2) order by id limit $3",self.schema),&[&tenant,&after,&(page.fetch_limit() as i64)])
+        self.tx.query(&format!("select * from {}.access_roles where tenant_id=$1 and ($2::uuid is null or (created_at_epoch,id)<($4,$2)) order by created_at_epoch desc,id desc limit $3",self.schema),&[&tenant,&after,&(page.fetch_limit() as i64), &after_time])
             .map_err(access_db_error)?.iter().map(decode_role).collect()
     }
     fn permission(
@@ -716,6 +748,11 @@ impl AccessAdminTransaction for PostgresAccessAdminTransaction<'_> {
             filter: filter.clone(),
         })
         .map_err(|_| invalid())?;
+        let after_time = page
+            .cursor
+            .as_ref()
+            .map(|c| c.after[0].parse::<i64>().map_err(|_| invalid()))
+            .transpose()?;
         let categories: Vec<_> = [
             PermissionCategory::Business,
             PermissionCategory::Tenant,
@@ -725,14 +762,14 @@ impl AccessAdminTransaction for PostgresAccessAdminTransaction<'_> {
         .filter(|c| scope.permits(self.mode, *c))
         .map(category_name)
         .collect();
-        let resource = page.cursor.as_ref().map(|c| &c.after[0]);
-        let action = page.cursor.as_ref().map(|c| &c.after[1]);
+        let resource = page.cursor.as_ref().map(|c| &c.after[1]);
+        let action = page.cursor.as_ref().map(|c| &c.after[2]);
         let category = filter.category.map(category_name);
         let tenant = match scope {
             AdminPermissionScope::Tenant(t) => t.as_str(),
             AdminPermissionScope::Platform => SYSTEM_TENANT_ID,
         };
-        self.tx.query(&format!("select * from {}.access_permissions where tenant_id=$1 and category=any($2) and ($3::text is null or (resource_type,action)>($3 collate \"C\",$4 collate \"C\")) and ($5::text is null or resource_type=$5) and ($6::text is null or category=$6) and ($7::boolean is null or enabled=$7) order by resource_type,action limit $8",self.schema),&[&tenant,&categories,&resource,&action,&filter.resource_type,&category,&filter.enabled,&(page.fetch_limit() as i64)])
+        self.tx.query(&format!("select * from {}.access_permissions where tenant_id=$1 and category=any($2) and ($3::text is null or (coalesce(created_at_epoch,0),resource_type,action)<($9,$3 collate \"C\",$4 collate \"C\")) and ($5::text is null or resource_type=$5) and ($6::text is null or category=$6) and ($7::boolean is null or enabled=$7) order by coalesce(created_at_epoch,0) desc,resource_type desc,action desc limit $8",self.schema),&[&tenant,&categories,&resource,&action,&filter.resource_type,&category,&filter.enabled,&(page.fetch_limit() as i64), &after_time])
             .map_err(access_db_error)?.iter().map(decode_permission).collect()
     }
     fn binding(&mut self, tenant: &str, binding: &str) -> Result<Option<RoleBinding>, StoreError> {
@@ -766,12 +803,17 @@ impl AccessAdminTransaction for PostgresAccessAdminTransaction<'_> {
             subject_id: subject.into(),
         })
         .map_err(|_| invalid())?;
+        let after_time = page
+            .cursor
+            .as_ref()
+            .map(|c| c.after[0].parse::<i64>().map_err(|_| invalid()))
+            .transpose()?;
         let after = page
             .cursor
             .as_ref()
-            .map(|c| uuid(&c.after[0]))
+            .map(|c| uuid(&c.after[1]))
             .transpose()?;
-        self.tx.query(&format!("select * from {}.access_role_bindings where tenant_id=$1 and account_id=$2 and ($3::uuid is null or id>$3) order by id limit $4",self.schema),&[&tenant,&uuid(subject)?,&after,&(page.fetch_limit() as i64)])
+        self.tx.query(&format!("select * from {}.access_role_bindings where tenant_id=$1 and account_id=$2 and ($3::uuid is null or (created_at_epoch,id)<($5,$3)) order by created_at_epoch desc,id desc limit $4",self.schema),&[&tenant,&uuid(subject)?,&after,&(page.fetch_limit() as i64), &after_time])
             .map_err(access_db_error)?.iter().map(decode_binding).collect()
     }
     fn security_role(
@@ -924,7 +966,7 @@ impl AccessAdminTransaction for PostgresAccessAdminTransaction<'_> {
                     if let Some(before) = &change.before {
                         changed(self.tx.execute(&format!("update {s}.access_permissions set description=$4,enabled=$5,archived=$6,version=$7 where tenant_id=$1 and resource_type=$2 and action=$3 and category=$8 and version=$9"), &[&p.tenant_id,&p.key.resource_type,&p.key.action,&p.description,&p.enabled,&p.archived,&version(p.version)?,&category_name(before.category),&version(before.version)?]).map_err(access_db_error)?)?;
                     } else {
-                        self.tx.execute(&format!("insert into {s}.access_permissions(tenant_id,resource_type,action,category,description,enabled,archived,version) values($1,$2,$3,$4,$5,$6,$7,$8)"), &[&p.tenant_id,&p.key.resource_type,&p.key.action,&category_name(p.category),&p.description,&p.enabled,&p.archived,&version(p.version)?]).map_err(access_db_error)?;
+                        self.tx.execute(&format!("insert into {s}.access_permissions(tenant_id,resource_type,action,category,description,enabled,archived,version,created_at_epoch) values($1,$2,$3,$4,$5,$6,$7,$8,$9)"), &[&p.tenant_id,&p.key.resource_type,&p.key.action,&category_name(p.category),&p.description,&p.enabled,&p.archived,&version(p.version)?,&now]).map_err(access_db_error)?;
                     }
                 }
             }
@@ -1060,7 +1102,7 @@ impl AccessAdminTransaction for PostgresAccessAdminTransaction<'_> {
             .transpose()?;
         let start = filter.occurred_after.map(epoch).transpose()?;
         let end = filter.occurred_before.map(epoch).transpose()?;
-        self.tx.query(&format!("select id,occurred_at_epoch,actor_id,actor_domain,actor_session_id,authentication_source,target_domain,operation,request_id from {}.access_audit_events where target_domain=$1 and ($2::bigint is null or (occurred_at_epoch,id)>($2,$3)) and ($4::uuid is null or actor_id=$4) and ($5::text is null or operation=$5) and ($6::bigint is null or occurred_at_epoch >= $6) and ($7::bigint is null or occurred_at_epoch <= $7) order by occurred_at_epoch,id limit $8",self.schema),&[&tenant,&after_time,&after_id,&actor,&filter.operation,&start,&end,&(page.fetch_limit() as i64)])
+        self.tx.query(&format!("select id,occurred_at_epoch,actor_id,actor_domain,actor_session_id,authentication_source,target_domain,operation,request_id from {}.access_audit_events where target_domain=$1 and ($2::bigint is null or (occurred_at_epoch,id)<($2,$3)) and ($4::uuid is null or actor_id=$4) and ($5::text is null or operation=$5) and ($6::bigint is null or occurred_at_epoch >= $6) and ($7::bigint is null or occurred_at_epoch <= $7) order by occurred_at_epoch desc,id desc limit $8",self.schema),&[&tenant,&after_time,&after_id,&actor,&filter.operation,&start,&end,&(page.fetch_limit() as i64)])
             .map_err(access_db_error)?.iter().map(decode_audit).collect()
     }
     fn admin_audit_event(
@@ -1316,11 +1358,21 @@ impl PostgresAccessAdminTransaction<'_> {
         filter: &AdminAccountFilter,
         page: &AccessPageRequest,
     ) -> Result<Vec<AccessAccountRecord>, StoreError> {
+        let after_time = page
+            .cursor
+            .as_ref()
+            .map(|c| c.after[0].parse::<i64>().map_err(|_| invalid()))
+            .transpose()?;
         let after = page
             .cursor
             .as_ref()
-            .map(|c| uuid(&c.after[0]))
+            .map(|c| uuid(&c.after[1]))
             .transpose()?;
+        let time_column = if tenant.is_some() {
+            "m.joined_at_epoch"
+        } else {
+            "a.created_at_epoch"
+        };
         let status = filter.status.map(identity_status);
         let member = filter.membership_status.map(member_status);
         let email = filter.email.as_ref().map(|e| e.to_ascii_lowercase());
@@ -1328,7 +1380,7 @@ impl PostgresAccessAdminTransaction<'_> {
         let until = filter.created_before.map(epoch).transpose()?;
         // ponytail: literal substring search scans eligible rows; add a search
         // index only when measured account volume and latency require it.
-        self.tx.query(&format!("select a.id,a.email,a.display_name,a.status as identity_status,a.created_at_epoch,m.tenant_id,m.account_id,m.status,m.version,m.joined_at_epoch from {s}.accounts a left join {s}.access_memberships m on m.account_id=a.id and m.tenant_id=$1 where ($1::text is null or m.tenant_id=$1) and ($2::uuid is null or a.id=$2) and ($3::uuid is null or a.id>$3) and ($4::text is null or a.status=$4) and ($5::text is null or m.status=$5) and ($6::text is null or strpos(translate(a.email,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),$6)>0) and ($7::bigint is null or a.created_at_epoch>=$7) and ($8::bigint is null or a.created_at_epoch<=$8) order by a.id limit $9",s=self.schema),&[&tenant,&account,&after,&status,&member,&email,&since,&until,&(page.fetch_limit() as i64)]).map_err(access_db_error)?.iter().map(|row| {
+        self.tx.query(&format!("select a.id,a.email,a.display_name,a.status as identity_status,a.created_at_epoch,m.tenant_id,m.account_id,m.status,m.version,m.joined_at_epoch from {s}.accounts a left join {s}.access_memberships m on m.account_id=a.id and m.tenant_id=$1 where ($1::text is null or m.tenant_id=$1) and ($2::uuid is null or a.id=$2) and ($3::uuid is null or ({time_column},a.id)<($10,$3)) and ($4::text is null or a.status=$4) and ($5::text is null or m.status=$5) and ($6::text is null or strpos(translate(a.email,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),$6)>0) and ($7::bigint is null or a.created_at_epoch>=$7) and ($8::bigint is null or a.created_at_epoch<=$8) order by {time_column} desc,a.id desc limit $9",s=self.schema),&[&tenant,&account,&after,&status,&member,&email,&since,&until,&(page.fetch_limit() as i64), &after_time]).map_err(access_db_error)?.iter().map(|row| {
             let membership=if row.get::<_,Option<String>>("tenant_id").is_some(){Some(decode_member(row)?)}else{None};
             let status=match row.get::<_,String>("identity_status").as_str() {
                 "pending_verification"=>AccountIdentityStatus::PendingVerification,

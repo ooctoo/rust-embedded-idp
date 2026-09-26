@@ -1,5 +1,8 @@
 use super::*;
-use crate::access::{service::finish_page, AccessListScope, AccessPage, AccessPageRequest};
+use crate::access::{
+    service::{finish_page, time_page_key},
+    AccessListScope, AccessPage, AccessPageRequest,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct AdminTenantFilter {
@@ -77,7 +80,9 @@ impl<S: AccessAdminStore, C: Clock + Send + Sync, I: IdGenerator + Send + Sync> 
             }) {
                 return Err(AccessError::InvalidStoreResponse);
             }
-            finish_page(rows, page, scope, |r| vec![r.tenant.id.clone()])
+            finish_page(rows, page, scope, |r| {
+                time_page_key(r.created_at, r.tenant.id.clone())
+            })
         })
     }
     fn get_tenant(

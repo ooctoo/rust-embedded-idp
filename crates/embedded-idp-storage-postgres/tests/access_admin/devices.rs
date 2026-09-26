@@ -133,7 +133,7 @@ fn device_admin_http_is_scoped_and_disable_revoke_cleanup_is_atomic_in_both_mode
         }
         let listed = send(&router, "GET", "/admin/devices?limit=1", Some(tenant), "");
         assert_eq!(listed.0, StatusCode::OK);
-        assert_eq!(listed.1["items"][0]["device_id"], id.to_string());
+        assert_eq!(listed.1["items"][0]["device_id"], other.to_string());
         assert!(listed.1["items"][0].get("public_jwk").is_none());
         let cursor = listed.1["next_cursor"].as_str().unwrap();
         let last = send(
@@ -436,7 +436,7 @@ fn device_filters_preserve_active_bindings_tenant_scope_and_pagination_in_both_m
         assert_eq!(result.1["items"].as_array().unwrap().len(), 1);
         assert_eq!(
             result.1["items"][0]["device_id"],
-            Uuid::from_u128(1).to_string()
+            Uuid::from_u128(2).to_string()
         );
         let cursor = result.1["next_cursor"].as_str().unwrap();
         let next = send(
@@ -450,7 +450,7 @@ fn device_filters_preserve_active_bindings_tenant_scope_and_pagination_in_both_m
         assert_eq!(next.1["items"].as_array().unwrap().len(), 1);
         assert_eq!(
             next.1["items"][0]["device_id"],
-            Uuid::from_u128(2).to_string()
+            Uuid::from_u128(1).to_string()
         );
         assert_eq!(next.1["has_more"], false);
         assert_eq!(next.1["next_cursor"], Value::Null);

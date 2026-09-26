@@ -58,7 +58,7 @@ fn audit_http_pages_metadata_with_bound_filters_and_reads_immutable_scoped_detai
         let first = get(&router, &format!("{base}?{filter}&limit=1"), Some(t));
         assert_eq!(first.0, StatusCode::OK);
         assert_eq!(first.1["items"].as_array().unwrap().len(), 1);
-        assert_eq!(first.1["items"][0]["audit_id"], ids[0]);
+        assert_eq!(first.1["items"][0]["audit_id"], ids[2]);
         assert!(first.1["items"][0].get("change").is_none());
         assert_eq!(first.1["items"][0]["actor_id"], db.actor.to_string());
         assert_eq!(first.1["items"][0]["target_domain"], t);
@@ -76,7 +76,7 @@ fn audit_http_pages_metadata_with_bound_filters_and_reads_immutable_scoped_detai
             &format!("{base}?{filter}&limit=1&cursor={next}"),
             Some(t),
         );
-        assert_eq!(third.1["items"][0]["audit_id"], ids[2]);
+        assert_eq!(third.1["items"][0]["audit_id"], ids[0]);
         assert_eq!(third.1["has_more"], false);
         assert!(third.1["next_cursor"].is_null());
         for part in filter.split('&') {

@@ -1,5 +1,8 @@
 use super::*;
-use crate::access::{service::finish_page, AccessListScope, AccessPage, AccessPageRequest};
+use crate::access::{
+    service::{finish_page, time_page_key},
+    AccessListScope, AccessPage, AccessPageRequest,
+};
 
 pub trait RoleAdminService: AccessAdminService {
     /// Configuration, not effective access: suspended members and disabled roles
@@ -43,7 +46,7 @@ impl<S: AccessAdminStore, C: Clock + Send + Sync, I: IdGenerator + Send + Sync> 
         };
         page.validate(&scope)?;
         if page.cursor.as_ref().is_some_and(|c| {
-            uuid::Uuid::parse_str(&c.after[0]).map_or(true, |id| id.to_string() != c.after[0])
+            uuid::Uuid::parse_str(&c.after[1]).map_or(true, |id| id.to_string() != c.after[1])
         }) {
             return Err(AccessError::InvalidCursor);
         }
@@ -67,7 +70,9 @@ impl<S: AccessAdminStore, C: Clock + Send + Sync, I: IdGenerator + Send + Sync> 
             {
                 return Err(AccessError::InvalidStoreResponse);
             }
-            finish_page(rows, page, scope, |b| vec![b.id.clone()])
+            finish_page(rows, page, scope, |b| {
+                time_page_key(b.created_at, b.id.clone())
+            })
         })
     }
     fn list_roles(
@@ -81,7 +86,7 @@ impl<S: AccessAdminStore, C: Clock + Send + Sync, I: IdGenerator + Send + Sync> 
         };
         page.validate(&scope)?;
         if page.cursor.as_ref().is_some_and(|c| {
-            uuid::Uuid::parse_str(&c.after[0]).map_or(true, |id| id.to_string() != c.after[0])
+            uuid::Uuid::parse_str(&c.after[1]).map_or(true, |id| id.to_string() != c.after[1])
         }) {
             return Err(AccessError::InvalidCursor);
         }
@@ -96,7 +101,9 @@ impl<S: AccessAdminStore, C: Clock + Send + Sync, I: IdGenerator + Send + Sync> 
             if rows.iter().any(|r| r.tenant_id != tenant || r.version == 0) {
                 return Err(AccessError::InvalidStoreResponse);
             }
-            finish_page(rows, page, scope, |r| vec![r.id.clone()])
+            finish_page(rows, page, scope, |r| {
+                time_page_key(r.created_at, r.id.clone())
+            })
         })
     }
     fn get_role(

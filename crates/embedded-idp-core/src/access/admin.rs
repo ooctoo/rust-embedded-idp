@@ -149,6 +149,7 @@ pub struct AccessRoleRecord {
 pub struct AccessTenantRecord {
     pub tenant: Tenant,
     pub version: u64,
+    pub created_at: SystemTime,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -275,6 +276,8 @@ pub trait AccessAdminTransaction {
         tenant: Option<&str>,
         account: &str,
     ) -> Result<Option<AccessAccountRecord>, StoreError>;
+    /// Newest-first `(membership.joined_at or account.created_at, account_id)` v2
+    /// keyset scan, returning at most limit + 1 records.
     fn admin_accounts(
         &mut self,
         tenant: Option<&str>,
@@ -283,6 +286,8 @@ pub trait AccessAdminTransaction {
     ) -> Result<Vec<AccessAccountRecord>, StoreError>;
 
     fn admin_client(&mut self, id: &str) -> Result<Option<crate::OidcClient>, StoreError>;
+    /// Newest-first `(created_at or epoch, client_id)` v2 keyset scan, returning
+    /// at most limit + 1 records.
     fn admin_clients(
         &mut self,
         filter: &AdminClientFilter,
@@ -300,6 +305,8 @@ pub trait AccessAdminTransaction {
         tenant: &str,
         session: &str,
     ) -> Result<Option<super::TenantSession>, StoreError>;
+    /// Newest-first `(created_at, session_id)` v2 keyset scan, returning at most
+    /// limit + 1 records.
     fn admin_sessions(
         &mut self,
         tenant: &str,
@@ -316,7 +323,8 @@ pub trait AccessAdminTransaction {
         tenant: &str,
         device: &str,
     ) -> Result<Option<AccessDeviceRecord>, StoreError>;
-    /// Tenant-scoped ID keyset scan, returning at most limit + 1 records.
+    /// Tenant-scoped newest-first `(registered_at, device_id)` v2 keyset scan,
+    /// returning at most limit + 1 records.
     /// Account filtering requires an active binding in this same tenant;
     /// without it, include unbound devices. Each device appears at most once.
     fn admin_devices(
@@ -338,8 +346,8 @@ pub trait AccessAdminTransaction {
     fn check_permission(&mut self, query: &AccessQuery) -> Result<bool, StoreError>;
     fn tenant(&mut self, tenant_id: &str) -> Result<Option<Tenant>, StoreError>;
     fn tenant_record(&mut self, tenant_id: &str) -> Result<Option<AccessTenantRecord>, StoreError>;
-    /// Platform-only real-tenant search; excludes reserved domain 0, orders by
-    /// tenant ID and returns at most limit + 1 matching records.
+    /// Platform-only real-tenant search; excludes reserved domain 0, newest-first
+    /// `(created_at, tenant_id)` v2 keyset scan returning at most limit + 1 records.
     fn admin_tenants(
         &mut self,
         filter: &AdminTenantFilter,
@@ -365,7 +373,8 @@ pub trait AccessAdminTransaction {
         role_id: &str,
     ) -> Result<Option<AccessRoleRecord>, StoreError>;
     /// Metadata only, including protected/disabled roles in exactly one tenant.
-    /// ID keyset order, at most limit + 1 rows; do not expand permission sets.
+    /// Newest-first `(created_at, role_id)` v2 keyset scan, at most limit + 1 rows;
+    /// do not expand permission sets.
     fn admin_roles(
         &mut self,
         tenant: &str,
@@ -381,7 +390,8 @@ pub trait AccessAdminTransaction {
         key: &PermissionKey,
     ) -> Result<Option<PermissionDefinition>, StoreError>;
     /// Persisted directory, including disabled/retired-host entries, filtered by
-    /// scope/category. Keyset order (resource_type, action), at most limit + 1.
+    /// scope/category. Newest-first `(created_at or epoch, resource_type, action)`
+    /// v2 keyset scan, at most limit + 1.
     fn admin_permissions(
         &mut self,
         scope: &AdminPermissionScope,
@@ -394,7 +404,8 @@ pub trait AccessAdminTransaction {
         binding_id: &str,
     ) -> Result<Option<RoleBinding>, StoreError>;
     /// Configured assignments in exactly one tenant and subject, including
-    /// protected roles. ID keyset order, at most limit + 1; no resource expansion.
+    /// protected roles. Newest-first `(created_at, binding_id)` v2 keyset scan,
+    /// at most limit + 1; no resource expansion.
     fn admin_role_bindings(
         &mut self,
         tenant: &str,
@@ -434,7 +445,8 @@ pub trait AccessAdminTransaction {
         kind: RoleKind,
     ) -> Result<bool, StoreError>;
     fn append_audit(&mut self, event: &AccessAuditEvent) -> Result<(), StoreError>;
-    /// Metadata only, ordered by (occurred_at, id), at most limit + 1, exact target domain.
+    /// Metadata only, newest-first `(occurred_at, id)` v2 keyset scan, at most
+    /// limit + 1 records in the exact target domain.
     fn admin_audit_events(
         &mut self,
         tenant: &str,
@@ -821,6 +833,7 @@ where
             }
             let mut scoped = definition.clone();
             scoped.tenant_id = tenant.clone();
+            scoped.created_at = Some(now);
             permission_definitions.push(scoped);
         }
         let role_id = self.new_id("role")?;
@@ -833,6 +846,7 @@ where
                     allow_registration: *allow_registration,
                 },
                 version: 1,
+                created_at: now,
             },
             administrator: TenantMembership {
                 tenant_id: tenant.clone(),
@@ -851,6 +865,7 @@ where
                     status: RoleStatus::Active,
                     kind: RoleKind::TenantSecurityAdmin,
                     version: 1,
+                    created_at: now,
                 },
                 permissions,
             },
@@ -861,6 +876,7 @@ where
                 role_id,
                 resource_type: "idp.tenant".into(),
                 scope: ResourceScope::Type,
+                created_at: now,
             },
         })
     }
@@ -950,6 +966,7 @@ where
                         allow_registration: *allow_registration,
                     },
                     version: next_version(before.version, *expected_version)?,
+                    created_at: before.created_at,
                 };
                 Ok(AccessChange::Tenant { before, after })
             }
@@ -966,6 +983,7 @@ where
                         return Err(AccessError::Forbidden);
                     }
                     after.tenant_id = tenant.clone();
+                    after.created_at = Some(now);
                     if let Some(category) = tx.resource_category(tenant, &key.resource_type)? {
                         if category != after.category {
                             return Err(AccessError::Conflict("permission_category"));
@@ -1043,6 +1061,7 @@ where
                             enabled: true,
                             archived: false,
                             version: 1,
+                            created_at: Some(now),
                         },
                     }],
                 })
@@ -1110,6 +1129,7 @@ where
                             status: RoleStatus::Active,
                             kind: RoleKind::Business,
                             version: 1,
+                            created_at: now,
                         },
                         permissions: vec![],
                     }),
@@ -1191,6 +1211,7 @@ where
                         role_id: role_id.clone(),
                         resource_type: resource_type.clone(),
                         scope: scope.clone(),
+                        created_at: now,
                     }),
                 })
             }
@@ -1338,6 +1359,7 @@ where
                         role_id: role.role.id,
                         resource_type: resource_type.into(),
                         scope: ResourceScope::Type,
+                        created_at: now,
                     })
                 } else {
                     None

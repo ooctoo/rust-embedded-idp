@@ -1,4 +1,5 @@
 use super::*;
+use crate::access::service::time_page_key;
 use crate::{Clock, IdGenerator, StoreError};
 use std::{
     collections::BTreeMap,
@@ -69,7 +70,16 @@ fn perm(resource: &str, action: &str, category: PermissionCategory) -> Permissio
         enabled: true,
         archived: false,
         version: 1,
+        created_at: None,
     }
+}
+fn permission_page_key(permission: &PermissionDefinition) -> Vec<String> {
+    let mut key = time_page_key(
+        permission.created_at.unwrap_or(UNIX_EPOCH),
+        permission.key.resource_type.clone(),
+    );
+    key.push(permission.key.action.clone());
+    key
 }
 fn role(
     id: &str,
@@ -86,6 +96,7 @@ fn role(
             status: RoleStatus::Active,
             kind,
             version: 1,
+            created_at: UNIX_EPOCH,
         },
         permissions,
     }
@@ -107,6 +118,7 @@ fn binding(id: &str, tenant: &str, subject: &str, role_id: &str, resource: &str)
         role_id: role_id.into(),
         resource_type: resource.into(),
         scope: ResourceScope::Type,
+        created_at: UNIX_EPOCH,
     }
 }
 fn catalog() -> (
@@ -378,13 +390,20 @@ impl AccessAdminTransaction for Tx {
             .into_iter()
             .filter(|r| {
                 filter.matches(r)
-                    && page
-                        .cursor
-                        .as_ref()
-                        .is_none_or(|c| r.account_id > c.after[0])
+                    && page.cursor.as_ref().is_none_or(|c| {
+                        time_page_key(
+                            r.membership.as_ref().map_or(r.created_at, |m| m.joined_at),
+                            r.account_id.clone(),
+                        ) < c.after
+                    })
             })
             .collect();
-        records.sort_by(|a, b| a.account_id.cmp(&b.account_id));
+        records.sort_by_key(|r| {
+            std::cmp::Reverse(time_page_key(
+                r.membership.as_ref().map_or(r.created_at, |m| m.joined_at),
+                r.account_id.clone(),
+            ))
+        });
         records.truncate(page.fetch_limit());
         Ok(records)
     }
@@ -410,13 +429,18 @@ impl AccessAdminTransaction for Tx {
             .map(client_metadata)
             .filter(|c| {
                 filter.matches(c)
-                    && page
-                        .cursor
-                        .as_ref()
-                        .is_none_or(|p| c.client_id > p.after[0])
+                    && page.cursor.as_ref().is_none_or(|p| {
+                        time_page_key(c.created_at.unwrap_or(UNIX_EPOCH), c.client_id.clone())
+                            < p.after
+                    })
             })
             .collect();
-        rows.sort_by(|a, b| a.client_id.cmp(&b.client_id));
+        rows.sort_by_key(|c| {
+            std::cmp::Reverse(time_page_key(
+                c.created_at.unwrap_or(UNIX_EPOCH),
+                c.client_id.clone(),
+            ))
+        });
         rows.truncate(page.fetch_limit());
         Ok(rows)
     }
@@ -453,11 +477,13 @@ impl AccessAdminTransaction for Tx {
             .filter(|s| {
                 s.tenant_id == t
                     && f.matches(s)
-                    && p.cursor.as_ref().is_none_or(|c| s.id > c.after[0])
+                    && p.cursor
+                        .as_ref()
+                        .is_none_or(|c| time_page_key(s.created_at, s.id.clone()) < c.after)
             })
             .cloned()
             .collect();
-        rows.sort_by(|a, b| a.id.cmp(&b.id));
+        rows.sort_by_key(|s| std::cmp::Reverse(time_page_key(s.created_at, s.id.clone())));
         rows.truncate(p.fetch_limit());
         Ok(rows)
     }
@@ -505,11 +531,15 @@ impl AccessAdminTransaction for Tx {
                                 },
                             )
                         })
-                        && p.cursor.as_ref().is_none_or(|c| r.device.id > c.after[0])
+                        && p.cursor.as_ref().is_none_or(|c| {
+                            time_page_key(r.registered_at, r.device.id.clone()) < c.after
+                        })
                 })
                 .cloned()
                 .collect();
-        rows.sort_by(|a, b| a.device.id.cmp(&b.device.id));
+        rows.sort_by_key(|r| {
+            std::cmp::Reverse(time_page_key(r.registered_at, r.device.id.clone()))
+        });
         rows.truncate(p.fetch_limit());
         Ok(rows)
     }
@@ -597,6 +627,7 @@ impl AccessAdminTransaction for Tx {
             .map(|tenant| AccessTenantRecord {
                 version: self.data.tenant_versions.get(id).copied().unwrap_or(1),
                 tenant,
+                created_at: UNIX_EPOCH,
             }))
     }
     fn admin_tenants(
@@ -604,11 +635,11 @@ impl AccessAdminTransaction for Tx {
         filter: &AdminTenantFilter,
         page: &AccessPageRequest,
     ) -> Result<Vec<AccessTenantRecord>, StoreError> {
-        Ok(self
+        let mut rows: Vec<_> = self
             .data
             .tenants
             .values()
-            .filter(|t| t.id != "0" && page.cursor.as_ref().is_none_or(|c| t.id > c.after[0]))
+            .filter(|t| t.id != "0")
             .map(|tenant| AccessTenantRecord {
                 tenant: tenant.clone(),
                 version: self
@@ -617,10 +648,18 @@ impl AccessAdminTransaction for Tx {
                     .get(&tenant.id)
                     .copied()
                     .unwrap_or(1),
+                created_at: UNIX_EPOCH,
             })
             .filter(|t| filter.matches(t))
-            .take(page.fetch_limit())
-            .collect())
+            .filter(|t| {
+                page.cursor
+                    .as_ref()
+                    .is_none_or(|c| time_page_key(t.created_at, t.tenant.id.clone()) < c.after)
+            })
+            .collect();
+        rows.sort_by_key(|t| std::cmp::Reverse(time_page_key(t.created_at, t.tenant.id.clone())));
+        rows.truncate(page.fetch_limit());
+        Ok(rows)
     }
     fn resource_category(
         &mut self,
@@ -671,10 +710,14 @@ impl AccessAdminTransaction for Tx {
             .iter()
             .map(|r| r.role.clone())
             .filter(|r| {
-                r.tenant_id == tenant && page.cursor.as_ref().is_none_or(|c| r.id > c.after[0])
+                r.tenant_id == tenant
+                    && page
+                        .cursor
+                        .as_ref()
+                        .is_none_or(|c| time_page_key(r.created_at, r.id.clone()) < c.after)
             })
             .collect();
-        rows.sort_by(|a, b| a.id.cmp(&b.id));
+        rows.sort_by_key(|r| std::cmp::Reverse(time_page_key(r.created_at, r.id.clone())));
         rows.truncate(page.fetch_limit());
         Ok(rows)
     }
@@ -700,7 +743,7 @@ impl AccessAdminTransaction for Tx {
         filter: &AdminPermissionFilter,
         page: &AccessPageRequest,
     ) -> Result<Vec<PermissionDefinition>, StoreError> {
-        Ok(self
+        let mut rows: Vec<_> = self
             .data
             .permissions
             .values()
@@ -708,10 +751,16 @@ impl AccessAdminTransaction for Tx {
                 scope.permits(self.data.mode, p.category)
                     && filter.matches(p)
                     && page.cursor.as_ref().is_none_or(|c| {
-                        (&p.key.resource_type, &p.key.action) > (&c.after[0], &c.after[1])
+                        time_page_key(
+                            p.created_at.unwrap_or(UNIX_EPOCH),
+                            p.key.resource_type.clone(),
+                        )
+                        .into_iter()
+                        .chain(std::iter::once(p.key.action.clone()))
+                        .collect::<Vec<_>>()
+                            < c.after
                     })
             })
-            .take(page.fetch_limit())
             .cloned()
             .map(|mut p| {
                 p.tenant_id = match scope {
@@ -720,7 +769,10 @@ impl AccessAdminTransaction for Tx {
                 };
                 p
             })
-            .collect())
+            .collect();
+        rows.sort_by_key(|p| std::cmp::Reverse(permission_page_key(p)));
+        rows.truncate(page.fetch_limit());
+        Ok(rows)
     }
     fn binding(&mut self, t: &str, id: &str) -> Result<Option<RoleBinding>, StoreError> {
         Ok(self
@@ -743,11 +795,14 @@ impl AccessAdminTransaction for Tx {
             .filter(|b| {
                 b.tenant_id == tenant
                     && b.subject_id == subject
-                    && page.cursor.as_ref().is_none_or(|c| b.id > c.after[0])
+                    && page
+                        .cursor
+                        .as_ref()
+                        .is_none_or(|c| time_page_key(b.created_at, b.id.clone()) < c.after)
             })
             .cloned()
             .collect();
-        rows.sort_by(|a, b| a.id.cmp(&b.id));
+        rows.sort_by_key(|b| std::cmp::Reverse(time_page_key(b.created_at, b.id.clone())));
         rows.truncate(page.fetch_limit());
         Ok(rows)
     }
@@ -1023,10 +1078,10 @@ impl AccessAdminTransaction for Tx {
             .filter(|r| {
                 r.target_domain == tenant
                     && filter.matches(r)
-                    && page.cursor.as_ref().is_none_or(|c| r.page_key() > c.after)
+                    && page.cursor.as_ref().is_none_or(|c| r.page_key() < c.after)
             })
             .collect();
-        rows.sort_by_key(AdminAuditRecord::page_key);
+        rows.sort_by_key(|r| std::cmp::Reverse(r.page_key()));
         rows.truncate(page.fetch_limit());
         Ok(rows)
     }
@@ -2624,7 +2679,7 @@ fn client_admin_keeps_secrets_out_of_audit_and_requires_current_platform_authori
             },
         )
         .unwrap();
-    assert_eq!(next.items[0].client_id, "z-web");
+    assert_eq!(next.items[0].client_id, "web");
     let mut public = command;
     public.client_type = OidcClientType::PublicDesktop;
     public.redirect_uris = vec!["http://127.0.0.1:4567/callback".into()];
@@ -2831,7 +2886,7 @@ fn account_queries_enforce_projection_scope_permissions_and_filter_bound_cursors
             },
         )
         .unwrap();
-    assert_eq!(next.items[0].status, AccountIdentityStatus::Closed);
+    assert_eq!(next.items[0].status, AccountIdentityStatus::Active);
     assert_eq!(
         svc.list_accounts(
             platform.clone(),
@@ -3278,7 +3333,7 @@ fn device_admin_filters_validate_bounds_and_bind_every_cursor_condition() {
             },
         )
         .unwrap();
-    assert_eq!(page.items, vec![row]);
+    assert_eq!(page.items, vec![second.clone()]);
     assert!(page.has_more);
     let cursor = page.next_cursor.unwrap();
     let request = AccessPageRequest {
@@ -3294,7 +3349,7 @@ fn device_admin_filters_validate_bounds_and_bind_every_cursor_condition() {
         )
         .unwrap()
         .items,
-        vec![second]
+        vec![row]
     );
     for changed in [
         AdminDeviceFilter {
@@ -3409,7 +3464,7 @@ fn tenant_management_queries_require_platform_authority_and_bind_search_cursors(
             },
         )
         .unwrap();
-    assert_eq!(page.items[0].tenant.id, "t1");
+    assert_eq!(page.items[0].tenant.id, "t2");
     assert!(page.has_more);
     let request = AccessPageRequest {
         limit: 1,
@@ -3418,7 +3473,7 @@ fn tenant_management_queries_require_platform_authority_and_bind_search_cursors(
     let next = svc
         .list_tenants(ctx("0", "u1", "s0"), filter.clone(), request.clone())
         .unwrap();
-    assert_eq!(next.items[0].tenant.id, "t2");
+    assert_eq!(next.items[0].tenant.id, "t1");
     assert!(!next.has_more);
     for changed in [
         AdminTenantFilter {
@@ -3556,6 +3611,19 @@ fn role_admin_queries_bind_tenant_and_validate_bounded_configuration_snapshots()
             .push(role(&second, "t1", RoleKind::Business, vec![]));
         data.roles
             .push(role(&first, "t2", RoleKind::Business, vec![]));
+        data.roles
+            .iter_mut()
+            .find(|role| role.role.id == "sec1")
+            .unwrap()
+            .role
+            .created_at = UNIX_EPOCH;
+        for role in data
+            .roles
+            .iter_mut()
+            .filter(|role| role.role.id == first || role.role.id == second)
+        {
+            role.role.created_at = UNIX_EPOCH + Duration::from_secs(1);
+        }
     }
     let (svc, store) = service(store);
     let page = svc
@@ -3568,7 +3636,7 @@ fn role_admin_queries_bind_tenant_and_validate_bounded_configuration_snapshots()
             },
         )
         .unwrap();
-    assert_eq!(page.items[0].id, first);
+    assert_eq!(page.items[0].id, second);
     let request = AccessPageRequest {
         limit: 1,
         cursor: page.next_cursor,
@@ -3578,7 +3646,7 @@ fn role_admin_queries_bind_tenant_and_validate_bounded_configuration_snapshots()
             .unwrap()
             .items[0]
             .id,
-        second
+        first
     );
     assert_eq!(
         svc.list_roles(ctx("0", "u1", "s0"), "t2".into(), request),
@@ -3690,7 +3758,7 @@ fn subject_binding_queries_preserve_scopes_and_bind_both_tenant_and_subject() {
             },
         )
         .unwrap();
-    assert_eq!(page.items, vec![one]);
+    assert_eq!(page.items, vec![two]);
     let request = AccessPageRequest {
         limit: 1,
         cursor: page.next_cursor,
@@ -3703,7 +3771,7 @@ fn subject_binding_queries_preserve_scopes_and_bind_both_tenant_and_subject() {
             request.clone(),
         )
         .unwrap();
-    assert_eq!(page.items, vec![two]);
+    assert_eq!(page.items, vec![one]);
     assert!(!page.has_more);
     for (tenant, subject) in [("t2", "u2"), ("t1", "u1")] {
         assert_eq!(
@@ -3810,12 +3878,12 @@ fn permission_directory_queries_bound_category_filters_and_compound_cursors() {
             },
         )
         .unwrap();
-    assert_eq!(first.items[0].key, key("report", "read"));
+    assert_eq!(first.items[0].key, key("report", "update"));
     let request = AccessPageRequest {
         limit: 1,
         cursor: first.next_cursor,
     };
-    assert_eq!(request.cursor.as_ref().unwrap().after.len(), 2);
+    assert_eq!(request.cursor.as_ref().unwrap().after.len(), 3);
     let last = svc
         .list_permissions(
             ctx("t1", "u1", "s1"),
@@ -3824,7 +3892,7 @@ fn permission_directory_queries_bound_category_filters_and_compound_cursors() {
             request.clone(),
         )
         .unwrap();
-    assert_eq!(last.items[0].key, key("report", "update"));
+    assert_eq!(last.items[0].key, key("report", "read"));
     assert!(!last.has_more);
     for changed in [
         AdminPermissionFilter {
@@ -4098,7 +4166,7 @@ fn audit_queries_bind_domain_filters_and_numeric_time_and_require_audit_permissi
     assert_eq!(first.items.len(), 1);
     assert_eq!(
         first.items[0].occurred_at,
-        UNIX_EPOCH + Duration::from_secs(9)
+        UNIX_EPOCH + Duration::from_secs(10)
     );
     let request = AccessPageRequest {
         limit: 2,
@@ -4114,7 +4182,7 @@ fn audit_queries_bind_domain_filters_and_numeric_time_and_require_audit_permissi
         .unwrap();
     assert_eq!(rest.items.len(), 2);
     assert!(!rest.has_more);
-    assert!(rest.items[0].id < rest.items[1].id);
+    assert!(rest.items[0].id > rest.items[1].id);
     for changed in [
         AdminAuditFilter {
             actor_id: None,

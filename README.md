@@ -96,6 +96,8 @@ cargo check --workspace --all-targets --locked
 cargo test --workspace --locked
 ```
 
+管理列表默认按时间倒序，时间相同按唯一标识倒序。已有 `tenant_v2` schema 使用本版本前，需由数据库维护者显式执行 `psql -v schema=目标_IdP_schema -f scripts/migrate_list_time_desc.sql`（连接由本地 PostgreSQL 配置提供）。该脚本保留数据、为未知历史权限保留空创建时间，并可重复执行。在线启动不会代为升级；旧管理分页游标失效，刷新列表从第一页开始。新建 schema 无需额外升级。
+
 真实 PostgreSQL 测试必须显式设置 `EMBEDDED_IDP_TEST_PG_CONNECTION_URI`，再运行 `./scripts/run_live_postgres_checks.sh disabled`。测试使用随机临时 schema，不会因为缺少测试连接而改用应用连接。
 
 - [参考服务配置与启动](docs/standalone-app-v1.md)

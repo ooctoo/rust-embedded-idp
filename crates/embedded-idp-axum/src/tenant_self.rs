@@ -228,6 +228,7 @@ mod tests {
             })?;
             Ok(AccessPage {
                 items: vec![Role {
+                    created_at: std::time::SystemTime::UNIX_EPOCH,
                     id: "r1".into(),
                     tenant_id: tenant.into(),
                     key: "reader".into(),

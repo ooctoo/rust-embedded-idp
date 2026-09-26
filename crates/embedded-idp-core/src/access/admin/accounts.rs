@@ -1,5 +1,8 @@
 use super::*;
-use crate::access::{service::finish_page, AccessListScope, AccessPage, AccessPageRequest};
+use crate::access::{
+    service::{finish_page, time_page_key},
+    AccessListScope, AccessPage, AccessPageRequest,
+};
 
 /// Identity state is separate from each tenant membership. Includes stored closed
 /// identities rather than silently treating them as active or disabled.
@@ -91,7 +94,7 @@ impl<S: AccessAdminStore, C: Clock + Send + Sync, I: IdGenerator + Send + Sync> 
         };
         page.validate(&scope)?;
         if page.cursor.as_ref().is_some_and(|c| {
-            uuid::Uuid::parse_str(&c.after[0]).map_or(true, |id| id.to_string() != c.after[0])
+            uuid::Uuid::parse_str(&c.after[1]).map_or(true, |id| id.to_string() != c.after[1])
         }) {
             return Err(AccessError::InvalidCursor);
         }
@@ -104,7 +107,12 @@ impl<S: AccessAdminStore, C: Clock + Send + Sync, I: IdGenerator + Send + Sync> 
             {
                 return Err(AccessError::InvalidStoreResponse);
             }
-            finish_page(rows, page, scope, |r| vec![r.account_id.clone()])
+            finish_page(rows, page, scope, |r| {
+                time_page_key(
+                    r.membership.as_ref().map_or(r.created_at, |m| m.joined_at),
+                    r.account_id.clone(),
+                )
+            })
         })
     }
     fn get_account(

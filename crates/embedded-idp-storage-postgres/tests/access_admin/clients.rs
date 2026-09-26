@@ -86,7 +86,7 @@ fn client_admin_http_in_both_modes_filters_and_commits_only_secret_free_audits()
             "",
         );
         assert_eq!(page.0, StatusCode::OK);
-        assert_eq!(page.1["items"][0]["client_id"], "Z-web");
+        assert_eq!(page.1["items"][0]["client_id"], "a-web");
         let cursor = page.1["next_cursor"].as_str().unwrap();
         let next = send(
             &router,
@@ -98,7 +98,7 @@ fn client_admin_http_in_both_modes_filters_and_commits_only_secret_free_audits()
             "",
         );
         assert_eq!(next.0, StatusCode::OK);
-        assert_eq!(next.1["items"][0]["client_id"], "a-web");
+        assert_eq!(next.1["items"][0]["client_id"], "Z-web");
         assert_eq!(next.1["has_more"], false);
         assert_eq!(
             send(

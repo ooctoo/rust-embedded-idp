@@ -87,8 +87,7 @@ struct Cursor {
     version: u8,
     tenant_id: Option<String>,
     filter: Filter,
-    resource_type: String,
-    action: String,
+    after: Vec<String>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -173,7 +172,7 @@ async fn list_scoped(
                         .map_or(AdminPermissionScope::Platform, AdminPermissionScope::Tenant),
                     filter: c.filter.core(),
                 },
-                after: vec![c.resource_type, c.action],
+                after: c.after,
             })
         }
     };
@@ -197,7 +196,7 @@ async fn list_scoped(
                     let AccessListScope::AdminPermissions { scope, .. } = c.scope else {
                         return error(AccessError::InvalidStoreResponse);
                     };
-                    if c.after.len() != 2 {
+                    if c.after.len() != 3 {
                         return error(AccessError::InvalidStoreResponse);
                     }
                     let tenant_id = match scope {
@@ -209,8 +208,7 @@ async fn list_scoped(
                             version: c.version,
                             tenant_id,
                             filter,
-                            resource_type: c.after[0].clone(),
-                            action: c.after[1].clone(),
+                            after: c.after,
                         })
                         .unwrap(),
                     ))

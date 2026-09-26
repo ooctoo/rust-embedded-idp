@@ -1,5 +1,8 @@
 use super::*;
-use crate::access::{service::finish_page, AccessListScope, AccessPage, AccessPageRequest};
+use crate::access::{
+    service::{finish_page, time_page_key},
+    AccessListScope, AccessPage, AccessPageRequest,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AdminPermissionScope {
@@ -128,7 +131,12 @@ impl<S: AccessAdminStore, C: Clock + Send + Sync, I: IdGenerator + Send + Sync>
                 return Err(AccessError::InvalidStoreResponse);
             }
             finish_page(rows, page, cursor_scope, |p| {
-                vec![p.key.resource_type.clone(), p.key.action.clone()]
+                let mut key = time_page_key(
+                    p.created_at.unwrap_or(SystemTime::UNIX_EPOCH),
+                    p.key.resource_type.clone(),
+                );
+                key.push(p.key.action.clone());
+                key
             })
         })
     }

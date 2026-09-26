@@ -1163,3 +1163,22 @@ test("diagnosis sends only the selected query and rejects mismatched or uncertai
   await assert.rejects(client.diagnosePermission("tenant-a", input), e => e.message.includes("勿重复提交"));
   assert.equal(calls.filter(c => c.path === "/access/check").length, 6);
 });
+
+
+test("management lists preserve server time order across opaque cursor pages", async t => {
+  const { client, calls } = setup(t, path => {
+    if (path === "/capabilities") return json(fixed);
+    if (path === "/login") return json(authenticated());
+    const cursor = new URL(path, "http://test").searchParams.get("cursor");
+    return json(cursor
+      ? { items: [managedClient({ client_id: "m-old" })], has_more: false, next_cursor: null }
+      : { items: [managedClient({ client_id: "z-new" }), managedClient({ client_id: "a-middle" })], has_more: true, next_cursor: "v2-time-cursor+/=" });
+  });
+  await client.loadCapabilities();
+  await client.login("admin@example.test", "synthetic-password");
+  const first = await client.listClients();
+  assert.deepEqual(first.items.map(row => row.client_id), ["z-new", "a-middle"]);
+  const next = await client.listClients({}, first.next_cursor);
+  assert.deepEqual(next.items.map(row => row.client_id), ["m-old"]);
+  assert.equal(new URL(calls.at(-1).path, "http://test").searchParams.get("cursor"), first.next_cursor);
+});
