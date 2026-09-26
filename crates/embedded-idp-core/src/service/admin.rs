@@ -372,6 +372,7 @@ fn admin_client_record(client: OidcClient) -> super::AdminClientRecord {
             .client_secret_hash
             .as_deref()
             .is_some_and(|value| !value.trim().is_empty()),
+        created_at: None,
     }
 }
 

@@ -51,7 +51,8 @@ create table __SCHEMA__.access_permissions (
     archived boolean not null default false,
     version bigint not null default 1 check (version > 0),
     primary key(tenant_id, resource_type, action),
-    check (not archived or not enabled)
+    check (not archived or not enabled),
+    created_at_epoch bigint default floor(extract(epoch from clock_timestamp()))::bigint
 );
 create table __SCHEMA__.access_roles (
     tenant_id text not null references __SCHEMA__.access_tenants(id),
@@ -284,3 +285,14 @@ begin
 end $$;
 create trigger device_identity_guard before update on __SCHEMA__.devices
     for each row execute function __SCHEMA__.access_guard_device_identity();
+
+-- Ascending B-trees also serve descending keyset scans.
+create index access_tenants_time_page on __SCHEMA__.access_tenants(created_at_epoch, id);
+create index accounts_time_page on __SCHEMA__.accounts(created_at_epoch, id);
+create index access_memberships_time_page on __SCHEMA__.access_memberships(tenant_id, joined_at_epoch, account_id);
+create index access_roles_time_page on __SCHEMA__.access_roles(tenant_id, created_at_epoch, id);
+create index access_bindings_time_page on __SCHEMA__.access_role_bindings(tenant_id, account_id, created_at_epoch, id);
+create index access_permissions_time_page on __SCHEMA__.access_permissions(tenant_id, (coalesce(created_at_epoch, 0)), resource_type, action);
+create index oidc_clients_time_page on __SCHEMA__.oidc_clients(created_at_epoch, client_id collate "C");
+create index devices_time_page on __SCHEMA__.devices(tenant_id, registered_at_epoch, id);
+create index sessions_time_page on __SCHEMA__.auth_sessions(tenant_id, created_at_epoch, id);

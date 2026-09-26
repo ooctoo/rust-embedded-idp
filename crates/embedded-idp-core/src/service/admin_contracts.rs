@@ -274,6 +274,8 @@ pub struct AdminClientRecord {
     pub client_type: OidcClientType,
     pub pkce_required: bool,
     pub client_secret_configured: bool,
+    /// Legacy client metadata has no persisted creation timestamp.
+    pub created_at: Option<SystemTime>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

@@ -84,7 +84,7 @@ struct PageQuery {
 struct Cursor {
     version: u8,
     filter: Filter,
-    after: String,
+    after: Vec<String>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -168,7 +168,7 @@ async fn list(
                 scope: AccessListScope::AdminTenants {
                     filter: c.filter.core(),
                 },
-                after: vec![c.after],
+                after: c.after,
             })
         }
     };
@@ -189,7 +189,7 @@ async fn list(
                 None => None,
                 Some(c) => {
                     if !matches!(c.scope, AccessListScope::AdminTenants { .. })
-                        || c.after.len() != 1
+                        || c.after.len() != 2
                     {
                         return error(AccessError::InvalidStoreResponse);
                     }
@@ -197,7 +197,7 @@ async fn list(
                         &serde_json::to_vec(&Cursor {
                             version: c.version,
                             filter,
-                            after: c.after[0].clone(),
+                            after: c.after,
                         })
                         .unwrap(),
                     ))

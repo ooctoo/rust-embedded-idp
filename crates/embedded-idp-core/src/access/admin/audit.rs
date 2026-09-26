@@ -1,5 +1,8 @@
 use super::*;
-use crate::access::{service::finish_page, AccessListScope, AccessPage, AccessPageRequest};
+use crate::access::{
+    service::{finish_page, time_page_key},
+    AccessListScope, AccessPage, AccessPageRequest,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AdminAuditRecord {
@@ -36,17 +39,7 @@ impl AdminAuditRecord {
         Ok(())
     }
     pub fn page_key(&self) -> Vec<String> {
-        // Fixed-width nonnegative seconds preserve chronological order in shared keyset validation.
-        vec![
-            format!(
-                "{:019}",
-                self.occurred_at
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs()
-            ),
-            self.id.clone(),
-        ]
+        time_page_key(self.occurred_at, self.id.clone())
     }
 }
 /// The existing secret-free audit projection, not a serialized credential/domain model.

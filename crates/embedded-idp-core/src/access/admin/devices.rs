@@ -1,6 +1,7 @@
 use super::*;
 use crate::access::{
-    service::finish_page, AccessListScope, AccessPage, AccessPageRequest, TenantProofDevice,
+    service::{finish_page, time_page_key},
+    AccessListScope, AccessPage, AccessPageRequest, TenantProofDevice,
 };
 
 /// Management projection; never includes JWKs, account credentials or bindings.
@@ -89,7 +90,7 @@ where
         };
         page.validate(&scope)?;
         if page.cursor.as_ref().is_some_and(|c| {
-            uuid::Uuid::parse_str(&c.after[0]).map_or(true, |id| id.to_string() != c.after[0])
+            uuid::Uuid::parse_str(&c.after[1]).map_or(true, |id| id.to_string() != c.after[1])
         }) {
             return Err(AccessError::InvalidCursor);
         }
@@ -107,7 +108,9 @@ where
             {
                 return Err(AccessError::InvalidStoreResponse);
             }
-            finish_page(rows, page, scope, |r| vec![r.device.id.clone()])
+            finish_page(rows, page, scope, |r| {
+                time_page_key(r.registered_at, r.device.id.clone())
+            })
         })
     }
     fn get_device(

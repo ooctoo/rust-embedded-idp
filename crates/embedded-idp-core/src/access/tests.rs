@@ -44,6 +44,7 @@ fn definition(resource_type: &str, action: &str) -> PermissionDefinition {
         enabled: true,
         archived: false,
         version: 1,
+        created_at: None,
     }
 }
 
@@ -109,6 +110,7 @@ fn grant(
             status: RoleStatus::Active,
             kind,
             version: 1,
+            created_at: UNIX_EPOCH,
         });
     }
     let permission = PermissionKey {
@@ -130,6 +132,7 @@ fn grant(
         role_id: role_id.into(),
         resource_type: resource.into(),
         scope,
+        created_at: UNIX_EPOCH,
     });
 }
 

@@ -37,6 +37,7 @@ impl IdGenerator for FixedIds {
 
 fn catalog() -> PermissionCatalog {
     PermissionCatalog::new(vec![PermissionDefinition {
+        created_at: None,
         tenant_id: "0".into(),
         key: PermissionKey {
             resource_type: "report".into(),

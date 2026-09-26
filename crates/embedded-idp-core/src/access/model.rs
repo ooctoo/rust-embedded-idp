@@ -153,6 +153,7 @@ pub struct PermissionDefinition {
     pub enabled: bool,
     pub archived: bool,
     pub version: u64,
+    pub created_at: Option<SystemTime>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -164,6 +165,7 @@ pub struct Role {
     pub status: RoleStatus,
     pub kind: RoleKind,
     pub version: u64,
+    pub created_at: SystemTime,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -181,6 +183,7 @@ pub struct RoleBinding {
     pub role_id: String,
     pub resource_type: String,
     pub scope: ResourceScope,
+    pub created_at: SystemTime,
 }
 
 impl RoleBinding {
@@ -288,6 +291,7 @@ impl PermissionCatalog {
                     enabled: true,
                     archived: false,
                     version: 1,
+                    created_at: None,
                 })?;
             }
         }

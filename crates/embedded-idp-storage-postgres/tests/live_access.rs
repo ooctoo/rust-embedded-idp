@@ -18,6 +18,7 @@ fn catalog() -> PermissionCatalog {
         ]
         .into_iter()
         .map(|(r, a)| PermissionDefinition {
+            created_at: None,
             tenant_id: "0".into(),
             key: PermissionKey {
                 resource_type: r.into(),
@@ -608,4 +609,58 @@ fn device_credentials_stay_in_their_tenant_and_layout_damage_is_rejected() {
         .adapter
         .initialize_access_schema(TenancyMode::Enabled, &catalog())
         .is_err());
+}
+
+#[test]
+#[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
+fn list_time_upgrade_preserves_unknown_history_and_is_repeatable() {
+    let db = Db::new(TenancyMode::Enabled);
+    let s = db.schema();
+    let mut client = db.adapter.connect().unwrap();
+    client
+        .batch_execute(&format!(
+            "alter table {s}.access_permissions drop column created_at_epoch cascade"
+        ))
+        .unwrap();
+    assert!(matches!(
+        db.adapter.inspect_access_schema(db.mode),
+        Err(embedded_idp_core::StoreError::Conflict(
+            "access.list_time_migration_required"
+        ))
+    ));
+    let migration = include_str!("../../../scripts/migrate_list_time_desc.sql")
+        .lines()
+        .filter(|line| !line.starts_with('\\'))
+        .collect::<Vec<_>>()
+        .join("\n")
+        .replace(":\"schema\"", s);
+    for _ in 0..2 {
+        client.batch_execute(&migration).unwrap();
+        db.adapter.inspect_access_schema(db.mode).unwrap();
+    }
+    let unknown: i64 = client
+        .query_one(
+            &format!("select count(*) from {s}.access_permissions where created_at_epoch is null"),
+            &[],
+        )
+        .unwrap()
+        .get(0);
+    assert_eq!(
+        unknown as usize,
+        catalog()
+            .definitions()
+            .filter(|p| p.category != PermissionCategory::Business)
+            .count()
+    );
+    client.batch_execute(&format!("insert into {s}.access_permissions(tenant_id,resource_type,action,category,description,enabled) values('0','new','read','business','new permission',true)")).unwrap();
+    let created: Option<i64> = client
+        .query_one(
+            &format!(
+                "select created_at_epoch from {s}.access_permissions where resource_type='new'"
+            ),
+            &[],
+        )
+        .unwrap()
+        .get(0);
+    assert!(created.is_some_and(|t| t > 0));
 }

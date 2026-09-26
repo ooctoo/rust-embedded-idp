@@ -31,6 +31,7 @@ fn catalog() -> PermissionCatalog {
                 enabled: true,
                 archived: false,
                 version: 1,
+                created_at: None,
             })
             .collect(),
     )
@@ -654,6 +655,7 @@ fn admin_transaction_panic_rolls_back_and_returns_a_usable_connection() {
                             status: RoleStatus::Active,
                             kind: RoleKind::Business,
                             version: 1,
+                            created_at: FixedClock.now(),
                         },
                         permissions: vec![],
                     }),
@@ -812,3 +814,6 @@ mod security_admin;
 
 #[path = "access_admin/audit.rs"]
 mod audit;
+
+#[path = "access_admin/list_order.rs"]
+mod list_order;

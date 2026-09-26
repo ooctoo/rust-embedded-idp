@@ -434,6 +434,7 @@ impl AdminService for HappyAdminService {
     ) -> Result<UpsertClientResult, ServiceError> {
         Ok(UpsertClientResult {
             client: AdminClientRecord {
+                created_at: None,
                 client_id: command.client_id,
                 client_name: command.client_name,
                 redirect_uris: command.redirect_uris,
@@ -848,6 +849,7 @@ fn test_pending_verification() -> PendingEmailVerification {
 
 fn test_admin_client() -> AdminClientRecord {
     AdminClientRecord {
+        created_at: None,
         client_id: "desktop-app".to_string(),
         client_name: "Desktop App".to_string(),
         redirect_uris: vec!["http://127.0.0.1:43821/callback".to_string()],

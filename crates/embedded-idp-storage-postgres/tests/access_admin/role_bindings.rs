@@ -209,11 +209,11 @@ fn binding_http_queries_and_mutations_enforce_identity_scope_and_protected_roles
             "",
         );
         assert_eq!(page.0, StatusCode::OK);
-        assert_eq!(page.1["items"][0]["binding_id"], first);
+        assert_eq!(page.1["items"][0]["binding_id"], second);
         let cursor = page.1["next_cursor"].as_str().unwrap();
         let next_path = format!("{subject_path}?cursor={cursor}");
         let next = send(&router, "GET", &next_path, Some(t), "");
-        assert_eq!(next.1["items"][0]["binding_id"], second);
+        assert_eq!(next.1["items"][0]["binding_id"], first);
         assert_eq!(next.1["has_more"], false);
         assert_eq!(
             send(

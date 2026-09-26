@@ -58,7 +58,7 @@ fn tenant_http_search_is_platform_only_scoped_and_rechecks_authority() {
         .iter()
         .map(|r| r["tenant_id"].as_str().unwrap())
         .collect();
-    assert_eq!(ids, vec!["Z", "t1", "t2", "z"]);
+    assert_eq!(ids, vec!["z", "t2", "t1", "Z"]);
     let page = send(
         &router,
         "GET",
@@ -67,11 +67,11 @@ fn tenant_http_search_is_platform_only_scoped_and_rechecks_authority() {
         "",
     );
     assert_eq!(page.0, StatusCode::OK);
-    assert_eq!(page.1["items"][0]["tenant_id"], "t1");
+    assert_eq!(page.1["items"][0]["tenant_id"], "t2");
     let cursor = page.1["next_cursor"].as_str().unwrap();
     let path = format!("/admin/tenants?name=alpha&status=active&cursor={cursor}");
     let next = send(&router, "GET", &path, None, "");
-    assert_eq!(next.1["items"][0]["tenant_id"], "t2");
+    assert_eq!(next.1["items"][0]["tenant_id"], "t1");
     assert_eq!(next.1["has_more"], false);
     for changed in [
         "name=alpha",

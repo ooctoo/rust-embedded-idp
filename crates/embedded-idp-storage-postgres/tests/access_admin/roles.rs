@@ -248,6 +248,16 @@ fn role_admin_queries_scope_cursor_and_read_write_authority_in_both_modes() {
         let router = app(&db, Some(db.context(db.actor_session.to_string())));
         let first = create(&router, t, "first");
         let second = create(&router, t, "second");
+        db.adapter
+            .connect()
+            .unwrap()
+            .execute(
+                &format!(
+                    "update {s}.access_roles set created_at_epoch=0 where tenant_id=$1 and kind<>'business'"
+                ),
+                &[&t],
+            )
+            .unwrap();
         assert_eq!(
             send(&app(&db, None), "GET", "/admin/access/roles", Some(t), "").0,
             StatusCode::UNAUTHORIZED
@@ -275,13 +285,13 @@ fn role_admin_queries_scope_cursor_and_read_write_authority_in_both_modes() {
         }
         let page = send(&router, "GET", "/admin/access/roles?limit=1", Some(t), "");
         assert_eq!(page.0, StatusCode::OK);
-        assert_eq!(page.1["items"][0]["role_id"], first);
+        assert_eq!(page.1["items"][0]["role_id"], second);
         assert!(page.1["items"][0].get("permissions").is_none());
         let cursor = page.1["next_cursor"].as_str().unwrap();
         let path = format!("/admin/access/roles?cursor={cursor}&limit=1");
         assert_eq!(
             send(&router, "GET", &path, Some(t), "").1["items"][0]["role_id"],
-            second
+            first
         );
         if mode == TenancyMode::Enabled {
             assert_eq!(

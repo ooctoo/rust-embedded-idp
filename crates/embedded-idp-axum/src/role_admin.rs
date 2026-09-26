@@ -48,7 +48,7 @@ struct PageQuery {
 struct Cursor {
     version: u8,
     tenant_id: String,
-    after: String,
+    after: Vec<String>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -136,7 +136,7 @@ async fn list(
                 scope: AccessListScope::AdminRoles {
                     tenant_id: c.tenant_id,
                 },
-                after: vec![c.after],
+                after: c.after,
             })
         }
     };
@@ -159,14 +159,14 @@ async fn list(
                     let AccessListScope::AdminRoles { tenant_id } = c.scope else {
                         return error(AccessError::InvalidStoreResponse);
                     };
-                    if c.after.len() != 1 {
+                    if c.after.len() != 2 {
                         return error(AccessError::InvalidStoreResponse);
                     }
                     Some(Base64UrlUnpadded::encode_string(
                         &serde_json::to_vec(&Cursor {
                             version: c.version,
                             tenant_id,
-                            after: c.after[0].clone(),
+                            after: c.after,
                         })
                         .unwrap(),
                     ))

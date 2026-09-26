@@ -80,6 +80,13 @@ fn validate_layout(client: &mut impl GenericClient, schema: &str) -> Result<(), 
             "access schema layout is incomplete".into(),
         ));
     }
+    let has_time_column: bool = client.query_one(
+        "select exists(select 1 from information_schema.columns where table_schema=$1 and table_name='access_permissions' and column_name='created_at_epoch' and data_type='bigint')",
+        &[&schema],
+    ).map_err(access_db_error)?.get(0);
+    if !has_time_column {
+        return Err(StoreError::Conflict("access.list_time_migration_required"));
+    }
     Ok(())
 }
 
@@ -360,6 +367,7 @@ impl TenantRegistrationStore for PostgresAccessStore {
 
 fn decode_role(row: &Row) -> Result<Role, StoreError> {
     Ok(Role {
+        created_at: time(row.get("created_at_epoch"))?,
         id: row.get::<_, Uuid>("id").to_string(),
         tenant_id: row.get("tenant_id"),
         key: row.get("key"),
@@ -380,6 +388,10 @@ fn decode_role(row: &Row) -> Result<Role, StoreError> {
 }
 fn decode_permission(row: &Row) -> Result<PermissionDefinition, StoreError> {
     Ok(PermissionDefinition {
+        created_at: row
+            .get::<_, Option<i64>>("created_at_epoch")
+            .map(time)
+            .transpose()?,
         tenant_id: row.get("tenant_id"),
         key: PermissionKey {
             resource_type: row.get("resource_type"),

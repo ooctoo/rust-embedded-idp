@@ -30,6 +30,7 @@ fn catalog() -> PermissionCatalog {
         ]
         .into_iter()
         .map(|(resource_type, action)| PermissionDefinition {
+            created_at: None,
             tenant_id: "0".into(),
             key: key(resource_type, action),
             description: format!("host {resource_type}/{action}"),
