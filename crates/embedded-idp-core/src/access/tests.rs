@@ -750,6 +750,7 @@ fn role_pages_are_distinct_and_cursors_cannot_cross_subject_or_tenant() {
             AccessPageRequest {
                 limit: 1,
                 cursor: None,
+                sort_order: None,
             },
         )
         .unwrap();
@@ -758,6 +759,7 @@ fn role_pages_are_distinct_and_cursors_cannot_cross_subject_or_tenant() {
     let second_request = AccessPageRequest {
         limit: 1,
         cursor: first.next_cursor.clone(),
+        sort_order: None,
     };
     let second = service
         .list_subject_roles("t1", "u1", second_request.clone())
@@ -780,7 +782,8 @@ fn role_pages_are_distinct_and_cursors_cannot_cross_subject_or_tenant() {
                 "u1",
                 AccessPageRequest {
                     limit,
-                    cursor: None
+                    cursor: None,
+                    sort_order: None,
                 }
             )
             .is_err());
@@ -793,7 +796,8 @@ fn role_pages_are_distinct_and_cursors_cannot_cross_subject_or_tenant() {
             "u1",
             AccessPageRequest {
                 limit: 1,
-                cursor: Some(invalid)
+                cursor: Some(invalid),
+                sort_order: None,
             }
         )
         .is_err());
@@ -827,6 +831,7 @@ fn role_permissions_use_composite_cursor_and_keep_disabled_state_visible() {
             AccessPageRequest {
                 limit: 1,
                 cursor: None,
+                sort_order: None,
             },
         )
         .unwrap();
@@ -834,6 +839,7 @@ fn role_permissions_use_composite_cursor_and_keep_disabled_state_visible() {
     let next = AccessPageRequest {
         limit: 1,
         cursor: first.next_cursor,
+        sort_order: None,
     };
     let second = service
         .list_role_permissions("t1", "reader", next.clone())
@@ -858,6 +864,7 @@ fn tenant_lists_require_choose_policy_and_do_not_expose_system_or_removed_member
             AccessPageRequest {
                 limit: 1,
                 cursor: None,
+                sort_order: None,
             },
         )
         .unwrap();
@@ -869,7 +876,8 @@ fn tenant_lists_require_choose_policy_and_do_not_expose_system_or_removed_member
             &choose,
             AccessPageRequest {
                 limit: 1,
-                cursor: first.next_cursor
+                cursor: first.next_cursor,
+                sort_order: None,
             }
         )
         .is_err());

@@ -1,5 +1,5 @@
 use crate::{
-    tenant_admin::{error, platform_context, target},
+    tenant_admin::{error, platform_context, target, ManagementSortOrder},
     tenant_auth::{call, no_store},
 };
 use axum::{
@@ -77,6 +77,8 @@ impl Filter {
 struct PageQuery {
     limit: Option<u32>,
     cursor: Option<String>,
+    #[serde(default)]
+    sort_order: ManagementSortOrder,
     resource_type: Option<String>,
     category: Option<Category>,
     enabled: Option<bool>,
@@ -88,6 +90,8 @@ struct Cursor {
     tenant_id: Option<String>,
     filter: Filter,
     after: Vec<String>,
+    #[serde(default)]
+    sort_order: ManagementSortOrder,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -173,6 +177,7 @@ async fn list_scoped(
                     filter: c.filter.core(),
                 },
                 after: c.after,
+                sort_order: Some(c.sort_order.core()),
             })
         }
     };
@@ -184,6 +189,7 @@ async fn list_scoped(
             AccessPageRequest {
                 limit: query.limit.unwrap_or(50),
                 cursor,
+                sort_order: Some(query.sort_order.core()),
             },
         )
     })
@@ -209,6 +215,9 @@ async fn list_scoped(
                             tenant_id,
                             filter,
                             after: c.after,
+                            sort_order: ManagementSortOrder::from_core(
+                                c.sort_order.unwrap_or(AccessSortOrder::Desc),
+                            ),
                         })
                         .unwrap(),
                     ))

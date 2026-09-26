@@ -1,5 +1,5 @@
 use crate::{
-    tenant_admin::{error, target},
+    tenant_admin::{error, target, ManagementSortOrder},
     tenant_auth::{call, no_store},
 };
 use axum::{
@@ -42,6 +42,8 @@ pub fn role_admin_router(mode: TenancyMode, service: Arc<dyn RoleAdminService>) 
 struct PageQuery {
     limit: Option<u32>,
     cursor: Option<String>,
+    #[serde(default)]
+    sort_order: ManagementSortOrder,
 }
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -49,6 +51,8 @@ struct Cursor {
     version: u8,
     tenant_id: String,
     after: Vec<String>,
+    #[serde(default)]
+    sort_order: ManagementSortOrder,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -137,6 +141,7 @@ async fn list(
                     tenant_id: c.tenant_id,
                 },
                 after: c.after,
+                sort_order: Some(c.sort_order.core()),
             })
         }
     };
@@ -147,6 +152,7 @@ async fn list(
             AccessPageRequest {
                 limit: query.limit.unwrap_or(50),
                 cursor,
+                sort_order: Some(query.sort_order.core()),
             },
         )
     })
@@ -167,6 +173,9 @@ async fn list(
                             version: c.version,
                             tenant_id,
                             after: c.after,
+                            sort_order: ManagementSortOrder::from_core(
+                                c.sort_order.unwrap_or(AccessSortOrder::Desc),
+                            ),
                         })
                         .unwrap(),
                     ))

@@ -365,6 +365,7 @@ fn access_lists_page_without_cross_tenant_or_subject_data() {
     db.seed();
     let service = CoreAccessService::new(TenancyMode::Enabled, catalog(), db.store());
     let mut page = AccessPageRequest {
+        sort_order: None,
         limit: 1,
         cursor: None,
     };
@@ -400,6 +401,7 @@ fn access_lists_page_without_cross_tenant_or_subject_data() {
             "t1",
             &db.role.to_string(),
             AccessPageRequest {
+                sort_order: None,
                 limit: 1,
                 cursor: None,
             },
@@ -411,6 +413,7 @@ fn access_lists_page_without_cross_tenant_or_subject_data() {
             "t1",
             &db.role.to_string(),
             AccessPageRequest {
+                sort_order: None,
                 limit: 1,
                 cursor: first.next_cursor,
             },

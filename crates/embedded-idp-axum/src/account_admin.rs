@@ -1,6 +1,6 @@
 use crate::{
     http_support::unix_time_secs,
-    tenant_admin::{error, platform_context, target},
+    tenant_admin::{error, platform_context, target, ManagementSortOrder},
     tenant_auth::{call, no_store},
 };
 use axum::{
@@ -109,6 +109,8 @@ impl Filter {
 struct PageQuery {
     limit: Option<u32>,
     cursor: Option<String>,
+    #[serde(default)]
+    sort_order: ManagementSortOrder,
     status: Option<Status>,
     membership_status: Option<MemberStatus>,
     email: Option<String>,
@@ -122,6 +124,8 @@ struct Cursor {
     tenant_id: Option<String>,
     filter: Filter,
     after: Vec<String>,
+    #[serde(default)]
+    sort_order: ManagementSortOrder,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -211,6 +215,7 @@ async fn list_scoped(
                     filter: stored,
                 },
                 after: c.after,
+                sort_order: Some(c.sort_order.core()),
             })
         }
     };
@@ -222,6 +227,7 @@ async fn list_scoped(
             AccessPageRequest {
                 limit: query.limit.unwrap_or(50),
                 cursor,
+                sort_order: Some(query.sort_order.core()),
             },
         )
     })
@@ -243,6 +249,9 @@ async fn list_scoped(
                             tenant_id,
                             filter,
                             after: c.after,
+                            sort_order: ManagementSortOrder::from_core(
+                                c.sort_order.unwrap_or(AccessSortOrder::Desc),
+                            ),
                         })
                         .unwrap(),
                     ))

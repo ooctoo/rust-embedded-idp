@@ -1,6 +1,6 @@
 use crate::{
     http_support::unix_time_secs,
-    tenant_admin::{error, target},
+    tenant_admin::{error, target, ManagementSortOrder},
     tenant_auth::{call, no_store},
     tenant_devices::device_json,
 };
@@ -46,6 +46,8 @@ pub fn tenant_device_admin_router(
 struct PageQuery {
     limit: Option<u32>,
     cursor: Option<String>,
+    #[serde(default)]
+    sort_order: ManagementSortOrder,
     account_id: Option<String>,
     client_id: Option<String>,
     status: Option<ExpectedStatus>,
@@ -59,6 +61,8 @@ struct Cursor {
     tenant_id: String,
     filter: Filter,
     after: Vec<String>,
+    #[serde(default)]
+    sort_order: ManagementSortOrder,
 }
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -163,6 +167,7 @@ async fn list(
                     filter: stored,
                 },
                 after: c.after,
+                sort_order: Some(c.sort_order.core()),
             })
         }
     };
@@ -174,6 +179,7 @@ async fn list(
             AccessPageRequest {
                 limit: query.limit.unwrap_or(50),
                 cursor,
+                sort_order: Some(query.sort_order.core()),
             },
         )
     })
@@ -195,6 +201,9 @@ async fn list(
                             tenant_id,
                             filter,
                             after: c.after,
+                            sort_order: ManagementSortOrder::from_core(
+                                c.sort_order.unwrap_or(AccessSortOrder::Desc),
+                            ),
                         })
                         .unwrap(),
                     ))

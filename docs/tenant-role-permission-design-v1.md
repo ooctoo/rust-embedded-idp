@@ -527,11 +527,22 @@ pub trait AuthorizationService: Send + Sync {
 
 新模块结果使用 `items + next_cursor + has_more`，默认 50，最大 200，数据库取 limit+1。与旧 `PageMetadata.total` 分开，不修改已有 API 的分页格式。
 
-管理列表统一按时间倒序，时间相同时按唯一标识倒序：全局账号按创建时间、租户成员按加入时间、设备按注册时间、审计按发生时间，租户、角色、角色分配、客户端和权限目录按创建时间。排序在数据库分页之前完成；页面直接保留接口顺序。账号／成员接口原有 `created_after` / `created_before` 过滤仍针对账号创建时间，成员排序则使用加入时间。权限目录历史记录若无创建时间，保留未知值并排在有时间的记录之后，不以升级时间冒充创建时间。
+管理列表通过查询参数 `sort_order=asc|desc` 选择顺序，省略时默认 `desc`；其他值返回 HTTP 400。时间和唯一标识始终按同一方向排列：全局账号按创建时间、租户成员按加入时间、设备按注册时间、审计按发生时间，租户、角色、角色分配、客户端和权限目录按创建时间。排序在数据库分页之前完成；页面直接保留接口顺序。账号／成员接口原有 `created_after` / `created_before` 过滤仍针对账号创建时间，成员排序则使用加入时间。权限目录历史记录若无创建时间，保留未知值，排序时按 epoch 0 处理（默认倒序在末尾，顺序在开头），不以升级时间冒充创建时间。
 
-管理游标为 v2，包含 `(19 位补零 epoch 秒, 唯一标识)`；权限目录以 `(时间, resource_type, action)` 唯一定位。v1 管理游标被拒绝，升级后需要从第一页重新读取。本人角色、角色权限和登录租户选择等业务查询继续使用既有 v1 ID／权限键顺序。游标包含版本及查询过滤摘要，解析时验证长度和过滤一致性。游标从来不是授权凭证，篡改它也不能改变查询 tenant/subject 条件。
+管理游标为 v2，包含排序方向及 `(19 位补零 epoch 秒, 唯一标识)`；权限目录以 `(时间, resource_type, action)` 唯一定位。后续页必须传相同 `sort_order`，方向与游标不符返回 HTTP 400；切换方向时去掉游标、从第一页重新读取。已有缺少排序方向的 v2 游标按 `desc` 解释，v1 管理游标仍被拒绝。本人角色、角色权限和登录租户选择等业务查询继续使用既有 v1 ID／权限键顺序。游标包含版本及查询过滤摘要，解析时验证长度和过滤一致性。游标从来不是授权凭证，篡改它也不能改变查询 tenant/subject 条件。
 
 现有 `tenant_v2` 数据库上线前须显式执行 [列表时间排序升级脚本](../scripts/migrate_list_time_desc.sql)，补充权限创建时间列与分页索引；新库初始化自带这些结构。初始化和在线启动均不会自动升级现有 schema。审计既有时间索引可反向扫描；其余管理列表有对应时间复合索引，权限目录索引按未知时间为 0 的排序表达式建立。
+
+例如（外层 `/api` 前缀由宿主决定）：
+
+```text
+GET /admin/access/roles                         # 默认时间倒序
+GET /admin/access/roles?sort_order=desc          # 显式倒序
+GET /admin/access/roles?sort_order=asc           # 时间顺序
+GET /admin/access/roles?sort_order=asc&cursor=…  # 按原方向继续分页
+```
+
+Rust 宿主通过 `AccessPageRequest.sort_order: Some(AccessSortOrder::Asc)` 显式选择方向；`None` 使用所属查询的默认顺序，`AccessCursor.sort_order` 绑定本次分页方向。管理客户端对应 `client.listRoles(tenant, cursor, "asc")`，其余管理列表方法同样在最后提供可选 `sortOrder` 参数。现有页面不传该参数，继续默认倒序。排序方向不要求再次修改数据库结构，现有时间复合索引支持正反两个扫描方向。
 
 新接口不默认计算 total。管理端确需准确数量时使用单独 count 操作，清楚标注它与随后页面数据可能不是同一时刻的快照。
 

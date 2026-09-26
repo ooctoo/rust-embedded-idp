@@ -1,6 +1,7 @@
 use super::devices::send;
 use super::*;
-use axum::{Extension, Router};
+use axum::{http::StatusCode, Extension, Router};
+use base64ct::{Base64UrlUnpadded, Encoding};
 use embedded_idp_axum::{
     account_admin_router, audit_admin_router, client_admin_router, permission_admin_router,
     role_admin_router, role_binding_admin_router, tenant_device_admin_router,
@@ -303,4 +304,144 @@ fn admin_lists_are_newest_first_and_cursor_pages_keep_tied_timestamps() {
         "",
     );
     assert_eq!(ids(&audits_next.1, "audit_id"), vec![audit_old.to_string()]);
+
+    // Every query must reverse the complete keyset, not merely the current page.
+    for (path, scope, field) in [
+        (
+            "/admin/platform/accounts?email=order-".to_owned(),
+            None,
+            "account_id",
+        ),
+        (
+            "/admin/accounts?email=order-".to_owned(),
+            Some(tenant),
+            "account_id",
+        ),
+        (
+            "/admin/clients?client_type=confidential_web".to_owned(),
+            None,
+            "client_id",
+        ),
+        (
+            format!("/admin/sessions?account_id={account_new}"),
+            Some(tenant),
+            "session_id",
+        ),
+        (
+            "/admin/devices?client_id=order-device-client".to_owned(),
+            Some(tenant),
+            "device_id",
+        ),
+        ("/admin/tenants?name=Order".to_owned(), None, "tenant_id"),
+        ("/admin/access/roles".to_owned(), Some(tenant), "role_id"),
+        (
+            format!("/admin/access/subjects/{account_new}/role-bindings"),
+            Some(tenant),
+            "binding_id",
+        ),
+        (
+            "/admin/access/permissions?resource_type=order".to_owned(),
+            Some(tenant),
+            "action",
+        ),
+        (
+            "/admin/access/audit-events?operation=order.list".to_owned(),
+            Some(tenant),
+            "audit_id",
+        ),
+    ] {
+        let separator = if path.contains('?') { "&" } else { "?" };
+        let default = send(&router, "GET", &path, scope, "");
+        assert_eq!(default.0, StatusCode::OK, "{path}");
+        let descending = ids(&default.1, field);
+        assert!(descending.len() > 1, "{path}");
+        let explicit = send(
+            &router,
+            "GET",
+            &format!("{path}{separator}sort_order=desc"),
+            scope,
+            "",
+        );
+        assert_eq!(explicit, default, "{path}");
+        assert_eq!(
+            send(
+                &router,
+                "GET",
+                &format!("{path}{separator}sort_order=sideways"),
+                scope,
+                ""
+            )
+            .0,
+            StatusCode::BAD_REQUEST,
+            "{path}"
+        );
+
+        let first = send(
+            &router,
+            "GET",
+            &format!("{path}{separator}limit=1"),
+            scope,
+            "",
+        );
+        let raw = first.1["next_cursor"].as_str().unwrap();
+        assert_eq!(
+            send(
+                &router,
+                "GET",
+                &format!("{path}{separator}sort_order=asc&cursor={raw}"),
+                scope,
+                ""
+            )
+            .0,
+            StatusCode::BAD_REQUEST,
+            "{path}"
+        );
+        let mut legacy: serde_json::Value =
+            serde_json::from_slice(&Base64UrlUnpadded::decode_vec(raw).unwrap()).unwrap();
+        assert_eq!(legacy["sort_order"], "desc");
+        legacy.as_object_mut().unwrap().remove("sort_order");
+        let legacy = Base64UrlUnpadded::encode_string(&serde_json::to_vec(&legacy).unwrap());
+        let next = send(
+            &router,
+            "GET",
+            &format!("{path}{separator}limit=1&cursor={legacy}"),
+            scope,
+            "",
+        );
+        assert_eq!(next.0, StatusCode::OK, "{path}");
+        assert_eq!(ids(&next.1, field), descending[1..2], "{path}");
+
+        let mut cursor: Option<String> = None;
+        for (index, expected) in descending.iter().rev().enumerate() {
+            let suffix = cursor
+                .as_ref()
+                .map_or(String::new(), |c| format!("&cursor={c}"));
+            let page = send(
+                &router,
+                "GET",
+                &format!("{path}{separator}sort_order=asc&limit=1{suffix}"),
+                scope,
+                "",
+            );
+            assert_eq!(page.0, StatusCode::OK, "{path}");
+            assert_eq!(ids(&page.1, field), vec![expected.clone()], "{path}");
+            assert_eq!(page.1["has_more"], index + 1 < descending.len(), "{path}");
+            cursor = page.1["next_cursor"].as_str().map(str::to_owned);
+            if let Some(raw) = &cursor {
+                assert_eq!(
+                    send(
+                        &router,
+                        "GET",
+                        &format!("{path}{separator}cursor={raw}"),
+                        scope,
+                        ""
+                    )
+                    .0,
+                    StatusCode::BAD_REQUEST,
+                    "{path}"
+                );
+            }
+        }
+        assert!(cursor.is_none(), "{path}");
+    }
 }

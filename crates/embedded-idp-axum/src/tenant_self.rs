@@ -91,6 +91,7 @@ async fn roles(
                     subject_id: cursor.subject_id,
                 },
                 after: vec![cursor.after],
+                sort_order: None,
             })
         }
         Some(_) => return invalid_cursor(),
@@ -105,6 +106,7 @@ async fn roles(
             AccessPageRequest {
                 limit: query.limit.unwrap_or(embedded_idp_core::DEFAULT_PAGE_LIMIT),
                 cursor,
+                sort_order: None,
             },
         )
     })
@@ -245,6 +247,7 @@ mod tests {
                         subject_id: subject.into(),
                     },
                     after: vec!["r1".into()],
+                    sort_order: None,
                 }),
             })
         }

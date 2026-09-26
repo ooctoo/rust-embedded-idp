@@ -726,7 +726,9 @@ fn switch_ticket_rechecks_source_session_and_cursor_scope() {
                 subject_id: "other".into(),
             },
             after: vec!["t1".into()],
+            sort_order: None,
         }),
+        sort_order: None,
     };
     assert_eq!(
         x.list_tenants(switch.ticket.clone(), page),

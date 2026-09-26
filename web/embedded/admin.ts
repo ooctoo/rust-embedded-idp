@@ -3,4 +3,4 @@ import "./admin.css";
 
 export { PermissionDirectory, type PermissionDirectoryClient, type PermissionDirectoryProps } from "../management/permission-directory";
 export { ManagementClient, ManagementError, type AdminPage, type AuthState,
-  type DirectoryPermission, type PermissionDirectoryFilter, type PermissionKey } from "../management/client";
+  type DirectoryPermission, type PermissionDirectoryFilter, type PermissionKey, type SortOrder } from "../management/client";

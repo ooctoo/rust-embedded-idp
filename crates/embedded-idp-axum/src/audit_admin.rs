@@ -1,5 +1,5 @@
 use crate::{
-    tenant_admin::{error, platform_context, target},
+    tenant_admin::{error, platform_context, target, ManagementSortOrder},
     tenant_auth::{call, no_store},
 };
 use axum::{
@@ -65,6 +65,8 @@ impl Filter {
 struct PageQuery {
     limit: Option<u32>,
     cursor: Option<String>,
+    #[serde(default)]
+    sort_order: ManagementSortOrder,
     actor_id: Option<String>,
     operation: Option<String>,
     occurred_after_unix_secs: Option<u64>,
@@ -77,6 +79,8 @@ struct Cursor {
     tenant_id: String,
     filter: Filter,
     after: Vec<String>,
+    #[serde(default)]
+    sort_order: ManagementSortOrder,
 }
 fn record_json(r: AdminAuditRecord) -> Value {
     json!({"audit_id":r.id,"occurred_at_unix_secs":r.occurred_at.duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default().as_secs(),"actor_id":r.actor_id,"actor_domain":r.actor_domain,"actor_session_id":r.actor_session_id,"authentication_source":r.authentication_source,"target_domain":r.target_domain,"operation":r.operation,"request_id":r.request_id})
@@ -144,6 +148,7 @@ async fn list_scoped(
                     filter: cf,
                 },
                 after: c.after,
+                sort_order: Some(c.sort_order.core()),
             })
         }
     };
@@ -155,6 +160,7 @@ async fn list_scoped(
             AccessPageRequest {
                 limit: query.limit.unwrap_or(50),
                 cursor,
+                sort_order: Some(query.sort_order.core()),
             },
         )
     })
@@ -173,6 +179,9 @@ async fn list_scoped(
                             tenant_id,
                             filter,
                             after: c.after,
+                            sort_order: ManagementSortOrder::from_core(
+                                c.sort_order.unwrap_or(AccessSortOrder::Desc),
+                            ),
                         })
                         .unwrap(),
                     ))
