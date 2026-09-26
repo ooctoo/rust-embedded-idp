@@ -218,6 +218,7 @@ impl ListTenantsRequest {
                         subject_id: cursor.subject_id,
                     },
                     after: vec![cursor.after_tenant_id],
+                    sort_order: None,
                 }),
                 Err(response) => return Err(response),
             },
@@ -232,6 +233,7 @@ impl ListTenantsRequest {
         Ok(AccessPageRequest {
             limit: self.limit.unwrap_or(embedded_idp_core::DEFAULT_PAGE_LIMIT),
             cursor,
+            sort_order: None,
         })
     }
 }
@@ -629,6 +631,7 @@ mod tests {
                         subject_id: "a1".into(),
                     },
                     after: vec!["bad".into()],
+                    sort_order: None,
                 })
             } else {
                 Some(AccessCursor {
@@ -637,6 +640,7 @@ mod tests {
                         subject_id: "a1".into(),
                     },
                     after: vec!["t1".into()],
+                    sort_order: None,
                 })
             };
             Ok(AccessPage {

@@ -41,6 +41,7 @@ export interface AuthState {
 }
 
 export interface AdminPage<T> { items: T[]; has_more: boolean; next_cursor?: string | null }
+export type SortOrder = "asc" | "desc";
 export interface ManagedTenant {
   tenant_id: string; name: string; status: "active" | "suspended" | "archived";
 }
@@ -88,6 +89,11 @@ function auditFilterQuery(filter: AuditFilter, cursor?: string) {
   const query = new URLSearchParams({ limit: "50", ...(cursor ? { cursor } : {}) });
   for (const key of ["actor_id", "operation", "occurred_after_unix_secs", "occurred_before_unix_secs"] as const)
     if (filter[key] !== undefined) query.set(key, String(filter[key]));
+  return query;
+}
+function sortOrderQuery(query: URLSearchParams, sortOrder: SortOrder) {
+  if (sortOrder !== "asc" && sortOrder !== "desc") throw new ManagementError("请选择有效排序方式。", 400);
+  query.set("sort_order", sortOrder);
   return query;
 }
 function directoryPermissionFrom(value: unknown): DirectoryPermission {
@@ -519,9 +525,9 @@ export class ManagementClient {
     return tenantDetailFrom(result.tenant, tenant.tenant_id);
   }
 
-  async listPlatformAccounts(email: string, cursor?: string, activeOnly = true): Promise<AdminPage<Account>> {
+  async listPlatformAccounts(email: string, cursor?: string, activeOnly = true, sortOrder: SortOrder = "desc"): Promise<AdminPage<Account>> {
     this.requirePlatform();
-    const query = new URLSearchParams({ limit: "50", ...(activeOnly ? { status: "active" } : {}), ...(email ? { email } : {}), ...(cursor ? { cursor } : {}) });
+    const query = sortOrderQuery(new URLSearchParams({ limit: "50", ...(activeOnly ? { status: "active" } : {}), ...(email ? { email } : {}), ...(cursor ? { cursor } : {}) }), sortOrder);
     return pageFrom(await this.authenticated(`/platform/accounts?${query}`), value => {
       const account = accountFrom(value);
       if (object(value).membership !== null || (activeOnly && account.status !== "active")) throw invalidResponse();
@@ -537,7 +543,7 @@ export class ManagementClient {
     return account;
   }
 
-  async listClients(filter: ClientFilter = {}, cursor?: string): Promise<AdminPage<ManagedClient>> {
+  async listClients(filter: ClientFilter = {}, cursor?: string, sortOrder: SortOrder = "desc"): Promise<AdminPage<ManagedClient>> {
     this.requirePlatform();
     const query = new URLSearchParams({ limit: "50", ...(cursor ? { cursor } : {}) });
     if (filter.client_type !== undefined) {
@@ -548,6 +554,7 @@ export class ManagementClient {
       if (typeof filter.pkce_required !== "boolean") throw new ManagementError("请选择有效 PKCE 策略。", 400);
       query.set("pkce_required", String(filter.pkce_required));
     }
+    sortOrderQuery(query, sortOrder);
     return pageFrom(await this.authenticated(`/clients?${query}`), value => {
       const c = clientFrom(value);
       if (filter.client_type !== undefined && c.client_type !== filter.client_type ||
@@ -615,9 +622,9 @@ export class ManagementClient {
     if (this.state.session?.account_id === account.account_id) this.clear();
   }
 
-  async listDevices(tenant: string, filter: DeviceFilter, cursor?: string): Promise<AdminPage<ManagedDevice>> {
+  async listDevices(tenant: string, filter: DeviceFilter, cursor?: string, sortOrder: SortOrder = "desc"): Promise<AdminPage<ManagedDevice>> {
     this.requireTarget(tenant);
-    const query = filterQuery(filter, ["pending", "active", "disabled", "revoked"], "registered_after_unix_secs", "registered_before_unix_secs", cursor);
+    const query = sortOrderQuery(filterQuery(filter, ["pending", "active", "disabled", "revoked"], "registered_after_unix_secs", "registered_before_unix_secs", cursor), sortOrder);
     return pageFrom(await this.authenticated(`/devices?${query}`, "GET", undefined, tenant), value => {
       const d = deviceFrom(value, tenant);
       if (filter.client_id !== undefined && d.client_id !== filter.client_id || filter.status !== undefined && d.status !== filter.status ||
@@ -643,9 +650,9 @@ export class ManagementClient {
     return updated;
   }
 
-  async listSessions(tenant: string, filter: SessionFilter, cursor?: string): Promise<AdminPage<ManagedSession>> {
+  async listSessions(tenant: string, filter: SessionFilter, cursor?: string, sortOrder: SortOrder = "desc"): Promise<AdminPage<ManagedSession>> {
     this.requireTarget(tenant);
-    const query = filterQuery(filter, ["pending", "active", "revoked", "expired"], "created_after_unix_secs", "created_before_unix_secs", cursor);
+    const query = sortOrderQuery(filterQuery(filter, ["pending", "active", "revoked", "expired"], "created_after_unix_secs", "created_before_unix_secs", cursor), sortOrder);
     return pageFrom(await this.authenticated(`/sessions?${query}`, "GET", undefined, tenant), value => {
       const s = managedSessionFrom(value, tenant);
       if (["account_id", "client_id", "device_id", "status"].some(key => (filter as Record<string, unknown>)[key] !== undefined && (filter as Record<string, unknown>)[key] !== s[key as keyof ManagedSession]) ||
@@ -708,9 +715,9 @@ export class ManagementClient {
     return updated;
   }
 
-  async listManagedTenants(filter: { tenant_id?: string; name?: string }, cursor?: string): Promise<AdminPage<ManagedTenant>> {
+  async listManagedTenants(filter: { tenant_id?: string; name?: string }, cursor?: string, sortOrder: SortOrder = "desc"): Promise<AdminPage<ManagedTenant>> {
     this.requireTenantPlatform();
-    const query = new URLSearchParams({ limit: "50", ...filter, ...(cursor ? { cursor } : {}) });
+    const query = sortOrderQuery(new URLSearchParams({ limit: "50", ...filter, ...(cursor ? { cursor } : {}) }), sortOrder);
     return pageFrom(await this.authenticated(`/tenants?${query}`), value => {
       const t = object(value);
       if (typeof t.tenant_id !== "string" || !t.tenant_id || t.tenant_id === "0" || typeof t.name !== "string" ||
@@ -719,9 +726,9 @@ export class ManagementClient {
     });
   }
 
-  async listRoles(tenant: string, cursor?: string): Promise<AdminPage<Role>> {
+  async listRoles(tenant: string, cursor?: string, sortOrder: SortOrder = "desc"): Promise<AdminPage<Role>> {
     this.requireTarget(tenant);
-    const query = new URLSearchParams({ limit: "50", ...(cursor ? { cursor } : {}) });
+    const query = sortOrderQuery(new URLSearchParams({ limit: "50", ...(cursor ? { cursor } : {}) }), sortOrder);
     return pageFrom(await this.authenticated(`/access/roles?${query}`, "GET", undefined, tenant), value => roleFrom(value, tenant));
   }
 
@@ -758,10 +765,10 @@ export class ManagementClient {
     if (result.role !== null || typeof result.audit_id !== "string" || !result.audit_id) throw invalidResponse();
   }
 
-  async listBusinessPermissions(tenant: string, resourceType?: string, cursor?: string): Promise<AdminPage<PermissionDefinition>> {
+  async listBusinessPermissions(tenant: string, resourceType?: string, cursor?: string, sortOrder: SortOrder = "desc"): Promise<AdminPage<PermissionDefinition>> {
     this.requireTarget(tenant);
-    const query = new URLSearchParams({ limit: "50", category: "business", enabled: "true",
-      ...(resourceType ? { resource_type: resourceType } : {}), ...(cursor ? { cursor } : {}) });
+    const query = sortOrderQuery(new URLSearchParams({ limit: "50", category: "business", enabled: "true",
+      ...(resourceType ? { resource_type: resourceType } : {}), ...(cursor ? { cursor } : {}) }), sortOrder);
     return pageFrom(await this.authenticated(`/access/permissions?${query}`, "GET", undefined, tenant), value => {
       const p = object(value);
       if (![p.resource_type, p.action, p.description].every(v => typeof v === "string") ||
@@ -770,7 +777,7 @@ export class ManagementClient {
     });
   }
 
-  async listPermissionDirectory(tenant: string, filter: PermissionDirectoryFilter = {}, cursor?: string): Promise<AdminPage<DirectoryPermission>> {
+  async listPermissionDirectory(tenant: string, filter: PermissionDirectoryFilter = {}, cursor?: string, sortOrder: SortOrder = "desc"): Promise<AdminPage<DirectoryPermission>> {
     const platform = tenant === "0" && this.state.capabilities?.tenancy_enabled;
     if (platform) this.requirePlatform(); else this.requireTarget(tenant);
     if (filter.resource_type !== undefined && !permissionName(filter.resource_type) ||
@@ -778,6 +785,7 @@ export class ManagementClient {
         filter.enabled !== undefined && typeof filter.enabled !== "boolean") throw new ManagementError("请核对权限目录筛选条件。", 400);
     const query = new URLSearchParams({ limit: "50", ...(cursor ? { cursor } : {}) });
     for (const key of ["resource_type", "category", "enabled"] as const) if (filter[key] !== undefined) query.set(key, String(filter[key]));
+    sortOrderQuery(query, sortOrder);
     return pageFrom(await this.authenticated(`${platform ? "/platform" : "/access"}/permissions?${query}`, "GET", undefined, platform ? undefined : tenant), value => {
       const p = directoryPermissionFrom(value);
       if (p.tenant_id !== tenant || filter.resource_type !== undefined && p.resource_type !== filter.resource_type ||
@@ -828,8 +836,8 @@ export class ManagementClient {
     return this.permissionChange(await this.authenticated(path, "POST", { enabled, expected_enabled: permission.enabled }, tenant), tenant, permission, false);
   }
 
-  private async auditPage(path: string, target: string, filter: AuditFilter, cursor?: string, header?: string): Promise<AdminPage<AuditRecord>> {
-    const query = auditFilterQuery(filter, cursor);
+  private async auditPage(path: string, target: string, filter: AuditFilter, cursor?: string, header?: string, sortOrder: SortOrder = "desc"): Promise<AdminPage<AuditRecord>> {
+    const query = sortOrderQuery(auditFilterQuery(filter, cursor), sortOrder);
     return pageFrom(await this.authenticated(`${path}?${query}`, "GET", undefined, header), value => {
       const record = auditRecordFrom(value, target);
       if (filter.actor_id !== undefined && record.actor_id !== filter.actor_id ||
@@ -848,9 +856,9 @@ export class ManagementClient {
     return { ...record, change: object(raw.change) };
   }
 
-  async listAuditEvents(tenant: string, filter: AuditFilter = {}, cursor?: string): Promise<AdminPage<AuditRecord>> {
+  async listAuditEvents(tenant: string, filter: AuditFilter = {}, cursor?: string, sortOrder: SortOrder = "desc"): Promise<AdminPage<AuditRecord>> {
     this.requireTarget(tenant);
-    return this.auditPage("/access/audit-events", tenant, filter, cursor, tenant);
+    return this.auditPage("/access/audit-events", tenant, filter, cursor, tenant, sortOrder);
   }
 
   async getAuditEvent(tenant: string, id: string): Promise<AuditDetail> {
@@ -858,9 +866,9 @@ export class ManagementClient {
     return this.auditDetail("/access/audit-events", tenant, id, tenant);
   }
 
-  async listPlatformAuditEvents(filter: AuditFilter = {}, cursor?: string): Promise<AdminPage<AuditRecord>> {
+  async listPlatformAuditEvents(filter: AuditFilter = {}, cursor?: string, sortOrder: SortOrder = "desc"): Promise<AdminPage<AuditRecord>> {
     this.requirePlatform();
-    return this.auditPage("/platform/audit-events", "0", filter, cursor);
+    return this.auditPage("/platform/audit-events", "0", filter, cursor, undefined, sortOrder);
   }
 
   async getPlatformAuditEvent(id: string): Promise<AuditDetail> {
@@ -900,15 +908,15 @@ export class ManagementClient {
     return updated;
   }
 
-  async listMembers(tenant: string, email?: string, cursor?: string): Promise<AdminPage<Member>> {
+  async listMembers(tenant: string, email?: string, cursor?: string, sortOrder: SortOrder = "desc"): Promise<AdminPage<Member>> {
     this.requireTarget(tenant);
-    const query = new URLSearchParams({ limit: "50", ...(email ? { email } : {}), ...(cursor ? { cursor } : {}) });
+    const query = sortOrderQuery(new URLSearchParams({ limit: "50", ...(email ? { email } : {}), ...(cursor ? { cursor } : {}) }), sortOrder);
     return pageFrom(await this.authenticated(`/accounts?${query}`, "GET", undefined, tenant), value => memberFrom(value, tenant));
   }
 
-  async listRoleBindings(tenant: string, subject: string, cursor?: string): Promise<AdminPage<RoleBinding>> {
+  async listRoleBindings(tenant: string, subject: string, cursor?: string, sortOrder: SortOrder = "desc"): Promise<AdminPage<RoleBinding>> {
     this.requireTarget(tenant);
-    const query = new URLSearchParams({ limit: "50", ...(cursor ? { cursor } : {}) });
+    const query = sortOrderQuery(new URLSearchParams({ limit: "50", ...(cursor ? { cursor } : {}) }), sortOrder);
     return pageFrom(await this.authenticated(`/access/subjects/${encodeURIComponent(subject)}/role-bindings?${query}`, "GET", undefined, tenant), value => bindingFrom(value, tenant, subject));
   }
 

@@ -81,6 +81,24 @@ fn permission_page_key(permission: &PermissionDefinition) -> Vec<String> {
     key.push(permission.key.action.clone());
     key
 }
+fn management_after(key: Vec<String>, page: &AccessPageRequest) -> bool {
+    page.cursor
+        .as_ref()
+        .is_none_or(|cursor| match page.sort_order {
+            Some(AccessSortOrder::Asc) => key > cursor.after,
+            None | Some(AccessSortOrder::Desc) => key < cursor.after,
+        })
+}
+fn sort_management<T>(rows: &mut [T], page: &AccessPageRequest, key: impl Fn(&T) -> Vec<String>) {
+    rows.sort_by(|left, right| {
+        let order = key(left).cmp(&key(right));
+        if page.sort_order == Some(AccessSortOrder::Asc) {
+            order
+        } else {
+            order.reverse()
+        }
+    });
+}
 fn role(
     id: &str,
     tenant: &str,
@@ -390,19 +408,20 @@ impl AccessAdminTransaction for Tx {
             .into_iter()
             .filter(|r| {
                 filter.matches(r)
-                    && page.cursor.as_ref().is_none_or(|c| {
+                    && management_after(
                         time_page_key(
                             r.membership.as_ref().map_or(r.created_at, |m| m.joined_at),
                             r.account_id.clone(),
-                        ) < c.after
-                    })
+                        ),
+                        page,
+                    )
             })
             .collect();
-        records.sort_by_key(|r| {
-            std::cmp::Reverse(time_page_key(
+        sort_management(&mut records, page, |r| {
+            time_page_key(
                 r.membership.as_ref().map_or(r.created_at, |m| m.joined_at),
                 r.account_id.clone(),
-            ))
+            )
         });
         records.truncate(page.fetch_limit());
         Ok(records)
@@ -429,17 +448,14 @@ impl AccessAdminTransaction for Tx {
             .map(client_metadata)
             .filter(|c| {
                 filter.matches(c)
-                    && page.cursor.as_ref().is_none_or(|p| {
-                        time_page_key(c.created_at.unwrap_or(UNIX_EPOCH), c.client_id.clone())
-                            < p.after
-                    })
+                    && management_after(
+                        time_page_key(c.created_at.unwrap_or(UNIX_EPOCH), c.client_id.clone()),
+                        page,
+                    )
             })
             .collect();
-        rows.sort_by_key(|c| {
-            std::cmp::Reverse(time_page_key(
-                c.created_at.unwrap_or(UNIX_EPOCH),
-                c.client_id.clone(),
-            ))
+        sort_management(&mut rows, page, |c| {
+            time_page_key(c.created_at.unwrap_or(UNIX_EPOCH), c.client_id.clone())
         });
         rows.truncate(page.fetch_limit());
         Ok(rows)
@@ -477,13 +493,11 @@ impl AccessAdminTransaction for Tx {
             .filter(|s| {
                 s.tenant_id == t
                     && f.matches(s)
-                    && p.cursor
-                        .as_ref()
-                        .is_none_or(|c| time_page_key(s.created_at, s.id.clone()) < c.after)
+                    && management_after(time_page_key(s.created_at, s.id.clone()), p)
             })
             .cloned()
             .collect();
-        rows.sort_by_key(|s| std::cmp::Reverse(time_page_key(s.created_at, s.id.clone())));
+        sort_management(&mut rows, p, |s| time_page_key(s.created_at, s.id.clone()));
         rows.truncate(p.fetch_limit());
         Ok(rows)
     }
@@ -531,14 +545,12 @@ impl AccessAdminTransaction for Tx {
                                 },
                             )
                         })
-                        && p.cursor.as_ref().is_none_or(|c| {
-                            time_page_key(r.registered_at, r.device.id.clone()) < c.after
-                        })
+                        && management_after(time_page_key(r.registered_at, r.device.id.clone()), p)
                 })
                 .cloned()
                 .collect();
-        rows.sort_by_key(|r| {
-            std::cmp::Reverse(time_page_key(r.registered_at, r.device.id.clone()))
+        sort_management(&mut rows, p, |r| {
+            time_page_key(r.registered_at, r.device.id.clone())
         });
         rows.truncate(p.fetch_limit());
         Ok(rows)
@@ -651,13 +663,11 @@ impl AccessAdminTransaction for Tx {
                 created_at: UNIX_EPOCH,
             })
             .filter(|t| filter.matches(t))
-            .filter(|t| {
-                page.cursor
-                    .as_ref()
-                    .is_none_or(|c| time_page_key(t.created_at, t.tenant.id.clone()) < c.after)
-            })
+            .filter(|t| management_after(time_page_key(t.created_at, t.tenant.id.clone()), page))
             .collect();
-        rows.sort_by_key(|t| std::cmp::Reverse(time_page_key(t.created_at, t.tenant.id.clone())));
+        sort_management(&mut rows, page, |t| {
+            time_page_key(t.created_at, t.tenant.id.clone())
+        });
         rows.truncate(page.fetch_limit());
         Ok(rows)
     }
@@ -711,13 +721,12 @@ impl AccessAdminTransaction for Tx {
             .map(|r| r.role.clone())
             .filter(|r| {
                 r.tenant_id == tenant
-                    && page
-                        .cursor
-                        .as_ref()
-                        .is_none_or(|c| time_page_key(r.created_at, r.id.clone()) < c.after)
+                    && management_after(time_page_key(r.created_at, r.id.clone()), page)
             })
             .collect();
-        rows.sort_by_key(|r| std::cmp::Reverse(time_page_key(r.created_at, r.id.clone())));
+        sort_management(&mut rows, page, |r| {
+            time_page_key(r.created_at, r.id.clone())
+        });
         rows.truncate(page.fetch_limit());
         Ok(rows)
     }
@@ -750,16 +759,7 @@ impl AccessAdminTransaction for Tx {
             .filter(|p| {
                 scope.permits(self.data.mode, p.category)
                     && filter.matches(p)
-                    && page.cursor.as_ref().is_none_or(|c| {
-                        time_page_key(
-                            p.created_at.unwrap_or(UNIX_EPOCH),
-                            p.key.resource_type.clone(),
-                        )
-                        .into_iter()
-                        .chain(std::iter::once(p.key.action.clone()))
-                        .collect::<Vec<_>>()
-                            < c.after
-                    })
+                    && management_after(permission_page_key(p), page)
             })
             .cloned()
             .map(|mut p| {
@@ -770,7 +770,7 @@ impl AccessAdminTransaction for Tx {
                 p
             })
             .collect();
-        rows.sort_by_key(|p| std::cmp::Reverse(permission_page_key(p)));
+        sort_management(&mut rows, page, permission_page_key);
         rows.truncate(page.fetch_limit());
         Ok(rows)
     }
@@ -795,14 +795,13 @@ impl AccessAdminTransaction for Tx {
             .filter(|b| {
                 b.tenant_id == tenant
                     && b.subject_id == subject
-                    && page
-                        .cursor
-                        .as_ref()
-                        .is_none_or(|c| time_page_key(b.created_at, b.id.clone()) < c.after)
+                    && management_after(time_page_key(b.created_at, b.id.clone()), page)
             })
             .cloned()
             .collect();
-        rows.sort_by_key(|b| std::cmp::Reverse(time_page_key(b.created_at, b.id.clone())));
+        sort_management(&mut rows, page, |b| {
+            time_page_key(b.created_at, b.id.clone())
+        });
         rows.truncate(page.fetch_limit());
         Ok(rows)
     }
@@ -1078,10 +1077,10 @@ impl AccessAdminTransaction for Tx {
             .filter(|r| {
                 r.target_domain == tenant
                     && filter.matches(r)
-                    && page.cursor.as_ref().is_none_or(|c| r.page_key() < c.after)
+                    && management_after(r.page_key(), page)
             })
             .collect();
-        rows.sort_by_key(|r| std::cmp::Reverse(r.page_key()));
+        sort_management(&mut rows, page, AdminAuditRecord::page_key);
         rows.truncate(page.fetch_limit());
         Ok(rows)
     }
@@ -2522,6 +2521,7 @@ fn session_admin_filters_bind_cursors_and_revocation_requires_permission_and_ato
             AccessPageRequest {
                 limit: 1,
                 cursor: None,
+                sort_order: None,
             },
         )
         .unwrap();
@@ -2533,7 +2533,8 @@ fn session_admin_filters_bind_cursors_and_revocation_requires_permission_and_ato
             AdminSessionFilter::default(),
             AccessPageRequest {
                 limit: 1,
-                cursor: page.next_cursor
+                cursor: page.next_cursor,
+                sort_order: None,
             }
         ),
         Err(AccessError::InvalidCursor)
@@ -2651,6 +2652,7 @@ fn client_admin_keeps_secrets_out_of_audit_and_requires_current_platform_authori
             AccessPageRequest {
                 limit: 1,
                 cursor: None,
+                sort_order: None,
             },
         )
         .unwrap();
@@ -2664,7 +2666,8 @@ fn client_admin_keeps_secrets_out_of_audit_and_requires_current_platform_authori
             },
             AccessPageRequest {
                 limit: 1,
-                cursor: page.next_cursor.clone()
+                cursor: page.next_cursor.clone(),
+                sort_order: None,
             }
         ),
         Err(AccessError::InvalidCursor)
@@ -2676,6 +2679,7 @@ fn client_admin_keeps_secrets_out_of_audit_and_requires_current_platform_authori
             AccessPageRequest {
                 limit: 1,
                 cursor: page.next_cursor,
+                sort_order: None,
             },
         )
         .unwrap();
@@ -2870,6 +2874,7 @@ fn account_queries_enforce_projection_scope_permissions_and_filter_bound_cursors
             AccessPageRequest {
                 limit: 1,
                 cursor: None,
+                sort_order: None,
             },
         )
         .unwrap();
@@ -2883,6 +2888,7 @@ fn account_queries_enforce_projection_scope_permissions_and_filter_bound_cursors
             AccessPageRequest {
                 limit: 1,
                 cursor: page.next_cursor.clone(),
+                sort_order: None,
             },
         )
         .unwrap();
@@ -2894,7 +2900,8 @@ fn account_queries_enforce_projection_scope_permissions_and_filter_bound_cursors
             AdminAccountFilter::default(),
             AccessPageRequest {
                 limit: 1,
-                cursor: page.next_cursor.clone()
+                cursor: page.next_cursor.clone(),
+                sort_order: None,
             }
         ),
         Err(AccessError::InvalidCursor)
@@ -2909,7 +2916,8 @@ fn account_queries_enforce_projection_scope_permissions_and_filter_bound_cursors
             },
             AccessPageRequest {
                 limit: 1,
-                cursor: page.next_cursor
+                cursor: page.next_cursor,
+                sort_order: None,
             }
         ),
         Err(AccessError::InvalidCursor)
@@ -3330,6 +3338,7 @@ fn device_admin_filters_validate_bounds_and_bind_every_cursor_condition() {
             AccessPageRequest {
                 limit: 1,
                 cursor: None,
+                sort_order: None,
             },
         )
         .unwrap();
@@ -3339,6 +3348,7 @@ fn device_admin_filters_validate_bounds_and_bind_every_cursor_condition() {
     let request = AccessPageRequest {
         limit: 1,
         cursor: Some(cursor.clone()),
+        sort_order: None,
     };
     assert_eq!(
         svc.list_devices(
@@ -3391,7 +3401,8 @@ fn device_admin_filters_validate_bounds_and_bind_every_cursor_condition() {
             filter.clone(),
             AccessPageRequest {
                 limit: 1,
-                cursor: Some(malformed)
+                cursor: Some(malformed),
+                sort_order: None,
             }
         ),
         Err(AccessError::InvalidCursor)
@@ -3461,6 +3472,7 @@ fn tenant_management_queries_require_platform_authority_and_bind_search_cursors(
             AccessPageRequest {
                 limit: 1,
                 cursor: None,
+                sort_order: None,
             },
         )
         .unwrap();
@@ -3469,6 +3481,7 @@ fn tenant_management_queries_require_platform_authority_and_bind_search_cursors(
     let request = AccessPageRequest {
         limit: 1,
         cursor: page.next_cursor,
+        sort_order: None,
     };
     let next = svc
         .list_tenants(ctx("0", "u1", "s0"), filter.clone(), request.clone())
@@ -3633,6 +3646,7 @@ fn role_admin_queries_bind_tenant_and_validate_bounded_configuration_snapshots()
             AccessPageRequest {
                 limit: 1,
                 cursor: None,
+                sort_order: None,
             },
         )
         .unwrap();
@@ -3640,6 +3654,7 @@ fn role_admin_queries_bind_tenant_and_validate_bounded_configuration_snapshots()
     let request = AccessPageRequest {
         limit: 1,
         cursor: page.next_cursor,
+        sort_order: None,
     };
     assert_eq!(
         svc.list_roles(ctx("t1", "u1", "s1"), "t1".into(), request.clone())
@@ -3755,6 +3770,7 @@ fn subject_binding_queries_preserve_scopes_and_bind_both_tenant_and_subject() {
             AccessPageRequest {
                 limit: 1,
                 cursor: None,
+                sort_order: None,
             },
         )
         .unwrap();
@@ -3762,6 +3778,7 @@ fn subject_binding_queries_preserve_scopes_and_bind_both_tenant_and_subject() {
     let request = AccessPageRequest {
         limit: 1,
         cursor: page.next_cursor,
+        sort_order: None,
     };
     let page = svc
         .list_subject_role_bindings(
@@ -3875,6 +3892,7 @@ fn permission_directory_queries_bound_category_filters_and_compound_cursors() {
             AccessPageRequest {
                 limit: 1,
                 cursor: None,
+                sort_order: None,
             },
         )
         .unwrap();
@@ -3882,6 +3900,7 @@ fn permission_directory_queries_bound_category_filters_and_compound_cursors() {
     let request = AccessPageRequest {
         limit: 1,
         cursor: first.next_cursor,
+        sort_order: None,
     };
     assert_eq!(request.cursor.as_ref().unwrap().after.len(), 3);
     let last = svc
@@ -4160,6 +4179,7 @@ fn audit_queries_bind_domain_filters_and_numeric_time_and_require_audit_permissi
             AccessPageRequest {
                 limit: 1,
                 cursor: None,
+                sort_order: None,
             },
         )
         .unwrap();
@@ -4171,6 +4191,7 @@ fn audit_queries_bind_domain_filters_and_numeric_time_and_require_audit_permissi
     let request = AccessPageRequest {
         limit: 2,
         cursor: first.next_cursor,
+        sort_order: None,
     };
     let rest = svc
         .list_audit_events(

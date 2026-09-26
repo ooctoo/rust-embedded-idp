@@ -590,6 +590,7 @@ mod authentication {
             .list_tenants(
                 pending.ticket.clone(),
                 AccessPageRequest {
+                    sort_order: None,
                     limit: 1,
                     cursor: None,
                 },
@@ -601,6 +602,7 @@ mod authentication {
             .list_tenants(
                 pending.ticket.clone(),
                 AccessPageRequest {
+                    sort_order: None,
                     limit: 1,
                     cursor: first.next_cursor,
                 },

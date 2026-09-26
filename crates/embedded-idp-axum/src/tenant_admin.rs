@@ -5,6 +5,29 @@ use axum::{
     Extension,
 };
 use embedded_idp_core::access::*;
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub(super) enum ManagementSortOrder {
+    Asc,
+    #[default]
+    Desc,
+}
+impl ManagementSortOrder {
+    pub(super) fn core(self) -> AccessSortOrder {
+        match self {
+            Self::Asc => AccessSortOrder::Asc,
+            Self::Desc => AccessSortOrder::Desc,
+        }
+    }
+    pub(super) fn from_core(value: AccessSortOrder) -> Self {
+        match value {
+            AccessSortOrder::Asc => Self::Asc,
+            AccessSortOrder::Desc => Self::Desc,
+        }
+    }
+}
 
 pub(super) fn target(
     mode: TenancyMode,
@@ -95,4 +118,36 @@ pub(super) fn platform_context(
         return Err(error(AccessError::InvalidInput("tenant_header")));
     }
     Ok(context)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ManagementSortOrder;
+
+    #[derive(Default, serde::Deserialize)]
+    #[serde(default)]
+    struct Query {
+        sort_order: ManagementSortOrder,
+    }
+
+    #[test]
+    fn management_sort_order_wire_values() {
+        assert_eq!(
+            serde_json::from_str::<Query>(r#"{}"#).unwrap().sort_order,
+            ManagementSortOrder::Desc
+        );
+        assert_eq!(
+            serde_json::from_str::<Query>(r#"{"sort_order":"asc"}"#)
+                .unwrap()
+                .sort_order,
+            ManagementSortOrder::Asc
+        );
+        assert_eq!(
+            serde_json::from_str::<Query>(r#"{"sort_order":"desc"}"#)
+                .unwrap()
+                .sort_order,
+            ManagementSortOrder::Desc
+        );
+        assert!(serde_json::from_str::<Query>(r#"{"sort_order":"sideways"}"#).is_err());
+    }
 }

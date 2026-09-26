@@ -59,6 +59,12 @@ pub enum AccessListScope {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AccessSortOrder {
+    Asc,
+    Desc,
+}
+
 impl AccessListScope {
     fn is_management(&self) -> bool {
         matches!(
@@ -93,12 +99,16 @@ pub struct AccessCursor {
     /// use `[19-digit epoch seconds, resource_type, action]`. V1 scopes retain
     /// their existing ascending keys.
     pub after: Vec<String>,
+    /// `None` is the legacy/default direction for the cursor scope.
+    pub sort_order: Option<AccessSortOrder>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccessPageRequest {
     pub limit: u32,
     pub cursor: Option<AccessCursor>,
+    /// `None` defaults to descending management lists and ascending v1 lists.
+    pub sort_order: Option<AccessSortOrder>,
 }
 
 impl Default for AccessPageRequest {
@@ -106,6 +116,7 @@ impl Default for AccessPageRequest {
         Self {
             limit: DEFAULT_PAGE_LIMIT,
             cursor: None,
+            sort_order: None,
         }
     }
 }
@@ -115,9 +126,20 @@ impl AccessPageRequest {
         self.limit as usize + 1
     }
 
+    pub fn effective_sort_order(&self, scope: &AccessListScope) -> AccessSortOrder {
+        self.sort_order.unwrap_or(if scope.is_management() {
+            AccessSortOrder::Desc
+        } else {
+            AccessSortOrder::Asc
+        })
+    }
+
     pub fn validate(&self, scope: &AccessListScope) -> Result<(), AccessError> {
         if self.limit == 0 || self.limit > MAX_PAGE_LIMIT {
             return Err(AccessError::InvalidInput("page_limit"));
+        }
+        if !scope.is_management() && self.sort_order == Some(AccessSortOrder::Desc) {
+            return Err(AccessError::InvalidInput("sort_order"));
         }
         if let Some(cursor) = &self.cursor {
             let management = scope.is_management();
@@ -130,6 +152,11 @@ impl AccessPageRequest {
             if cursor.version != scope.cursor_version()
                 || &cursor.scope != scope
                 || cursor.after.len() != expected
+                || cursor.sort_order.unwrap_or(if scope.is_management() {
+                    AccessSortOrder::Desc
+                } else {
+                    AccessSortOrder::Asc
+                }) != self.effective_sort_order(scope)
             {
                 return Err(AccessError::InvalidCursor);
             }
@@ -525,10 +552,11 @@ pub(super) fn finish_page<T>(
     if rows.len() > page.fetch_limit() {
         return Err(AccessError::InvalidStoreResponse);
     }
+    let order = page.effective_sort_order(&scope);
     let mut previous = page.cursor.as_ref().map(|c| c.after.clone());
     for row in &rows {
         let current = key(row);
-        let unordered = if scope.is_management() {
+        let unordered = if order == AccessSortOrder::Desc {
             previous.as_ref().is_some_and(|last| last <= &current)
         } else {
             previous.as_ref().is_some_and(|last| last >= &current)
@@ -541,10 +569,12 @@ pub(super) fn finish_page<T>(
     let has_more = rows.len() > page.limit as usize;
     rows.truncate(page.limit as usize);
     let next_cursor = if has_more {
+        let cursor_sort_order = scope.is_management().then_some(order);
         rows.last().map(|last| AccessCursor {
             version: scope.cursor_version(),
             scope,
             after: key(last),
+            sort_order: cursor_sort_order,
         })
     } else {
         None
@@ -592,23 +622,112 @@ mod tests {
             AccessPageRequest {
                 limit: 2,
                 cursor: None,
+                sort_order: None,
             },
             scope.clone(),
             Clone::clone,
         )
         .unwrap();
         assert_eq!(first.items, rows[..2]);
+        assert_eq!(
+            first.next_cursor.as_ref().unwrap().sort_order,
+            Some(AccessSortOrder::Desc)
+        );
         let second = finish_page(
             rows[2..].to_vec(),
             AccessPageRequest {
                 limit: 2,
                 cursor: first.next_cursor,
+                sort_order: None,
             },
             scope,
             Clone::clone,
         )
         .unwrap();
         assert_eq!(second.items, rows[2..]);
+    }
+
+    #[test]
+    fn management_pages_accept_ascending_and_reject_direction_switches() {
+        let scope = device_scope();
+        let rows = vec![
+            vec!["0000000000000000001".into(), "a".into()],
+            vec!["0000000000000000001".into(), "z".into()],
+            vec!["0000000000000000002".into(), "a".into()],
+        ];
+        let first = finish_page(
+            rows[..].to_vec(),
+            AccessPageRequest {
+                limit: 2,
+                cursor: None,
+                sort_order: Some(AccessSortOrder::Asc),
+            },
+            scope.clone(),
+            Clone::clone,
+        )
+        .unwrap();
+        assert_eq!(first.items, rows[..2]);
+        assert_eq!(
+            first.next_cursor.as_ref().unwrap().sort_order,
+            Some(AccessSortOrder::Asc)
+        );
+        assert_eq!(
+            AccessPageRequest {
+                limit: 2,
+                cursor: first.next_cursor.clone(),
+                sort_order: Some(AccessSortOrder::Desc),
+            }
+            .validate(&scope),
+            Err(AccessError::InvalidCursor)
+        );
+        let second = finish_page(
+            rows[2..].to_vec(),
+            AccessPageRequest {
+                limit: 2,
+                cursor: first.next_cursor,
+                sort_order: Some(AccessSortOrder::Asc),
+            },
+            scope,
+            Clone::clone,
+        )
+        .unwrap();
+        assert_eq!(second.items, rows[2..]);
+    }
+
+    #[test]
+    fn legacy_management_cursor_defaults_to_descending_and_v1_stays_ascending() {
+        let management = device_scope();
+        let legacy = AccessCursor {
+            version: 2,
+            scope: management.clone(),
+            after: vec!["0000000000000000001".into(), "id".into()],
+            sort_order: None,
+        };
+        assert!(AccessPageRequest {
+            limit: 1,
+            cursor: Some(legacy),
+            sort_order: None,
+        }
+        .validate(&management)
+        .is_ok());
+
+        let subject = AccessListScope::SubjectRoles {
+            tenant_id: "tenant".into(),
+            subject_id: "subject".into(),
+        };
+        assert_eq!(
+            AccessPageRequest::default().effective_sort_order(&subject),
+            AccessSortOrder::Asc
+        );
+        assert_eq!(
+            AccessPageRequest {
+                limit: 1,
+                cursor: None,
+                sort_order: Some(AccessSortOrder::Desc),
+            }
+            .validate(&subject),
+            Err(AccessError::InvalidInput("sort_order"))
+        );
     }
 
     #[test]
@@ -625,7 +744,9 @@ mod tests {
                         version,
                         scope: scope.clone(),
                         after,
+                        sort_order: None,
                     }),
+                    sort_order: None,
                 }
                 .validate(&scope),
                 Err(AccessError::InvalidCursor)

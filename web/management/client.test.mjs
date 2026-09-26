@@ -324,7 +324,7 @@ test("permission catalog is scoped, business-only, enabled-only and cursor-pagin
   });
   await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
   await client.listBusinessPermissions("0", "report", "cursor+/=");
-  assert.equal(calls.at(-1).path, "/access/permissions?limit=50&category=business&enabled=true&resource_type=report&cursor=cursor%2B%2F%3D");
+  assert.equal(calls.at(-1).path, "/access/permissions?limit=50&category=business&enabled=true&resource_type=report&cursor=cursor%2B%2F%3D&sort_order=desc");
   assert.equal(calls.at(-1).headers["X-Embedded-Idp-Tenant-Id"], "0");
 });
 
@@ -1181,4 +1181,27 @@ test("management lists preserve server time order across opaque cursor pages", a
   const next = await client.listClients({}, first.next_cursor);
   assert.deepEqual(next.items.map(row => row.client_id), ["m-old"]);
   assert.equal(new URL(calls.at(-1).path, "http://test").searchParams.get("cursor"), first.next_cursor);
+});
+
+test("management list sort order defaults to descending, forwards cursors, and rejects invalid values locally", async t => {
+  const rows = [managedClient({ client_id: "z-new" }), managedClient({ client_id: "a-old" })];
+  const { client, calls } = setup(t, path => {
+    if (path === "/capabilities") return json(fixed);
+    if (path === "/login") return json(authenticated());
+    return json({ items: rows, has_more: false, next_cursor: null });
+  });
+  await client.loadCapabilities();
+  await client.login("admin@example.test", "synthetic-password");
+  assert.deepEqual((await client.listClients({}, "cursor+/=")).items.map(row => row.client_id), ["z-new", "a-old"]);
+  let query = new URL(calls.at(-1).path, "http://test").searchParams;
+  assert.equal(query.get("sort_order"), "desc");
+  assert.equal(query.get("cursor"), "cursor+/=");
+  await client.listClients({}, undefined, "asc");
+  query = new URL(calls.at(-1).path, "http://test").searchParams;
+  assert.equal(query.get("sort_order"), "asc");
+  await client.listClients({}, undefined, "desc");
+  assert.equal(new URL(calls.at(-1).path, "http://test").searchParams.get("sort_order"), "desc");
+  const count = calls.length;
+  await assert.rejects(client.listClients({}, undefined, "sideways"));
+  assert.equal(calls.length, count);
 });

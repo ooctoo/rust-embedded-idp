@@ -242,6 +242,7 @@ async fn list(
                     client_id: c.client_id,
                 },
                 after: vec![c.after],
+                sort_order: None,
             })
         }
     };
@@ -251,6 +252,7 @@ async fn list(
             AccessPageRequest {
                 limit: query.limit.unwrap_or(50),
                 cursor,
+                sort_order: None,
             },
         )
     })
@@ -389,7 +391,9 @@ mod tests {
                 version: 1,
                 scope: scope.clone(),
                 after: vec!["d1".into()],
+                sort_order: None,
             }),
+            sort_order: None,
         };
         assert!(page.validate(&scope).is_ok());
         for other in [

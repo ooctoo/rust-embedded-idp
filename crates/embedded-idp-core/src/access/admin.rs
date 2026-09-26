@@ -276,8 +276,8 @@ pub trait AccessAdminTransaction {
         tenant: Option<&str>,
         account: &str,
     ) -> Result<Option<AccessAccountRecord>, StoreError>;
-    /// Newest-first `(membership.joined_at or account.created_at, account_id)` v2
-    /// keyset scan, returning at most limit + 1 records.
+    /// Caller-selected v2 keyset scan by `(membership.joined_at or account.created_at,
+    /// account_id)`, descending by default, returning at most limit + 1 records.
     fn admin_accounts(
         &mut self,
         tenant: Option<&str>,
@@ -286,8 +286,8 @@ pub trait AccessAdminTransaction {
     ) -> Result<Vec<AccessAccountRecord>, StoreError>;
 
     fn admin_client(&mut self, id: &str) -> Result<Option<crate::OidcClient>, StoreError>;
-    /// Newest-first `(created_at or epoch, client_id)` v2 keyset scan, returning
-    /// at most limit + 1 records.
+    /// Caller-selected v2 keyset scan by `(created_at or epoch, client_id)`,
+    /// descending by default, returning at most limit + 1 records.
     fn admin_clients(
         &mut self,
         filter: &AdminClientFilter,
@@ -305,8 +305,8 @@ pub trait AccessAdminTransaction {
         tenant: &str,
         session: &str,
     ) -> Result<Option<super::TenantSession>, StoreError>;
-    /// Newest-first `(created_at, session_id)` v2 keyset scan, returning at most
-    /// limit + 1 records.
+    /// Caller-selected v2 keyset scan by `(created_at, session_id)`, descending
+    /// by default, returning at most limit + 1 records.
     fn admin_sessions(
         &mut self,
         tenant: &str,
@@ -323,8 +323,8 @@ pub trait AccessAdminTransaction {
         tenant: &str,
         device: &str,
     ) -> Result<Option<AccessDeviceRecord>, StoreError>;
-    /// Tenant-scoped newest-first `(registered_at, device_id)` v2 keyset scan,
-    /// returning at most limit + 1 records.
+    /// Tenant-scoped caller-selected v2 keyset scan by `(registered_at, device_id)`,
+    /// descending by default and returning at most limit + 1 records.
     /// Account filtering requires an active binding in this same tenant;
     /// without it, include unbound devices. Each device appears at most once.
     fn admin_devices(
@@ -346,8 +346,9 @@ pub trait AccessAdminTransaction {
     fn check_permission(&mut self, query: &AccessQuery) -> Result<bool, StoreError>;
     fn tenant(&mut self, tenant_id: &str) -> Result<Option<Tenant>, StoreError>;
     fn tenant_record(&mut self, tenant_id: &str) -> Result<Option<AccessTenantRecord>, StoreError>;
-    /// Platform-only real-tenant search; excludes reserved domain 0, newest-first
-    /// `(created_at, tenant_id)` v2 keyset scan returning at most limit + 1 records.
+    /// Platform-only real-tenant search; excludes reserved domain 0. Caller-selected
+    /// v2 `(created_at, tenant_id)` scan defaults to descending and returns at most
+    /// limit + 1 records.
     fn admin_tenants(
         &mut self,
         filter: &AdminTenantFilter,
@@ -373,8 +374,8 @@ pub trait AccessAdminTransaction {
         role_id: &str,
     ) -> Result<Option<AccessRoleRecord>, StoreError>;
     /// Metadata only, including protected/disabled roles in exactly one tenant.
-    /// Newest-first `(created_at, role_id)` v2 keyset scan, at most limit + 1 rows;
-    /// do not expand permission sets.
+    /// Caller-selected v2 `(created_at, role_id)` keyset scan, descending by default,
+    /// at most limit + 1 rows; do not expand permission sets.
     fn admin_roles(
         &mut self,
         tenant: &str,
@@ -390,8 +391,8 @@ pub trait AccessAdminTransaction {
         key: &PermissionKey,
     ) -> Result<Option<PermissionDefinition>, StoreError>;
     /// Persisted directory, including disabled/retired-host entries, filtered by
-    /// scope/category. Newest-first `(created_at or epoch, resource_type, action)`
-    /// v2 keyset scan, at most limit + 1.
+    /// scope/category. Caller-selected v2 `(created_at or epoch, resource_type,
+    /// action)` keyset scan defaults to descending, at most limit + 1.
     fn admin_permissions(
         &mut self,
         scope: &AdminPermissionScope,
@@ -404,8 +405,8 @@ pub trait AccessAdminTransaction {
         binding_id: &str,
     ) -> Result<Option<RoleBinding>, StoreError>;
     /// Configured assignments in exactly one tenant and subject, including
-    /// protected roles. Newest-first `(created_at, binding_id)` v2 keyset scan,
-    /// at most limit + 1; no resource expansion.
+    /// protected roles. Caller-selected v2 `(created_at, binding_id)` keyset scan,
+    /// descending by default, at most limit + 1; no resource expansion.
     fn admin_role_bindings(
         &mut self,
         tenant: &str,
@@ -445,8 +446,8 @@ pub trait AccessAdminTransaction {
         kind: RoleKind,
     ) -> Result<bool, StoreError>;
     fn append_audit(&mut self, event: &AccessAuditEvent) -> Result<(), StoreError>;
-    /// Metadata only, newest-first `(occurred_at, id)` v2 keyset scan, at most
-    /// limit + 1 records in the exact target domain.
+    /// Metadata only, caller-selected v2 `(occurred_at, id)` keyset scan,
+    /// descending by default with at most limit + 1 records in the exact target domain.
     fn admin_audit_events(
         &mut self,
         tenant: &str,
