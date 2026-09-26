@@ -521,3 +521,207 @@ fn reference_host_refuses_uninitialized_or_wrong_mode_without_mutating_schema() 
         0
     );
 }
+
+/// Uses the real HTTP server and database; Cookie handling is explicit so the
+/// test can also submit stale/wrong-purpose credentials deliberately.
+impl Host {
+    fn browser(
+        &self,
+        path: &str,
+        cookie: Option<&str>,
+        ticket: Option<&str>,
+        body: Value,
+    ) -> (u16, Option<String>, Value) {
+        let body = body.to_string();
+        let mut request = format!("POST {path} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nOrigin: http://127.0.0.1:{}\r\nX-Embedded-Idp-Browser: 1\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: {}\r\n", self.port, self.port, body.len());
+        if let Some(cookie) = cookie {
+            request.push_str(&format!("Cookie: {cookie}\r\n"));
+        }
+        if let Some(ticket) = ticket {
+            request.push_str(&format!("Authorization: TenantSelection {ticket}\r\n"));
+        }
+        request.push_str("\r\n");
+        request.push_str(&body);
+        let mut stream = TcpStream::connect(("127.0.0.1", self.port)).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        stream.write_all(request.as_bytes()).unwrap();
+        let mut response = String::new();
+        stream.read_to_string(&mut response).unwrap();
+        let (headers, body) = response.split_once("\r\n\r\n").unwrap();
+        let status = headers.split_whitespace().nth(1).unwrap().parse().unwrap();
+        let cookie = headers.lines().find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.eq_ignore_ascii_case("set-cookie")
+                .then(|| value.trim().to_owned())
+        });
+        (
+            status,
+            cookie,
+            serde_json::from_str(body).unwrap_or(Value::Null),
+        )
+    }
+}
+fn cookie_pair(cookie: &str) -> &str {
+    cookie.split(';').next().unwrap()
+}
+fn browser_identity(session: &Value) -> Value {
+    json!({"tenant_id":session["tenant_id"], "account_id":session["account_id"],
+        "session_id":session["session_id"], "client_id":session["client_id"]})
+}
+#[test]
+#[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
+fn browser_cookie_restore_logout_and_purpose_isolation_in_both_modes() {
+    for mode in [TenancyMode::Disabled, TenancyMode::Enabled] {
+        let db = Db::new(mode);
+        db.bootstrap();
+        let host = db.start();
+        let management_root = "/api/admin/auth/browser";
+        let (status, management_cookie, admin) = host.browser(
+            &format!("{management_root}/login"),
+            None,
+            None,
+            json!({"email":"admin@example.test","password":"Runtime-Admin123"}),
+        );
+        assert_eq!(status, 200);
+        assert!(admin["tokens"].get("refresh_token").is_none());
+        let management_cookie = management_cookie.unwrap();
+        assert!(
+            management_cookie.contains("HttpOnly") && management_cookie.contains("SameSite=Strict")
+        );
+        let tenant = if mode == TenancyMode::Enabled {
+            "browser-a"
+        } else {
+            "0"
+        };
+        if mode == TenancyMode::Enabled {
+            host.json("POST", "/api/admin/tenants", Some(token(&admin)), None,
+                Some(json!({"tenant_id":tenant,"name":"Browser tenant","allow_registration":true,
+                    "administrator":{"kind":"new","email":"browser@example.test","password":"Browser-Member123"}})), 201);
+        } else {
+            host.json("POST", "/api/admin/platform/accounts", Some(token(&admin)), None,
+                Some(json!({"tenant_id":"0","email":"browser@example.test","password":"Browser-Member123"})), 200);
+        }
+        let (status, cookie, result) = host.browser(
+            "/auth/browser/login",
+            None,
+            None,
+            json!({"email":"browser@example.test","password":"Browser-Member123"}),
+        );
+        assert_eq!(status, 200);
+        let (cookie, result) = if mode == TenancyMode::Enabled {
+            assert!(cookie.is_none());
+            assert_eq!(result["status"], "tenant_selection_required");
+            let (status, cookie, result) = host.browser(
+                "/auth/browser/tenant-selection/complete",
+                None,
+                result["selection_ticket"].as_str(),
+                json!({"tenant_id":tenant}),
+            );
+            assert_eq!(status, 200);
+            (cookie.unwrap(), result)
+        } else {
+            (cookie.unwrap(), result)
+        };
+        assert_eq!(result["session"]["tenant_id"], tenant);
+        assert!(result["tokens"].get("refresh_token").is_none());
+        let identity = browser_identity(&result["session"]);
+        let mut wrong = identity.clone();
+        wrong["tenant_id"] = json!("wrong-tenant");
+        let (status, changed_cookie, result) = host.browser(
+            "/auth/browser/refresh",
+            Some(cookie_pair(&cookie)),
+            None,
+            json!({"expected_session":wrong}),
+        );
+        assert_eq!(status, 409);
+        assert!(changed_cookie.is_none());
+        assert_eq!(result["code"], "browser_session_changed");
+        let (status, next, restored) = host.browser(
+            "/auth/browser/restore",
+            Some(cookie_pair(&cookie)),
+            None,
+            json!({"expected_session":identity}),
+        );
+        assert_eq!(status, 200);
+        let next = next.unwrap();
+        assert_ne!(cookie_pair(&cookie), cookie_pair(&next));
+        assert!(restored["tokens"].get("refresh_token").is_none());
+        // Renaming a business cookie cannot upgrade its signed/stored purpose.
+        let forged = format!(
+            "{}={}",
+            cookie_pair(&management_cookie).split_once('=').unwrap().0,
+            cookie_pair(&next).split_once('=').unwrap().1
+        );
+        assert_eq!(
+            host.browser(
+                &format!("{management_root}/restore"),
+                Some(&forged),
+                None,
+                json!({})
+            )
+            .0,
+            401
+        );
+        // No access token is supplied to logout, including before local restoration.
+        let (status, cleared, _) = host.browser(
+            "/auth/browser/logout",
+            Some(cookie_pair(&next)),
+            None,
+            json!({}),
+        );
+        assert_eq!(status, 204);
+        assert!(cleared.unwrap().contains("Max-Age=0"));
+        assert_eq!(
+            host.browser(
+                "/auth/browser/restore",
+                Some(cookie_pair(&next)),
+                None,
+                json!({})
+            )
+            .0,
+            401
+        );
+        assert_eq!(
+            host.browser(
+                "/auth/browser/logout",
+                Some(cookie_pair(&next)),
+                None,
+                json!({})
+            )
+            .0,
+            204
+        );
+        // Business logout has no effect on the separate management session.
+        let (status, next_admin, _) = host.browser(
+            &format!("{management_root}/restore"),
+            Some(cookie_pair(&management_cookie)),
+            None,
+            json!({}),
+        );
+        assert_eq!(status, 200);
+        let next_admin = next_admin.unwrap();
+        // Reusing the old management credential revokes its family, including the new token.
+        assert_eq!(
+            host.browser(
+                &format!("{management_root}/restore"),
+                Some(cookie_pair(&management_cookie)),
+                None,
+                json!({})
+            )
+            .0,
+            401
+        );
+        assert_eq!(
+            host.browser(
+                &format!("{management_root}/restore"),
+                Some(cookie_pair(&next_admin)),
+                None,
+                json!({})
+            )
+            .0,
+            401
+        );
+    }
+}

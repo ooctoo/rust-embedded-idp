@@ -27,7 +27,7 @@ pub trait ManagementAuthenticationService: Send + Sync {
 }
 
 pub struct CoreManagementAuthenticationService<S, T, G, D, C, I> {
-    auth: CoreTenantAuthenticationService<S, T, G, D, C, I>,
+    pub(crate) auth: CoreTenantAuthenticationService<S, T, G, D, C, I>,
 }
 
 impl<S, T, G, D, C, I> CoreManagementAuthenticationService<S, T, G, D, C, I> {

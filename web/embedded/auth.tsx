@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, useSyncExternalStore, type CSSProperties, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, useSyncExternalStore, type CSSProperties, type FormEvent } from "react";
 import { EmbeddedIdentityClient, IdentityError, type JoinedTenantPage, type MyRolePage } from "./client";
 import styles from "./auth.module.css";
 
@@ -9,7 +9,7 @@ const copy = {
     signingIn: "正在登录…", choose: "选择租户", loadingTenants: "正在读取已加入的租户…", unavailable: "不可进入",
     enter: "进入", previous: "上一页", next: "下一页", page: "第", empty: "暂无可进入的租户，请联系管理员。",
     back: "返回登录", cancel: "取消切换，返回当前会话", switch: "切换租户", logout: "退出登录",
-    current: "当前身份", account: "用户 ID", tenant: "租户", system: "当前系统", note: "凭证仅保存在本页内存中，刷新后需重新登录。",
+    current: "当前身份", account: "用户 ID", tenant: "租户", system: "当前系统", note: "访问令牌仅保存在本页内存中，刷新后会尝试恢复浏览器会话。",
     fixed: "此入口只登录指定租户。", selectable: "验证账号后，选择已加入的租户。", disabled: "使用账号邮箱和密码登录。",
     verify: "校验会话", verified: "会话有效", error: "操作失败，请重试。", busy: "正在处理…",
     roles: "我的角色", loadingRoles: "正在读取角色…", noRoles: "当前租户暂无角色。", disabledRole: "已停用",
@@ -19,7 +19,7 @@ const copy = {
     signingIn: "Signing in…", choose: "Choose a tenant", loadingTenants: "Loading your tenants…", unavailable: "Unavailable",
     enter: "Enter", previous: "Previous", next: "Next", page: "Page", empty: "No tenant is available. Contact an administrator.",
     back: "Back to sign in", cancel: "Cancel switch and return", switch: "Switch tenant", logout: "Sign out",
-    current: "Current identity", account: "User ID", tenant: "Tenant", system: "Current system", note: "Credentials stay in this page's memory. Sign in again after a reload.",
+    current: "Current identity", account: "User ID", tenant: "Tenant", system: "Current system", note: "The access token stays in this page's memory; a reload restores the browser session.",
     fixed: "This sign-in is limited to one tenant.", selectable: "Verify your account, then choose a tenant you have joined.", disabled: "Sign in with your account email and password.",
     verify: "Check session", verified: "Session active", error: "The operation failed. Please try again.", busy: "Working…",
     roles: "My roles", loadingRoles: "Loading roles…", noRoles: "No roles in this tenant.", disabledRole: "Disabled",
@@ -48,6 +48,7 @@ export function EmbeddedAuth({ client, language = "zh-CN", className, style }: E
   const [rolePage, setRolePage] = useState<{ key: string; page: MyRolePage }>();
   const [roleCursors, setRoleCursors] = useState<(string | undefined)[]>([undefined]);
   const [roleLoading, setRoleLoading] = useState(false);
+  const restoreAttempted = useRef<EmbeddedIdentityClient | undefined>(undefined);
   const roleKey = state.session ? `${state.session.tenant_id}/${state.session.account_id}/${state.session.session_id}` : "";
   const emailId = useId(), passwordId = useId();
   const message = (reason: unknown) => language === "zh-CN" && reason instanceof IdentityError ? reason.message : t.error;
@@ -62,6 +63,16 @@ export function EmbeddedAuth({ client, language = "zh-CN", className, style }: E
     let live = true;
     if (!state.capabilities) void client.loadCapabilities().catch(reason => { if (live) setError(message(reason)); });
     return () => { live = false; };
+  }, [client, state.capabilities]);
+
+  useEffect(() => {
+    if (!client.isCookieMode() || !state.capabilities || restoreAttempted.current === client) return;
+    restoreAttempted.current = client;
+    setBusy(true);
+    void client.restore().catch(reason => {
+      if (reason instanceof IdentityError && reason.status === 401) return;
+      setError(message(reason));
+    }).finally(() => setBusy(false));
   }, [client, state.capabilities]);
 
   useEffect(() => { if (!state.selecting) { setPage(undefined); setCursors([undefined]); } }, [state.selecting]);
@@ -105,6 +116,7 @@ export function EmbeddedAuth({ client, language = "zh-CN", className, style }: E
   }
 
   return <section className={`${styles.root}${className ? ` ${className}` : ""}`} style={style} lang={language} aria-busy={busy || tenantLoading}>
+    {state.sessionChanged && <p role="status">{language === "zh-CN" ? "其他页面已更改此会话，请重新加载后继续。" : "Another page changed this session. Reload to continue."} <button type="button" onClick={() => window.location.reload()}>{language === "zh-CN" ? "重新加载" : "Reload"}</button></p>}
     {error && <p className={styles.error} role="alert">{error}</p>}
     {!state.capabilities ? <div>
       <h2>{t.connect}</h2>
@@ -168,7 +180,7 @@ export function EmbeddedAuth({ client, language = "zh-CN", className, style }: E
         <input id={passwordId} type="password" autoComplete="current-password" required maxLength={4096} disabled={busy} value={password} onChange={event => setPassword(event.target.value)} />
         <button type="submit" disabled={busy}>{busy ? t.signingIn : t.login}</button>
       </form>
-      <p className={styles.helper}>{t.note}</p>
+      <p className={styles.helper}>{client.isCookieMode() ? t.note : language === "zh-CN" ? "凭证仅保存在本页内存中，刷新后需重新登录。" : "Credentials stay in memory. Sign in again after a reload."}</p>
     </div>}
   </section>;
 }

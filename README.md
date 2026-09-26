@@ -106,6 +106,7 @@ cargo test --workspace --locked
 - [租户/角色/权限设计](docs/tenant-role-permission-design-v1.md)
 - [1.0.0 破坏性升级记录](CHANGELOG.md)
 - [当前进度与历史验证记录](docs/tenant-access-execution-plan.md)
+- [浏览器 Cookie 会话设计](docs/browser-session-design.md)
 - [React 管理与嵌入组件](docs/react-ui-integration-design.md)
 - [无租户嵌入宿主示例](examples/no-tenant-host/README.md)
 - [生产安全要求](docs/rust-embedded-idp-production-security-delivery-v2.md)

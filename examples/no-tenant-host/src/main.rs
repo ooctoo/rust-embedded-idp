@@ -6,8 +6,8 @@ use std::{error::Error, fs, sync::Arc};
 use axum::{routing::get, Json, Router};
 use config::Config;
 use embedded_idp_axum::{
-    tenant_device_auth_router, tenant_oidc_resource_router, tenant_self_router,
-    TenantDeviceAuthHttpConfig,
+    browser_session_router, tenant_device_auth_router, tenant_oidc_resource_router,
+    tenant_self_router, BrowserSessionHttpConfig, TenantDeviceAuthHttpConfig,
 };
 use embedded_idp_core::{access::*, *};
 use embedded_idp_security::*;
@@ -126,6 +126,15 @@ fn build_app(config: &Config, business: ReportStore) -> Result<Router, String> {
         .route("/assets/:name", get(reports::asset))
         .route("/healthz", get(|| async { Json(json!({"status":"ok"})) }))
         .merge(tenant_device_auth_router(authentication.clone(), auth_http))
+        .merge(browser_session_router(
+            Arc::new(auth()?),
+            BrowserSessionHttpConfig::new(
+                &config.browser_origin,
+                &format!("idp_{}_business", config.bind_addr.port()),
+                "/auth/browser",
+                AccessTokenPurpose::Business,
+            )?,
+        )?)
         .merge(tenant_oidc_resource_router(Arc::new(oidc)))
         .merge(tenant_self_router(authentication.clone(), access.clone()))
         .merge(reports::router(ReportState {

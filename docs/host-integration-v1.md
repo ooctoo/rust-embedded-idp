@@ -1,5 +1,7 @@
 # Host Integration v1
 
+> 浏览器 Cookie 接入的新增契约见[浏览器会话设计](browser-session-design.md)。原显式令牌与设备证明接口继续适用；本期不支持跨标签页同时使用不同业务租户。
+
 ## Current reference-host composition
 
 The reference host now uses tenant-aware services in both modes. See
@@ -1841,3 +1843,9 @@ policies. Device-bound management is still not supported by this bearer service.
 
 This independently mountable module is exercised with real RS256 and PostgreSQL.
 The reference host now uses it in both modes, behind startup/readiness validation.
+
+## Optional browser Cookie adapter (2026-09-26)
+
+`BrowserSessionService` is implemented by the business Core authentication service and the independent management Core service. `browser_session_router(service, BrowserSessionHttpConfig::new(origin, cookie_name, external_cookie_path, purpose)?)` merges additional routes without replacing explicit-token or proof routes. Compose it beside `management_router`, not inside its protected admin routes. The configuration validates the origin, external path and service purpose. The adapter owns Cookie and CSRF handling; Core remains independent of HTTP and storage schema changes are not required.
+
+Full requests, expiry/rotation/logout semantics, multi-tenant rules and React coordination are specified in [browser session design](browser-session-design.md). Statements above that the original adapters do not create cookies still apply to those adapters. Only the new opt-in browser routes read/write refresh cookies.

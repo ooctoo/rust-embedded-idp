@@ -1,3 +1,5 @@
+import { BrowserSessionCoordinator } from "./browser-session";
+
 export type LoginCapabilities =
   | { tenancy_enabled: false; login_tenant_policy: "fixed"; fixed_tenant_id: "0" }
   | { tenancy_enabled: true; login_tenant_policy: "fixed"; fixed_tenant_id: string }
@@ -43,6 +45,7 @@ export interface IdentitySnapshot {
   session?: IdentitySession;
   selecting: boolean;
   accessExpiresAt?: number;
+  sessionChanged?: boolean;
 }
 
 export type IdentityTransport = (url: string, init: RequestInit) => Promise<Response>;
@@ -55,7 +58,7 @@ interface Credentials {
   session: IdentitySession;
   tokens: {
     access_token: string;
-    refresh_token: string;
+    refresh_token?: string;
     access_expires_at_unix_secs: number;
     refresh_expires_at_unix_secs: number;
   };
@@ -95,16 +98,28 @@ export class EmbeddedIdentityClient {
   private revision = 0;
   private listeners = new Set<() => void>();
   private snapshot: IdentitySnapshot = { selecting: false };
+  private sessionChanged = false;
+  private readonly browser?: BrowserSessionCoordinator;
+  private restoring?: Promise<IdentitySession | undefined>;
 
-  constructor(baseUrl: string, transport: IdentityTransport = (url, init) => fetch(url, init)) {
+  constructor(baseUrl: string, transport: IdentityTransport = (url, init) => fetch(url, init), options: { mode?: "token" | "cookie" } = {}) {
     this.base = basePath(baseUrl);
     this.transport = transport;
+    if (options.mode === "cookie") {
+      const origin = typeof location === "undefined" ? "https://embedded-idp.invalid" : location.origin;
+      const url = new URL(this.base || "/", origin);
+      if (url.origin !== origin) throw new Error("Cookie 会话必须使用同源身份接口。");
+      this.base = url.pathname.replace(/\/$/, "");
+      this.browser = new BrowserSessionCoordinator(`${this.base}/auth/browser`, "business");
+      this.browser.subscribe(() => { this.sessionChanged = true; this.clear(); });
+    }
   }
 
   getSnapshot = () => this.snapshot;
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   private publish() {
     this.snapshot = { capabilities: this.snapshot.capabilities, session: this.credentials?.session,
+      ...(this.sessionChanged ? { sessionChanged: true } : {}),
       selecting: !!this.selection, accessExpiresAt: this.credentials?.tokens.access_expires_at_unix_secs };
     this.listeners.forEach(listener => listener());
   }
@@ -135,6 +150,29 @@ export class EmbeddedIdentityClient {
     try { return await response.json(); } catch { throw invalidResponse(); }
   }
 
+  private expectedSession() {
+    const session = this.credentials?.session;
+    return session && { expected_session: session };
+  }
+
+  private async browserRequest(path: string, body: Record<string, unknown> = {}, authorization?: string): Promise<unknown> {
+    const browser = this.browser;
+    if (!browser) throw new IdentityError("当前客户端未启用 Cookie 会话。", 400);
+    let response: Response;
+    try {
+      response = await this.transport(`${this.base}/auth/browser${path}`, {
+        method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json", "X-Embedded-Idp-Browser": "1", ...(authorization ? { Authorization: authorization } : {}) },
+        body: JSON.stringify(body), credentials: "same-origin", cache: "no-store", redirect: "error", signal: AbortSignal.timeout(15_000),
+      });
+    } catch { throw new IdentityError("无法连接身份服务，请检查网络后重试。"); }
+    if (!response.ok) {
+      const messages: Record<number, string> = { 400: "请求无效，请重新操作。", 401: "凭证无效或已过期，请重新登录。", 403: "当前身份无权执行此操作。", 409: "浏览器会话已被其他页面替换，请重新加载。", 429: "操作过于频繁，请稍后重试。" };
+      throw new IdentityError(messages[response.status] ?? "身份服务暂时不可用，请稍后重试。", response.status);
+    }
+    if (response.status === 204) return undefined;
+    try { return await response.json(); } catch { throw invalidResponse(); }
+  }
+
   async loadCapabilities() {
     const value = record(await this.request("/auth/access/capabilities"));
     if (typeof value.tenancy_enabled !== "boolean" ||
@@ -144,7 +182,8 @@ export class EmbeddedIdentityClient {
     this.publish();
   }
 
-  private accept(value: unknown, allowSelection: boolean) {
+  private accept(value: unknown, allowSelection: boolean, cookie = false) {
+    this.sessionChanged = false;
     const result = record(value);
     if (allowSelection && result.status === "tenant_selection_required" && this.canChoose()) {
       if (typeof result.selection_ticket !== "string" || !/^[A-Za-z0-9_-]+$/.test(result.selection_ticket) ||
@@ -154,7 +193,8 @@ export class EmbeddedIdentityClient {
       if (result.status !== "authenticated") throw invalidResponse();
       const session = sessionFrom(result.session);
       const tokens = record(result.tokens);
-      if (![tokens.access_token, tokens.refresh_token].every(v => typeof v === "string" && v.length > 0) ||
+      if (cookie && tokens.refresh_token !== undefined) throw invalidResponse();
+      if (!(typeof tokens.access_token === "string" && tokens.access_token.length > 0) || (!cookie && !(typeof tokens.refresh_token === "string" && tokens.refresh_token.length > 0)) ||
           ![tokens.access_expires_at_unix_secs, tokens.refresh_expires_at_unix_secs].every(v => typeof v === "number" && Number.isSafeInteger(v) && v > Date.now() / 1000)) throw invalidResponse();
       const capabilities = this.snapshot.capabilities;
       if (!capabilities || capabilities.login_tenant_policy === "fixed" && session.tenant_id !== capabilities.fixed_tenant_id ||
@@ -166,18 +206,87 @@ export class EmbeddedIdentityClient {
   }
 
   canChoose() { return this.snapshot.capabilities?.login_tenant_policy === "choose_after_authentication"; }
+  isCookieMode() { return !!this.browser; }
   async login(email: string, password: string) {
     if (!this.snapshot.capabilities) throw invalidResponse();
     this.clear();
     const revision = this.revision;
+    if (this.browser) {
+      await this.browser.run(async () => {
+        this.current(revision);
+        try {
+          const result = await this.browserRequest("/login", { email, password });
+          this.current(revision);
+          this.browser!.mark("changed");
+          this.accept(result, true, true);
+        } catch (error) { this.browserFailure(error, revision, false); throw error; }
+      });
+      return;
+    }
     const result = await this.request("/auth/login", "POST", JSON.stringify({ email, password }));
     this.current(revision);
-    this.accept(result, true);
+    this.accept(result, true, false);
+  }
+
+  private browserFailure(error: unknown, revision: number, readsCookie = true) {
+    if (revision !== this.revision) return;
+    this.clear();
+    const status = error instanceof IdentityError ? error.status : 0;
+    if (status === 401 && readsCookie) this.browser!.mark("changed");
+    else if (!status || status >= 500) this.browser!.mark("blocked");
+  }
+
+  async restore() {
+    if (!this.browser) throw new IdentityError("当前客户端未启用 Cookie 会话。", 400);
+    if (this.restoring) return this.restoring;
+    const revision = this.revision;
+    const expected = this.expectedSession();
+    const pending = this.browser.run(async () => {
+      this.browser!.check();
+      this.current(revision);
+      try {
+        const value = await this.browserRequest("/restore", expected);
+        this.current(revision);
+        const restored = sessionFrom(record(value).session);
+        const original = expected?.expected_session;
+        if (original && (restored.tenant_id !== original.tenant_id || restored.account_id !== original.account_id ||
+            restored.session_id !== original.session_id || restored.client_id !== original.client_id)) throw invalidResponse();
+        this.accept(value, false, true);
+        return this.snapshot.session;
+      } catch (error) { this.browserFailure(error, revision); throw error; }
+    });
+    this.restoring = pending;
+    try { return await pending; } finally { if (this.restoring === pending) this.restoring = undefined; }
   }
 
   private async access(): Promise<Credentials> {
+    if (this.browser && this.selection) throw new IdentityError("请先完成或取消租户切换。", 409);
     const credentials = this.credentials;
     if (!credentials) throw new IdentityError("请先登录。", 401);
+    if (this.browser) {
+      this.browser.check();
+      if (this.refreshing) return this.refreshing;
+      if (credentials.tokens.access_expires_at_unix_secs > Date.now() / 1000 + 30) return credentials;
+      const revision = this.revision;
+      const expected = this.expectedSession();
+      const pending = this.browser.run(async () => {
+        this.browser!.check();
+        this.current(revision);
+        try {
+          const value = await this.browserRequest("/refresh", expected);
+          this.current(revision);
+          const session = sessionFrom(record(value).session);
+          if (session.account_id !== credentials.session.account_id || session.tenant_id !== credentials.session.tenant_id || session.session_id !== credentials.session.session_id || session.client_id !== credentials.session.client_id) throw invalidResponse();
+          this.accept(value, false, true);
+          return this.credentials!;
+        } catch (error) {
+          this.browserFailure(error, revision);
+          throw error;
+        } finally { if (revision === this.revision) this.refreshing = undefined; }
+      });
+      this.refreshing = pending;
+      return pending;
+    }
     if (this.refreshing) return this.refreshing;
     if (credentials.tokens.access_expires_at_unix_secs > Date.now() / 1000 + 30) return credentials;
     const revision = this.revision;
@@ -286,6 +395,24 @@ export class EmbeddedIdentityClient {
   }
   async selectTenant(tenantId: string) {
     if (!id(tenantId) || tenantId === "0") throw new IdentityError("请选择有效租户。", 400);
+    if (this.browser) {
+      const selection = this.selection;
+      if (!selection || selection.expiresAt <= Date.now()) throw new IdentityError("请重新登录以选择租户。", 401);
+      const revision = this.revision;
+      const original = this.credentials?.session;
+      await this.browser.run(async () => {
+        this.browser!.check(); this.current(revision);
+        try {
+          const result = await this.browserRequest("/tenant-selection/complete", { tenant_id: tenantId }, `TenantSelection ${selection.ticket}`);
+          this.current(revision);
+          const session = sessionFrom(record(result).session);
+          if (session.tenant_id !== tenantId || original && session.account_id !== original.account_id) throw invalidResponse();
+          this.browser!.mark("changed");
+          this.accept(result, false, true); this.revision++; this.refreshing = undefined;
+        } catch (error) { this.browserFailure(error, revision, false); throw error; }
+      });
+      return;
+    }
     const value = await this.withSelection("/auth/tenant-selection/complete", JSON.stringify({ tenant_id: tenantId }));
     const session = sessionFrom(record(value).session);
     if (session.tenant_id !== tenantId || this.credentials && session.account_id !== this.credentials.session.account_id) {
@@ -297,9 +424,23 @@ export class EmbeddedIdentityClient {
   }
 
   async logout() {
+    if (this.browser) {
+      const expected = this.expectedSession();
+      this.clear();
+      const revision = this.revision;
+      await this.browser.run(async () => {
+        this.browser!.check(); this.current(revision);
+        try {
+          await this.browserRequest("/logout", expected);
+          this.current(revision);
+          this.browser!.mark("changed");
+        } catch (error) { this.browserFailure(error, revision); throw error; }
+      });
+      return;
+    }
     const credentials = this.credentials;
     this.clear();
-    if (!credentials) return;
+    if (!credentials || !credentials.tokens.refresh_token) return;
     try {
       await this.request("/auth/logout", "POST", new URLSearchParams({ refresh_token: credentials.tokens.refresh_token,
         client_id: credentials.session.client_id }).toString());

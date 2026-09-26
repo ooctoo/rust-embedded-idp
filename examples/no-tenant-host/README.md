@@ -40,3 +40,7 @@ pnpm --dir web install --frozen-lockfile
 ## 验证边界
 
 `cargo test -p embedded-idp-no-tenant-host` 检查宿主构造的授权查询绑定真实用户和报告 ID；`./examples/no-tenant-host/run.sh build-web` 检查页面并生成 `examples/no-tenant-host/dist`。`serve` 会先执行这一步。示例展示业务资源读取与权限撤销的集成路径，不包含报告列表、写入 API、完整 OIDC 客户端、设备注册界面或带租户嵌入能力。
+
+## 浏览器恢复
+
+示例登录组件使用 Cookie 模式，刷新页面后通过 `/auth/browser/restore` 恢复，访问令牌仍只保存在内存。`NO_TENANT_HOST_BROWSER_ORIGIN` 默认 `http://<NO_TENANT_HOST_BIND_ADDR>`，反向代理部署需设置精确外部源；非 loopback 必须 HTTPS。Cookie 名称为 `idp_<bind-port>_business`，不与参考管理端共用。接口与多标签页规则见[浏览器会话设计](../../docs/browser-session-design.md)。

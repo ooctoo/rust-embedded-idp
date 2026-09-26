@@ -10,6 +10,7 @@ use embedded_idp_storage_postgres::{DbPoolConfig, PgConnectionConfig, PgStorageC
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EmbeddedIdpAppConfig {
     pub bind_addr: SocketAddr,
+    pub browser_origin: String,
     pub embedded_idp: EmbeddedIdpConfig,
     pub admin_ui_base_path: String,
     pub postgres: PgStorageConfig,
@@ -84,6 +85,10 @@ impl EmbeddedIdpAppConfig {
         let bind_addr = env_var("EMBEDDED_IDP_APP_BIND_ADDR", "127.0.0.1:9100")
             .parse::<SocketAddr>()
             .map_err(|error| format!("invalid EMBEDDED_IDP_APP_BIND_ADDR: {error}"))?;
+        let browser_origin = env_var(
+            "EMBEDDED_IDP_APP_BROWSER_ORIGIN",
+            &format!("http://{bind_addr}"),
+        );
         let issuer = env_var("EMBEDDED_IDP_APP_ISSUER", &format!("http://{bind_addr}"));
         let admin_ui_base_path = match env::var("EMBEDDED_IDP_APP_ADMIN_UI_BASE_PATH") {
             Ok(value) => normalize_admin_ui_base_path(&value)?,
@@ -187,6 +192,7 @@ impl EmbeddedIdpAppConfig {
 
         Ok(Self {
             bind_addr,
+            browser_origin,
             embedded_idp,
             admin_ui_base_path,
             postgres,

@@ -243,6 +243,26 @@ pub fn build_app(config: &EmbeddedIdpAppConfig) -> Result<Router, String> {
             subject: config.email_delivery.subject.clone(),
         },
     ));
+    let management = Arc::new(management);
+    let cookie_prefix = format!("idp_{}", config.bind_addr.port());
+    let browser_business = browser_session_router(
+        Arc::new(auth()?),
+        BrowserSessionHttpConfig::new(
+            &config.browser_origin,
+            &format!("{cookie_prefix}_business"),
+            "/auth/browser",
+            AccessTokenPurpose::Business,
+        )?,
+    )?;
+    let browser_management = browser_session_router(
+        management.clone(),
+        BrowserSessionHttpConfig::new(
+            &config.browser_origin,
+            &format!("{cookie_prefix}_management"),
+            "/api/admin/auth/browser",
+            AccessTokenPurpose::Management,
+        )?,
+    )?;
     let public = tenant_device_auth_router(
         devices.clone(),
         TenantDeviceAuthHttpConfig::new(
@@ -320,9 +340,10 @@ pub fn build_app(config: &EmbeddedIdpAppConfig) -> Result<Router, String> {
         .merge(admin_console_router(&config.admin_ui_base_path))
         .nest(
             "/api",
-            management_router(Arc::new(management), admin_routes),
+            management_router(management, admin_routes).merge(browser_management),
         )
-        .merge(public))
+        .merge(public)
+        .merge(browser_business))
 }
 fn seed_public_client(
     adapter: &PostgresStorageAdapter,

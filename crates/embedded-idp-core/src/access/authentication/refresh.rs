@@ -80,16 +80,17 @@ where
         &self,
         refresh: SecretString,
     ) -> Result<TenantRefreshOutcome, TenantAuthError> {
-        self.rotate_with_device_step(refresh, |_, session| {
+        self.rotate_with_device_step(refresh, None, |_, session| {
             if self.entry.require_device_proof || session.device_id.is_some() {
                 return Err(TenantAuthError::DeviceProofRequired);
             }
             Ok(())
         })
     }
-    fn rotate_with_device_step(
+    pub(crate) fn rotate_with_device_step(
         &self,
         raw: SecretString,
+        expected: Option<&BrowserSessionIdentity>,
         verify: impl FnOnce(&mut S::Transaction<'_>, &TenantSession) -> Result<(), TenantAuthError>,
     ) -> Result<TenantRefreshOutcome, TenantAuthError> {
         let digest = self
@@ -139,6 +140,14 @@ where
                 &account.id,
                 self.clock.now(),
             )?;
+            if expected.is_some_and(|expected| {
+                expected.tenant_id != session.tenant_id
+                    || expected.account_id != session.account_id
+                    || expected.session_id != session.id
+                    || expected.client_id != session.client_id
+            }) {
+                return Err(AccessError::InvalidInput("browser_session_changed").into());
+            }
             verify(tx, &session)?;
             // Proof verification may wait for locks. Recheck all credential times
             // afterwards; errors roll back any nonce consumption by that step.
@@ -271,7 +280,7 @@ where
             &self.entry.login_entry,
             &command.refresh_token,
         );
-        self.rotate_with_device_step(command.refresh_token, |tx, session| {
+        self.rotate_with_device_step(command.refresh_token, None, |tx, session| {
             if session.device_id.as_deref() != Some(command.proof.device_id.as_str()) {
                 return Err(TenantAuthError::DeviceProof(
                     DeviceRequestVerificationError::InvalidProof,

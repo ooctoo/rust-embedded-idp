@@ -37,7 +37,7 @@ test("admin subpath exports a mountable permission directory without changing th
 
 test("two embedded forms have separate labels, language and theme roots", () => {
   const state = { selecting: false, capabilities: { tenancy_enabled: false, login_tenant_policy: "fixed", fixed_tenant_id: "0" } };
-  const client = { getSnapshot: () => state, subscribe: () => () => {} };
+  const client = { getSnapshot: () => state, subscribe: () => () => {}, isCookieMode: () => false };
   const html = renderToStaticMarkup(createElement(Fragment, null,
     createElement(EmbeddedAuth, { client, style: { "--embedded-idp-primary": "#2257bb" } }),
     createElement(EmbeddedAuth, { client, language: "en-US", style: { "--embedded-idp-primary": "#385542" } }),

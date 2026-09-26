@@ -1,5 +1,7 @@
 # React 管理后台与宿主嵌入组件
 
+> 浏览器 Cookie 接入的新增契约见[浏览器会话设计](browser-session-design.md)。原显式令牌与设备证明接口继续适用；本期不支持跨标签页同时使用不同业务租户。
+
 更新时间：2026-09-25。Web 工程有两个交付面：参考服务使用的独立管理后台，以及宿主可本地导入的 `@embedded-idp/react` 组件包。源码和构建产物在同一工程，均未发布到 npm。
 
 | 入口 | 内容 | 主要依赖 |
@@ -10,7 +12,7 @@
 
 ## 身份和安全边界
 
-管理后台先读取 `/admin/auth/capabilities`，再使用独立管理登录与管理用途 JWT；业务组件只调用公开 `/auth` 和本人接口。两种凭证不能互换。当前管理客户端只接受同源绝对 API 前缀，令牌和选择票据保存在客户端实例内存，不进入 URL、本地存储或 React 状态。业务组件的请求适配器可由宿主提供，以承载其设备证明；真实签名和业务资源授权始终由宿主服务端负责。
+管理后台先读取 `/admin/auth/capabilities`，再使用独立管理登录与管理用途 JWT；业务组件只调用公开 `/auth` 和本人接口。两种凭证不能互换。当前管理客户端只接受同源绝对 API 前缀，默认显式令牌模式的凭证和选择票据保存在客户端实例内存。可选 Cookie 模式仅把访问令牌与选择票据留在内存，刷新凭证由 HttpOnly Cookie 保存；本地存储只保存跨标签页协调标记，不保存凭证。参考管理页面使用 Cookie 模式，启动时先读取 capabilities 再 restore()。业务组件的请求适配器可由宿主提供，以承载其设备证明；真实签名和业务资源授权始终由宿主服务端负责。
 
 Disabled 模式固定域 `0`，不展示租户管理或切换。Enabled 模式的业务登录遵循服务端 Fixed/Choose 策略；管理平台 `0` 选择业务租户时，目标域通过专用管理 Header 传递，管理身份并不变成目标租户的业务身份。界面隐藏或显示操作只是交互提示，Core 与管理服务每次写入仍复查实时权限。管理写入遇到冲突或结果不确定时不自动重放，需重新读取核对。
 
@@ -48,3 +50,9 @@ export function PermissionSettings({ client, tenantId }: {
 ## 验证边界
 
 `pnpm --dir web test` 覆盖管理和业务客户端协议；`pnpm --dir web build` 检查类型与产物；`pnpm --dir web test:embedded-bundle` 验证组件包入口、样式边界和宿主 React 复用。参考服务和 PostgreSQL 的实际接口另由 Rust 集成测试覆盖。这些检查不替代真实业务宿主中的设备证明、报告资源授权或全部管理页面的浏览器验收；剩余工作见[当前交付与验收](tenant-access-execution-plan.md)。
+
+## Cookie 模式接入
+
+业务端使用 `new EmbeddedIdentityClient("/idp", undefined, { mode: "cookie" })`；管理端使用 `new ManagementClient("/api", { mode: "cookie" })`。默认不传选项时仍使用显式令牌模式。Cookie 模式只能连接同源端点，路径会规范化以避免同一接口使用不同跨标签页锁。
+
+`EmbeddedAuth` 和管理 Console 在读取 capabilities 后调用一次 `restore()`。自行构建界面的宿主应先 `loadCapabilities()` 再 `restore()`；401 表示未登录，其他错误应显示给用户，不能无限重试。已登录实例调用 restore 会发送完整预期身份；并发 restore 在实例内合并。订阅快照的 `sessionChanged` 时停止旧操作、清除业务数据并提示重新加载；`selecting` 期间不得继续操作旧业务上下文。设备证明宿主继续使用原显式令牌模式及自定义 transport。

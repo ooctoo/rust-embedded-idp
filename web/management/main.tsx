@@ -6,5 +6,5 @@ import { ManagementClient } from "./client";
 
 // Host-owned, same-origin outer prefix; never a tenant ID or authentication secret.
 const basePath = document.querySelector<HTMLMetaElement>('meta[name="idp-api-base"]')?.content ?? "/api";
-const client = new ManagementClient(basePath);
+const client = new ManagementClient(basePath, { mode: "cookie" });
 createRoot(document.getElementById("root")!).render(<StrictMode><ManagementApp client={client} /></StrictMode>);
