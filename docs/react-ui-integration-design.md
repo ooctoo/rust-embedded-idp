@@ -1,5 +1,7 @@
 # React 管理后台与宿主嵌入组件
 
+> 2.0 客户端契约见[租户内业务标识与业务管理员设计](business-domain-authorization-design-v1.md)：租户内业务筛选、`business_admin`、业务级分配和游标隔离。本文示例对应 2.0。
+
 > 浏览器 Cookie 接入的新增契约见[浏览器会话设计](browser-session-design.md)。原显式令牌与设备证明接口继续适用；本期不支持跨标签页同时使用不同业务租户。
 
 更新时间：2026-09-25。Web 工程有两个交付面：参考服务使用的独立管理后台，以及宿主可本地导入的 `@embedded-idp/react` 组件包。源码和构建产物在同一工程，均未发布到 npm。
@@ -16,7 +18,7 @@
 
 Disabled 模式固定域 `0`，不展示租户管理或切换。Enabled 模式的业务登录遵循服务端 Fixed/Choose 策略；管理平台 `0` 选择业务租户时，目标域通过专用管理 Header 传递，管理身份并不变成目标租户的业务身份。界面隐藏或显示操作只是交互提示，Core 与管理服务每次写入仍复查实时权限。管理写入遇到冲突或结果不确定时不自动重放，需重新读取核对。
 
-权限目录只定义 `(tenant_id, resource_type, action)`。管理页面支持创建、查询、修改说明、启停和归档业务权限；创建定义不会自动加入角色。角色页面维护权限集合，成员页面把角色按资源类型或具体资源 ID 分配给用户。是否真的允许读取某份报告，由宿主在已验证租户和业务资源后调用授权服务决定。
+权限目录定义 `(tenant_id, business_id, resource_type, action)`。管理页面只选择租户；同一租户内角色、权限和绑定列表默认显示当前授权范围内的全部业务，并提供业务标识筛选。创建权限、角色和业务管理员时在表单填写业务标识；普通角色需显式关联权限，业务管理员自动覆盖同业务新增的有效权限。成员页面的角色绑定抽屉和角色选择器可按业务筛选，按类型或实例分配普通角色，按整个业务分配业务管理员。筛选变化后重置列表游标和选中项；账号、成员、设备、会话页面不增加业务筛选，审计使用可选业务筛选，留空查询目标租户全部记录。诊断表单必须填写业务标识；宿主仍须核对业务对象归属并调用权限检查。
 
 ## 构建与本地使用
 
@@ -32,16 +34,18 @@ const identity = new EmbeddedIdentityClient("/api");
 export function Login() { return <EmbeddedAuth client={identity} language="zh-CN" />; }
 ```
 
+`EmbeddedAuth` 可选传入 `businessId="f_01"` 显示该业务的本人角色；省略时仅显示身份与登录操作，不查询角色。自行调用客户端时使用 `listMyRoles("f_01", cursor?)`，业务 ID 不参与登录或选租户。
+
 管理控制台如需嵌入权限目录，使用独立入口：
 
 ```tsx
 import { PermissionDirectory, type PermissionDirectoryClient } from "@embedded-idp/react/admin";
 import "@embedded-idp/react/admin/style.css";
 
-export function PermissionSettings({ client, tenantId }: {
-  client: PermissionDirectoryClient; tenantId: string;
+export function PermissionSettings({ client, tenantId, businessId }: {
+  client: PermissionDirectoryClient; tenantId: string; businessId: string;
 }) {
-  return <PermissionDirectory key={tenantId} client={client} tenant={tenantId} />;
+  return <PermissionDirectory key={`${tenantId}:${businessId}`} client={client} tenant={tenantId} business={businessId} />;
 }
 ```
 

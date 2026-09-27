@@ -57,6 +57,12 @@ impl IdGenerator for SeqIds {
 
 fn key(resource: &str, action: &str) -> PermissionKey {
     PermissionKey {
+        business_id: if resource.starts_with("idp.") {
+            "idp"
+        } else {
+            "f_01"
+        }
+        .into(),
         resource_type: resource.into(),
         action: action.into(),
     }
@@ -79,6 +85,7 @@ fn permission_page_key(permission: &PermissionDefinition) -> Vec<String> {
         permission.key.resource_type.clone(),
     );
     key.push(permission.key.action.clone());
+    key.push(permission.key.business_id.clone());
     key
 }
 fn management_after(key: Vec<String>, page: &AccessPageRequest) -> bool {
@@ -109,6 +116,12 @@ fn role(
         role: Role {
             id: id.into(),
             tenant_id: tenant.into(),
+            business_id: if matches!(kind, RoleKind::SystemAdmin | RoleKind::TenantSecurityAdmin) {
+                "idp"
+            } else {
+                "f_01"
+            }
+            .into(),
             key: id.into(),
             name: id.into(),
             status: RoleStatus::Active,
@@ -132,10 +145,18 @@ fn binding(id: &str, tenant: &str, subject: &str, role_id: &str, resource: &str)
     RoleBinding {
         id: id.into(),
         tenant_id: tenant.into(),
+        business_id: if resource.starts_with("idp.") {
+            "idp"
+        } else {
+            "f_01"
+        }
+        .into(),
         subject_id: subject.into(),
         role_id: role_id.into(),
-        resource_type: resource.into(),
-        scope: ResourceScope::Type,
+        scope: RoleBindingScope::Resource {
+            resource_type: resource.into(),
+            scope: ResourceScope::Type,
+        },
         created_at: UNIX_EPOCH,
     }
 }
@@ -370,7 +391,13 @@ impl AccessAdminTransaction for Tx {
                     && self.data.bindings.iter().any(|b| {
                         b.tenant_id == m.tenant_id
                             && b.subject_id == subject
-                            && b.scope == ResourceScope::Type
+                            && matches!(
+                                &b.scope,
+                                RoleBindingScope::Resource {
+                                    scope: ResourceScope::Type,
+                                    ..
+                                }
+                            )
                             && self.data.roles.iter().any(|r| {
                                 r.role.id == b.role_id
                                     && r.role.tenant_id == m.tenant_id
@@ -610,19 +637,21 @@ impl AccessAdminTransaction for Tx {
                     && m.subject_id == q.subject_id
                     && m.status == MembershipStatus::Active
             });
-        let Some(permission) = self.data.permissions.get(&q.permission()) else {
+        let Some(mut permission) = self.data.permissions.get(&q.permission()).cloned() else {
             return Ok(false);
         };
+        permission.tenant_id = q.tenant_id.clone();
         Ok(active
             && self.data.bindings.iter().any(|b| {
                 self.data.roles.iter().any(|r| {
                     r.permissions.iter().any(|key| {
                         let link = RolePermission {
                             tenant_id: r.role.tenant_id.clone(),
+                            business_id: r.role.business_id.clone(),
                             role_id: r.role.id.clone(),
                             permission: key.clone(),
                         };
-                        b.grants(q, &r.role, &link, permission, self.data.mode)
+                        b.grants(q, &r.role, Some(&link), &permission, self.data.mode)
                     })
                 })
             }))
@@ -674,13 +703,17 @@ impl AccessAdminTransaction for Tx {
     fn resource_category(
         &mut self,
         _tenant_id: &str,
+        business_id: &str,
         resource_type: &str,
     ) -> Result<Option<PermissionCategory>, StoreError> {
         let mut categories = self
             .data
             .permissions
             .values()
-            .filter(|permission| permission.key.resource_type == resource_type)
+            .filter(|permission| {
+                permission.key.business_id == business_id
+                    && permission.key.resource_type == resource_type
+            })
             .map(|permission| permission.category);
         let Some(first) = categories.next() else {
             return Ok(None);
@@ -701,17 +734,23 @@ impl AccessAdminTransaction for Tx {
             .find(|m| m.tenant_id == t && m.subject_id == s)
             .cloned())
     }
-    fn role(&mut self, t: &str, id: &str) -> Result<Option<AccessRoleRecord>, StoreError> {
+    fn role(
+        &mut self,
+        t: &str,
+        business_id: &str,
+        id: &str,
+    ) -> Result<Option<AccessRoleRecord>, StoreError> {
         Ok(self
             .data
             .roles
             .iter()
-            .find(|r| r.role.tenant_id == t && r.role.id == id)
+            .find(|r| r.role.tenant_id == t && r.role.business_id == business_id && r.role.id == id)
             .cloned())
     }
     fn admin_roles(
         &mut self,
         tenant: &str,
+        business_id: Option<&str>,
         page: &AccessPageRequest,
     ) -> Result<Vec<Role>, StoreError> {
         let mut rows: Vec<_> = self
@@ -721,6 +760,7 @@ impl AccessAdminTransaction for Tx {
             .map(|r| r.role.clone())
             .filter(|r| {
                 r.tenant_id == tenant
+                    && business_id.is_none_or(|id| r.business_id == id)
                     && management_after(time_page_key(r.created_at, r.id.clone()), page)
             })
             .collect();
@@ -758,13 +798,19 @@ impl AccessAdminTransaction for Tx {
             .values()
             .filter(|p| {
                 scope.permits(self.data.mode, p.category)
+                    && match scope {
+                        AdminPermissionScope::Tenant { business_id, .. } => business_id
+                            .as_ref()
+                            .is_none_or(|business_id| &p.key.business_id == business_id),
+                        AdminPermissionScope::Platform => true,
+                    }
                     && filter.matches(p)
                     && management_after(permission_page_key(p), page)
             })
             .cloned()
             .map(|mut p| {
                 p.tenant_id = match scope {
-                    AdminPermissionScope::Tenant(t) => t.clone(),
+                    AdminPermissionScope::Tenant { tenant_id, .. } => tenant_id.clone(),
                     AdminPermissionScope::Platform => SYSTEM_TENANT_ID.into(),
                 };
                 p
@@ -774,17 +820,23 @@ impl AccessAdminTransaction for Tx {
         rows.truncate(page.fetch_limit());
         Ok(rows)
     }
-    fn binding(&mut self, t: &str, id: &str) -> Result<Option<RoleBinding>, StoreError> {
+    fn binding(
+        &mut self,
+        t: &str,
+        business_id: &str,
+        id: &str,
+    ) -> Result<Option<RoleBinding>, StoreError> {
         Ok(self
             .data
             .bindings
             .iter()
-            .find(|b| b.tenant_id == t && b.id == id)
+            .find(|b| b.tenant_id == t && b.business_id == business_id && b.id == id)
             .cloned())
     }
     fn admin_role_bindings(
         &mut self,
         tenant: &str,
+        business_id: Option<&str>,
         subject: &str,
         page: &AccessPageRequest,
     ) -> Result<Vec<RoleBinding>, StoreError> {
@@ -794,6 +846,7 @@ impl AccessAdminTransaction for Tx {
             .iter()
             .filter(|b| {
                 b.tenant_id == tenant
+                    && business_id.is_none_or(|id| b.business_id == id)
                     && b.subject_id == subject
                     && management_after(time_page_key(b.created_at, b.id.clone()), page)
             })
@@ -815,6 +868,22 @@ impl AccessAdminTransaction for Tx {
             .roles
             .iter()
             .find(|r| r.role.tenant_id == t && r.role.kind == k)
+            .cloned())
+    }
+    fn business_admin_role(
+        &mut self,
+        tenant: &str,
+        business_id: &str,
+    ) -> Result<Option<AccessRoleRecord>, StoreError> {
+        Ok(self
+            .data
+            .roles
+            .iter()
+            .find(|r| {
+                r.role.tenant_id == tenant
+                    && r.role.business_id == business_id
+                    && r.role.kind == RoleKind::BusinessAdmin
+            })
             .cloned())
     }
     fn security_binding(
@@ -952,7 +1021,7 @@ impl AccessAdminTransaction for Tx {
                             || after.as_ref().is_some_and(|a| {
                                 a.permissions
                                     .iter()
-                                    .any(|p| p.resource_type == x.resource_type)
+                                    .any(|p| matches!(&x.scope, RoleBindingScope::Resource { resource_type, .. } if p.resource_type == *resource_type))
                             })
                     });
                 }
@@ -979,7 +1048,7 @@ impl AccessAdminTransaction for Tx {
                             || (b.tenant_id == a.tenant_id
                                 && b.subject_id == a.subject_id
                                 && b.role_id == a.role_id
-                                && b.resource_type == a.resource_type
+                                && b.business_id == a.business_id
                                 && b.scope == a.scope)
                     }) {
                         return Err(StoreError::Conflict("binding"));
@@ -1052,8 +1121,7 @@ impl AccessAdminTransaction for Tx {
                 && self.data.bindings.iter().any(|b| {
                     b.tenant_id == t
                         && b.role_id == r.role.id
-                        && b.resource_type == resource
-                        && b.scope == ResourceScope::Type
+                        && matches!(&b.scope, RoleBindingScope::Resource { resource_type, scope: ResourceScope::Type } if resource_type == resource)
                         && self.data.accounts.get(&b.subject_id) == Some(&true)
                         && self.data.memberships.iter().any(|m| {
                             m.tenant_id == t
@@ -1121,6 +1189,7 @@ fn role_crud_permissions_binding_and_cleanup() {
             command(
                 "t1",
                 AccessAdminMutation::CreateRole {
+                    business_id: "f_01".into(),
                     key: "reader".into(),
                     name: "Reader".into(),
                 },
@@ -1136,6 +1205,7 @@ fn role_crud_permissions_binding_and_cleanup() {
         command(
             "t1",
             AccessAdminMutation::ReplaceRolePermissions {
+                business_id: "f_01".into(),
                 role_id: id.clone(),
                 permissions: vec![report()],
                 expected_version: 1,
@@ -1148,10 +1218,13 @@ fn role_crud_permissions_binding_and_cleanup() {
         command(
             "t1",
             AccessAdminMutation::GrantRole {
+                business_id: "f_01".into(),
                 subject_id: "u2".into(),
                 role_id: id.clone(),
-                resource_type: "report".into(),
-                scope: ResourceScope::Type,
+                scope: RoleBindingScope::Resource {
+                    resource_type: "report".into(),
+                    scope: ResourceScope::Type,
+                },
             },
         ),
     )
@@ -1172,6 +1245,7 @@ fn role_crud_permissions_binding_and_cleanup() {
         command(
             "t1",
             AccessAdminMutation::DeleteRole {
+                business_id: "f_01".into(),
                 role_id: id.clone(),
                 expected_version: 2,
             },
@@ -1196,6 +1270,7 @@ fn rejects_invalid_session_cross_domain_version_and_permissions() {
             command(
                 "t1",
                 AccessAdminMutation::CreateRole {
+                    business_id: "f_01".into(),
                     key: "x".into(),
                     name: "X".into()
                 }
@@ -1209,6 +1284,7 @@ fn rejects_invalid_session_cross_domain_version_and_permissions() {
             command(
                 "t2",
                 AccessAdminMutation::CreateRole {
+                    business_id: "f_01".into(),
                     key: "x".into(),
                     name: "X".into()
                 }
@@ -1222,6 +1298,7 @@ fn rejects_invalid_session_cross_domain_version_and_permissions() {
             command(
                 "t1",
                 AccessAdminMutation::CreateRole {
+                    business_id: "f_01".into(),
                     key: "x".into(),
                     name: "X".into(),
                 },
@@ -1238,6 +1315,7 @@ fn rejects_invalid_session_cross_domain_version_and_permissions() {
             command(
                 "t1",
                 AccessAdminMutation::ReplaceRolePermissions {
+                    business_id: "f_01".into(),
                     role_id: id.clone(),
                     permissions: vec![key("unknown", "read")],
                     expected_version: 1
@@ -1252,6 +1330,7 @@ fn rejects_invalid_session_cross_domain_version_and_permissions() {
             command(
                 "t1",
                 AccessAdminMutation::UpdateRole {
+                    business_id: "f_01".into(),
                     role_id: id,
                     name: "Y".into(),
                     status: RoleStatus::Active,
@@ -1273,6 +1352,7 @@ fn protected_roles_only_security_path_and_last_admin_rollback() {
             command(
                 "0",
                 AccessAdminMutation::UpdateRole {
+                    business_id: "f_01".into(),
                     role_id: "sys".into(),
                     name: "x".into(),
                     status: RoleStatus::Active,
@@ -1280,7 +1360,7 @@ fn protected_roles_only_security_path_and_last_admin_rollback() {
                 }
             )
         ),
-        Err(AccessError::Forbidden)
+        Err(AccessError::NotFound("role"))
     );
     assert!(svc
         .execute(
@@ -1525,6 +1605,20 @@ fn catalog_sync_preserves_omitted_and_enabled_state_and_checks_categories() {
         permission.description = "Tenant-specific report meaning".into();
     }
     let (svc, store) = service(store);
+    let mut other_business = report();
+    other_business.business_id = "other".into();
+    assert_eq!(
+        svc.execute(
+            ctx("t1", "u1", "s1"),
+            command(
+                "t1",
+                AccessAdminMutation::SyncPermissions {
+                    permissions: vec![report(), other_business]
+                }
+            )
+        ),
+        Err(AccessError::InvalidInput("mixed_business_permissions"))
+    );
     svc.execute(
         ctx("t1", "u1", "s1"),
         command(
@@ -1626,7 +1720,12 @@ fn manually_created_permission_is_versioned_and_archive_is_terminal() {
     };
     create().unwrap();
     let initial = svc
-        .get_permission(ctx("t1", "u1", "s1"), "t1".into(), invoice.clone())
+        .get_permission(
+            ctx("t1", "u1", "s1"),
+            "t1".into(),
+            "f_01".into(),
+            invoice.clone(),
+        )
         .unwrap();
     assert_eq!(initial.version, 1);
     assert_eq!(initial.description, "Read invoices");
@@ -1658,7 +1757,12 @@ fn manually_created_permission_is_versioned_and_archive_is_terminal() {
     )
     .unwrap();
     let updated = svc
-        .get_permission(ctx("t1", "u1", "s1"), "t1".into(), invoice.clone())
+        .get_permission(
+            ctx("t1", "u1", "s1"),
+            "t1".into(),
+            "f_01".into(),
+            invoice.clone(),
+        )
         .unwrap();
     assert_eq!(updated.version, 2);
     svc.execute(
@@ -1673,7 +1777,12 @@ fn manually_created_permission_is_versioned_and_archive_is_terminal() {
     )
     .unwrap();
     let archived = svc
-        .get_permission(ctx("t1", "u1", "s1"), "t1".into(), invoice.clone())
+        .get_permission(
+            ctx("t1", "u1", "s1"),
+            "t1".into(),
+            "f_01".into(),
+            invoice.clone(),
+        )
         .unwrap();
     assert!(archived.archived);
     assert!(!archived.enabled);
@@ -1691,6 +1800,7 @@ fn removal_rejoin_has_no_old_grant() {
             command(
                 "t1",
                 AccessAdminMutation::CreateRole {
+                    business_id: "f_01".into(),
                     key: "r".into(),
                     name: "R".into(),
                 },
@@ -1706,6 +1816,7 @@ fn removal_rejoin_has_no_old_grant() {
         command(
             "t1",
             AccessAdminMutation::ReplaceRolePermissions {
+                business_id: "f_01".into(),
                 role_id: id.clone(),
                 permissions: vec![report()],
                 expected_version: 1,
@@ -1718,10 +1829,13 @@ fn removal_rejoin_has_no_old_grant() {
         command(
             "t1",
             AccessAdminMutation::GrantRole {
+                business_id: "f_01".into(),
                 subject_id: "u2".into(),
                 role_id: id,
-                resource_type: "report".into(),
-                scope: ResourceScope::Type,
+                scope: RoleBindingScope::Resource {
+                    resource_type: "report".into(),
+                    scope: ResourceScope::Type,
+                },
             },
         ),
     )
@@ -1795,6 +1909,7 @@ fn audit_failure_and_transaction_time_revocation_rollback() {
             command(
                 "t1",
                 AccessAdminMutation::CreateRole {
+                    business_id: "f_01".into(),
                     key: "x".into(),
                     name: "X".into()
                 }
@@ -1817,6 +1932,7 @@ fn audit_failure_and_transaction_time_revocation_rollback() {
             command(
                 "t1",
                 AccessAdminMutation::CreateRole {
+                    business_id: "f_01".into(),
                     key: "y".into(),
                     name: "Y".into()
                 }
@@ -1838,6 +1954,7 @@ fn disabled_mode_keeps_role_management_but_disables_member_management() {
             command(
                 "0",
                 AccessAdminMutation::CreateRole {
+                    business_id: "f_01".into(),
                     key: "local".into(),
                     name: "Local".into()
                 }
@@ -1882,6 +1999,7 @@ fn role_updates_preserve_scope_and_removing_last_permission_cannot_revive_bindin
         command(
             "t1",
             AccessAdminMutation::UpdateRole {
+                business_id: "f_01".into(),
                 role_id: "reader".into(),
                 name: "Renamed".into(),
                 status: RoleStatus::Disabled,
@@ -1902,6 +2020,7 @@ fn role_updates_preserve_scope_and_removing_last_permission_cannot_revive_bindin
         command(
             "t1",
             AccessAdminMutation::ReplaceRolePermissions {
+                business_id: "f_01".into(),
                 role_id: "reader".into(),
                 permissions: vec![],
                 expected_version: 2,
@@ -1914,6 +2033,7 @@ fn role_updates_preserve_scope_and_removing_last_permission_cannot_revive_bindin
         command(
             "t1",
             AccessAdminMutation::ReplaceRolePermissions {
+                business_id: "f_01".into(),
                 role_id: "reader".into(),
                 permissions: vec![report()],
                 expected_version: 3,
@@ -1950,6 +2070,7 @@ fn permission_and_assignment_validation_cannot_escalate_or_implicitly_bind() {
                 command(
                     "t1",
                     AccessAdminMutation::ReplaceRolePermissions {
+                        business_id: "f_01".into(),
                         role_id: "reader".into(),
                         permissions,
                         expected_version: 1,
@@ -1958,6 +2079,26 @@ fn permission_and_assignment_validation_cannot_escalate_or_implicitly_bind() {
             )
             .is_err());
     }
+    let other_business_permission = PermissionKey {
+        business_id: "f_02".into(),
+        resource_type: "report".into(),
+        action: "read".into(),
+    };
+    assert_eq!(
+        svc.execute(
+            ctx("t1", "u1", "s1"),
+            command(
+                "t1",
+                AccessAdminMutation::ReplaceRolePermissions {
+                    business_id: "f_01".into(),
+                    role_id: "reader".into(),
+                    permissions: vec![other_business_permission],
+                    expected_version: 1,
+                },
+            ),
+        ),
+        Err(AccessError::Forbidden)
+    );
     store
         .0
         .lock()
@@ -1972,6 +2113,7 @@ fn permission_and_assignment_validation_cannot_escalate_or_implicitly_bind() {
             command(
                 "t1",
                 AccessAdminMutation::ReplaceRolePermissions {
+                    business_id: "f_01".into(),
                     role_id: "reader".into(),
                     permissions: vec![report()],
                     expected_version: 1,
@@ -1999,10 +2141,13 @@ fn permission_and_assignment_validation_cannot_escalate_or_implicitly_bind() {
                 command(
                     "t1",
                     AccessAdminMutation::GrantRole {
+                        business_id: "f_01".into(),
                         subject_id: subject.into(),
                         role_id: "reader".into(),
-                        resource_type: resource.into(),
-                        scope,
+                        scope: RoleBindingScope::Resource {
+                            resource_type: resource.into(),
+                            scope
+                        },
                     }
                 )
             )
@@ -2117,6 +2262,7 @@ fn concurrent_writers_preserve_last_membership_and_reject_stale_role_version() {
                         command(
                             "t1",
                             AccessAdminMutation::UpdateRole {
+                                business_id: "f_01".into(),
                                 role_id: "reader".into(),
                                 name: name.into(),
                                 status: RoleStatus::Active,
@@ -2274,6 +2420,7 @@ fn actor_expiry_is_checked_after_lock_wait_and_mode_mismatch_never_writes() {
         command(
             "t1",
             AccessAdminMutation::CreateRole {
+                business_id: "f_01".into(),
                 key: "x".into(),
                 name: "X".into(),
             },
@@ -2290,6 +2437,7 @@ fn actor_expiry_is_checked_after_lock_wait_and_mode_mismatch_never_writes() {
             ctx("t1", "u1", "s1"),
             AccessQuery {
                 tenant_id: "t1".into(),
+                business_id: "f_01".into(),
                 subject_id: "u2".into(),
                 resource_type: "report".into(),
                 action: "read".into(),
@@ -2316,6 +2464,7 @@ fn binding_revocation_is_tenant_scoped_and_platform_can_clean_inactive_tenants()
             command(
                 "t2",
                 AccessAdminMutation::RevokeRole {
+                    business_id: "f_01".into(),
                     binding_id: "reader-t1".into()
                 }
             )
@@ -2328,11 +2477,12 @@ fn binding_revocation_is_tenant_scoped_and_platform_can_clean_inactive_tenants()
             command(
                 "t1",
                 AccessAdminMutation::RevokeRole {
+                    business_id: "f_01".into(),
                     binding_id: "bsec1".into()
                 }
             )
         ),
-        Err(AccessError::Forbidden)
+        Err(AccessError::NotFound("binding"))
     );
     store
         .0
@@ -2346,10 +2496,13 @@ fn binding_revocation_is_tenant_scoped_and_platform_can_clean_inactive_tenants()
         command(
             "t1",
             AccessAdminMutation::GrantRole {
+                business_id: "f_01".into(),
                 subject_id: "u2".into(),
                 role_id: "reader".into(),
-                resource_type: "report".into(),
-                scope: ResourceScope::Instance("r2".into()),
+                scope: RoleBindingScope::Resource {
+                    resource_type: "report".into(),
+                    scope: ResourceScope::Instance("r2".into()),
+                },
             },
         )
     };
@@ -2363,6 +2516,7 @@ fn binding_revocation_is_tenant_scoped_and_platform_can_clean_inactive_tenants()
             command(
                 "t1",
                 AccessAdminMutation::RevokeRole {
+                    business_id: "f_01".into(),
                     binding_id: "reader-t1".into()
                 }
             )
@@ -2374,6 +2528,7 @@ fn binding_revocation_is_tenant_scoped_and_platform_can_clean_inactive_tenants()
         command(
             "t1",
             AccessAdminMutation::RevokeRole {
+                business_id: "f_01".into(),
                 binding_id: "reader-t1".into(),
             },
         ),
@@ -3643,6 +3798,7 @@ fn role_admin_queries_bind_tenant_and_validate_bounded_configuration_snapshots()
         .list_roles(
             ctx("t1", "u1", "s1"),
             "t1".into(),
+            Some("f_01".into()),
             AccessPageRequest {
                 limit: 1,
                 cursor: None,
@@ -3657,37 +3813,72 @@ fn role_admin_queries_bind_tenant_and_validate_bounded_configuration_snapshots()
         sort_order: None,
     };
     assert_eq!(
-        svc.list_roles(ctx("t1", "u1", "s1"), "t1".into(), request.clone())
-            .unwrap()
-            .items[0]
+        svc.list_roles(
+            ctx("t1", "u1", "s1"),
+            "t1".into(),
+            Some("f_01".into()),
+            request.clone()
+        )
+        .unwrap()
+        .items[0]
             .id,
         first
     );
     assert_eq!(
-        svc.list_roles(ctx("0", "u1", "s0"), "t2".into(), request),
+        svc.list_roles(
+            ctx("0", "u1", "s0"),
+            "t2".into(),
+            Some("f_01".into()),
+            request
+        ),
         Err(AccessError::InvalidCursor)
     );
     assert_eq!(
-        svc.get_role(ctx("t1", "u1", "s1"), "t1".into(), first.clone())
-            .unwrap()
-            .permissions,
+        svc.get_role(
+            ctx("t1", "u1", "s1"),
+            "t1".into(),
+            "f_01".into(),
+            first.clone()
+        )
+        .unwrap()
+        .permissions,
         vec![key("report", "read")]
     );
     assert!(svc
-        .get_role(ctx("0", "u1", "s0"), "t2".into(), first.clone())
+        .get_role(
+            ctx("0", "u1", "s0"),
+            "t2".into(),
+            "f_01".into(),
+            first.clone()
+        )
         .unwrap()
         .permissions
         .is_empty());
     assert_eq!(
-        svc.get_role(ctx("t1", "u1", "s1"), "t2".into(), first.clone()),
+        svc.get_role(
+            ctx("t1", "u1", "s1"),
+            "t2".into(),
+            "f_01".into(),
+            first.clone()
+        ),
         Err(AccessError::Forbidden)
     );
     assert_eq!(
-        svc.get_role(ctx("t1", "u2", "s2"), "t1".into(), first.clone()),
+        svc.get_role(
+            ctx("t1", "u2", "s2"),
+            "t1".into(),
+            "f_01".into(),
+            first.clone()
+        ),
         Err(AccessError::Forbidden)
     );
     assert_eq!(
-        svc.get_role(ctx("t1", "u1", "s1"), "t1".into(), "missing".into()),
+        svc.get_role(
+            ctx("t1", "u1", "s1"),
+            "t1".into(),
+            "f_01".into(),
+            "missing".into()
+        ),
         Err(AccessError::NotFound("role"))
     );
     store
@@ -3700,7 +3891,12 @@ fn role_admin_queries_bind_tenant_and_validate_bounded_configuration_snapshots()
         .unwrap()
         .permissions = vec![key("report", "read"); MAX_ROLE_PERMISSIONS + 1];
     assert_eq!(
-        svc.get_role(ctx("t1", "u1", "s1"), "t1".into(), first.clone()),
+        svc.get_role(
+            ctx("t1", "u1", "s1"),
+            "t1".into(),
+            "f_01".into(),
+            first.clone()
+        ),
         Err(AccessError::InvalidStoreResponse)
     );
     store
@@ -3715,6 +3911,7 @@ fn role_admin_queries_bind_tenant_and_validate_bounded_configuration_snapshots()
         svc.list_roles(
             ctx("t1", "u1", "s1"),
             "t1".into(),
+            Some("f_01".into()),
             AccessPageRequest::default()
         ),
         Err(AccessError::Forbidden)
@@ -3732,10 +3929,62 @@ fn role_admin_queries_bind_tenant_and_validate_bounded_configuration_snapshots()
         svc.list_roles(
             ctx("t1", "u1", "s1"),
             "t1".into(),
+            Some("f_01".into()),
             AccessPageRequest::default()
         ),
         Err(AccessError::Forbidden)
     );
+}
+
+#[test]
+fn role_and_binding_lists_include_all_businesses_without_a_filter() {
+    let store = seeded();
+    let role_id = uuid::Uuid::from_u128(99).to_string();
+    let binding_id = uuid::Uuid::from_u128(99).to_string();
+    {
+        let mut data = store.0.lock().unwrap();
+        let mut other_role = role(&role_id, "t1", RoleKind::Business, vec![]);
+        other_role.role.business_id = "f_02".into();
+        data.roles.push(other_role);
+        let mut other_binding = binding(&binding_id, "t1", "u2", &role_id, "report");
+        other_binding.business_id = "f_02".into();
+        data.bindings.push(other_binding);
+    }
+    let (svc, _) = service(store);
+    let roles = svc
+        .list_roles(
+            ctx("t1", "u1", "s1"),
+            "t1".into(),
+            None,
+            AccessPageRequest::default(),
+        )
+        .unwrap();
+    assert!(roles.items.iter().any(|role| role.business_id == "f_02"));
+    let filtered_roles = svc
+        .list_roles(
+            ctx("t1", "u1", "s1"),
+            "t1".into(),
+            Some("f_01".into()),
+            AccessPageRequest::default(),
+        )
+        .unwrap();
+    assert!(filtered_roles
+        .items
+        .iter()
+        .all(|role| role.business_id == "f_01"));
+    let bindings = svc
+        .list_subject_role_bindings(
+            ctx("t1", "u1", "s1"),
+            "t1".into(),
+            None,
+            "u2".into(),
+            AccessPageRequest::default(),
+        )
+        .unwrap();
+    assert!(bindings
+        .items
+        .iter()
+        .any(|binding| binding.business_id == "f_02"));
 }
 
 #[test]
@@ -3748,7 +3997,10 @@ fn subject_binding_queries_preserve_scopes_and_bind_both_tenant_and_subject() {
         "reader",
         "report",
     );
-    one.scope = ResourceScope::Instance("report-1".into());
+    one.scope = RoleBindingScope::Resource {
+        resource_type: "report".into(),
+        scope: ResourceScope::Instance("report-1".into()),
+    };
     let two = binding(
         &uuid::Uuid::from_u128(2).to_string(),
         "t1",
@@ -3766,6 +4018,7 @@ fn subject_binding_queries_preserve_scopes_and_bind_both_tenant_and_subject() {
         .list_subject_role_bindings(
             ctx("t1", "u1", "s1"),
             "t1".into(),
+            Some("f_01".into()),
             "u2".into(),
             AccessPageRequest {
                 limit: 1,
@@ -3784,6 +4037,7 @@ fn subject_binding_queries_preserve_scopes_and_bind_both_tenant_and_subject() {
         .list_subject_role_bindings(
             ctx("t1", "u1", "s1"),
             "t1".into(),
+            Some("f_01".into()),
             "u2".into(),
             request.clone(),
         )
@@ -3795,6 +4049,7 @@ fn subject_binding_queries_preserve_scopes_and_bind_both_tenant_and_subject() {
             svc.list_subject_role_bindings(
                 ctx("0", "u1", "s0"),
                 tenant.into(),
+                Some("f_01".into()),
                 subject.into(),
                 request.clone()
             ),
@@ -3805,6 +4060,7 @@ fn subject_binding_queries_preserve_scopes_and_bind_both_tenant_and_subject() {
         svc.list_subject_role_bindings(
             ctx("t1", "u2", "s2"),
             "t1".into(),
+            Some("f_01".into()),
             "u2".into(),
             AccessPageRequest::default()
         ),
@@ -3814,6 +4070,7 @@ fn subject_binding_queries_preserve_scopes_and_bind_both_tenant_and_subject() {
         svc.list_subject_role_bindings(
             ctx("t1", "u1", "s1"),
             "t1".into(),
+            Some("f_01".into()),
             "u3".into(),
             AccessPageRequest::default()
         ),
@@ -3832,6 +4089,7 @@ fn subject_binding_queries_preserve_scopes_and_bind_both_tenant_and_subject() {
         svc.list_subject_role_bindings(
             ctx("t1", "u1", "s1"),
             "t1".into(),
+            Some("f_01".into()),
             "u2".into(),
             AccessPageRequest::default()
         )
@@ -3848,11 +4106,15 @@ fn subject_binding_queries_preserve_scopes_and_bind_both_tenant_and_subject() {
         .iter_mut()
         .find(|b| b.tenant_id == "t1" && b.subject_id == "u2")
         .unwrap()
-        .scope = ResourceScope::Instance(String::new());
+        .scope = RoleBindingScope::Resource {
+        resource_type: "report".into(),
+        scope: ResourceScope::Instance(String::new()),
+    };
     assert_eq!(
         svc.list_subject_role_bindings(
             ctx("t1", "u1", "s1"),
             "t1".into(),
+            Some("f_01".into()),
             "u2".into(),
             AccessPageRequest::default()
         ),
@@ -3863,6 +4125,7 @@ fn subject_binding_queries_preserve_scopes_and_bind_both_tenant_and_subject() {
         svc.list_subject_role_bindings(
             ctx("t1", "u1", "s1"),
             "t1".into(),
+            Some("f_01".into()),
             "u2".into(),
             AccessPageRequest::default()
         ),
@@ -3878,7 +4141,10 @@ fn permission_directory_queries_bound_category_filters_and_compound_cursors() {
         perm("report", "update", PermissionCategory::Business),
     );
     let (svc, store) = service(store);
-    let scope = AdminPermissionScope::Tenant("t1".into());
+    let scope = AdminPermissionScope::Tenant {
+        tenant_id: "t1".into(),
+        business_id: Some("f_01".into()),
+    };
     let filter = AdminPermissionFilter {
         resource_type: Some("report".into()),
         category: Some(PermissionCategory::Business),
@@ -3902,7 +4168,7 @@ fn permission_directory_queries_bound_category_filters_and_compound_cursors() {
         cursor: first.next_cursor,
         sort_order: None,
     };
-    assert_eq!(request.cursor.as_ref().unwrap().after.len(), 3);
+    assert_eq!(request.cursor.as_ref().unwrap().after.len(), 4);
     let last = svc
         .list_permissions(
             ctx("t1", "u1", "s1"),
@@ -3938,7 +4204,14 @@ fn permission_directory_queries_bound_category_filters_and_compound_cursors() {
         );
     }
     for changed in [
-        AdminPermissionScope::Tenant("t2".into()),
+        AdminPermissionScope::Tenant {
+            tenant_id: "t2".into(),
+            business_id: Some("f_01".into()),
+        },
+        AdminPermissionScope::Tenant {
+            tenant_id: "t1".into(),
+            business_id: None,
+        },
         AdminPermissionScope::Platform,
     ] {
         assert_eq!(
@@ -4003,6 +4276,24 @@ fn permission_directory_queries_bound_category_filters_and_compound_cursors() {
 }
 
 #[test]
+fn unfiltered_disabled_permission_scope_includes_supported_categories() {
+    let all = AdminPermissionScope::Tenant {
+        tenant_id: "0".into(),
+        business_id: None,
+    };
+    assert!(all.permits(TenancyMode::Disabled, PermissionCategory::Platform));
+    assert!(all.permits(TenancyMode::Disabled, PermissionCategory::Tenant));
+    assert!(all.permits(TenancyMode::Disabled, PermissionCategory::Business));
+    let idp = AdminPermissionScope::Tenant {
+        tenant_id: "0".into(),
+        business_id: Some("idp".into()),
+    };
+    assert!(idp.permits(TenancyMode::Disabled, PermissionCategory::Platform));
+    assert!(idp.permits(TenancyMode::Disabled, PermissionCategory::Tenant));
+    assert!(!idp.permits(TenancyMode::Disabled, PermissionCategory::Business));
+}
+
+#[test]
 fn permission_diagnosis_reuses_grants_and_commits_allow_and_deny_audits() {
     let (svc, store) = service(seeded());
     {
@@ -4014,11 +4305,15 @@ fn permission_diagnosis_reuses_grants_and_commits_allow_and_deny_audits() {
             vec![key("report", "read")],
         ));
         let mut grant = binding("reader1", "t1", "u2", "reader", "report");
-        grant.scope = ResourceScope::Instance("r1".into());
+        grant.scope = RoleBindingScope::Resource {
+            resource_type: "report".into(),
+            scope: ResourceScope::Instance("r1".into()),
+        };
         data.bindings.push(grant);
     }
     let query = AccessQuery {
         tenant_id: "t1".into(),
+        business_id: "f_01".into(),
         subject_id: "u2".into(),
         resource_type: "report".into(),
         action: "read".into(),
@@ -4123,6 +4418,7 @@ fn permission_diagnosis_reuses_grants_and_commits_allow_and_deny_audits() {
 fn audit_metadata(event: &AccessAuditEvent) -> AdminAuditRecord {
     AdminAuditRecord {
         id: event.id.clone(),
+        target_business_id: None,
         occurred_at: event.occurred_at,
         actor_id: event.context.actor.subject_id.clone(),
         actor_domain: event.context.actor.tenant_id.clone(),
@@ -4142,6 +4438,7 @@ fn audit_queries_bind_domain_filters_and_numeric_time_and_require_audit_permissi
             ctx("0", "u1", "s0"),
             AccessQuery {
                 tenant_id: tenant.into(),
+                business_id: "f_01".into(),
                 subject_id: "u2".into(),
                 resource_type: "report".into(),
                 action: "read".into(),
@@ -4166,6 +4463,7 @@ fn audit_queries_bind_domain_filters_and_numeric_time_and_require_audit_permissi
             .enabled = false;
     }
     let filter = AdminAuditFilter {
+        business_id: None,
         actor_id: Some("u1".into()),
         operation: Some("access.check".into()),
         occurred_after: Some(UNIX_EPOCH + Duration::from_secs(9)),
@@ -4206,18 +4504,22 @@ fn audit_queries_bind_domain_filters_and_numeric_time_and_require_audit_permissi
     assert!(rest.items[0].id > rest.items[1].id);
     for changed in [
         AdminAuditFilter {
+            business_id: None,
             actor_id: None,
             ..filter.clone()
         },
         AdminAuditFilter {
+            business_id: None,
             operation: None,
             ..filter.clone()
         },
         AdminAuditFilter {
+            business_id: None,
             occurred_after: None,
             ..filter.clone()
         },
         AdminAuditFilter {
+            business_id: None,
             occurred_before: None,
             ..filter.clone()
         },
@@ -4469,7 +4771,13 @@ fn administrator_snapshot_tracks_appointment_and_removal_without_other_tenant_gr
     let assigned = svc
         .get_security_administrator(ctx("0", "u1", "s0"), "t1".into(), "u2".into())
         .unwrap();
-    assert_eq!(assigned.binding.unwrap().resource_type, "idp.tenant");
+    assert_eq!(
+        assigned.binding.unwrap().scope,
+        RoleBindingScope::Resource {
+            resource_type: "idp.tenant".into(),
+            scope: ResourceScope::Type
+        }
+    );
     assert!(svc
         .get_security_administrator(ctx("0", "u1", "s0"), "t2".into(), "u2".into())
         .unwrap()

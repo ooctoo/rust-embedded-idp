@@ -9,11 +9,11 @@ description = "Standalone reference host for rust-embedded-idp"
 
 [dependencies]
 axum = { version = "0.7", default-features = false, features = ["form", "http1", "json", "query", "tokio"] }
-embedded-idp-axum = { version = "1.0.0", path = "../embedded-idp-axum" }
-embedded-idp-core = { version = "1.0.0", path = "../embedded-idp-core" }
-embedded-idp-security = { version = "1.0.0", path = "../embedded-idp-security" }
-embedded-idp-email = { version = "1.0.0", path = "../embedded-idp-email" }
-embedded-idp-storage-postgres = { version = "1.0.0", path = "../embedded-idp-storage-postgres" }
+embedded-idp-axum = { version = "2.0.0", path = "../embedded-idp-axum" }
+embedded-idp-core = { version = "2.0.0", path = "../embedded-idp-core" }
+embedded-idp-security = { version = "2.0.0", path = "../embedded-idp-security" }
+embedded-idp-email = { version = "2.0.0", path = "../embedded-idp-email" }
+embedded-idp-storage-postgres = { version = "2.0.0", path = "../embedded-idp-storage-postgres" }
 lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "rustls", "ring", "webpki-roots"] }
 postgres = "0.19"
 serde_json = "1"

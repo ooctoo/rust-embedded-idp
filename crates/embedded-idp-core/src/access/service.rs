@@ -1,6 +1,7 @@
 use super::{
-    query::validate_id, AccessActor, AccessDecision, AccessError, AccessQuery, AccessReadStore,
-    BatchAccessQuery, LoginTenantPolicy, MembershipStatus, PermissionCatalog, PermissionCategory,
+    query::{validate_access_business_id, validate_business_id, validate_id, IDP_BUSINESS_ID},
+    AccessActor, AccessDecision, AccessError, AccessQuery, AccessReadStore, BatchAccessQuery,
+    LoginTenantPolicy, MembershipStatus, PermissionCatalog, PermissionCategory,
     PermissionDefinition, Role, SubjectTenant, TenancyMode, SYSTEM_TENANT_ID,
 };
 use crate::{DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT};
@@ -18,10 +19,12 @@ pub enum AccessListScope {
     },
     AdminRoleBindings {
         tenant_id: String,
+        business_id: Option<String>,
         subject_id: String,
     },
     AdminRoles {
         tenant_id: String,
+        business_id: Option<String>,
     },
     AdminTenants {
         filter: super::AdminTenantFilter,
@@ -48,10 +51,12 @@ pub enum AccessListScope {
     },
     SubjectRoles {
         tenant_id: String,
+        business_id: String,
         subject_id: String,
     },
     RolePermissions {
         tenant_id: String,
+        business_id: String,
         role_id: String,
     },
     SubjectTenants {
@@ -82,10 +87,13 @@ impl AccessListScope {
     }
 
     fn cursor_version(&self) -> u8 {
-        if self.is_management() {
-            2
-        } else {
-            1
+        match self {
+            Self::AdminPermissions { .. }
+            | Self::AdminRoleBindings { .. }
+            | Self::AdminRoles { .. } => 3,
+            Self::SubjectRoles { .. } | Self::RolePermissions { .. } => 2,
+            _ if self.is_management() => 2,
+            _ => 1,
         }
     }
 }
@@ -95,9 +103,9 @@ impl AccessListScope {
 pub struct AccessCursor {
     pub version: u8,
     pub scope: AccessListScope,
-    /// V2 management cursors use `[19-digit epoch seconds, stable_id]`; permissions
-    /// use `[19-digit epoch seconds, resource_type, action]`. V1 scopes retain
-    /// their existing ascending keys.
+    /// Management cursors use `[19-digit epoch seconds, stable_id]`; v3 permission
+    /// lists use `[19-digit epoch seconds, resource_type, action, business_id]`.
+    /// Self-service scopes retain their existing ascending keys.
     pub after: Vec<String>,
     /// `None` is the legacy/default direction for the cursor scope.
     pub sort_order: Option<AccessSortOrder>,
@@ -107,7 +115,7 @@ pub struct AccessCursor {
 pub struct AccessPageRequest {
     pub limit: u32,
     pub cursor: Option<AccessCursor>,
-    /// `None` defaults to descending management lists and ascending v1 lists.
+    /// `None` defaults to descending management lists and ascending self-service lists.
     pub sort_order: Option<AccessSortOrder>,
 }
 
@@ -144,7 +152,7 @@ impl AccessPageRequest {
         if let Some(cursor) = &self.cursor {
             let management = scope.is_management();
             let expected = match scope {
-                AccessListScope::AdminPermissions { .. } => 3,
+                AccessListScope::AdminPermissions { .. } => 4,
                 AccessListScope::RolePermissions { .. } => 2,
                 _ if management => 2,
                 _ => 1,
@@ -182,6 +190,7 @@ impl AccessPageRequest {
             }
             if matches!(scope, AccessListScope::AdminPermissions { .. }) {
                 super::PermissionKey {
+                    business_id: cursor.after[3].clone(),
                     resource_type: cursor.after[1].clone(),
                     action: cursor.after[2].clone(),
                 }
@@ -189,6 +198,7 @@ impl AccessPageRequest {
                 .map_err(|_| AccessError::InvalidCursor)?;
             } else if matches!(scope, AccessListScope::RolePermissions { .. }) {
                 super::PermissionKey {
+                    business_id: IDP_BUSINESS_ID.into(),
                     resource_type: cursor.after[0].clone(),
                     action: cursor.after[1].clone(),
                 }
@@ -219,12 +229,14 @@ pub trait AccessQueryService: Send + Sync {
     fn list_subject_roles(
         &self,
         tenant_id: &str,
+        business_id: &str,
         subject_id: &str,
         page: AccessPageRequest,
     ) -> Result<AccessPage<Role>, AccessError>;
     fn list_role_permissions(
         &self,
         tenant_id: &str,
+        business_id: &str,
         role_id: &str,
         page: AccessPageRequest,
     ) -> Result<AccessPage<PermissionDefinition>, AccessError>;
@@ -288,6 +300,7 @@ pub(super) fn admin_permission_query(
         }
         return Ok(AccessQuery {
             tenant_id: SYSTEM_TENANT_ID.into(),
+            business_id: IDP_BUSINESS_ID.into(),
             subject_id: actor.subject_id.clone(),
             resource_type: "idp.platform".into(),
             action: if matches!(
@@ -368,6 +381,7 @@ pub(super) fn admin_permission_query(
     };
     Ok(AccessQuery {
         tenant_id: actor.tenant_id.clone(),
+        business_id: IDP_BUSINESS_ID.into(),
         subject_id: actor.subject_id.clone(),
         resource_type: resource_type.into(),
         action: action.into(),
@@ -391,11 +405,12 @@ impl<S: AccessReadStore> CoreAccessService<S> {
         }
     }
 
-    fn valid_domain(&self, tenant: &str) -> Result<(), AccessError> {
+    fn valid_domain(&self, tenant: &str, business_id: &str) -> Result<(), AccessError> {
         validate_id(tenant, 128, "tenant_id")?;
         if self.mode == TenancyMode::Disabled && tenant != SYSTEM_TENANT_ID {
             return Err(AccessError::ModeMismatch);
         }
+        validate_access_business_id(business_id)?;
         Ok(())
     }
 
@@ -458,23 +473,26 @@ impl<S: AccessReadStore> AccessQueryService for CoreAccessService<S> {
     fn list_subject_roles(
         &self,
         tenant_id: &str,
+        business_id: &str,
         subject_id: &str,
         page: AccessPageRequest,
     ) -> Result<AccessPage<Role>, AccessError> {
-        self.valid_domain(tenant_id)?;
+        self.valid_domain(tenant_id, business_id)?;
         validate_id(subject_id, 128, "subject_id")?;
         let scope = AccessListScope::SubjectRoles {
             tenant_id: tenant_id.into(),
+            business_id: business_id.into(),
             subject_id: subject_id.into(),
         };
         page.validate(&scope)?;
         let rows = self
             .store
-            .list_subject_roles(tenant_id, subject_id, &page)?;
-        if rows
-            .iter()
-            .any(|r| r.tenant_id != tenant_id || validate_id(&r.id, 128, "role_id").is_err())
-        {
+            .list_subject_roles(tenant_id, business_id, subject_id, &page)?;
+        if rows.iter().any(|r| {
+            r.tenant_id != tenant_id
+                || r.business_id != business_id
+                || validate_id(&r.id, 128, "role_id").is_err()
+        }) {
             return Err(AccessError::InvalidStoreResponse);
         }
         finish_page(rows, page, scope, |r| vec![r.id.clone()])
@@ -483,22 +501,25 @@ impl<S: AccessReadStore> AccessQueryService for CoreAccessService<S> {
     fn list_role_permissions(
         &self,
         tenant_id: &str,
+        business_id: &str,
         role_id: &str,
         page: AccessPageRequest,
     ) -> Result<AccessPage<PermissionDefinition>, AccessError> {
-        self.valid_domain(tenant_id)?;
+        self.valid_domain(tenant_id, business_id)?;
         validate_id(role_id, 128, "role_id")?;
         let scope = AccessListScope::RolePermissions {
             tenant_id: tenant_id.into(),
+            business_id: business_id.into(),
             role_id: role_id.into(),
         };
         page.validate(&scope)?;
         let rows = self
             .store
-            .list_role_permissions(tenant_id, role_id, &page)?;
+            .list_role_permissions(tenant_id, business_id, role_id, &page)?;
         if rows.iter().any(|p| {
             p.key.validate().is_err()
                 || p.tenant_id != tenant_id
+                || p.key.business_id != business_id
                 || !self.mode.permits(tenant_id, p.category)
                 || (p.category != PermissionCategory::Business
                     && self
@@ -713,6 +734,7 @@ mod tests {
 
         let subject = AccessListScope::SubjectRoles {
             tenant_id: "tenant".into(),
+            business_id: "f_01".into(),
             subject_id: "subject".into(),
         };
         assert_eq!(
@@ -761,8 +783,10 @@ pub(super) fn query_is_permitted(
     catalog: &PermissionCatalog,
     query: &AccessQuery,
 ) -> bool {
-    if !query.resource_type.starts_with("idp.") {
-        return mode.permits(&query.tenant_id, PermissionCategory::Business);
+    if query.business_id != IDP_BUSINESS_ID {
+        return validate_business_id(&query.business_id).is_ok()
+            && !query.resource_type.starts_with("idp.")
+            && mode.permits(&query.tenant_id, PermissionCategory::Business);
     }
     catalog.get(&query.permission()).is_some_and(|definition| {
         mode.permits(&query.tenant_id, definition.category)

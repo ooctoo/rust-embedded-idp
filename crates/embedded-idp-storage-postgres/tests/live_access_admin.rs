@@ -23,6 +23,7 @@ fn catalog() -> PermissionCatalog {
             .map(|(resource_type, action)| PermissionDefinition {
                 tenant_id: "0".into(),
                 key: PermissionKey {
+                    business_id: "f_01".into(),
                     resource_type: resource_type.into(),
                     action: action.into(),
                 },
@@ -146,7 +147,7 @@ impl Db {
                     } else {
                         "business"
                     };
-                    tx.execute(&format!("insert into {s}.access_permissions(tenant_id,resource_type,action,category,description,enabled) values($1,$2,$3,$4,$5,true)"), &[&tenant,&permission.key.resource_type,&permission.key.action,&category,&permission.description]).unwrap();
+                    tx.execute(&format!("insert into {s}.access_permissions(tenant_id,business_id,resource_type,action,category,description,enabled) values($1,$2,$3,$4,$5,$6,true)"), &[&tenant,&permission.key.business_id,&permission.key.resource_type,&permission.key.action,&category,&permission.description]).unwrap();
                 }
             }
         }
@@ -163,18 +164,18 @@ impl Db {
             tx.execute(&format!("insert into {s}.access_memberships(tenant_id,account_id,status,joined_at_epoch) values('t2',$1,'active',$2)"), &[&self.owner, &(NOW as i64)]).unwrap();
         }
         let platform_role = Uuid::now_v7();
-        tx.execute(&format!("insert into {s}.access_roles(tenant_id,id,key,name,status,kind,created_at_epoch) values('0',$1,'system_admin','System admin','active','system_admin',$2)"), &[&platform_role, &(NOW as i64)]).unwrap();
-        tx.execute(&format!("insert into {s}.access_role_permissions(tenant_id,role_id,resource_type,action) select '0',$1,resource_type,action from {s}.access_permissions where tenant_id='0' and category='platform'"), &[&platform_role]).unwrap();
-        tx.execute(&format!("insert into {s}.access_role_bindings(id,tenant_id,account_id,role_id,resource_type,created_at_epoch,created_by) values($1,'0',$2,$3,'idp.platform',$4,$2)"), &[&Uuid::now_v7(), &self.actor, &platform_role, &(NOW as i64)]).unwrap();
+        tx.execute(&format!("insert into {s}.access_roles(tenant_id,business_id,id,key,name,status,kind,created_at_epoch) values('0','idp',$1,'idp_system_admin','IDP管理员','active','system_admin',$2)"), &[&platform_role, &(NOW as i64)]).unwrap();
+        tx.execute(&format!("insert into {s}.access_role_permissions(tenant_id,business_id,role_id,resource_type,action) select '0','idp',$1,resource_type,action from {s}.access_permissions where tenant_id='0' and business_id='idp' and category='platform'"), &[&platform_role]).unwrap();
+        tx.execute(&format!("insert into {s}.access_role_bindings(id,tenant_id,business_id,account_id,role_id,scope_kind,resource_type,created_at_epoch,created_by) values($1,'0','idp',$2,$3,'type','idp.platform',$4,$2)"), &[&Uuid::now_v7(), &self.actor, &platform_role, &(NOW as i64)]).unwrap();
         if target != "0" {
             let target_role = Uuid::now_v7();
-            tx.execute(&format!("insert into {s}.access_roles(tenant_id,id,key,name,status,kind,created_at_epoch) values($1,$2,'tenant_security_admin','Target admin','active','tenant_security_admin',$3)"), &[&target, &target_role, &(NOW as i64)]).unwrap();
-            tx.execute(&format!("insert into {s}.access_role_permissions(tenant_id,role_id,resource_type,action) select $1,$2,resource_type,action from {s}.access_permissions where tenant_id=$1 and category='tenant'"), &[&target, &target_role]).unwrap();
-            tx.execute(&format!("insert into {s}.access_role_bindings(id,tenant_id,account_id,role_id,resource_type,created_at_epoch,created_by) values($1,$2,$3,$4,'idp.tenant',$5,$3)"), &[&Uuid::now_v7(), &target, &self.owner, &target_role, &(NOW as i64)]).unwrap();
+            tx.execute(&format!("insert into {s}.access_roles(tenant_id,business_id,id,key,name,status,kind,created_at_epoch) values($1,'idp',$2,'idp_tenant_security_admin','IDP租户管理员','active','tenant_security_admin',$3)"), &[&target, &target_role, &(NOW as i64)]).unwrap();
+            tx.execute(&format!("insert into {s}.access_role_permissions(tenant_id,business_id,role_id,resource_type,action) select $1,'idp',$2,resource_type,action from {s}.access_permissions where tenant_id=$1 and business_id='idp' and category='tenant'"), &[&target, &target_role]).unwrap();
+            tx.execute(&format!("insert into {s}.access_role_bindings(id,tenant_id,business_id,account_id,role_id,scope_kind,resource_type,created_at_epoch,created_by) values($1,$2,'idp',$3,$4,'type','idp.tenant',$5,$3)"), &[&Uuid::now_v7(), &target, &self.owner, &target_role, &(NOW as i64)]).unwrap();
             let other_role = Uuid::now_v7();
-            tx.execute(&format!("insert into {s}.access_roles(tenant_id,id,key,name,status,kind,created_at_epoch) values('t2',$1,'tenant_security_admin','Other admin','active','tenant_security_admin',$2)"), &[&other_role, &(NOW as i64)]).unwrap();
-            tx.execute(&format!("insert into {s}.access_role_permissions(tenant_id,role_id,resource_type,action) select 't2',$1,resource_type,action from {s}.access_permissions where tenant_id='t2' and category='tenant'"), &[&other_role]).unwrap();
-            tx.execute(&format!("insert into {s}.access_role_bindings(id,tenant_id,account_id,role_id,resource_type,created_at_epoch,created_by) values($1,'t2',$2,$3,'idp.tenant',$4,$2)"), &[&Uuid::now_v7(), &self.owner, &other_role, &(NOW as i64)]).unwrap();
+            tx.execute(&format!("insert into {s}.access_roles(tenant_id,business_id,id,key,name,status,kind,created_at_epoch) values('t2','idp',$1,'idp_tenant_security_admin','IDP租户管理员','active','tenant_security_admin',$2)"), &[&other_role, &(NOW as i64)]).unwrap();
+            tx.execute(&format!("insert into {s}.access_role_permissions(tenant_id,business_id,role_id,resource_type,action) select 't2','idp',$1,resource_type,action from {s}.access_permissions where tenant_id='t2' and business_id='idp' and category='tenant'"), &[&other_role]).unwrap();
+            tx.execute(&format!("insert into {s}.access_role_bindings(id,tenant_id,business_id,account_id,role_id,scope_kind,resource_type,created_at_epoch,created_by) values($1,'t2','idp',$2,$3,'type','idp.tenant',$4,$2)"), &[&Uuid::now_v7(), &self.owner, &other_role, &(NOW as i64)]).unwrap();
         }
         tx.execute(&format!("insert into {s}.oidc_clients(client_id,client_name,redirect_uris_json,client_type,pkce_required,created_at_epoch) values('live-admin-client','Live admin','[]','public_desktop',true,$1)"), &[&(NOW as i64)]).unwrap();
         tx.execute(&format!("insert into {s}.auth_sessions(purpose,tenant_id,id,account_id,client_id,status,created_at_epoch,expires_at_epoch,refresh_token_version,authenticated_at_epoch) values('management','0',$1,$2,'live-admin-client','active',$3,$4,1,$3),('management',$5,$6,$7,'live-admin-client','active',$3,$4,1,$3)"), &[&self.actor_session, &self.actor, &(NOW as i64), &((NOW + 1_000) as i64), &target, &self.member_session, &self.member]).unwrap();
@@ -217,6 +218,7 @@ fn admin_role_lifecycle_versions_and_domain_isolation_work_in_both_modes() {
                 .execute(
                     db.context(db.actor_session.to_string()),
                     db.command(AccessAdminMutation::CreateRole {
+                        business_id: "f_01".into(),
                         key: "reader".into(),
                         name: "Reader".into(),
                     }),
@@ -227,8 +229,10 @@ fn admin_role_lifecycle_versions_and_domain_isolation_work_in_both_modes() {
             .execute(
                 db.context(db.actor_session.to_string()),
                 db.command(AccessAdminMutation::ReplaceRolePermissions {
+                    business_id: "f_01".into(),
                     role_id: role.clone(),
                     permissions: vec![PermissionKey {
+                        business_id: "f_01".into(),
                         resource_type: "report".into(),
                         action: "read".into(),
                     }],
@@ -240,10 +244,13 @@ fn admin_role_lifecycle_versions_and_domain_isolation_work_in_both_modes() {
             .execute(
                 db.context(db.actor_session.to_string()),
                 db.command(AccessAdminMutation::GrantRole {
+                    business_id: "f_01".into(),
                     subject_id: db.member.to_string(),
                     role_id: role.clone(),
-                    resource_type: "report".into(),
-                    scope: ResourceScope::Instance("report-1".into()),
+                    scope: RoleBindingScope::Resource {
+                        resource_type: "report".into(),
+                        scope: ResourceScope::Instance("report-1".into()),
+                    },
                 }),
             )
             .unwrap();
@@ -258,6 +265,7 @@ fn admin_role_lifecycle_versions_and_domain_isolation_work_in_both_modes() {
             .execute(
                 db.context(db.actor_session.to_string()),
                 db.command(AccessAdminMutation::ReplaceRolePermissions {
+                    business_id: "f_01".into(),
                     role_id: role.clone(),
                     permissions: vec![],
                     expected_version: 2,
@@ -268,8 +276,10 @@ fn admin_role_lifecycle_versions_and_domain_isolation_work_in_both_modes() {
             .execute(
                 db.context(db.actor_session.to_string()),
                 db.command(AccessAdminMutation::ReplaceRolePermissions {
+                    business_id: "f_01".into(),
                     role_id: role.clone(),
                     permissions: vec![PermissionKey {
+                        business_id: "f_01".into(),
                         resource_type: "report".into(),
                         action: "read".into(),
                     }],
@@ -295,10 +305,13 @@ fn admin_role_lifecycle_versions_and_domain_isolation_work_in_both_modes() {
             .execute(
                 db.context(db.actor_session.to_string()),
                 db.command(AccessAdminMutation::GrantRole {
+                    business_id: "f_01".into(),
                     subject_id: db.member.to_string(),
                     role_id: role.clone(),
-                    resource_type: "report".into(),
-                    scope: ResourceScope::Instance("report-1".into()),
+                    scope: RoleBindingScope::Resource {
+                        resource_type: "report".into(),
+                        scope: ResourceScope::Instance("report-1".into()),
+                    },
                 }),
             )
             .unwrap();
@@ -313,6 +326,7 @@ fn admin_role_lifecycle_versions_and_domain_isolation_work_in_both_modes() {
             .execute(
                 db.context(db.actor_session.to_string()),
                 db.command(AccessAdminMutation::UpdateRole {
+                    business_id: "f_01".into(),
                     role_id: role.clone(),
                     name: "Reader v2".into(),
                     status: RoleStatus::Active,
@@ -324,6 +338,7 @@ fn admin_role_lifecycle_versions_and_domain_isolation_work_in_both_modes() {
             service.execute(
                 db.context(db.actor_session.to_string()),
                 db.command(AccessAdminMutation::UpdateRole {
+                    business_id: "f_01".into(),
                     role_id: role.clone(),
                     name: "stale".into(),
                     status: RoleStatus::Active,
@@ -336,6 +351,7 @@ fn admin_role_lifecycle_versions_and_domain_isolation_work_in_both_modes() {
             .execute(
                 db.context(db.actor_session.to_string()),
                 db.command(AccessAdminMutation::RevokeRole {
+                    business_id: "f_01".into(),
                     binding_id: replacement_id,
                 }),
             )
@@ -344,6 +360,7 @@ fn admin_role_lifecycle_versions_and_domain_isolation_work_in_both_modes() {
             .execute(
                 db.context(db.actor_session.to_string()),
                 db.command(AccessAdminMutation::DeleteRole {
+                    business_id: "f_01".into(),
                     role_id: role.clone(),
                     expected_version: 5,
                 }),
@@ -378,6 +395,7 @@ fn removal_cleans_tenant_credentials_and_audit_or_actor_failure_rolls_back() {
             .execute(
                 db.context(db.actor_session.to_string()),
                 db.command(AccessAdminMutation::CreateRole {
+                    business_id: "f_01".into(),
                     key: "reader".into(),
                     name: "Reader".into(),
                 }),
@@ -388,8 +406,10 @@ fn removal_cleans_tenant_credentials_and_audit_or_actor_failure_rolls_back() {
         .execute(
             db.context(db.actor_session.to_string()),
             db.command(AccessAdminMutation::ReplaceRolePermissions {
+                business_id: "f_01".into(),
                 role_id: role.clone(),
                 permissions: vec![PermissionKey {
+                    business_id: "f_01".into(),
                     resource_type: "report".into(),
                     action: "read".into(),
                 }],
@@ -401,10 +421,13 @@ fn removal_cleans_tenant_credentials_and_audit_or_actor_failure_rolls_back() {
         .execute(
             db.context(db.actor_session.to_string()),
             db.command(AccessAdminMutation::GrantRole {
+                business_id: "f_01".into(),
                 subject_id: db.member.to_string(),
                 role_id: role,
-                resource_type: "report".into(),
-                scope: ResourceScope::Type,
+                scope: RoleBindingScope::Resource {
+                    resource_type: "report".into(),
+                    scope: ResourceScope::Type,
+                },
             }),
         )
         .unwrap();
@@ -571,6 +594,7 @@ fn removal_cleans_tenant_credentials_and_audit_or_actor_failure_rolls_back() {
         .execute(
             db.context(db.actor_session.to_string()),
             db.command(AccessAdminMutation::CreateRole {
+                business_id: "f_01".into(),
                 key: "audit-fails".into(),
                 name: "Audit fails".into()
             })
@@ -599,6 +623,7 @@ fn removal_cleans_tenant_credentials_and_audit_or_actor_failure_rolls_back() {
         service.execute(
             db.context(Uuid::now_v7().to_string()),
             db.command(AccessAdminMutation::CreateRole {
+                business_id: "f_01".into(),
                 key: "invalid-session".into(),
                 name: "Invalid session".into()
             })
@@ -618,6 +643,7 @@ fn removal_cleans_tenant_credentials_and_audit_or_actor_failure_rolls_back() {
         service.execute(
             db.context(db.actor_session.to_string()),
             db.command(AccessAdminMutation::CreateRole {
+                business_id: "f_01".into(),
                 key: "directory-disabled".into(),
                 name: "Directory disabled".into()
             })
@@ -650,6 +676,7 @@ fn admin_transaction_panic_rolls_back_and_returns_a_usable_connection() {
                         role: Role {
                             id: role_id.to_string(),
                             tenant_id: "t1".into(),
+                            business_id: "f_01".into(),
                             key: "panic-role".into(),
                             name: "Panic role".into(),
                             status: RoleStatus::Active,

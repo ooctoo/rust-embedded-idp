@@ -38,6 +38,7 @@ function AuditDetailDrawer({ client, tenant, platformScope, auditId, close }: {
         <Descriptions.Item label="审计 ID">{detail.audit_id}</Descriptions.Item>
         <Descriptions.Item label="发生时间">{time(detail.occurred_at_unix_secs)}</Descriptions.Item>
         <Descriptions.Item label="目标域">{domain(detail.target_domain, client.getSnapshot().capabilities?.tenancy_enabled)}</Descriptions.Item>
+        <Descriptions.Item label="业务标识">{detail.target_business_id ?? "未区分业务"}</Descriptions.Item>
         <Descriptions.Item label="操作者">{detail.actor_id}</Descriptions.Item>
         <Descriptions.Item label="操作者域">{domain(detail.actor_domain, client.getSnapshot().capabilities?.tenancy_enabled)}</Descriptions.Item>
         <Descriptions.Item label="会话">{detail.actor_session_id ?? "无"}</Descriptions.Item>
@@ -72,6 +73,7 @@ function AuditTable({ client, tenant, platformScope, filter }: {
       locale={{ emptyText: result.error ? "未能读取审计记录" : "没有符合条件的审计记录" }} columns={[
         { title: "发生时间", dataIndex: "occurred_at_unix_secs", render: (value: number) => time(value) },
         { title: "目标域", dataIndex: "target_domain", render: (value: string) => domain(value, client.getSnapshot().capabilities?.tenancy_enabled) },
+        { title: "业务标识", dataIndex: "target_business_id", render: (value: string | null) => value ?? "未区分业务" },
         { title: "操作者", dataIndex: "actor_id" },
         { title: "操作", dataIndex: "operation" },
         { title: "请求 ID", dataIndex: "request_id" },
@@ -88,9 +90,9 @@ export function AuditManagement({ client, tenant, platformScope = false }: { cli
   const [filterError, setFilterError] = useState("");
   const scopeLabel = platformScope ? "平台" : client.getSnapshot().capabilities?.tenancy_enabled ? tenant : "当前系统";
   return <Card title="审计记录" className="management-card">
-    <Typography.Paragraph type="secondary">查看“{scopeLabel}”范围内的审计记录。记录按目标域查询，不会混合不同租户的数据。</Typography.Paragraph>
+    <Typography.Paragraph type="secondary">查看“{scopeLabel}”范围内的审计记录。</Typography.Paragraph>
     <Form name={`audit-filter-${platformScope ? "platform" : tenant}`} layout="inline" className="management-filter"
-      onFinish={(values: { actor_id?: string; operation?: string; occurred_after?: string; occurred_before?: string }) => {
+      onFinish={(values: { business_id?: string; actor_id?: string; operation?: string; occurred_after?: string; occurred_before?: string }) => {
         const after = unix(values.occurred_after), before = unix(values.occurred_before);
         if ((values.occurred_after && after === undefined) || (values.occurred_before && before === undefined) ||
           (after !== undefined && before !== undefined && after > before)) {
@@ -98,11 +100,12 @@ export function AuditManagement({ client, tenant, platformScope = false }: { cli
           return;
         }
         setFilterError("");
-        setFilter({ ...(values.actor_id?.trim() ? { actor_id: values.actor_id.trim() } : {}),
+        setFilter({ ...(values.business_id?.trim() ? { business_id: values.business_id.trim() } : {}), ...(values.actor_id?.trim() ? { actor_id: values.actor_id.trim() } : {}),
           ...(values.operation?.trim() ? { operation: values.operation.trim() } : {}),
           ...(after !== undefined ? { occurred_after_unix_secs: after } : {}),
           ...(before !== undefined ? { occurred_before_unix_secs: before } : {}) });
       }}>
+      <Form.Item name="business_id" label="业务标识" rules={[{ pattern: /^(?!idp\.)[a-z][a-z0-9_.-]{0,63}$/, message: "请输入有效业务标识" }]}><Input allowClear maxLength={64} placeholder="留空查看全部" /></Form.Item>
       <Form.Item name="actor_id" label="操作者" rules={[{ pattern: /^[A-Za-z0-9_.-]{1,128}$/, message: "请输入有效操作者 ID" }]}><Input allowClear maxLength={128} /></Form.Item>
       <Form.Item name="operation" label="操作" rules={[{ pattern: /^[a-z][a-z0-9_.-]{0,63}$/, message: "请输入有效操作标识" }]}><Input allowClear maxLength={64} /></Form.Item>
       <Form.Item name="occurred_after" label="起始时间"><Input type="datetime-local" /></Form.Item>
@@ -110,6 +113,6 @@ export function AuditManagement({ client, tenant, platformScope = false }: { cli
       <Button htmlType="submit">查询</Button>
     </Form>
     {filterError && <Alert type="error" role="alert" message={filterError} />}
-    <AuditTable key={`${platformScope ? "platform" : tenant}:${JSON.stringify(filter)}`} client={client} tenant={tenant} platformScope={platformScope} filter={filter} />
+    <AuditTable key={`${platformScope ? "platform" : `${tenant}`}:${JSON.stringify(filter)}`} client={client} tenant={tenant} platformScope={platformScope} filter={filter} />
   </Card>;
 }

@@ -28,6 +28,7 @@ struct SelfState {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct PageQuery {
+    business_id: String,
     limit: Option<u32>,
     cursor: Option<String>,
 }
@@ -37,6 +38,7 @@ struct PageQuery {
 struct Cursor {
     version: u8,
     tenant_id: String,
+    business_id: String,
     subject_id: String,
     after: String,
 }
@@ -75,6 +77,15 @@ async fn roles(
         Ok(_) => return map_tenant_auth_error(TenantAuthError::InvalidSession),
         Err(error) => return map_tenant_auth_error(error),
     };
+    if validate_business_id(&query.business_id).is_err()
+        || headers.contains_key("x-embedded-idp-business-id")
+    {
+        return tenant_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "invalid business selection",
+        );
+    }
     let cursor = match query.cursor {
         None => None,
         Some(raw) if raw.len() <= 2048 => {
@@ -88,6 +99,7 @@ async fn roles(
                 version: cursor.version,
                 scope: AccessListScope::SubjectRoles {
                     tenant_id: cursor.tenant_id,
+                    business_id: cursor.business_id,
                     subject_id: cursor.subject_id,
                 },
                 after: vec![cursor.after],
@@ -102,6 +114,7 @@ async fn roles(
     match call(move || {
         access.list_subject_roles(
             &tenant_id,
+            &query.business_id,
             &subject_id,
             AccessPageRequest {
                 limit: query.limit.unwrap_or(embedded_idp_core::DEFAULT_PAGE_LIMIT),
@@ -119,6 +132,7 @@ async fn roles(
                     let (
                         AccessListScope::SubjectRoles {
                             tenant_id,
+                            business_id,
                             subject_id,
                         },
                         [after],
@@ -129,6 +143,7 @@ async fn roles(
                     let Ok(bytes) = serde_json::to_vec(&Cursor {
                         version: cursor.version,
                         tenant_id,
+                        business_id,
                         subject_id,
                         after: after.clone(),
                     }) else {
@@ -220,12 +235,14 @@ mod tests {
         fn list_subject_roles(
             &self,
             tenant: &str,
+            business: &str,
             subject: &str,
             page: AccessPageRequest,
         ) -> Result<AccessPage<Role>, AccessError> {
             assert_eq!((tenant, subject), ("t1", "u1"));
             page.validate(&AccessListScope::SubjectRoles {
                 tenant_id: tenant.into(),
+                business_id: business.into(),
                 subject_id: subject.into(),
             })?;
             Ok(AccessPage {
@@ -233,6 +250,7 @@ mod tests {
                     created_at: std::time::SystemTime::UNIX_EPOCH,
                     id: "r1".into(),
                     tenant_id: tenant.into(),
+                    business_id: business.into(),
                     key: "reader".into(),
                     name: "Reader".into(),
                     status: RoleStatus::Active,
@@ -241,9 +259,10 @@ mod tests {
                 }],
                 has_more: true,
                 next_cursor: Some(AccessCursor {
-                    version: 1,
+                    version: 2,
                     scope: AccessListScope::SubjectRoles {
                         tenant_id: tenant.into(),
+                        business_id: business.into(),
                         subject_id: subject.into(),
                     },
                     after: vec!["r1".into()],
@@ -253,6 +272,7 @@ mod tests {
         }
         fn list_role_permissions(
             &self,
+            _: &str,
             _: &str,
             _: &str,
             _: AccessPageRequest,
@@ -286,26 +306,43 @@ mod tests {
     #[tokio::test]
     async fn only_current_session_scope_can_read_roles() {
         assert_eq!(
-            get("/auth/me/roles", None, None).await.status(),
-            StatusCode::UNAUTHORIZED
-        );
-        assert_eq!(
-            get("/auth/me/roles", Some("invalid"), None).await.status(),
-            StatusCode::UNAUTHORIZED
-        );
-        assert_eq!(
-            get("/auth/me/roles", Some("valid-token"), Some("t2"))
+            get("/auth/me/roles?business_id=f_01", None, None)
                 .await
                 .status(),
             StatusCode::UNAUTHORIZED
         );
         assert_eq!(
-            get("/auth/me/roles?tenant_id=t2", Some("valid-token"), None)
+            get("/auth/me/roles?business_id=f_01", Some("invalid"), None)
                 .await
                 .status(),
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            get(
+                "/auth/me/roles?business_id=f_01",
+                Some("valid-token"),
+                Some("t2")
+            )
+            .await
+            .status(),
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            get(
+                "/auth/me/roles?business_id=f_01&tenant_id=t2",
+                Some("valid-token"),
+                None
+            )
+            .await
+            .status(),
             StatusCode::BAD_REQUEST
         );
-        let response = get("/auth/me/roles", Some("valid-token"), Some("t1")).await;
+        let response = get(
+            "/auth/me/roles?business_id=f_01",
+            Some("valid-token"),
+            Some("t1"),
+        )
+        .await;
         assert_eq!(response.status(), StatusCode::OK);
         let body: serde_json::Value = serde_json::from_slice(
             &axum::body::to_bytes(response.into_body(), usize::MAX)
@@ -315,21 +352,41 @@ mod tests {
         .unwrap();
         assert_eq!(body["items"][0]["role_id"], "r1");
         let cursor = body["next_cursor"].as_str().unwrap();
-        let own = format!("/auth/me/roles?cursor={cursor}");
+        assert_eq!(body["items"][0]["business_id"], "f_01");
+        let foreign_business = format!("/auth/me/roles?business_id=f_02&cursor={cursor}");
+        assert_eq!(
+            get(&foreign_business, Some("valid-token"), None)
+                .await
+                .status(),
+            StatusCode::BAD_REQUEST
+        );
+        for uri in [
+            "/auth/me/roles",
+            "/auth/me/roles?business_id=idp",
+            "/auth/me/roles?business_id=f_01&business_id=f_02",
+        ] {
+            assert_eq!(
+                get(uri, Some("valid-token"), None).await.status(),
+                StatusCode::BAD_REQUEST
+            );
+        }
+
+        let own = format!("/auth/me/roles?business_id=f_01&cursor={cursor}");
         assert_eq!(
             get(&own, Some("valid-token"), None).await.status(),
             StatusCode::OK
         );
         let foreign = Base64UrlUnpadded::encode_string(
             &serde_json::to_vec(&Cursor {
-                version: 1,
+                version: 2,
                 tenant_id: "t2".into(),
+                business_id: "f_01".into(),
                 subject_id: "u1".into(),
                 after: "r1".into(),
             })
             .unwrap(),
         );
-        let foreign = format!("/auth/me/roles?cursor={foreign}");
+        let foreign = format!("/auth/me/roles?business_id=f_01&cursor={foreign}");
         assert_eq!(
             get(&foreign, Some("valid-token"), None).await.status(),
             StatusCode::BAD_REQUEST

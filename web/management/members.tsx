@@ -11,21 +11,22 @@ const scopeLabel = (scope: ResourceScope) => scope.kind === "type" ? "该类型�
 const accountStatus = { active: "启用", pending_verification: "待验证", disabled: "停用", closed: "已关闭" };
 const memberStatus = { active: "有效", suspended: "暂停", removed: "已移除" };
 
-function RoleChoice({ client, tenant, choose, disabled }: { client: ManagementClient; tenant: string; choose: (role: Role) => void; disabled: boolean }) {
-  const load = useCallback((cursor?: string) => client.listRoles(tenant, cursor), [client, tenant]);
+function RoleChoice({ client, tenant, business, choose, disabled }: { client: ManagementClient; tenant: string; business?: string; choose: (role: Role) => void; disabled: boolean }) {
+  const load = useCallback((cursor?: string) => client.listRoles(tenant, business, cursor), [client, tenant, business]);
   const result = useCursorPage(load);
   return <>
     {result.error && <Alert type="error" role="alert" message={result.error} action={<Button onClick={result.reload}>重试</Button>} />}
     <Table<Role> scroll={{ x: 440 }} rowKey="role_id" dataSource={result.page?.items ?? []} loading={result.loading} pagination={false} columns={[
+      { title: "业务标识", dataIndex: "business_id" },
       { title: "角色", dataIndex: "name", render: (name, role) => <>{name}<br /><Typography.Text type="secondary">{role.key}</Typography.Text></> },
-      { title: "操作", render: (_, role) => <Button disabled={disabled || role.kind !== "business" || role.status !== "active"} onClick={() => choose(role)} aria-label={`选择角色 ${role.name}`}>选择</Button> },
+      { title: "操作", render: (_, role) => <Button disabled={disabled || !["business", "business_admin"].includes(role.kind) || role.status !== "active"} onClick={() => choose(role)} aria-label={`选择角色 ${role.name}`}>选择</Button> },
     ]} />{result.controls}
   </>;
 }
 
-function GrantForm({ client, tenant, subject, busy, blocked, error, grant }: {
-  client: ManagementClient; tenant: string; subject: Member; busy: boolean; blocked: boolean; error: string;
-  grant: (role: RoleDetail, resource: string, scope: ResourceScope) => Promise<void>;
+function GrantForm({ client, tenant, business, subject, busy, blocked, error, grant }: {
+  client: ManagementClient; tenant: string; business?: string; subject: Member; busy: boolean; blocked: boolean; error: string;
+  grant: (role: RoleDetail, resource?: string, scope?: ResourceScope | { kind: "business" }) => Promise<void>;
 }) {
   const [selected, setSelected] = useState<Role>();
   const [role, setRole] = useState<RoleDetail>();
@@ -36,21 +37,25 @@ function GrantForm({ client, tenant, subject, busy, blocked, error, grant }: {
     if (!selected) return;
     let active = true;
     setRole(undefined); setLoading(true); setLoadError("");
-    client.getRole(tenant, selected.role_id).then(value => { if (active) setRole(value); })
+    client.getRole(tenant, selected.business_id, selected.role_id).then(value => { if (active) setRole(value); })
       .catch(reason => { if (active) setLoadError(failure(reason)); }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [client, tenant, selected]);
+  }, [client, tenant, business, selected]);
   return <>
     {loadError && <Alert type="error" role="alert" message={loadError} />}
-    {!selected ? <RoleChoice client={client} tenant={tenant} choose={setSelected} disabled={busy || blocked} /> : <>
+    {!selected ? <RoleChoice client={client} tenant={tenant} business={business} choose={setSelected} disabled={busy || blocked} /> : <>
       <Button disabled={busy} onClick={() => { setSelected(undefined); setRole(undefined); setLoadError(""); }}>重新选择角色</Button>
       {loading && <Card loading />}
-      {role && (role.kind !== "business" || role.status !== "active") && <Alert type="warning" message="角色状态已变化，请重新选择可用的业务角色。" />}
-      {role && !role.permissions.length && <Alert type="info" message="此角色尚无可分配的资源类型，请先配置角色权限。" />}
-      {role && <Form key={role.role_id} layout="vertical" disabled={busy || blocked || role.kind !== "business" || role.status !== "active"}
+      {role && (!["business", "business_admin"].includes(role.kind) || role.status !== "active") && <Alert type="warning" message="角色状态已变化，请重新选择可用的业务角色。" />}
+      {role?.kind === "business_admin" && <>
+        <Alert type="info" message={`将 ${subject.email} 设为 ${tenant} / ${role.business_id} 的业务管理员`} description="拥有此业务全部有效权限，包括以后新增的权限。不获得 IDP 管理权限。" />
+        <Button type="primary" disabled={busy || blocked || role.status !== "active"} onClick={() => grant(role, undefined, { kind: "business" })}>确认分配业务管理员</Button>
+      </>}
+      {role?.kind === "business" && !role.permissions.length && <Alert type="info" message="此角色尚无可分配的资源类型，请先配置角色权限。" />}
+      {role?.kind === "business" && <Form key={role.role_id} layout="vertical" disabled={busy || blocked || role.status !== "active"}
         onFinish={(values: { resource: string; kind: "type" | "instance"; resource_id?: string }) => setDraft({ resource: values.resource,
           scope: values.kind === "instance" ? { kind: "instance", resource_id: values.resource_id! } : { kind: "type" } })}>
-        <Typography.Paragraph>角色：{role.name}</Typography.Paragraph>
+        <Typography.Paragraph>业务标识：{role.business_id}<br />角色：{role.name}</Typography.Paragraph>
         <Form.Item name="resource" label="资源类型" rules={[{ required: true, message: "请选择资源类型" }]}>
           <Select options={[...new Set(role.permissions.map(p => p.resource_type))].map(value => ({ value, label: value }))} />
         </Form.Item>
@@ -67,7 +72,7 @@ function GrantForm({ client, tenant, subject, busy, blocked, error, grant }: {
       onOk={() => role && draft ? grant(role, draft.resource, draft.scope) : undefined}>
       {error && <Alert type="error" role="alert" message={error} description="请关闭授权表单，重新读取已有分配后核对。" />}
       {role && draft && <>
-        <Typography.Paragraph>目标域：{tenant}<br />成员：{subject.email}（{subject.account_id}）<br />角色：{role.name}<br />资源类型：{draft.resource}<br />范围：{scopeLabel(draft.scope)}</Typography.Paragraph>
+        <Typography.Paragraph>目标域：{tenant} / {role.business_id}<br />成员：{subject.email}（{subject.account_id}）<br />角色：{role.name}<br />资源类型：{draft.resource}<br />范围：{scopeLabel(draft.scope)}</Typography.Paragraph>
         <Typography.Paragraph>当前动作：{role.permissions.filter(p => p.resource_type === draft.resource).map(p => p.action).join("、")}</Typography.Paragraph>
         <Alert type={draft.scope.kind === "type" ? "warning" : "info"} showIcon message={scopeLabel(draft.scope)} description="分配后可执行的动作随角色权限变化。具体资源的存在和租户归属仍由业务宿主校验。" />
       </>}
@@ -76,7 +81,8 @@ function GrantForm({ client, tenant, subject, busy, blocked, error, grant }: {
 }
 
 function BindingDrawer({ client, tenant, subject, close }: { client: ManagementClient; tenant: string; subject: Member; close: () => void }) {
-  const load = useCallback((cursor?: string) => client.listRoleBindings(tenant, subject.account_id, cursor), [client, tenant, subject.account_id]);
+  const [business, setBusiness] = useState<string>();
+  const load = useCallback((cursor?: string) => client.listRoleBindings(tenant, business, subject.account_id, cursor), [client, tenant, business, subject.account_id]);
   const result = useCursorPage(load);
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -95,22 +101,31 @@ function BindingDrawer({ client, tenant, subject, close }: { client: ManagementC
   return <Drawer open title={`成员角色：${subject.email}`} width={720} onClose={close} closable={!busy} keyboard={!busy} maskClosable={!busy}>
     <Typography.Paragraph>目标域：{tenant} · 用户 ID：{subject.account_id}</Typography.Paragraph>
     {(error || result.error) && <Alert type="error" showIcon role="alert" message={error || result.error} />}
+    <Form layout="inline" className="management-filter" disabled={busy} onFinish={(values: { business_id?: string }) => {
+      setRevoke(undefined); setError(""); setBlocked(false); setBusiness(values.business_id?.trim() || undefined); result.reload();
+    }}>
+      <Form.Item name="business_id" label="业务标识" rules={[{ pattern: /^(?!idp\.)[a-z][a-z0-9_.-]{0,63}$/, message: "请输入有效业务标识" }]}><Input allowClear maxLength={64} placeholder="全部业务" /></Form.Item>
+      <Button htmlType="submit">查询</Button>
+    </Form>
     <Space className="management-filter">
       <Button ref={reloadButton} disabled={busy} onClick={() => { setAdding(false); setRevoke(undefined); setError(""); setBlocked(false); result.reload(); }}>重新加载分配</Button>
-      <Button disabled={busy || blocked || result.loading || !!result.error || subject.status !== "active" || subject.membership.status !== "active"} onClick={() => setAdding(v => !v)}>{adding ? "取消分配" : "分配业务角色"}</Button>
+      <Button type={adding ? "default" : "primary"} disabled={busy || blocked || result.loading || !!result.error || subject.status !== "active" || subject.membership.status !== "active"} onClick={() => setAdding(v => !v)}>{adding ? "取消分配" : "分配业务角色"}</Button>
     </Space>
-    {adding ? <GrantForm client={client} tenant={tenant} subject={subject} busy={busy} blocked={blocked} error={error}
-      grant={(role, resource, scope) => mutate(() => client.grantRole(tenant, subject.account_id, role, resource, scope))} /> : <>
+    <Typography.Title level={4}>{adding ? "选择要分配的角色" : "已分配角色"}</Typography.Title>
+    <Typography.Paragraph type="secondary">{adding ? "可按业务标识筛选，然后选择角色并确认授权范围。" : "下方仅显示该成员已有的角色。添加其他业务的角色，请点击“分配业务角色”。"}</Typography.Paragraph>
+    {adding ? <GrantForm key={business ?? ""} client={client} tenant={tenant} business={business} subject={subject} busy={busy} blocked={blocked} error={error}
+      grant={(role, resource, scope) => mutate(() => client.grantRole(tenant, role.business_id, subject.account_id, role, resource, scope))} /> : <>
       <Table<RoleBinding> rowKey="binding_id" dataSource={result.page?.items ?? []} pagination={false} loading={result.loading} scroll={{ x: 520 }}
         locale={{ emptyText: result.error ? "未能读取分配" : "此成员暂无角色分配" }} columns={[
-          { title: "角色 ID", dataIndex: "role_id" }, { title: "资源类型", dataIndex: "resource_type" },
-          { title: "范围", render: (_, binding) => scopeLabel(binding.scope) },
-          { title: "操作", render: (_, binding) => <Button danger disabled={busy || blocked} onClick={async () => {
+          { title: "业务标识", dataIndex: "business_id" },
+          { title: "角色 ID", dataIndex: "role_id" }, { title: "资源类型", render: (_, binding) => "resource_type" in binding ? binding.resource_type : "全部业务权限" },
+          { title: "范围", render: (_, binding) => binding.scope.kind === "business" ? "整个业务" : scopeLabel(binding.scope) },
+          { title: "操作", render: (_, binding) => binding.business_id === "idp" ? <Typography.Text type="secondary">通过管理员授权管理</Typography.Text> : <Button danger disabled={busy || blocked} onClick={async () => {
             setBusy(true); setError("");
             try {
-              const role = await client.getRole(tenant, binding.role_id);
+              const role = await client.getRole(tenant, binding.business_id, binding.role_id);
               if (mounted.current) {
-                if (role.kind !== "business") setError("保护角色请通过专用管理员任命流程管理。");
+                if (!["business", "business_admin"].includes(role.kind)) setError("保护角色请通过专用管理员任命流程管理。");
                 else setRevoke({ binding, role });
               }
             } catch (reason) { if (mounted.current) setError(failure(reason)); }
@@ -120,9 +135,9 @@ function BindingDrawer({ client, tenant, subject, close }: { client: ManagementC
     </>}
     <Modal rootClassName="management-overlay" open={!!revoke} title="确认撤销角色分配" okText="确认撤销" cancelText="取消" confirmLoading={busy}
       okButtonProps={{ danger: true, disabled: blocked }} cancelButtonProps={{ disabled: busy }} closable={!busy} keyboard={!busy} maskClosable={false}
-      onCancel={() => setRevoke(undefined)} onOk={() => revoke ? mutate(() => client.revokeRoleBinding(tenant, revoke.binding, revoke.role)) : undefined}>
+      onCancel={() => setRevoke(undefined)} onOk={() => revoke ? mutate(() => client.revokeRoleBinding(tenant, revoke.binding.business_id, revoke.binding, revoke.role)) : undefined}>
       {error && <Alert type="error" role="alert" message={error} description="请取消并重新加载分配后核对。" />}
-      {revoke && <Typography.Paragraph>目标域：{tenant}<br />成员：{subject.email}<br />角色：{revoke.role.name}<br />资源类型：{revoke.binding.resource_type}<br />范围：{scopeLabel(revoke.binding.scope)}</Typography.Paragraph>}
+      {revoke && <Typography.Paragraph>目标域：{tenant} / {revoke.binding.business_id}<br />成员：{subject.email}<br />角色：{revoke.role.name}<br />资源类型：{"resource_type" in revoke.binding ? revoke.binding.resource_type : "全部业务权限"}<br />范围：{revoke.binding.scope.kind === "business" ? "整个业务" : scopeLabel(revoke.binding.scope)}</Typography.Paragraph>}
       <Typography.Paragraph>仅移除此项分配，不删除成员或角色。</Typography.Paragraph>
     </Modal>
   </Drawer>;
@@ -251,6 +266,6 @@ export function MemberRoles({ client, tenant }: { client: ManagementClient; tena
     <Form layout="inline" className="management-filter" onFinish={(values: { email?: string }) => setEmail(values.email?.trim() ?? "")}>
       <Form.Item name="email" label="邮箱"><Input allowClear maxLength={320} /></Form.Item><Button htmlType="submit">查询</Button>
     </Form>
-    <MemberTable key={email} client={client} tenant={tenant} email={email} />
+    <MemberTable key={`${tenant}:${email}`} client={client} tenant={tenant} email={email} />
   </Card>;
 }

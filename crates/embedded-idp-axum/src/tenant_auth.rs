@@ -627,6 +627,7 @@ mod tests {
                 Some(AccessCursor {
                     version: 1,
                     scope: AccessListScope::SubjectRoles {
+                        business_id: "f_01".into(),
                         tenant_id: "t1".into(),
                         subject_id: "a1".into(),
                     },

@@ -119,6 +119,7 @@ impl ReportStore {
 
 #[derive(Clone)]
 pub struct ReportState {
+    pub business_id: String,
     pub authentication: Arc<dyn TenantAuthenticationService>,
     pub authorization: Arc<dyn AuthorizationService>,
     pub store: ReportStore,
@@ -131,7 +132,9 @@ pub fn router(state: ReportState) -> Router {
 }
 
 fn bearer(headers: &HeaderMap) -> Option<String> {
-    if headers.contains_key("x-embedded-idp-tenant-id") {
+    if headers.contains_key("x-embedded-idp-tenant-id")
+        || headers.contains_key("x-embedded-idp-business-id")
+    {
         return None;
     }
     let mut values = headers.get_all(header::AUTHORIZATION).iter();
@@ -152,12 +155,14 @@ fn bearer(headers: &HeaderMap) -> Option<String> {
 
 fn authorized(
     actor: &AccessActor,
+    business_id: &str,
     id: &str,
     service: &dyn AuthorizationService,
 ) -> Result<bool, StatusCode> {
     service
         .check(AccessQuery {
             tenant_id: actor.tenant_id.clone(),
+            business_id: business_id.into(),
             subject_id: actor.subject_id.clone(),
             resource_type: "report".into(),
             action: "read".into(),
@@ -189,7 +194,12 @@ async fn read_report(
                 .authentication
                 .authenticate(SecretString::new(token))
                 .map_err(authentication_status)?;
-            if !authorized(&actor, &id, state.authorization.as_ref())? {
+            if !authorized(
+                &actor,
+                &state.business_id,
+                &id,
+                state.authorization.as_ref(),
+            )? {
                 return Err(StatusCode::FORBIDDEN);
             }
             state
@@ -293,11 +303,12 @@ mod tests {
             subject_id: "user1".into(),
             session_id: "session1".into(),
         };
-        assert_eq!(authorized(&actor, "r001", &service), Ok(true));
+        assert_eq!(authorized(&actor, "reports", "r001", &service), Ok(true));
         assert_eq!(
             *service.0.lock().unwrap(),
             Some(AccessQuery {
                 tenant_id: "t1".into(),
+                business_id: "reports".into(),
                 subject_id: "user1".into(),
                 resource_type: "report".into(),
                 action: "read".into(),

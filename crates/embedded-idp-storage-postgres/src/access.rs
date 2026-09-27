@@ -23,8 +23,8 @@ use uuid::Uuid;
 
 use crate::PostgresStorageAdapter;
 
-pub const ACCESS_SCHEMA_VERSION: &str = "tenant_v2";
-const DDL: &str = include_str!("sql/tenant_v2.sql");
+pub const ACCESS_SCHEMA_VERSION: &str = "tenant_v3";
+const DDL: &str = include_str!("sql/tenant_v3.sql");
 const ACCESS_TABLES: &[&str] = &[
     "access_state",
     "access_tenants",
@@ -56,6 +56,9 @@ fn validate_layout(client: &mut impl GenericClient, schema: &str) -> Result<(), 
         "access_state_guard",
         "membership_identity_guard",
         "device_identity_guard",
+        "role_identity_guard",
+        "role_permission_guard",
+        "role_binding_guard",
     ];
     let constraints = [
         "account_registration_membership",
@@ -67,7 +70,7 @@ fn validate_layout(client: &mut impl GenericClient, schema: &str) -> Result<(), 
         "authorization_code_source_session",
         "authorization_code_pkce_pair",
         "access_role_bindings_tenant_id_account_id_fkey",
-        "access_role_bindings_tenant_id_role_id_fkey",
+        "access_role_bindings_tenant_id_business_id_role_id_fkey",
     ];
     let row = client.query_one(
         "select not exists(select 1 from unnest($2::text[]) t(name) where not exists(select 1 from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname=$1 and c.relname=t.name and c.relkind='r'))
@@ -86,6 +89,18 @@ fn validate_layout(client: &mut impl GenericClient, schema: &str) -> Result<(), 
     ).map_err(access_db_error)?.get(0);
     if !has_time_column {
         return Err(StoreError::Conflict("access.list_time_migration_required"));
+    }
+    let business_layout: bool = client.query_one(
+        "select not exists(select 1 from unnest(array['access_permissions','access_roles','access_role_permissions','access_role_bindings']) t(name) where not exists(select 1 from information_schema.columns c where c.table_schema=$1 and c.table_name=t.name and c.column_name='business_id' and c.data_type='text' and c.is_nullable='NO' and c.collation_name='C'))
+         and exists(select 1 from information_schema.columns where table_schema=$1 and table_name='access_role_bindings' and column_name='scope_kind' and data_type='text' and is_nullable='NO')
+         and exists(select 1 from information_schema.columns where table_schema=$1 and table_name='access_audit_events' and column_name='target_business_id' and data_type='text' and collation_name='C')
+         and not exists(select 1 from unnest(array['access_business_admin_unique','access_binding_business_unique']) expected(name) where not exists(select 1 from pg_index i join pg_class c on c.oid=i.indexrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname=$1 and c.relname=expected.name and i.indisunique and i.indisvalid))",
+        &[&schema],
+    ).map_err(access_db_error)?.get(0);
+    if !business_layout {
+        return Err(StoreError::Backend(
+            "access business schema layout is incomplete".into(),
+        ));
     }
     Ok(())
 }
@@ -202,7 +217,7 @@ impl PostgresStorageAdapter {
             if mode == TenancyMode::Enabled && definition.category == PermissionCategory::Business {
                 continue;
             }
-            tx.execute(&format!("insert into {schema}.access_permissions(tenant_id,resource_type,action,category,description,enabled,archived,version) values('0',$1,$2,$3,$4,$5,$6,$7)"), &[&definition.key.resource_type, &definition.key.action, &category_name(definition.category), &definition.description, &definition.enabled, &definition.archived, &(definition.version as i64)]).map_err(access_db_error)?;
+            tx.execute(&format!("insert into {schema}.access_permissions(tenant_id,business_id,resource_type,action,category,description,enabled,archived,version) values('0',$1,$2,$3,$4,$5,$6,$7,$8)"), &[&definition.key.business_id, &definition.key.resource_type, &definition.key.action, &category_name(definition.category), &definition.description, &definition.enabled, &definition.archived, &(definition.version as i64)]).map_err(access_db_error)?;
         }
         let facts = schema_facts(&mut tx, schema, mode)?;
         tx.commit().map_err(access_db_error)?;
@@ -261,11 +276,13 @@ impl AccessReadStore for PostgresAccessStore {
     fn list_subject_roles(
         &self,
         tenant: &str,
+        business_id: &str,
         subject: &str,
         page: &AccessPageRequest,
     ) -> Result<Vec<Role>, StoreError> {
         page.validate(&AccessListScope::SubjectRoles {
             tenant_id: tenant.into(),
+            business_id: business_id.into(),
             subject_id: subject.into(),
         })
         .map_err(|_| StoreError::Conflict("access.page"))?;
@@ -281,16 +298,18 @@ impl AccessReadStore for PostgresAccessStore {
         let mut client = self.adapter.connect()?;
         self.verify(&mut *client)?;
         let s = self.adapter.schema_name();
-        client.query(&format!("select r.* from {s}.access_roles r where r.tenant_id=$1 and ($3::uuid is null or r.id>$3) and exists(select 1 from {s}.access_role_bindings b where b.tenant_id=r.tenant_id and b.role_id=r.id and b.account_id=$2) order by r.id limit $4"), &[&tenant,&subject,&after,&(page.fetch_limit() as i64)]).map_err(access_db_error)?.iter().map(decode_role).collect()
+        client.query(&format!("select r.* from {s}.access_roles r where r.tenant_id=$1 and r.business_id=$2 and ($4::uuid is null or r.id>$4) and exists(select 1 from {s}.access_role_bindings b where b.tenant_id=r.tenant_id and b.business_id=r.business_id and b.role_id=r.id and b.account_id=$3) order by r.id limit $5"), &[&tenant,&business_id,&subject,&after,&(page.fetch_limit() as i64)]).map_err(access_db_error)?.iter().map(decode_role).collect()
     }
     fn list_role_permissions(
         &self,
         tenant: &str,
+        business_id: &str,
         role: &str,
         page: &AccessPageRequest,
     ) -> Result<Vec<PermissionDefinition>, StoreError> {
         page.validate(&AccessListScope::RolePermissions {
             tenant_id: tenant.into(),
+            business_id: business_id.into(),
             role_id: role.into(),
         })
         .map_err(|_| StoreError::Conflict("access.page"))?;
@@ -302,7 +321,7 @@ impl AccessReadStore for PostgresAccessStore {
         let mut client = self.adapter.connect()?;
         self.verify(&mut *client)?;
         let s = self.adapter.schema_name();
-        client.query(&format!("select p.* from {s}.access_role_permissions rp join {s}.access_permissions p using(tenant_id,resource_type,action) where rp.tenant_id=$1 and rp.role_id=$2 and ($3::text is null or (p.resource_type,p.action)>($3 collate \"C\",$4 collate \"C\")) order by p.resource_type,p.action limit $5"), &[&tenant,&role,&resource,&action,&(page.fetch_limit() as i64)]).map_err(access_db_error)?.iter().map(decode_permission).collect()
+        client.query(&format!("select p.* from {s}.access_role_permissions rp join {s}.access_permissions p using(tenant_id,business_id,resource_type,action) where rp.tenant_id=$1 and rp.business_id=$2 and rp.role_id=$3 and ($4::text is null or (p.resource_type,p.action)>($4 collate \"C\",$5 collate \"C\")) order by p.resource_type,p.action limit $6"), &[&tenant,&business_id,&role,&resource,&action,&(page.fetch_limit() as i64)]).map_err(access_db_error)?.iter().map(decode_permission).collect()
     }
     fn list_subject_tenants(
         &self,
@@ -370,6 +389,7 @@ fn decode_role(row: &Row) -> Result<Role, StoreError> {
         created_at: time(row.get("created_at_epoch"))?,
         id: row.get::<_, Uuid>("id").to_string(),
         tenant_id: row.get("tenant_id"),
+        business_id: row.get("business_id"),
         key: row.get("key"),
         name: row.get("name"),
         status: match row.get::<_, &str>("status") {
@@ -379,6 +399,7 @@ fn decode_role(row: &Row) -> Result<Role, StoreError> {
         },
         kind: match row.get::<_, &str>("kind") {
             "business" => RoleKind::Business,
+            "business_admin" => RoleKind::BusinessAdmin,
             "system_admin" => RoleKind::SystemAdmin,
             "tenant_security_admin" => RoleKind::TenantSecurityAdmin,
             _ => return Err(invalid()),
@@ -394,6 +415,7 @@ fn decode_permission(row: &Row) -> Result<PermissionDefinition, StoreError> {
             .transpose()?,
         tenant_id: row.get("tenant_id"),
         key: PermissionKey {
+            business_id: row.get("business_id"),
             resource_type: row.get("resource_type"),
             action: row.get("action"),
         },
@@ -444,24 +466,34 @@ fn check_grants(
     // One parameterized SQL statement, one snapshot, stable duplicate/input order.
     let sql = format!(
         r#"
-with state as (select tenancy_mode=$6 and module_version='tenant_v2' and bootstrap_completed_at_epoch is not null as valid from {schema}.access_state where singleton)
+with state as (select tenancy_mode=$7 and module_version='tenant_v3' and bootstrap_completed_at_epoch is not null as valid from {schema}.access_state where singleton)
 select coalesce((select valid from state),false) as valid, exists (
  select 1 from {schema}.accounts a
  join {schema}.access_memberships m on m.account_id=a.id and m.tenant_id=$1
  join {schema}.access_tenants t on t.id=m.tenant_id
- join {schema}.access_role_bindings b on b.tenant_id=m.tenant_id and b.account_id=m.account_id
- join {schema}.access_roles r on r.tenant_id=b.tenant_id and r.id=b.role_id
- join {schema}.access_role_permissions rp on rp.tenant_id=r.tenant_id and rp.role_id=r.id and rp.resource_type=b.resource_type
- join {schema}.access_permissions p on p.tenant_id=rp.tenant_id and p.resource_type=rp.resource_type and p.action=rp.action
- where a.id=$2 and a.status='active' and m.status='active' and t.status='active' and r.status='active' and p.enabled and not p.archived
- and b.resource_type=q.resource_type and p.action=q.action
- and (b.resource_id is null or b.resource_id=q.resource_id)
- and ((p.category='platform' and r.kind='system_admin' and $1='0')
-   or (p.category='tenant' and r.kind='tenant_security_admin' and (($6='disabled' and $1='0') or ($6='enabled' and $1<>'0')))
-   or (p.category='business' and r.kind='business' and (($6='disabled' and $1='0') or ($6='enabled' and $1<>'0'))))
- and (p.category='business' or (b.resource_id is null and q.resource_id is null))
+ join {schema}.access_permissions p on p.tenant_id=m.tenant_id and p.business_id=$2 and p.resource_type=q.resource_type and p.action=q.action
+ where a.id=$3 and a.status='active' and m.status='active' and t.status='active' and p.enabled and not p.archived
+ and ((p.category='business' and exists (
+      select 1 from {schema}.access_role_bindings b
+      join {schema}.access_roles r on r.tenant_id=b.tenant_id and r.business_id=b.business_id and r.id=b.role_id
+      where b.tenant_id=m.tenant_id and b.business_id=$2 and b.account_id=m.account_id
+        and b.scope_kind='business' and r.status='active' and r.kind='business_admin'
+        and (($7='disabled' and $1='0') or ($7='enabled' and $1<>'0'))
+ )) or exists (
+      select 1 from {schema}.access_role_bindings b
+      join {schema}.access_roles r on r.tenant_id=b.tenant_id and r.business_id=b.business_id and r.id=b.role_id
+      join {schema}.access_role_permissions rp on rp.tenant_id=r.tenant_id and rp.business_id=r.business_id and rp.role_id=r.id
+          and rp.resource_type=q.resource_type and rp.action=q.action
+      where b.tenant_id=m.tenant_id and b.business_id=$2 and b.account_id=m.account_id and r.status='active'
+        and b.scope_kind in ('type','instance') and b.resource_type=q.resource_type
+        and (b.scope_kind='type' or b.resource_id=q.resource_id)
+        and ((p.category='platform' and r.kind='system_admin' and $1='0')
+          or (p.category='tenant' and r.kind='tenant_security_admin' and (($7='disabled' and $1='0') or ($7='enabled' and $1<>'0')))
+          or (p.category='business' and r.kind='business' and (($7='disabled' and $1='0') or ($7='enabled' and $1<>'0'))))
+        and (p.category='business' or (b.scope_kind='type' and q.resource_id is null))
+ ))
 ) as allowed
-from unnest($3::text[],$4::text[],$5::text[]) with ordinality q(resource_type,action,resource_id,n) order by q.n
+from unnest($4::text[],$5::text[],$6::text[]) with ordinality q(resource_type,action,resource_id,n) order by q.n
 "#
     );
     let rows = client
@@ -469,6 +501,7 @@ from unnest($3::text[],$4::text[],$5::text[]) with ordinality q(resource_type,ac
             &sql,
             &[
                 &first.tenant_id,
+                &first.business_id,
                 &subject,
                 &types,
                 &actions,

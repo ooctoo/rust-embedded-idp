@@ -41,9 +41,13 @@ pub(crate) fn check_readiness(
             .tx
             .query_opt(
                 &format!(
-                    "select category, enabled from {schema}.access_permissions where tenant_id='0' and resource_type=$1 and action=$2"
+                    "select category, enabled from {schema}.access_permissions where tenant_id='0' and business_id=$1 and resource_type=$2 and action=$3"
                 ),
-                &[&expected.key.resource_type, &expected.key.action],
+                &[
+                    &expected.key.business_id,
+                    &expected.key.resource_type,
+                    &expected.key.action,
+                ],
             )
             .map_err(access_db_error)?
             .ok_or(StoreError::Conflict("access.readiness_catalog"))?;
@@ -130,6 +134,7 @@ fn role_status(value: RoleStatus) -> &'static str {
 fn role_kind(value: RoleKind) -> &'static str {
     match value {
         RoleKind::Business => "business",
+        RoleKind::BusinessAdmin => "business_admin",
         RoleKind::SystemAdmin => "system_admin",
         RoleKind::TenantSecurityAdmin => "tenant_security_admin",
     }
@@ -146,12 +151,6 @@ fn tenant_status(value: TenantStatus) -> &'static str {
         TenantStatus::Active => "active",
         TenantStatus::Suspended => "suspended",
         TenantStatus::Archived => "archived",
-    }
-}
-fn resource_id(scope: &ResourceScope) -> Option<&str> {
-    match scope {
-        ResourceScope::Type => None,
-        ResourceScope::Instance(id) => Some(id),
     }
 }
 fn decode_member(row: &Row) -> Result<TenantMembership, StoreError> {
@@ -173,12 +172,21 @@ fn decode_binding(row: &Row) -> Result<RoleBinding, StoreError> {
         created_at: time(row.get("created_at_epoch"))?,
         id: row.get::<_, Uuid>("id").to_string(),
         tenant_id: row.get("tenant_id"),
+        business_id: row.get("business_id"),
         subject_id: row.get::<_, Uuid>("account_id").to_string(),
         role_id: row.get::<_, Uuid>("role_id").to_string(),
-        resource_type: row.get("resource_type"),
-        scope: row
-            .get::<_, Option<String>>("resource_id")
-            .map_or(ResourceScope::Type, ResourceScope::Instance),
+        scope: match row.get::<_, &str>("scope_kind") {
+            "business" => RoleBindingScope::Business,
+            "type" => RoleBindingScope::Resource {
+                resource_type: row.get("resource_type"),
+                scope: ResourceScope::Type,
+            },
+            "instance" => RoleBindingScope::Resource {
+                resource_type: row.get("resource_type"),
+                scope: ResourceScope::Instance(row.get("resource_id")),
+            },
+            _ => return Err(invalid()),
+        },
     })
 }
 
@@ -604,16 +612,17 @@ impl AccessAdminTransaction for PostgresAccessAdminTransaction<'_> {
     fn resource_category(
         &mut self,
         tenant: &str,
+        business: &str,
         resource: &str,
     ) -> Result<Option<PermissionCategory>, StoreError> {
         let rows = self
             .tx
             .query(
                 &format!(
-                    "select distinct category from {}.access_permissions where tenant_id=$1 and resource_type=$2",
+                    "select distinct category from {}.access_permissions where tenant_id=$1 and business_id=$2 and resource_type=$3",
                     self.schema
                 ),
-                &[&tenant, &resource],
+                &[&tenant, &business, &resource],
             )
             .map_err(access_db_error)?;
         if rows.len() > 1 {
@@ -665,7 +674,12 @@ impl AccessAdminTransaction for PostgresAccessAdminTransaction<'_> {
             .map(decode_member)
             .transpose()
     }
-    fn role(&mut self, tenant: &str, role: &str) -> Result<Option<AccessRoleRecord>, StoreError> {
+    fn role(
+        &mut self,
+        tenant: &str,
+        business_id: &str,
+        role: &str,
+    ) -> Result<Option<AccessRoleRecord>, StoreError> {
         let Ok(id) = Uuid::parse_str(role) else {
             return Ok(None);
         };
@@ -676,16 +690,16 @@ impl AccessAdminTransaction for PostgresAccessAdminTransaction<'_> {
             .tx
             .query_opt(
                 &format!(
-                    "select * from {}.access_roles where tenant_id=$1 and id=$2",
+                    "select * from {}.access_roles where tenant_id=$1 and business_id=$2 and id=$3",
                     self.schema
                 ),
-                &[&tenant, &id],
+                &[&tenant, &business_id, &id],
             )
             .map_err(access_db_error)?
         else {
             return Ok(None);
         };
-        let permissions: Vec<_> = self.tx.query(&format!("select resource_type,action from {}.access_role_permissions where tenant_id=$1 and role_id=$2 order by resource_type,action limit $3",self.schema), &[&tenant,&id,&((MAX_ROLE_PERMISSIONS+1) as i64)]).map_err(access_db_error)?.into_iter().map(|r| PermissionKey { resource_type:r.get(0), action:r.get(1) }).collect();
+        let permissions: Vec<_> = self.tx.query(&format!("select business_id,resource_type,action from {}.access_role_permissions where tenant_id=$1 and business_id=$2 and role_id=$3 order by resource_type,action limit $4",self.schema), &[&tenant,&business_id,&id,&((MAX_ROLE_PERMISSIONS+1) as i64)]).map_err(access_db_error)?.into_iter().map(|r| PermissionKey { business_id:r.get(0), resource_type:r.get(1), action:r.get(2) }).collect();
         if permissions.len() > MAX_ROLE_PERMISSIONS {
             return Err(invalid());
         }
@@ -697,10 +711,12 @@ impl AccessAdminTransaction for PostgresAccessAdminTransaction<'_> {
     fn admin_roles(
         &mut self,
         tenant: &str,
+        business_id: Option<&str>,
         page: &AccessPageRequest,
     ) -> Result<Vec<Role>, StoreError> {
         page.validate(&AccessListScope::AdminRoles {
             tenant_id: tenant.into(),
+            business_id: business_id.map(str::to_owned),
         })
         .map_err(|_| invalid())?;
         let (order, comparison) = list_order(page);
@@ -714,7 +730,7 @@ impl AccessAdminTransaction for PostgresAccessAdminTransaction<'_> {
             .as_ref()
             .map(|c| uuid(&c.after[1]))
             .transpose()?;
-        self.tx.query(&format!("select * from {}.access_roles where tenant_id=$1 and ($2::uuid is null or (created_at_epoch,id){comparison}($4,$2)) order by created_at_epoch {order},id {order} limit $3",self.schema),&[&tenant,&after,&(page.fetch_limit() as i64), &after_time])
+        self.tx.query(&format!("select * from {}.access_roles where tenant_id=$1 and ($2::text is null or business_id=$2) and ($3::uuid is null or (created_at_epoch,id){comparison}($5,$3)) order by created_at_epoch {order},id {order} limit $4",self.schema),&[&tenant,&business_id,&after,&(page.fetch_limit() as i64), &after_time])
             .map_err(access_db_error)?.iter().map(decode_role).collect()
     }
     fn permission(
@@ -724,10 +740,10 @@ impl AccessAdminTransaction for PostgresAccessAdminTransaction<'_> {
         self.tx
             .query_opt(
                 &format!(
-                    "select * from {}.access_permissions where tenant_id='0' and resource_type=$1 and action=$2",
+                    "select * from {}.access_permissions where tenant_id='0' and business_id=$1 and resource_type=$2 and action=$3",
                     self.schema
                 ),
-                &[&key.resource_type, &key.action],
+                &[&key.business_id, &key.resource_type, &key.action],
             )
             .map_err(access_db_error)?
             .as_ref()
@@ -741,8 +757,8 @@ impl AccessAdminTransaction for PostgresAccessAdminTransaction<'_> {
     ) -> Result<Option<PermissionDefinition>, StoreError> {
         self.tx
             .query_opt(
-                &format!("select * from {}.access_permissions where tenant_id=$1 and resource_type=$2 and action=$3", self.schema),
-                &[&tenant, &key.resource_type, &key.action],
+                &format!("select * from {}.access_permissions where tenant_id=$1 and business_id=$2 and resource_type=$3 and action=$4", self.schema),
+                &[&tenant, &key.business_id, &key.resource_type, &key.action],
             )
             .map_err(access_db_error)?
             .as_ref()
@@ -779,15 +795,24 @@ impl AccessAdminTransaction for PostgresAccessAdminTransaction<'_> {
         .collect();
         let resource = page.cursor.as_ref().map(|c| &c.after[1]);
         let action = page.cursor.as_ref().map(|c| &c.after[2]);
+        let cursor_business_id = page.cursor.as_ref().map(|c| &c.after[3]);
         let category = filter.category.map(category_name);
-        let tenant = match scope {
-            AdminPermissionScope::Tenant(t) => t.as_str(),
-            AdminPermissionScope::Platform => SYSTEM_TENANT_ID,
+        let (tenant, business_id) = match scope {
+            AdminPermissionScope::Tenant {
+                tenant_id,
+                business_id,
+            } => (tenant_id.as_str(), business_id.as_deref()),
+            AdminPermissionScope::Platform => (SYSTEM_TENANT_ID, Some(IDP_BUSINESS_ID)),
         };
-        self.tx.query(&format!("select * from {}.access_permissions where tenant_id=$1 and category=any($2) and ($3::text is null or (coalesce(created_at_epoch,0),resource_type,action){comparison}($9,$3 collate \"C\",$4 collate \"C\")) and ($5::text is null or resource_type=$5) and ($6::text is null or category=$6) and ($7::boolean is null or enabled=$7) order by coalesce(created_at_epoch,0) {order},resource_type {order},action {order} limit $8",self.schema),&[&tenant,&categories,&resource,&action,&filter.resource_type,&category,&filter.enabled,&(page.fetch_limit() as i64), &after_time])
+        self.tx.query(&format!("select * from {}.access_permissions where tenant_id=$1 and ($2::text is null or business_id=$2) and category=any($3) and ($4::text is null or (coalesce(created_at_epoch,0),resource_type,action,business_id){comparison}($11,$4 collate \"C\",$5 collate \"C\",$6 collate \"C\")) and ($7::text is null or resource_type=$7) and ($8::text is null or category=$8) and ($9::boolean is null or enabled=$9) order by coalesce(created_at_epoch,0) {order},resource_type {order},action {order},business_id {order} limit $10",self.schema),&[&tenant,&business_id,&categories,&resource,&action,&cursor_business_id,&filter.resource_type,&category,&filter.enabled,&(page.fetch_limit() as i64), &after_time])
             .map_err(access_db_error)?.iter().map(decode_permission).collect()
     }
-    fn binding(&mut self, tenant: &str, binding: &str) -> Result<Option<RoleBinding>, StoreError> {
+    fn binding(
+        &mut self,
+        tenant: &str,
+        business_id: &str,
+        binding: &str,
+    ) -> Result<Option<RoleBinding>, StoreError> {
         let Ok(id) = Uuid::parse_str(binding) else {
             return Ok(None);
         };
@@ -797,10 +822,10 @@ impl AccessAdminTransaction for PostgresAccessAdminTransaction<'_> {
         self.tx
             .query_opt(
                 &format!(
-                    "select * from {}.access_role_bindings where tenant_id=$1 and id=$2",
+                    "select * from {}.access_role_bindings where tenant_id=$1 and business_id=$2 and id=$3",
                     self.schema
                 ),
-                &[&tenant, &id],
+                &[&tenant, &business_id, &id],
             )
             .map_err(access_db_error)?
             .as_ref()
@@ -810,11 +835,13 @@ impl AccessAdminTransaction for PostgresAccessAdminTransaction<'_> {
     fn admin_role_bindings(
         &mut self,
         tenant: &str,
+        business_id: Option<&str>,
         subject: &str,
         page: &AccessPageRequest,
     ) -> Result<Vec<RoleBinding>, StoreError> {
         page.validate(&AccessListScope::AdminRoleBindings {
             tenant_id: tenant.into(),
+            business_id: business_id.map(str::to_owned),
             subject_id: subject.into(),
         })
         .map_err(|_| invalid())?;
@@ -829,7 +856,7 @@ impl AccessAdminTransaction for PostgresAccessAdminTransaction<'_> {
             .as_ref()
             .map(|c| uuid(&c.after[1]))
             .transpose()?;
-        self.tx.query(&format!("select * from {}.access_role_bindings where tenant_id=$1 and account_id=$2 and ($3::uuid is null or (created_at_epoch,id){comparison}($5,$3)) order by created_at_epoch {order},id {order} limit $4",self.schema),&[&tenant,&uuid(subject)?,&after,&(page.fetch_limit() as i64), &after_time])
+        self.tx.query(&format!("select * from {}.access_role_bindings where tenant_id=$1 and ($2::text is null or business_id=$2) and account_id=$3 and ($4::uuid is null or (created_at_epoch,id){comparison}($6,$4)) order by created_at_epoch {order},id {order} limit $5",self.schema),&[&tenant,&business_id,&uuid(subject)?,&after,&(page.fetch_limit() as i64), &after_time])
             .map_err(access_db_error)?.iter().map(decode_binding).collect()
     }
     fn security_role(
@@ -841,14 +868,25 @@ impl AccessAdminTransaction for PostgresAccessAdminTransaction<'_> {
             .tx
             .query_opt(
                 &format!(
-                    "select id from {}.access_roles where tenant_id=$1 and kind=$2",
+                    "select id from {}.access_roles where tenant_id=$1 and business_id='idp' and kind=$2",
                     self.schema
                 ),
                 &[&tenant, &role_kind(kind)],
             )
             .map_err(access_db_error)?;
         match row {
-            Some(row) => self.role(tenant, &row.get::<_, Uuid>(0).to_string()),
+            Some(row) => self.role(tenant, IDP_BUSINESS_ID, &row.get::<_, Uuid>(0).to_string()),
+            None => Ok(None),
+        }
+    }
+    fn business_admin_role(
+        &mut self,
+        tenant: &str,
+        business_id: &str,
+    ) -> Result<Option<AccessRoleRecord>, StoreError> {
+        let row = self.tx.query_opt(&format!("select id from {}.access_roles where tenant_id=$1 and business_id=$2 and kind='business_admin'", self.schema), &[&tenant,&business_id]).map_err(access_db_error)?;
+        match row {
+            Some(row) => self.role(tenant, business_id, &row.get::<_, Uuid>(0).to_string()),
             None => Ok(None),
         }
     }
@@ -858,7 +896,7 @@ impl AccessAdminTransaction for PostgresAccessAdminTransaction<'_> {
         subject: &str,
         role: &str,
     ) -> Result<Option<RoleBinding>, StoreError> {
-        self.tx.query_opt(&format!("select * from {}.access_role_bindings where tenant_id=$1 and account_id=$2 and role_id=$3 and resource_type=$4 and resource_id is null",self.schema), &[&tenant,&uuid(subject)?,&uuid(role)?,&if tenant=="0" { "idp.platform" } else { "idp.tenant" }]).map_err(access_db_error)?.as_ref().map(decode_binding).transpose()
+        self.tx.query_opt(&format!("select * from {}.access_role_bindings where tenant_id=$1 and business_id='idp' and account_id=$2 and role_id=$3 and scope_kind='type' and resource_type=$4",self.schema), &[&tenant,&uuid(subject)?,&uuid(role)?,&if tenant=="0" { "idp.platform" } else { "idp.tenant" }]).map_err(access_db_error)?.as_ref().map(decode_binding).transpose()
     }
     fn apply_change(&mut self, change: &AccessChange, now: SystemTime) -> Result<(), StoreError> {
         let actor = self.actor.ok_or_else(invalid)?;
@@ -980,9 +1018,9 @@ impl AccessAdminTransaction for PostgresAccessAdminTransaction<'_> {
                 for change in changes {
                     let p = &change.after;
                     if let Some(before) = &change.before {
-                        changed(self.tx.execute(&format!("update {s}.access_permissions set description=$4,enabled=$5,archived=$6,version=$7 where tenant_id=$1 and resource_type=$2 and action=$3 and category=$8 and version=$9"), &[&p.tenant_id,&p.key.resource_type,&p.key.action,&p.description,&p.enabled,&p.archived,&version(p.version)?,&category_name(before.category),&version(before.version)?]).map_err(access_db_error)?)?;
+                        changed(self.tx.execute(&format!("update {s}.access_permissions set description=$5,enabled=$6,archived=$7,version=$8 where tenant_id=$1 and business_id=$2 and resource_type=$3 and action=$4 and category=$9 and version=$10"), &[&p.tenant_id,&p.key.business_id,&p.key.resource_type,&p.key.action,&p.description,&p.enabled,&p.archived,&version(p.version)?,&category_name(before.category),&version(before.version)?]).map_err(access_db_error)?)?;
                     } else {
-                        self.tx.execute(&format!("insert into {s}.access_permissions(tenant_id,resource_type,action,category,description,enabled,archived,version,created_at_epoch) values($1,$2,$3,$4,$5,$6,$7,$8,$9)"), &[&p.tenant_id,&p.key.resource_type,&p.key.action,&category_name(p.category),&p.description,&p.enabled,&p.archived,&version(p.version)?,&now]).map_err(access_db_error)?;
+                        self.tx.execute(&format!("insert into {s}.access_permissions(tenant_id,business_id,resource_type,action,category,description,enabled,archived,version,created_at_epoch) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)"), &[&p.tenant_id,&p.key.business_id,&p.key.resource_type,&p.key.action,&category_name(p.category),&p.description,&p.enabled,&p.archived,&version(p.version)?,&now]).map_err(access_db_error)?;
                     }
                 }
             }
@@ -990,37 +1028,59 @@ impl AccessAdminTransaction for PostgresAccessAdminTransaction<'_> {
                 match (before, after) {
                     (None, Some(record)) => {
                         let r = &record.role;
-                        self.tx.execute(&format!("insert into {s}.access_roles(tenant_id,id,key,name,status,kind,version,created_at_epoch) values($1,$2,$3,$4,$5,$6,$7,$8)"), &[&r.tenant_id,&uuid(&r.id)?,&r.key,&r.name,&role_status(r.status),&role_kind(r.kind),&version(r.version)?,&now]).map_err(access_db_error)?;
+                        self.tx.execute(&format!("insert into {s}.access_roles(tenant_id,business_id,id,key,name,status,kind,version,created_at_epoch) values($1,$2,$3,$4,$5,$6,$7,$8,$9)"), &[&r.tenant_id,&r.business_id,&uuid(&r.id)?,&r.key,&r.name,&role_status(r.status),&role_kind(r.kind),&version(r.version)?,&now]).map_err(access_db_error)?;
                     }
                     (Some(before), Some(after)) => {
                         let r = &after.role;
-                        changed(self.tx.execute(&format!("update {s}.access_roles set name=$3,status=$4,version=$5 where tenant_id=$1 and id=$2 and version=$6"), &[&before.role.tenant_id,&uuid(&before.role.id)?,&r.name,&role_status(r.status),&version(r.version)?,&version(before.role.version)?]).map_err(access_db_error)?)?;
+                        changed(self.tx.execute(&format!("update {s}.access_roles set name=$4,status=$5,version=$6 where tenant_id=$1 and business_id=$2 and id=$3 and version=$7"), &[&before.role.tenant_id,&before.role.business_id,&uuid(&before.role.id)?,&r.name,&role_status(r.status),&version(r.version)?,&version(before.role.version)?]).map_err(access_db_error)?)?;
                     }
                     (Some(before), None) => {
                         let tenant = &before.role.tenant_id;
+                        let business = &before.role.business_id;
                         let id = uuid(&before.role.id)?;
-                        self.tx.execute(&format!("delete from {s}.access_role_bindings where tenant_id=$1 and role_id=$2"), &[&tenant,&id]).map_err(access_db_error)?;
-                        self.tx.execute(&format!("delete from {s}.access_role_permissions where tenant_id=$1 and role_id=$2"), &[&tenant,&id]).map_err(access_db_error)?;
-                        changed(self.tx.execute(&format!("delete from {s}.access_roles where tenant_id=$1 and id=$2 and version=$3"), &[&tenant,&id,&version(before.role.version)?]).map_err(access_db_error)?)?;
+                        if before.role.kind == RoleKind::BusinessAdmin {
+                            let has_bindings: bool = self.tx.query_one(&format!("select exists(select 1 from {s}.access_role_bindings where tenant_id=$1 and business_id=$2 and role_id=$3)"), &[&tenant,&business,&id]).map_err(access_db_error)?.get(0);
+                            if has_bindings {
+                                return Err(StoreError::Conflict(
+                                    "access.business_admin_has_bindings",
+                                ));
+                            }
+                        } else {
+                            self.tx.execute(&format!("delete from {s}.access_role_bindings where tenant_id=$1 and business_id=$2 and role_id=$3"), &[&tenant,&business,&id]).map_err(access_db_error)?;
+                        }
+                        self.tx.execute(&format!("delete from {s}.access_role_permissions where tenant_id=$1 and business_id=$2 and role_id=$3"), &[&tenant,&business,&id]).map_err(access_db_error)?;
+                        changed(self.tx.execute(&format!("delete from {s}.access_roles where tenant_id=$1 and business_id=$2 and id=$3 and version=$4"), &[&tenant,&business,&id,&version(before.role.version)?]).map_err(access_db_error)?)?;
                     }
                     _ => return Err(invalid()),
                 }
                 if let Some(after) = after {
                     let tenant = &after.role.tenant_id;
+                    let business = &after.role.business_id;
                     let id = uuid(&after.role.id)?;
-                    self.tx.execute(&format!("delete from {s}.access_role_permissions where tenant_id=$1 and role_id=$2"), &[&tenant,&id]).map_err(access_db_error)?;
+                    self.tx.execute(&format!("delete from {s}.access_role_permissions where tenant_id=$1 and business_id=$2 and role_id=$3"), &[&tenant,&business,&id]).map_err(access_db_error)?;
                     for p in &after.permissions {
-                        self.tx.execute(&format!("insert into {s}.access_role_permissions(tenant_id,role_id,resource_type,action) values($1,$2,$3,$4)"), &[&tenant,&id,&p.resource_type,&p.action]).map_err(access_db_error)?;
+                        self.tx.execute(&format!("insert into {s}.access_role_permissions(tenant_id,business_id,role_id,resource_type,action) values($1,$2,$3,$4,$5)"), &[&tenant,&business,&id,&p.resource_type,&p.action]).map_err(access_db_error)?;
                     }
-                    self.tx.execute(&format!("delete from {s}.access_role_bindings b where tenant_id=$1 and role_id=$2 and not exists(select 1 from {s}.access_role_permissions p where p.tenant_id=b.tenant_id and p.role_id=b.role_id and p.resource_type=b.resource_type)"), &[&tenant,&id]).map_err(access_db_error)?;
+                    self.tx.execute(&format!("delete from {s}.access_role_bindings b where tenant_id=$1 and business_id=$2 and scope_kind <> 'business' and role_id=$3 and not exists(select 1 from {s}.access_role_permissions p where p.tenant_id=b.tenant_id and p.business_id=b.business_id and p.role_id=b.role_id and p.resource_type=b.resource_type)"), &[&tenant,&business,&id]).map_err(access_db_error)?;
                 }
             }
             AccessChange::Binding { before, after } => match (before, after) {
                 (None, Some(b)) => {
-                    self.tx.execute(&format!("insert into {s}.access_role_bindings(id,tenant_id,account_id,role_id,resource_type,resource_id,created_at_epoch,created_by) values($1,$2,$3,$4,$5,$6,$7,$8)"), &[&uuid(&b.id)?,&b.tenant_id,&uuid(&b.subject_id)?,&uuid(&b.role_id)?,&b.resource_type,&resource_id(&b.scope),&now,&actor]).map_err(access_db_error)?;
+                    let (scope_kind, resource_type, resource_id) = match &b.scope {
+                        RoleBindingScope::Business => ("business", None, None),
+                        RoleBindingScope::Resource {
+                            resource_type,
+                            scope: ResourceScope::Type,
+                        } => ("type", Some(resource_type.as_str()), None),
+                        RoleBindingScope::Resource {
+                            resource_type,
+                            scope: ResourceScope::Instance(id),
+                        } => ("instance", Some(resource_type.as_str()), Some(id.as_str())),
+                    };
+                    self.tx.execute(&format!("insert into {s}.access_role_bindings(id,tenant_id,business_id,account_id,role_id,scope_kind,resource_type,resource_id,created_at_epoch,created_by) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)"), &[&uuid(&b.id)?,&b.tenant_id,&b.business_id,&uuid(&b.subject_id)?,&uuid(&b.role_id)?,&scope_kind,&resource_type,&resource_id,&now,&actor]).map_err(access_db_error)?;
                 }
                 (Some(b), None) => {
-                    changed(self.tx.execute(&format!("delete from {s}.access_role_bindings where tenant_id=$1 and id=$2"), &[&b.tenant_id,&uuid(&b.id)?]).map_err(access_db_error)?)?;
+                    changed(self.tx.execute(&format!("delete from {s}.access_role_bindings where tenant_id=$1 and business_id=$2 and id=$3"), &[&b.tenant_id,&b.business_id,&uuid(&b.id)?]).map_err(access_db_error)?)?;
                 }
                 _ => return Err(invalid()),
             },
@@ -1064,6 +1124,7 @@ impl AccessAdminTransaction for PostgresAccessAdminTransaction<'_> {
             RoleKind::SystemAdmin => "idp.platform",
             RoleKind::TenantSecurityAdmin => "idp.tenant",
             RoleKind::Business => return Ok(false),
+            RoleKind::BusinessAdmin => return Ok(false),
         };
         let category = if kind == RoleKind::SystemAdmin {
             PermissionCategory::Platform
@@ -1080,7 +1141,7 @@ impl AccessAdminTransaction for PostgresAccessAdminTransaction<'_> {
             .map(|p| p.key.action.as_str())
             .collect();
         let s = self.schema;
-        Ok(self.tx.query_one(&format!("select exists(select 1 from {s}.access_role_bindings b join {s}.access_roles r on r.tenant_id=b.tenant_id and r.id=b.role_id join {s}.access_memberships m on m.tenant_id=b.tenant_id and m.account_id=b.account_id join {s}.accounts a on a.id=m.account_id join {s}.access_tenants t on t.id=m.tenant_id where b.tenant_id=$1 and b.resource_type=$2 and b.resource_id is null and r.kind=$3 and r.status='active' and m.status='active' and a.status='active' and t.status='active' and not exists(select 1 from unnest($4::text[]) required(action) where not exists(select 1 from {s}.access_role_permissions rp join {s}.access_permissions p using(tenant_id,resource_type,action) where rp.tenant_id=r.tenant_id and rp.role_id=r.id and rp.resource_type=$2 and rp.action=required.action and p.enabled and not p.archived and p.category=$5)))"), &[&tenant,&resource,&role_kind(kind),&actions,&category_name(category)]).map_err(access_db_error)?.get(0))
+        Ok(self.tx.query_one(&format!("select exists(select 1 from {s}.access_role_bindings b join {s}.access_roles r on r.tenant_id=b.tenant_id and r.business_id=b.business_id and r.id=b.role_id join {s}.access_memberships m on m.tenant_id=b.tenant_id and m.account_id=b.account_id join {s}.accounts a on a.id=m.account_id join {s}.access_tenants t on t.id=m.tenant_id where b.tenant_id=$1 and b.business_id='idp' and b.scope_kind='type' and b.resource_type=$2 and r.kind=$3 and r.status='active' and m.status='active' and a.status='active' and t.status='active' and not exists(select 1 from unnest($4::text[]) required(action) where not exists(select 1 from {s}.access_role_permissions rp join {s}.access_permissions p using(tenant_id,business_id,resource_type,action) where rp.tenant_id=r.tenant_id and rp.business_id='idp' and rp.role_id=r.id and rp.resource_type=$2 and rp.action=required.action and p.enabled and not p.archived and p.category=$5)))"), &[&tenant,&resource,&role_kind(kind),&actions,&category_name(category)]).map_err(access_db_error)?.get(0))
     }
     fn admin_audit_events(
         &mut self,
@@ -1119,7 +1180,7 @@ impl AccessAdminTransaction for PostgresAccessAdminTransaction<'_> {
             .transpose()?;
         let start = filter.occurred_after.map(epoch).transpose()?;
         let end = filter.occurred_before.map(epoch).transpose()?;
-        self.tx.query(&format!("select id,occurred_at_epoch,actor_id,actor_domain,actor_session_id,authentication_source,target_domain,operation,request_id from {}.access_audit_events where target_domain=$1 and ($2::bigint is null or (occurred_at_epoch,id){comparison}($2,$3)) and ($4::uuid is null or actor_id=$4) and ($5::text is null or operation=$5) and ($6::bigint is null or occurred_at_epoch >= $6) and ($7::bigint is null or occurred_at_epoch <= $7) order by occurred_at_epoch {order},id {order} limit $8",self.schema),&[&tenant,&after_time,&after_id,&actor,&filter.operation,&start,&end,&(page.fetch_limit() as i64)])
+        self.tx.query(&format!("select id,occurred_at_epoch,actor_id,actor_domain,actor_session_id,authentication_source,target_domain,target_business_id,operation,request_id from {}.access_audit_events where target_domain=$1 and ($2::bigint is null or (occurred_at_epoch,id){comparison}($2,$3)) and ($4::uuid is null or actor_id=$4) and ($5::text is null or target_business_id=$5) and ($6::text is null or operation=$6) and ($7::bigint is null or occurred_at_epoch >= $7) and ($8::bigint is null or occurred_at_epoch <= $8) order by occurred_at_epoch {order},id {order} limit $9",self.schema),&[&tenant,&after_time,&after_id,&actor,&filter.business_id,&filter.operation,&start,&end,&(page.fetch_limit() as i64)])
             .map_err(access_db_error)?.iter().map(decode_audit).collect()
     }
     fn admin_audit_event(
@@ -1133,7 +1194,7 @@ impl AccessAdminTransaction for PostgresAccessAdminTransaction<'_> {
         if key.to_string() != id {
             return Ok(None);
         }
-        self.tx.query_opt(&format!("select id,occurred_at_epoch,actor_id,actor_domain,actor_session_id,authentication_source,target_domain,operation,request_id,change_json::text as change_text from {}.access_audit_events where target_domain=$1 and id=$2",self.schema),&[&tenant,&key])
+        self.tx.query_opt(&format!("select id,occurred_at_epoch,actor_id,actor_domain,actor_session_id,authentication_source,target_domain,target_business_id,operation,request_id,change_json::text as change_text from {}.access_audit_events where target_domain=$1 and id=$2",self.schema),&[&tenant,&key])
             .map_err(access_db_error)?.map(|r|Ok(AdminAuditDetail {event:decode_audit(&r)?,change_json:r.get("change_text")})).transpose()
     }
     fn append_audit(&mut self, event: &AccessAuditEvent) -> Result<(), StoreError> {
@@ -1141,7 +1202,7 @@ impl AccessAdminTransaction for PostgresAccessAdminTransaction<'_> {
             return Err(invalid());
         }
         let change = change_json(&event.change)?.to_string();
-        self.tx.execute(&format!("insert into {}.access_audit_events(id,occurred_at_epoch,actor_id,actor_domain,actor_session_id,authentication_source,target_domain,operation,request_id,change_json) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::text::jsonb)",self.schema), &[&uuid(&event.id)?,&epoch(event.occurred_at)?,&uuid(&event.context.actor.subject_id)?,&event.context.actor.tenant_id,&uuid(&event.context.actor.session_id)?,&event.context.authentication_source,&event.tenant_id,&event.operation,&event.context.request_id,&change]).map_err(access_db_error)?;
+        self.tx.execute(&format!("insert into {}.access_audit_events(id,occurred_at_epoch,actor_id,actor_domain,actor_session_id,authentication_source,target_domain,target_business_id,operation,request_id,change_json) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::text::jsonb)",self.schema), &[&uuid(&event.id)?,&epoch(event.occurred_at)?,&uuid(&event.context.actor.subject_id)?,&event.context.actor.tenant_id,&uuid(&event.context.actor.session_id)?,&event.context.authentication_source,&event.tenant_id,&event.target_business_id,&event.operation,&event.context.request_id,&change]).map_err(access_db_error)?;
         Ok(())
     }
 }
@@ -1153,18 +1214,28 @@ fn change_json(change: &AccessChange) -> Result<Value, StoreError> {
         json!({"id":t.id,"name":t.name,"status":tenant_status(t.status),"allow_registration":t.allow_registration,"version":record.version})
     }
     fn permission(p: &PermissionDefinition) -> Value {
-        json!({"tenant_id":p.tenant_id,"resource_type":p.key.resource_type,"action":p.key.action,"category":category_name(p.category),"description":p.description,"enabled":p.enabled,"archived":p.archived,"version":p.version})
+        json!({"tenant_id":p.tenant_id,"business_id":p.key.business_id,"resource_type":p.key.resource_type,"action":p.key.action,"category":category_name(p.category),"description":p.description,"enabled":p.enabled,"archived":p.archived,"version":p.version})
     }
     fn role(record: &AccessRoleRecord) -> Value {
         let r = &record.role;
-        json!({"id":r.id,"tenant_id":r.tenant_id,"key":r.key,"name":r.name,"status":role_status(r.status),"kind":role_kind(r.kind),"version":r.version,"permissions":record.permissions.iter().map(|p|json!({"resource_type":p.resource_type,"action":p.action})).collect::<Vec<_>>()})
+        json!({"id":r.id,"tenant_id":r.tenant_id,"business_id":r.business_id,"key":r.key,"name":r.name,"status":role_status(r.status),"kind":role_kind(r.kind),"version":r.version,"permissions":record.permissions.iter().map(|p|json!({"business_id":p.business_id,"resource_type":p.resource_type,"action":p.action})).collect::<Vec<_>>()})
     }
     fn binding(b: &RoleBinding) -> Value {
-        let scope = match &b.scope {
-            ResourceScope::Type => json!({"kind":"type"}),
-            ResourceScope::Instance(id) => json!({"kind":"instance","resource_id":id}),
+        let (resource_type, scope) = match &b.scope {
+            RoleBindingScope::Business => (None, json!({"kind":"business"})),
+            RoleBindingScope::Resource {
+                resource_type,
+                scope: ResourceScope::Type,
+            } => (Some(resource_type), json!({"kind":"type"})),
+            RoleBindingScope::Resource {
+                resource_type,
+                scope: ResourceScope::Instance(id),
+            } => (
+                Some(resource_type),
+                json!({"kind":"instance","resource_id":id}),
+            ),
         };
-        json!({"id":b.id,"tenant_id":b.tenant_id,"subject_id":b.subject_id,"role_id":b.role_id,"resource_type":b.resource_type,"scope":scope})
+        json!({"id":b.id,"tenant_id":b.tenant_id,"business_id":b.business_id,"subject_id":b.subject_id,"role_id":b.role_id,"resource_type":resource_type,"scope":scope})
     }
     fn member(m: &TenantMembership) -> Result<Value, StoreError> {
         Ok(
@@ -1294,7 +1365,7 @@ impl AccessBootstrapStore for PostgresStorageAdapter {
             .map_err(access_db_error)?;
         store.tx.execute(&format!("insert into {s}.accounts(id,registration_tenant_id,email,password_hash,display_name,status,created_at_epoch) values($1,'0',$2,$3,$4,'active',$5)"), &[&subject,&account.email,&account.password_hash,&account.display_name,&now]).map_err(access_db_error)?;
         store.tx.execute(&format!("insert into {s}.access_memberships(tenant_id,account_id,status,joined_at_epoch) values('0',$1,'active',$2)"), &[&subject,&now]).map_err(access_db_error)?;
-        store.tx.execute(&format!("insert into {s}.access_roles(tenant_id,id,key,name,status,kind,created_at_epoch) values('0',$1,'system_admin','System administrator','active','system_admin',$2)"), &[&role,&now]).map_err(access_db_error)?;
+        store.tx.execute(&format!("insert into {s}.access_roles(tenant_id,business_id,id,key,name,status,kind,created_at_epoch) values('0','idp',$1,'idp_system_admin','IDP管理员','active','system_admin',$2)"), &[&role,&now]).map_err(access_db_error)?;
         let catalog = PermissionCatalog::new(vec![]).map_err(|_| invalid())?;
         for definition in catalog
             .definitions()
@@ -1306,9 +1377,9 @@ impl AccessBootstrapStore for PostgresStorageAdapter {
             if !actual.enabled || actual.category != definition.category {
                 return Err(StoreError::Conflict("access.bootstrap_catalog"));
             }
-            store.tx.execute(&format!("insert into {s}.access_role_permissions(tenant_id,role_id,resource_type,action) values('0',$1,$2,$3)"), &[&role,&key.resource_type,&key.action]).map_err(access_db_error)?;
+            store.tx.execute(&format!("insert into {s}.access_role_permissions(tenant_id,business_id,role_id,resource_type,action) values('0','idp',$1,$2,$3)"), &[&role,&key.resource_type,&key.action]).map_err(access_db_error)?;
         }
-        store.tx.execute(&format!("insert into {s}.access_role_bindings(id,tenant_id,account_id,role_id,resource_type,created_at_epoch,created_by) values($1,'0',$2,$3,'idp.platform',$4,$2)"), &[&binding,&subject,&role,&now]).map_err(access_db_error)?;
+        store.tx.execute(&format!("insert into {s}.access_role_bindings(id,tenant_id,business_id,account_id,role_id,scope_kind,resource_type,created_at_epoch,created_by) values($1,'0','idp',$2,$3,'type','idp.platform',$4,$2)"), &[&binding,&subject,&role,&now]).map_err(access_db_error)?;
         if !store.has_effective_security_admin("0", RoleKind::SystemAdmin)? {
             return Err(StoreError::Conflict("access.last_security_admin"));
         }
@@ -1431,6 +1502,7 @@ fn decode_audit(row: &postgres::Row) -> Result<AdminAuditRecord, StoreError> {
             .map(|id| id.to_string()),
         authentication_source: row.get("authentication_source"),
         target_domain: row.get("target_domain"),
+        target_business_id: row.get("target_business_id"),
         operation: row.get("operation"),
         request_id: row.get("request_id"),
     })

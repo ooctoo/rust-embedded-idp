@@ -21,7 +21,7 @@ echo "running live postgres integration tests"
 pnpm --dir web build
 
 EMBEDDED_IDP_TEST_PG_CONNECTION_URI="${PG_CONNECTION_URI}" \
-cargo test -p embedded-idp-storage-postgres --locked --test live_postgres --test live_access --test live_access_admin --test live_access_bootstrap --test live_access_tenants --test live_pool --test live_tenant_registration -- --ignored --nocapture
+cargo test -p embedded-idp-storage-postgres --locked --test live_postgres --test live_access --test live_access_admin --test live_access_bootstrap --test live_access_tenants --test live_business_admin --test live_pool --test live_tenant_registration -- --ignored --nocapture
 
 EMBEDDED_IDP_TEST_PG_CONNECTION_URI="${PG_CONNECTION_URI}" \
 cargo test -p embedded-idp-app --locked --test live_bootstrap_admin --test live_reference_host -- --ignored --nocapture

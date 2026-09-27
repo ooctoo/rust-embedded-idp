@@ -1,5 +1,5 @@
 use crate::{
-    tenant_admin::{error, target},
+    tenant_admin::{business_target, error},
     tenant_auth::{call, no_store},
 };
 use axum::{
@@ -45,11 +45,13 @@ async fn check(
     headers: HeaderMap,
     Json(body): Json<Check>,
 ) -> Response {
-    let (context, tenant_id) = match target(state.mode, context, &headers) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
+    let (context, tenant_id, business_id) =
+        match business_target(state.mode, context, &headers, false) {
+            Ok(v) => v,
+            Err(e) => return e,
+        };
     let query = AccessQuery {
+        business_id,
         tenant_id,
         subject_id: body.subject_id,
         resource_type: body.resource_type,
@@ -61,6 +63,7 @@ async fn check(
             AccessChange::PermissionChecked { query, decision } => Json(json!({
                 "audit_id":event.id,
                 "tenant_id":query.tenant_id,
+                "business_id":query.business_id,
                 "subject_id":query.subject_id,
                 "resource_type":query.resource_type,
                 "action":query.action,

@@ -1,4 +1,4 @@
-use super::devices::{device, send};
+use super::devices::{device, send, send_with_business};
 use super::*;
 use axum::{http::StatusCode, Extension, Router};
 use embedded_idp_axum::role_binding_admin_router;
@@ -20,6 +20,7 @@ fn role(db: &Db) -> String {
             .execute(
                 db.context(db.actor_session.to_string()),
                 db.command(AccessAdminMutation::CreateRole {
+                    business_id: "f_01".into(),
                     key: "reader".into(),
                     name: "Reader".into(),
                 }),
@@ -30,8 +31,10 @@ fn role(db: &Db) -> String {
         .execute(
             db.context(db.actor_session.to_string()),
             db.command(AccessAdminMutation::ReplaceRolePermissions {
+                business_id: "f_01".into(),
                 role_id: id.clone(),
                 permissions: vec![PermissionKey {
+                    business_id: "f_01".into(),
                     resource_type: "report".into(),
                     action: "read".into(),
                 }],
@@ -85,6 +88,7 @@ fn revoke(router: &Router, tenant: &str, id: &str) -> (StatusCode, Value) {
 fn decision(db: &Db, tenant: &str, resource: Option<&str>) -> AccessDecision {
     CoreAccessService::new(db.mode, catalog(), db.store())
         .check(AccessQuery {
+            business_id: "f_01".into(),
             tenant_id: tenant.into(),
             subject_id: db.member.to_string(),
             resource_type: "report".into(),
@@ -288,18 +292,35 @@ fn binding_http_queries_and_mutations_enforce_identity_scope_and_protected_roles
         let protected=c.query_one(&format!("select b.id,b.account_id,b.role_id,b.resource_type from {s}.access_role_bindings b join {s}.access_roles r on r.tenant_id=b.tenant_id and r.id=b.role_id where b.tenant_id=$1 and r.kind<>'business'"),&[&t]).unwrap();
         let protected_id = protected.get::<_, Uuid>(0).to_string();
         let protected_subject = protected.get::<_, Uuid>(1);
-        assert!(
-            send(&router, "GET", &path(protected_subject), Some(t), "").1["items"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|b| b["binding_id"] == protected_id)
+        assert!(send_with_business(
+            &router,
+            "GET",
+            &path(protected_subject),
+            Some(t),
+            "",
+            Some("idp")
+        )
+        .1["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|b| b["binding_id"] == protected_id));
+        assert_eq!(
+            send_with_business(
+                &router,
+                "DELETE",
+                &format!("/admin/access/role-bindings/{protected_id}"),
+                Some(t),
+                "",
+                Some("idp")
+            )
+            .0,
+            StatusCode::BAD_REQUEST
         );
-        assert_eq!(revoke(&router, t, &protected_id).0, StatusCode::FORBIDDEN);
         let b=json!({"role_id":protected.get::<_,Uuid>(2).to_string(),"resource_type":protected.get::<_,String>(3),"scope":{"kind":"type"}}).to_string();
         assert_eq!(
-            send(&router, "POST", &subject_path, Some(t), &b).0,
-            StatusCode::FORBIDDEN
+            send_with_business(&router, "POST", &subject_path, Some(t), &b, Some("idp")).0,
+            StatusCode::BAD_REQUEST
         );
         c.execute(&format!("update {s}.access_memberships set status='suspended' where tenant_id=$1 and account_id=$2"),&[&t,&db.member]).unwrap();
         assert_eq!(

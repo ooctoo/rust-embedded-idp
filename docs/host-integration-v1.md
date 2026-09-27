@@ -1,5 +1,7 @@
 # Host Integration v1
 
+> Version 2.0 authorization contract: [business-scoped authorization and business administrators](business-domain-authorization-design-v1.md). Management selects a tenant; same-tenant lists use an optional business filter, while creation, detail and mutation requests carry or derive the exact business. Old requests without the exact business header and old affected cursors must be updated. Authentication and device-proof protocols remain unchanged.
+
 > 浏览器 Cookie 接入的新增契约见[浏览器会话设计](browser-session-design.md)。原显式令牌与设备证明接口继续适用；本期不支持跨标签页同时使用不同业务租户。
 
 ## Current reference-host composition
@@ -122,7 +124,7 @@ The reference host now injects this store into the tenant-aware login and HTTP s
 
 The admin service accepts tenant creation and updates plus tenant-scoped business
 permission creation, reading, description updates, enabled-state changes and
-archival. The persisted key is `(tenant_id, resource_type, action)`. The same key
+archival. The persisted key is `(tenant_id, business_id, resource_type, action)`. Core queries require business_id; the host must choose it from trusted server context. The same key
 can have independent definitions and role grants in different tenants. Enabled
 platform administrators must select a real target tenant; tenant administrators
 can manage only their own tenant. Disabled targets domain `0`. Built-in management
@@ -568,7 +570,7 @@ supplying a tenant to a byte builder alone.
 ### Tenant device challenges and protected-request transactions (P3)
 
 `access::CoreTenantDeviceProofService` now connects V2 proof verification to
-`tenant_v2` PostgreSQL authority. Construct it with the existing independent
+`tenant_v3` PostgreSQL authority. Construct it with the existing independent
 `PostgresAccessStore`, `TenantDeviceProofConfig`, `Ed25519PublicJwkParser`,
 `RingEd25519Verifier`, `SecureDeviceChallengeGenerator`, clock and ID generator.
 The typed configuration fixes the client, allowed purposes, challenge lifetime and
@@ -1410,173 +1412,119 @@ React UI, administrator startup composition and Enabled cutover are still pendin
 
 ## Role management HTTP module
 
-`role_admin_router(mode, Arc<dyn RoleAdminService>)` uses the existing trusted
-management context and tenant target rules. Disabled serves local roles in domain 0.
-Enabled requires a real tenant: platform callers must select it explicitly with the
-target header; tenant callers default to their authenticated tenant and cannot cross
-it. Ordinary role routes do not manage Enabled platform-domain roles.
+`role_admin_router(mode, Arc<dyn RoleAdminService>)` requires a trusted management
+context. List requests accept an optional `X-Embedded-IdP-Business-Id` filter;
+detail and mutation requests require exactly one such header. The existing tenant
+header/session rules still apply. Disabled targets tenant 0; Enabled targets a
+real tenant, selected explicitly by platform callers.
 
-Reads require `idp.tenant/access.read`; business-role writes require
-`idp.tenant/roles.manage`. Platform actors use `idp.platform/access.manage` for both.
-Current account, tenant, membership, session, source-device authority and grants are
-rechecked transactionally. Mutation authorization and audit remain in Core.
+Reads use tenant `access.read`; writes use `roles.manage`; platform callers use
+`idp.platform/access.manage`. These management checks always use the reserved
+`idp` business namespace, never the target business. `business_admin` grants none
+of these management capabilities.
 
 | Route | Contract |
 | --- | --- |
-| GET `/admin/access/roles` | limit/cursor; scoped role metadata, including disabled and protected roles |
-| POST `/admin/access/roles` | key, name; creates an active business role with no permissions; 201 |
-| GET `/admin/access/roles/:role_id` | Role metadata and complete configured permission keys, at one version |
-| PATCH `/admin/access/roles/:role_id` | name, status (active/disabled), expected_version; all required |
-| DELETE `/admin/access/roles/:role_id` | JSON expected_version; success returns role:null and audit_id |
-| GET `/admin/access/roles/:role_id/permissions` | tenant_id, role_id, version, items of resource_type/action |
-| PUT `/admin/access/roles/:role_id/permissions` | permissions array of resource_type/action and expected_version; complete replacement |
+| GET `/admin/access/roles` | Tenant role metadata; optional business filter, limit/cursor/sort_order |
+| POST `/admin/access/roles` | `{key,name}`, creates ordinary Business; exact business header required; reserved keys and kind overrides rejected |
+| GET/POST `/admin/access/business-admin` | Read with exact business header; create with `{name?}` and exact business header; fixed key/kind business_admin, 409 if already present |
+| GET `/admin/access/roles/:role_id` | Role metadata plus explicit configured permissions; exact business header required |
+| PATCH `/admin/access/roles/:role_id` | Exact business header required; name, active/disabled status, expected_version; scope/key/kind immutable |
+| DELETE `/admin/access/roles/:role_id` | Exact business header required; expected_version; BusinessAdmin requires no bindings |
+| GET/PUT `/admin/access/roles/:role_id/permissions` | Exact business header required; explicit permission keys; business administrator GET returns [], PUT rejected |
 
-Role metadata includes tenant_id, role_id, key, name, status, kind and version.
-List pagination uses ascending canonical role IDs, default 50/max 200, a tenant-bound
-cursor and limit + 1 reads without COUNT. Lists do not expand permission sets or
-query permissions per row. Detail and permission reads return a complete bounded
-configuration snapshot (maximum 200 keys), not effective permissions or a paged
-permission catalog. This keeps the version and editable set together; disabled
-permission definitions can remain in a role's configuration. Authorization checks
-continue to read current role, definition, membership and binding state.
+Role DTOs include business_id. Permission keys contain business_id, resource_type
+and action. Creation forms collect business_id and the client sends it as the
+exact `X-Embedded-IdP-Business-Id` header; bodies do not repeat it. List requests
+may omit the optional filter to return the mode-appropriate authorized records:
+Disabled `0` returns Platform, Tenant and Business records; an `idp` filter
+returns Platform and Tenant records; Enabled real tenants return Tenant and
+Business records. Detail and mutation requests require the exact business header.
+All UUID lookups verify tenant and business. Read-only `idp` selection can inspect
+built-in tenant roles; their mutation remains restricted to special administrator
+appointment routes.
 
-Writes return role metadata/configuration and audit_id. Duplicate/unknown permission
-keys, reserved role keys and attempts to place management permissions in a business
-role are rejected. Protected administrator roles may be read but cannot be created,
-modified, deleted or have their permissions replaced through these routes. Stale
-versions yield 409. Empty permission replacement is valid; obsolete resource bindings
-are removed atomically and do not reappear if a permission is later re-added. Role
-removal also removes its bindings. Audit failure rolls back all these changes.
-
-Bodies reject unknown fields, including role kind, caller authority and resource_id
-on a permission definition. The body limit is 64 KiB to accommodate the existing
-200-key contract, and responses disable caching. PostgreSQL uses the existing role
-and role-permission composite keys; malformed or noncanonical role UUIDs are absent
-resources. No new dependencies, tables or configuration are required.
-
-Subject role-scope bindings and permission catalog management use the separate
-adapters described below. Audited diagnostics and protected administrator
-appointments and audit queries are also available below. This router does not
-complete management login, React integration or the
-reference-host cutover.
+Management lists default to descending creation time and stable ID, accept asc,
+and use v3 cursors bound to tenant/optional-business-filter/other-filters/direction.
+Changing a filter requires a new page sequence. Permission ordering adds
+business_id as a tie-breaker so equal resource/action rows cannot be skipped
+across businesses. Role details are configuration, not an effective permission
+decision. Ordinary permission replacement retains its bounded/versioned contract;
+obsolete ordinary resource bindings are removed atomically. It cannot remove a
+business administrator binding. Mutations and audit commit together.
 
 ## Subject role binding HTTP module
 
-`role_binding_admin_router(mode, Arc<dyn RoleAdminService>)` provides independently
-mountable assignment routes. It shares the existing role service and audited Core
-GrantRole/RevokeRole transactions. The host must verify management-purpose/audience
-credentials and inject `AccessAdminContext`; the target tenant rules are identical
-to role management. Disabled retains local assignments in domain 0, while Enabled
-uses a real tenant. A platform actor must name the target; a tenant actor cannot
-select another tenant.
+`role_binding_admin_router(mode, Arc<dyn RoleAdminService>)` uses the tenant and
+an optional business filter for list reads. Role binding drawers and role pickers
+may use that filter; detail and mutations use the exact business on the record.
+Reads require access.read; mutations require
+grants.manage (or platform access.manage). Assignment is not granted by possession
+of a business administrator role.
 
 | Route | Contract |
 | --- | --- |
-| GET `/admin/access/subjects/:subject_id/role-bindings` | limit/cursor; configured assignments for one tenant member |
-| POST `/admin/access/subjects/:subject_id/role-bindings` | role_id, resource_type and explicit scope; 201 with binding and audit_id |
-| DELETE `/admin/access/role-bindings/:binding_id` | No body required; 200 with binding:null and audit_id |
+| GET `/admin/access/subjects/:subject_id/role-bindings` | Configured assignments for a member; optional business filter |
+| POST `/admin/access/subjects/:subject_id/role-bindings` | Exact business header required; business is derived from the selected role record; explicit business or resource scope; 201 with binding and audit_id |
+| DELETE `/admin/access/role-bindings/:binding_id` | Exact business header required; same-domain immutable binding ID; 200 with binding:null and audit_id |
 
-Grant bodies must specify either `"scope":{"kind":"type"}` or
-`"scope":{"kind":"instance","resource_id":"report-1"}`. Missing scope, an
-instance without its ID, or an ID attached to a type scope is rejected. Instance
-IDs follow the existing resource-ID grammar: no empty string, slash or wildcard.
-The subject comes from the path; JSON cannot override subject, tenant or actor.
-Bindings apply the selected role's actions for that resource_type to the explicit
-scope. Type and instance assignments can coexist; duplicate identical assignments
-return 409 through the existing unique constraints.
+Business administrator assignment:
 
-Reads require access.read and writes require grants.manage within idp.tenant;
-platform callers use idp.platform/access.manage. Actor authority is checked again
-inside each transaction. Grants require an active target account/member, an active
-business role in the same tenant, and current enabled business permissions for the
-requested resource_type. Ordinary assignment routes cannot grant or revoke
-protected administrator roles. Revocation uses the immutable binding ID and removes
-only that assignment; a repeated deletion returns 404. Another remaining assignment
-may still grant access to the same resource.
+```json
+{"role_id":"<business-admin-role>","scope":{"kind":"business"}}
+```
 
-Lists return binding_id, tenant_id, subject_id, role_id, resource_type and explicit
-scope. They require an existing target membership and remain available for suspended
-members or disabled roles so administrators can inspect configured assignments.
-Protected assignments are visible but cannot be changed here. The response is not
-an effective-access decision: hosts must still call the authorization service and
-verify business-resource ownership. IdP does not assert that a report ID exists.
+Ordinary assignment:
 
-Pagination uses ascending binding IDs, default 50/max 200, limit + 1 reads and no
-COUNT. Cursors bind both tenant and subject. PostgreSQL uses the existing
-(tenant_id, account_id, id) index; it does not expand type scopes into resource lists
-or load other subjects' assignments. Grant/revoke and audit commit together; audit
-failure leaves effective authorization unchanged. Request bodies are capped at
-16 KiB and responses disable caching.
+```json
+{"role_id":"<ordinary-role>","resource_type":"report","scope":{"kind":"instance","resource_id":"report-1"}}
+```
 
-This completes the assignment module, not the application cutover. Management login,
-React integration and the reference-host cutover remain separate work.
+Ordinary type scope uses `{ "kind":"type" }`. Missing scope is rejected; business
+scope cannot include any resource fields, and scope must match the stored role
+kind. BusinessAdmin needs no explicit permission links; ordinary assignments still
+require valid linked permissions for the selected resource type. The target account,
+tenant membership and role must be active. Duplicate bindings return 409.
+
+DTOs include business_id; business bindings omit resource_type entirely. Lists are
+configuration views, include disabled roles/suspended members, and use v3 scoped
+time/ID cursors. Hosts still call AuthorizationService for actual decisions and
+verify resource existence/ownership. Tenant member removal cleans all businesses.
 
 ## Permission directory HTTP module
 
-`permission_admin_router(mode, Arc<dyn PermissionAdminService>)` exposes the
-persisted directory. The host verifies management purpose/audience and injects
-`AccessAdminContext`; Core rechecks live authority in the transaction.
+`permission_admin_router(mode, Arc<dyn PermissionAdminService>)` exposes persisted
+permission definitions. Identity and management checks remain in Core.
 
 | Route | Contract |
 | --- | --- |
-| GET/POST `/admin/access/permissions` | List or create a business definition in the selected tenant |
-| GET/PATCH/DELETE `/admin/access/permissions/:resource_type/:action` | Read, update description with `expected_version`, or archive with `expected_version` |
-| POST `/admin/access/permissions/:resource_type/:action/enabled` | Toggle with `enabled` and `expected_enabled` |
-| GET `/admin/platform/permissions` | Read platform `0` management definitions |
+| GET/POST `/admin/access/permissions` | Optional business filter for list; create form sends business_id as the exact header |
+| GET/PATCH/DELETE `/admin/access/permissions/:resource_type/:action` | Exact business header required; scoped read, versioned description update or irreversible archive |
+| POST `/admin/access/permissions/:resource_type/:action/enabled` | Exact business header required; enabled + expected_enabled |
+| GET `/admin/platform/permissions` | Built-in platform idp definitions; no host business header |
 
-Enabled platform callers must send the trusted target-tenant header on access
-routes. Tenant callers are limited to their own tenant; Disabled uses `0`. Reads
-require `idp.tenant/access.read` or platform `idp.platform/access.manage`.
-Writes require `idp.tenant/permissions.manage` or platform `access.manage`.
-Responses include tenant_id, key, description, category, enabled, archived and
-version. List filters and cursors are bound to the target tenant. Archival
-immediately denies access, is audited and cannot be reversed or recreated with
-the same key. A disabled definition may be re-enabled, which can restore existing
-role grants; the UI makes that effect explicit. Definitions never enforce a
-host endpoint by themselves: the host must invoke the Core access check for the
-actual resource and tenant.
+The unique key is tenant/business/resource_type/action. Responses include business_id
+and current state. Writes require permissions.manage or platform access.manage;
+read-only idp selection cannot be used to mutate built-ins. Unknown, disabled or
+archived permissions deny even business administrators. Newly created effective
+permissions immediately become available to existing business administrators in
+that same domain; ordinary roles still require explicit links.
 
 ## Audited management permission diagnosis
 
-`access_diagnostic_router(mode, Arc<dyn AccessDiagnosticService>)` mounts
-`POST /admin/access/check` independently. It requires the same host-verified
-management-purpose/audience context as other management modules. It never accepts
-actor authority, tenant selection or a precomputed decision from JSON.
+`POST /admin/access/check` requires the target business from its form in the exact
+business header and an authorized management session. JSON does not repeat
+business_id and selects the target user, resource and action:
 
 ```json
 {"subject_id":"<member-id>","resource_type":"report","action":"read","resource_id":"report-1"}
 ```
 
-The target domain follows the existing management header/session rules: Enabled
-tenant administrators can diagnose only their own tenant; a platform administrator
-must explicitly select a real tenant. Disabled uses domain 0. The caller needs
-idp.tenant/access.read or, for a platform caller, idp.platform/access.manage. A
-platform caller's own permissions do not supply the target user's business grants.
-
-Omitting resource_id or using null checks type-wide permission. An instance grant
-alone cannot satisfy that query. Empty strings and wildcard IDs are invalid. The
-target must have a membership in the selected domain; an absent membership returns
-404 after caller authorization. Suspended/removed members can be diagnosed and
-return deny, as do inactive accounts/roles/tenants, disabled or unknown permissions
-and unmatched grants. The trusted host catalog, mode/category rules and PostgreSQL
-grant predicate are shared with normal authorization checks.
-
-The service locks state, involved domains and caller/target accounts in the existing
-order, then checks current management authority using server time read after lock
-acquisition. That same time stamps the audit. The query and audit commit in one
-transaction. Both allow and deny return 200 only after successful audit insertion;
-storage/audit failure returns an error without a decision. The response contains
-audit_id, tenant_id, subject_id, resource_type, action, resource_id and decision
-(allow/deny). The audit records access.check, caller, source category, request_id,
-target and result, without credentials. Rejected management calls produce no
-successful diagnostic audit; the host remains responsible for failure/security logs.
-
-This is a point-in-time management diagnostic, not a credential or reusable grant.
-It does not load all of a user's roles or expand type-wide grants into resources.
-It does use management locks and writes an audit, so hosts should use the ordinary
-authorization service for business traffic and enforce resource ownership/existence
-there. Bodies reject unknown fields, are capped at 16 KiB, and responses disable
-caching. No database migration or configuration changes are required.
+The response echoes tenant_id and business_id with the decision and audit_id.
+Checks use the same permission validity and administrator/ordinary grant predicate
+as normal access checks. A missing resource_id checks type-wide authorization;
+ordinary instance-only grants do not satisfy it. Actor permissions never substitute
+for the queried user's permissions. Storage failures remain errors, not deny/allow.
 
 ## Protected administrator appointment HTTP module
 
@@ -1610,7 +1558,7 @@ default to 0. Request data cannot select a role, role kind, resource or grant sc
 Both routes require a currently active platform actor in domain 0 with
 idp.platform/access.manage. Tenant security administrators cannot appoint or revoke
 protected administrators, including within their own tenant. Core chooses
-tenant_security_admin/idp.tenant for real tenants and system_admin/idp.platform for
+idp_tenant_security_admin/idp.tenant for real tenants and idp_system_admin/idp.platform for
 domain 0, always with type-wide scope. Business role CRUD and grant APIs continue
 to reject protected roles.
 
@@ -1770,7 +1718,7 @@ session was logged out also fails validation.
 
 This reuses existing tables, row locks and indexed lookups; it does not copy the
 business authentication state machine or load roles on every login. The fresh
-`tenant_v2` layout now requires `auth_session_purpose`; readiness rejects incomplete
+`tenant_v3` layout requires `auth_session_purpose`; readiness rejects incomplete
 layouts instead of migrating them. No environment variables or application data
 were added by this module change.
 

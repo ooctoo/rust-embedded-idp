@@ -140,6 +140,7 @@ impl<S: AccessAdminStore, C: Clock + Send + Sync, I: IdGenerator + Send + Sync>
                 occurred_at: now,
                 context,
                 tenant_id: command.tenant_id,
+                target_business_id: None,
                 operation: "account.create",
                 change: AccessChange::AccountCreated { after: record },
             };
@@ -288,6 +289,7 @@ impl<S: AccessAdminStore, C: Clock, I: IdGenerator> CoreAccountSecurityService<S
             occurred_at: now,
             context,
             tenant_id: SYSTEM_TENANT_ID.into(),
+            target_business_id: None,
             operation: if password_changed {
                 "account.password"
             } else {
@@ -444,6 +446,7 @@ impl<S: AccessAdminStore, C: Clock + Send + Sync, I: IdGenerator + Send + Sync>
                 occurred_at: now,
                 context: context.clone(),
                 tenant_id: command.tenant_id.clone(),
+                target_business_id: None,
                 operation: "account.create",
                 change: AccessChange::AccountCreated { after: account },
             })?;
@@ -452,6 +455,7 @@ impl<S: AccessAdminStore, C: Clock + Send + Sync, I: IdGenerator + Send + Sync>
                 occurred_at: now,
                 context,
                 tenant_id: command.tenant_id,
+                target_business_id: None,
                 operation: "tenant.create",
                 change,
             };

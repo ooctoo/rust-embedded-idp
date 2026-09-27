@@ -427,7 +427,7 @@ fn concurrent_platform_account_disables_cannot_remove_the_last_effective_admin()
     let s = db.schema();
     let second = db.member;
     let mut c = db.adapter.connect().unwrap();
-    c.execute(&format!("insert into {s}.access_role_bindings(id,tenant_id,account_id,role_id,resource_type,created_at_epoch,created_by) select $1,'0',$2,id,'idp.platform',1000,$3 from {s}.access_roles where tenant_id='0' and kind='system_admin'"),&[&Uuid::now_v7(),&second,&db.actor]).unwrap();
+    c.execute(&format!("insert into {s}.access_role_bindings(id,tenant_id,business_id,account_id,role_id,scope_kind,resource_type,created_at_epoch,created_by) select $1,'0','idp',$2,id,'type','idp.platform',1000,$3 from {s}.access_roles where tenant_id='0' and business_id='idp' and kind='system_admin'"),&[&Uuid::now_v7(),&second,&db.actor]).unwrap();
     drop(c);
     let first = app(&db, Some(db.context(db.actor_session.to_string())));
     let second_router = app(

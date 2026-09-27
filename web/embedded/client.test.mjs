@@ -277,17 +277,18 @@ test("my roles use the business session and reject another tenant's roles", asyn
   const { instance, calls } = client(call => {
     if (call.path === "/auth/access/capabilities") return json(fixed);
     if (call.path === "/auth/login") return json(authenticated());
-    if (call.path === "/auth/me/roles") return json({ items: [{ tenant_id: wrongTenant ? "other" : "0", role_id: "role-1",
+    if (call.path === "/auth/me/roles") return json({ items: [{ tenant_id: wrongTenant ? "other" : "0", business_id: "f_01", role_id: "role-1",
       key: "reader", name: "Reader", status: "active", kind: "business" }], has_more: false, next_cursor: null });
     throw new Error(call.path);
   });
   await instance.loadCapabilities();
   await instance.login("user@example.test", "password");
-  assert.equal((await instance.listMyRoles()).items[0].key, "reader");
+  assert.equal((await instance.listMyRoles("f_01")).items[0].key, "reader");
   assert.equal(calls.at(-1).headers.Authorization, "Bearer synthetic-access");
   assert.equal(calls.at(-1).path, "/auth/me/roles");
+  assert.ok(String(calls.at(-1).url).includes("business_id=f_01"));
   wrongTenant = true;
-  await assert.rejects(instance.listMyRoles());
+  await assert.rejects(instance.listMyRoles("f_01"));
 });
 
 test("one refresh serves concurrent checks and an uncertain refresh clears local credentials", async () => {

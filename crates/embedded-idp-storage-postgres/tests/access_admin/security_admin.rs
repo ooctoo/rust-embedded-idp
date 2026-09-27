@@ -38,6 +38,7 @@ fn write(
 fn allowed(db: &Db, tenant: &str, subject: Uuid) -> bool {
     CoreAccessService::new(db.mode, catalog(), db.store())
         .check(AccessQuery {
+            business_id: "idp".into(),
             tenant_id: tenant.into(),
             subject_id: subject.to_string(),
             resource_type: if tenant == "0" {

@@ -21,6 +21,7 @@ fn catalog() -> PermissionCatalog {
             created_at: None,
             tenant_id: "0".into(),
             key: PermissionKey {
+                business_id: "f_01".into(),
                 resource_type: r.into(),
                 action: a.into(),
             },
@@ -92,7 +93,7 @@ impl Db {
                     } else {
                         "business"
                     };
-                    tx.execute(&format!("insert into {s}.access_permissions(tenant_id,resource_type,action,category,description,enabled) values($1,$2,$3,$4,$5,true)"), &[&t,&permission.key.resource_type,&permission.key.action,&category,&permission.description]).unwrap();
+                    tx.execute(&format!("insert into {s}.access_permissions(tenant_id,business_id,resource_type,action,category,description,enabled) values($1,$2,$3,$4,$5,$6,true)"), &[&t,&permission.key.business_id,&permission.key.resource_type,&permission.key.action,&category,&permission.description]).unwrap();
                 }
             }
         }
@@ -105,18 +106,33 @@ impl Db {
         for t in tenants {
             tx.execute(&format!("insert into {s}.access_memberships(tenant_id,account_id,status,joined_at_epoch) values($1,$2,'active',1)"),&[&t,&self.user]).unwrap();
             let role = Uuid::now_v7();
-            let (kind, resource, category) = if t == "0" {
-                ("system_admin", "idp.platform", "platform")
+            let (business_id, kind, key, resource, category) = if t == "0" {
+                (
+                    "idp",
+                    "system_admin",
+                    "idp_system_admin",
+                    "idp.platform",
+                    "platform",
+                )
             } else {
-                ("tenant_security_admin", "idp.tenant", "tenant")
+                (
+                    "idp",
+                    "tenant_security_admin",
+                    "idp_tenant_security_admin",
+                    "idp.tenant",
+                    "tenant",
+                )
             };
-            tx.execute(&format!("insert into {s}.access_roles(tenant_id,id,key,name,status,kind,created_at_epoch) values($1,$2,$3,$3,'active',$3,1)"),&[&t,&role,&kind]).unwrap();
-            tx.execute(&format!("insert into {s}.access_role_permissions(tenant_id,role_id,resource_type,action) select $1,$2,resource_type,action from {s}.access_permissions where tenant_id=$1 and category=$3"),&[&t,&role,&category]).unwrap();
-            tx.execute(&format!("insert into {s}.access_role_bindings(id,tenant_id,account_id,role_id,resource_type,created_at_epoch,created_by) values($1,$2,$3,$4,$5,1,$3)"),&[&Uuid::now_v7(),&t,&self.user,&role,&resource]).unwrap();
+            tx.execute(&format!("insert into {s}.access_roles(tenant_id,business_id,id,key,name,status,kind,created_at_epoch) values($1,$2,$3,$4,$4,'active',$5,1)"),&[&t,&business_id,&role,&key,&kind]).unwrap();
+            tx.execute(&format!("insert into {s}.access_role_permissions(tenant_id,business_id,role_id,resource_type,action) select $1,$2,$3,resource_type,action from {s}.access_permissions where tenant_id=$1 and business_id=$2 and category=$4"),&[&t,&business_id,&role,&category]).unwrap();
+            tx.execute(&format!("insert into {s}.access_role_bindings(id,tenant_id,business_id,account_id,role_id,scope_kind,resource_type,created_at_epoch,created_by) values($1,$2,$3,$4,$5,'type',$6,1,$4)"),&[&Uuid::now_v7(),&t,&business_id,&self.user,&role,&resource]).unwrap();
         }
-        tx.execute(&format!("insert into {s}.access_roles(tenant_id,id,key,name,status,kind,created_at_epoch) values($1,$2,'reader','Reader','active','business',1)"),&[&tenant,&self.role]).unwrap();
-        tx.execute(&format!("insert into {s}.access_role_permissions(tenant_id,role_id,resource_type,action) values($1,$2,'report','read'),($1,$2,'dataset','read')"),&[&tenant,&self.role]).unwrap();
-        tx.execute(&format!("insert into {s}.access_role_bindings(id,tenant_id,account_id,role_id,resource_type,resource_id,created_at_epoch,created_by) values($1,$2,$3,$4,'report','r1',1,$3)"),&[&Uuid::now_v7(),&tenant,&self.user,&self.role]).unwrap();
+        tx.execute(&format!("insert into {s}.access_roles(tenant_id,business_id,id,key,name,status,kind,created_at_epoch) values($1,'f_01',$2,'reader','Reader','active','business',1)"),&[&tenant,&self.role]).unwrap();
+        tx.execute(&format!("insert into {s}.access_role_permissions(tenant_id,business_id,role_id,resource_type,action) values($1,'f_01',$2,'report','read'),($1,'f_01',$2,'dataset','read')"),&[&tenant,&self.role]).unwrap();
+        tx.execute(&format!("insert into {s}.access_role_bindings(id,tenant_id,business_id,account_id,role_id,scope_kind,resource_type,resource_id,created_at_epoch,created_by) values($1,$2,'f_01',$3,$4,'instance','report','r1',1,$3)"),&[&Uuid::now_v7(),&tenant,&self.user,&self.role]).unwrap();
+        let second_role = Uuid::now_v7();
+        tx.execute(&format!("insert into {s}.access_roles(tenant_id,business_id,id,key,name,status,kind,created_at_epoch) values($1,'f_01',$2,'reader-2','Reader 2','active','business',1)"),&[&tenant,&second_role]).unwrap();
+        tx.execute(&format!("insert into {s}.access_role_bindings(id,tenant_id,business_id,account_id,role_id,scope_kind,resource_type,created_at_epoch,created_by) values($1,$2,'f_01',$3,$4,'type','report',1,$3)"),&[&Uuid::now_v7(),&tenant,&self.user,&second_role]).unwrap();
         // Explicit TEST fixture bootstrap. Production bootstrap is a separate pending service.
         tx.execute(
             &format!("update {s}.access_state set bootstrap_completed_at_epoch=1"),
@@ -130,6 +146,7 @@ impl Db {
     }
     fn q(&self, tenant: &str, resource: &str, action: &str, id: Option<&str>) -> AccessQuery {
         AccessQuery {
+            business_id: "f_01".into(),
             tenant_id: tenant.into(),
             subject_id: self.user.to_string(),
             resource_type: resource.into(),
@@ -338,7 +355,7 @@ fn access_sql_checks_exact_scopes_status_revocation_and_batch_order_in_both_mode
         c.execute(&format!("update {s}.access_permissions set enabled=false where resource_type='report' and action='read'"),&[]).unwrap();
         assert_eq!(service.check(q.clone()).unwrap(), AccessDecision::Deny);
         c.execute(&format!("update {s}.access_permissions set enabled=true where resource_type='report' and action='read'"),&[]).unwrap();
-        c.execute(&format!("update {s}.access_role_bindings set resource_id=null where tenant_id=$1 and role_id=$2"),&[&t,&db.role]).unwrap();
+        c.execute(&format!("update {s}.access_role_bindings set scope_kind='type', resource_id=null where tenant_id=$1 and role_id=$2"),&[&t,&db.role]).unwrap();
         assert_eq!(
             service
                 .check(db.q(t, "report", "read", Some("future-report")))
@@ -372,7 +389,7 @@ fn access_lists_page_without_cross_tenant_or_subject_data() {
     let mut roles = vec![];
     loop {
         let result = service
-            .list_subject_roles("t1", &db.user.to_string(), page.clone())
+            .list_subject_roles("t1", "f_01", &db.user.to_string(), page.clone())
             .unwrap();
         roles.extend(result.items);
         if !result.has_more {
@@ -385,6 +402,7 @@ fn access_lists_page_without_cross_tenant_or_subject_data() {
     assert!(service
         .list_subject_roles(
             "t1",
+            "f_01",
             &Uuid::now_v7().to_string(),
             AccessPageRequest::default()
         )
@@ -392,13 +410,19 @@ fn access_lists_page_without_cross_tenant_or_subject_data() {
         .items
         .is_empty());
     assert!(service
-        .list_role_permissions("t2", &db.role.to_string(), AccessPageRequest::default())
+        .list_role_permissions(
+            "t2",
+            "f_01",
+            &db.role.to_string(),
+            AccessPageRequest::default()
+        )
         .unwrap()
         .items
         .is_empty());
     let first = service
         .list_role_permissions(
             "t1",
+            "f_01",
             &db.role.to_string(),
             AccessPageRequest {
                 sort_order: None,
@@ -411,6 +435,7 @@ fn access_lists_page_without_cross_tenant_or_subject_data() {
     let second = service
         .list_role_permissions(
             "t1",
+            "f_01",
             &db.role.to_string(),
             AccessPageRequest {
                 sort_order: None,
@@ -507,7 +532,7 @@ fn access_registration_and_database_constraints_keep_membership_atomic() {
     assert!(c.execute(&format!("insert into {s}.accounts(id,registration_tenant_id,email,password_hash,status,created_at_epoch) values($1,'t1','bare@example.test','test-hash','active',1)"),&[&Uuid::now_v7()]).is_err());
     assert!(c.execute(&format!("update {s}.access_memberships set status='removed',removed_at_epoch=200 where account_id=$1"),&[&user]).is_err());
     // Cross-tenant role and a blank resource scope must be rejected by constraints.
-    assert!(c.execute(&format!("insert into {s}.access_role_bindings(id,tenant_id,account_id,role_id,resource_type,resource_id,created_at_epoch,created_by) values($1,'t2',$2,$3,'report','r1',1,$2)"),&[&Uuid::now_v7(),&db.user,&db.role]).is_err());
+    assert!(c.execute(&format!("insert into {s}.access_role_bindings(id,tenant_id,business_id,account_id,role_id,scope_kind,resource_type,resource_id,created_at_epoch,created_by) values($1,'t2','f_01',$2,$3,'instance','report','r1',1,$2)"),&[&Uuid::now_v7(),&db.user,&db.role]).is_err());
     assert!(c
         .execute(
             &format!("update {s}.access_role_bindings set resource_id='' where role_id=$1"),
@@ -620,26 +645,37 @@ fn list_time_upgrade_preserves_unknown_history_and_is_repeatable() {
     let db = Db::new(TenancyMode::Enabled);
     let s = db.schema();
     let mut client = db.adapter.connect().unwrap();
-    client
-        .batch_execute(&format!(
-            "alter table {s}.access_permissions drop column created_at_epoch cascade"
-        ))
-        .unwrap();
-    assert!(matches!(
-        db.adapter.inspect_access_schema(db.mode),
-        Err(embedded_idp_core::StoreError::Conflict(
-            "access.list_time_migration_required"
-        ))
-    ));
     let migration = include_str!("../../../scripts/migrate_list_time_desc.sql")
         .lines()
         .filter(|line| !line.starts_with('\\'))
         .collect::<Vec<_>>()
         .join("\n")
         .replace(":\"schema\"", s);
+    // This historical upgrade must reject v3 instead of recreating v2 indexes.
+    assert!(client.batch_execute(&migration).is_err());
+    client.batch_execute("rollback").unwrap();
+    client
+        .batch_execute(&format!("drop schema {s} cascade; create schema {s}"))
+        .unwrap();
+    let legacy_schema = include_str!("../src/sql/tenant_v2.sql").replace("__SCHEMA__", s);
+    client.batch_execute(&legacy_schema).unwrap();
+    client
+        .batch_execute(&format!(
+            "insert into {s}.access_state(singleton,tenancy_mode,module_version) values(true,'enabled','tenant_v2');\
+             insert into {s}.access_tenants(id,kind,name,status,allow_registration,created_at_epoch) values('0','system','System','active',false,1),('t1','tenant','Tenant 1','active',true,1);\
+             insert into {s}.access_permissions(tenant_id,resource_type,action,category,description,enabled) values\
+             ('0','idp.platform','access.manage','platform','Platform management',true),\
+             ('t1','idp.tenant','access.read','tenant','Tenant access',true),\
+             ('t1','report','read','business','Read reports',true)"
+        ))
+        .unwrap();
+    client
+        .batch_execute(&format!(
+            "alter table {s}.access_permissions drop column created_at_epoch cascade"
+        ))
+        .unwrap();
     for _ in 0..2 {
         client.batch_execute(&migration).unwrap();
-        db.adapter.inspect_access_schema(db.mode).unwrap();
     }
     let unknown: i64 = client
         .query_one(
@@ -648,14 +684,8 @@ fn list_time_upgrade_preserves_unknown_history_and_is_repeatable() {
         )
         .unwrap()
         .get(0);
-    assert_eq!(
-        unknown as usize,
-        catalog()
-            .definitions()
-            .filter(|p| p.category != PermissionCategory::Business)
-            .count()
-    );
-    client.batch_execute(&format!("insert into {s}.access_permissions(tenant_id,resource_type,action,category,description,enabled) values('0','new','read','business','new permission',true)")).unwrap();
+    assert_eq!(unknown, 3);
+    client.batch_execute(&format!("insert into {s}.access_permissions(tenant_id,resource_type,action,category,description,enabled) values('t1','new','read','business','new permission',true)")).unwrap();
     let created: Option<i64> = client
         .query_one(
             &format!(

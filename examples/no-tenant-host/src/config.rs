@@ -14,6 +14,7 @@ pub struct Config {
     pub idp: PgStorageConfig,
     pub business_uri: String,
     pub business_schema: String,
+    pub business_id: String,
     pub signing_key_file: String,
     pub client_id: String,
     pub login_policy: LoginTenantPolicy,
@@ -68,6 +69,10 @@ impl Config {
             env::var("EMBEDDED_IDP_APP_PG_URI").map_err(|_| "set EMBEDDED_IDP_APP_PG_URI")?;
         let idp_schema =
             env::var("EMBEDDED_IDP_APP_PG_SCHEMA").map_err(|_| "set EMBEDDED_IDP_APP_PG_SCHEMA")?;
+        let business_id =
+            env::var("NO_TENANT_HOST_BUSINESS_ID").map_err(|_| "set NO_TENANT_HOST_BUSINESS_ID")?;
+        embedded_idp_core::access::validate_business_id(&business_id)
+            .map_err(|_| "invalid NO_TENANT_HOST_BUSINESS_ID")?;
         let business_uri = value("NO_TENANT_HOST_BUSINESS_PG_URI", &idp_uri);
         let business_schema = value("NO_TENANT_HOST_BUSINESS_SCHEMA", "no_tenant_host_business");
         if !valid_schema(&business_schema) {
@@ -136,6 +141,7 @@ impl Config {
             idp,
             business_uri,
             business_schema,
+            business_id,
             signing_key_file: value(
                 "EMBEDDED_IDP_APP_SIGNING_KEY_FILE",
                 "examples/no-tenant-host/.local/idp-signing-key.der",

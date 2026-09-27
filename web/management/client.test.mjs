@@ -258,9 +258,35 @@ test("session revalidation must match all three identity fields", async t => {
   }
 });
 
-const role = (tenant = "0", overrides = {}) => ({ tenant_id: tenant, role_id: "reader-id", key: "reader", name: "Reader", version: 3,
-  kind: "business", status: "active", permissions: [{ resource_type: "report", action: "read" }], ...overrides });
+const role = (tenant = "0", overrides = {}) => ({ tenant_id: tenant, business_id: ["system_admin", "tenant_security_admin"].includes(overrides.kind) ? "idp" : "f_01", role_id: "reader-id", key: "reader", name: "Reader", version: 3,
+  kind: "business", status: "active", permissions: [{ business_id: "f_01", resource_type: "report", action: "read" }], ...overrides });
 const page = items => ({ items, has_more: false, next_cursor: null });
+
+test("business administrator creation and assignment preserve the selected business", async t => {
+  let administrator = role("0", { key: "business_admin", kind: "business_admin", name: "Business owner", permissions: [] });
+  const assignment = { binding_id: "binding-1", tenant_id: "0", business_id: "f_01", subject_id: "member-1", role_id: "reader-id", scope: { kind: "business" } };
+  const { client, calls } = setup(t, (path, init) => {
+    if (path === "/capabilities") return json(fixed);
+    if (path === "/login") return json(authenticated());
+    if (path === "/access/business-admin") return json(init.method === "POST" ? { role: administrator, audit_id: "audit-1" } : administrator);
+    if (path === "/access/subjects/member-1/role-bindings") return json({ binding: assignment, audit_id: "audit-2" });
+    throw new Error(path);
+  });
+  await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
+  const created = await client.createBusinessAdmin("0", "f_01", "Business owner");
+  assert.deepEqual(JSON.parse(calls.at(-1).body), { name: "Business owner" });
+  assert.equal(calls.at(-1).headers["X-Embedded-IdP-Business-Id"], "f_01");
+  assert.deepEqual(await client.getBusinessAdmin("0", "f_01"), created);
+  assert.deepEqual(await client.grantRole("0", "f_01", "member-1", created, undefined, { kind: "business" }), assignment);
+  assert.deepEqual(JSON.parse(calls.at(-1).body), { role_id: "reader-id", scope: { kind: "business" } });
+  const count = calls.length;
+  await assert.rejects(client.grantRole("0", "f_01", "member-1", created, "report", { kind: "type" }));
+  await assert.rejects(client.replaceRolePermissions("0", "f_01", created, []));
+  await assert.rejects(client.createBusinessAdmin("0", "idp"));
+  assert.equal(calls.length, count);
+  administrator = { ...administrator, business_id: "other" };
+  await assert.rejects(client.getBusinessAdmin("0", "f_01"));
+});
 
 test("platform target selection sends a target only to scoped role APIs and preserves actor 0", async t => {
   const { client, calls } = setup(t, path => {
@@ -272,14 +298,14 @@ test("platform target selection sends a target only to scoped role APIs and pres
     return json(identity());
   });
   await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
-  await assert.rejects(client.listRoles("0"));
-  await assert.rejects(client.listRoles(""));
+  await assert.rejects(client.listRoles("0", "f_01"));
+  await assert.rejects(client.listRoles("", "f_01"));
   await client.listManagedTenants({ name: "研发 & A" }, "cursor+/=");
   assert.ok(calls.at(-1).path.includes("name=%E7%A0%94%E5%8F%91+%26+A"));
   assert.ok(calls.at(-1).path.includes("cursor=cursor%2B%2F%3D"));
-  await client.listRoles("a");
+  await client.listRoles("a", "f_01");
   assert.equal(calls.filter(c => c.path === "/access/roles/reader-id").length, 0);
-  await client.getRole("a", "reader-id");
+  await client.getRole("a", "f_01", "reader-id");
   assert.equal(calls.at(-1).headers["X-Embedded-Idp-Tenant-Id"], "a");
   assert.equal(calls.at(-1).headers.Authorization, "Bearer synthetic-access");
   assert.equal(client.getSnapshot().session.tenant_id, "0");
@@ -294,11 +320,11 @@ test("disabled and tenant sessions reject out-of-domain role requests and tenant
       return json(page([role(tenant)]));
     });
     await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
-    await client.listRoles(tenant);
+    await client.listRoles(tenant, "f_01");
     assert.equal(calls.at(-1).headers["X-Embedded-Idp-Tenant-Id"], tenant);
     const before = calls.length;
-    await assert.rejects(client.listRoles("other"));
-    await assert.rejects(client.getRole("other", "reader-id"));
+    await assert.rejects(client.listRoles("other", "f_01"));
+    await assert.rejects(client.getRole("other", "f_01", "reader-id"));
     await assert.rejects(client.listManagedTenants({}));
     assert.equal(calls.length, before);
   }
@@ -312,16 +338,16 @@ test("role writes send exact versioned contracts, never protection kind or permi
     return json({ role: role(), audit_id: "synthetic-audit" });
   });
   await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
-  await client.createRole("0", "reader", "Reader");
+  await client.createRole("0", "f_01", "reader", "Reader");
   assert.deepEqual(JSON.parse(calls.at(-1).body), { key: "reader", name: "Reader" });
-  await client.updateRole("0", role(), "New Reader", "disabled");
+  await client.updateRole("0", "f_01", role(), "New Reader", "disabled");
   assert.deepEqual(JSON.parse(calls.at(-1).body), { name: "New Reader", status: "disabled", expected_version: 3 });
-  await client.deleteRole("0", role());
+  await client.deleteRole("0", "f_01", role());
   assert.deepEqual(JSON.parse(calls.at(-1).body), { expected_version: 3 });
   const before = calls.length;
-  await assert.rejects(client.updateRole("0", role("0", { kind: "system_admin" }), "Name", "active"));
-  await assert.rejects(client.deleteRole("0", role("0", { kind: "tenant_security_admin" })));
-  await assert.rejects(client.updateRole("0", role("other"), "Name", "active"));
+  await assert.rejects(client.updateRole("0", "f_01", role("0", { kind: "system_admin" }), "Name", "active"));
+  await assert.rejects(client.deleteRole("0", "f_01", role("0", { kind: "tenant_security_admin" })));
+  await assert.rejects(client.updateRole("0", "f_01", role("other"), "Name", "active"));
   assert.equal(calls.length, before);
 });
 
@@ -334,7 +360,7 @@ test("conflicting, forbidden and uncertain writes are not replayed; 401 clears a
       return json({ message: "private internal detail" }, status);
     });
     await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
-    await assert.rejects(client.updateRole("0", role(), "Name", "active"), e => e.status === status && !e.message.includes("private"));
+    await assert.rejects(client.updateRole("0", "f_01", role(), "Name", "active"), e => e.status === status && !e.message.includes("private"));
     assert.equal(calls.filter(c => c.method === "PATCH").length, 1);
     assert.equal(!!client.getSnapshot().session, status !== 401);
   }
@@ -351,8 +377,8 @@ test("cross-domain role payloads and responses arriving after logout are rejecte
     return new Response(null, { status: 204 });
   });
   await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
-  await assert.rejects(client.listRoles("0"));
-  const pending = assert.rejects(client.getRole("0", "reader-id"));
+  await assert.rejects(client.listRoles("0", "f_01"));
+  const pending = assert.rejects(client.getRole("0", "f_01", "reader-id"));
   await started.promise;
   await client.logout();
   response.resolve(json(role()));
@@ -361,8 +387,8 @@ test("cross-domain role payloads and responses arriving after logout are rejecte
 
 const member = (tenant = "0") => ({ account_id: "member-1", email: "member@example.test", display_name: null, status: "active",
   membership: { account_id: "member-1", tenant_id: tenant, status: "active", version: 1 } });
-const binding = (scope = { kind: "type" }, tenant = "0") => ({ binding_id: "binding-1", tenant_id: tenant, subject_id: "member-1", role_id: "reader-id", resource_type: "report", scope });
-const directoryPermission = (overrides = {}) => ({ tenant_id: "0", resource_type: "report", action: "read", description: "Read reports", category: "business", enabled: true, archived: false, version: 1, ...overrides });
+const binding = (scope = { kind: "type" }, tenant = "0") => ({ binding_id: "binding-1", tenant_id: tenant, business_id: "f_01", subject_id: "member-1", role_id: "reader-id", resource_type: "report", scope });
+const directoryPermission = (overrides = {}) => ({ tenant_id: "0", business_id: "f_01", resource_type: "report", action: "read", description: "Read reports", category: "business", enabled: true, archived: false, version: 1, ...overrides });
 
 test("permission catalog is scoped, business-only, enabled-only and cursor-paginated", async t => {
   const { client, calls } = setup(t, path => {
@@ -371,7 +397,7 @@ test("permission catalog is scoped, business-only, enabled-only and cursor-pagin
     return json(page([directoryPermission()]));
   });
   await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
-  await client.listBusinessPermissions("0", "report", "cursor+/=");
+  await client.listBusinessPermissions("0", "f_01", "report", "cursor+/=");
   assert.equal(calls.at(-1).path, "/access/permissions?limit=50&category=business&enabled=true&resource_type=report&cursor=cursor%2B%2F%3D&sort_order=desc");
   assert.equal(calls.at(-1).headers["X-Embedded-Idp-Tenant-Id"], "0");
 });
@@ -386,7 +412,7 @@ test("permission directory reads stay inside the selected tenant", async t => {
       return json(page([permission]));
     });
     await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
-    const result = await client.listPermissionDirectory(tenant, { resource_type: "report", category: "business", enabled: true }, "cursor+/=");
+    const result = await client.listPermissionDirectory(tenant, "f_01", { resource_type: "report", category: "business", enabled: true }, "cursor+/=");
     const call = calls.at(-1); const url = new URL(call.path, "http://test");
     assert.equal(url.pathname, "/access/permissions");
     assert.equal(url.searchParams.get("cursor"), "cursor+/=");
@@ -402,7 +428,52 @@ test("permission directory rejects a different tenant's rows", async t => {
     return json(page([directoryPermission({ tenant_id: "tenant-b" })]));
   });
   await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
-  await assert.rejects(client.listPermissionDirectory("tenant-a"));
+  await assert.rejects(client.listPermissionDirectory("tenant-a", "f_01"));
+});
+
+test("tenant list reads can span businesses without sending a business header", async t => {
+  const roles = page([role("0", { business_id: "f_01" }), role("0", { business_id: "f_02", role_id: "reader-2" })]);
+  const bindings = page([binding(), { ...binding(), business_id: "f_02", binding_id: "binding-2" }]);
+  const permissions = page([directoryPermission(), directoryPermission({ business_id: "f_02" })]);
+  const { client, calls } = setup(t, path => {
+    if (path === "/capabilities") return json(fixed);
+    if (path === "/login") return json(authenticated());
+    if (path.startsWith("/access/roles?")) return json(roles);
+    if (path.startsWith("/access/subjects/member-1/role-bindings?")) return json(bindings);
+    if (path.startsWith("/access/permissions?")) return json(permissions);
+    throw new Error(path);
+  });
+  await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
+  assert.equal((await client.listRoles("0")).items.length, 2);
+  assert.equal(calls.at(-1).headers["X-Embedded-IdP-Business-Id"], undefined);
+  assert.equal((await client.listRoleBindings("0", undefined, "member-1")).items.length, 2);
+  assert.equal(calls.at(-1).headers["X-Embedded-IdP-Business-Id"], undefined);
+  assert.equal((await client.listPermissionDirectory("0")).items.length, 2);
+  assert.equal(calls.at(-1).headers["X-Embedded-IdP-Business-Id"], undefined);
+});
+
+test("optional business filters reject invalid values and mismatched rows", async t => {
+  let payload = page([role("0", { business_id: "f_02" })]);
+  const { client, calls } = setup(t, path => {
+    if (path === "/capabilities") return json(fixed);
+    if (path === "/login") return json(authenticated());
+    if (path.startsWith("/access/roles?")) return json(payload);
+    if (path.startsWith("/access/subjects/member-1/role-bindings?")) return json(page([{ ...binding(), business_id: "f_02" }]));
+    return json(page([directoryPermission({ business_id: "f_02" })]));
+  });
+  await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
+  await assert.rejects(client.listRoles("0", "f_01"));
+  await assert.rejects(client.listRoleBindings("0", "f_01", "member-1"));
+  await assert.rejects(client.listPermissionDirectory("0", "f_01"));
+  const before = calls.length;
+  for (const business of ["", "idp.custom", "bad value"]) {
+    await assert.rejects(client.listRoles("0", business));
+    await assert.rejects(client.listRoleBindings("0", business, "member-1"));
+    await assert.rejects(client.listPermissionDirectory("0", business));
+  }
+  assert.equal(calls.length, before);
+  payload = page([{ ...role("0"), business_id: "idp.custom" }]);
+  await assert.rejects(client.listRoles("0"));
 });
 
 test("permission definitions support manual create, read, edit, toggle and archive", async t => {
@@ -421,11 +492,11 @@ test("permission definitions support manual create, read, edit, toggle and archi
     return json({ audit_id: "audit", changes: [{ before: disabled, after: archived }] });
   });
   await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
-  assert.deepEqual(await client.createPermission("0", original, original.description), created);
-  assert.deepEqual(await client.getPermission("0", original), created);
-  assert.deepEqual(await client.updatePermission("0", created, edited.description), edited);
-  assert.deepEqual(await client.setPermissionEnabled("0", edited, false), disabled);
-  assert.deepEqual(await client.archivePermission("0", disabled), archived);
+  assert.deepEqual(await client.createPermission("0", "f_01", original, original.description), created);
+  assert.deepEqual(await client.getPermission("0", "f_01", original), created);
+  assert.deepEqual(await client.updatePermission("0", "f_01", created, edited.description), edited);
+  assert.deepEqual(await client.setPermissionEnabled("0", "f_01", edited, false), disabled);
+  assert.deepEqual(await client.archivePermission("0", "f_01", disabled), archived);
   assert.deepEqual(calls.slice(-5).map(c => [c.method, c.path]), [
     ["POST", "/access/permissions"], ["GET", "/access/permissions/report/read"],
     ["PATCH", "/access/permissions/report/read"], ["POST", "/access/permissions/report/read/enabled"],
@@ -437,19 +508,20 @@ test("role permissions replace the complete versioned set, allow empty set, reje
   const { client, calls } = setup(t, (path, init) => {
     if (path === "/capabilities") return json(fixed);
     if (path === "/login") return json(authenticated());
-    return json({ role: role("0", { permissions: JSON.parse(init.body).permissions, version: 4 }), audit_id: "synthetic-audit" });
+    return json({ role: role("0", { permissions: JSON.parse(init.body).permissions.map(p => ({ business_id: "f_01", ...p })), version: 4 }), audit_id: "synthetic-audit" });
   });
   await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
-  const permissions = [{ resource_type: "report", action: "read" }, { resource_type: "order", action: "read" }];
-  await client.replaceRolePermissions("0", role(), permissions);
+  const permissions = [{ business_id: "f_01", resource_type: "report", action: "read" }, { business_id: "f_01", resource_type: "order", action: "read" }];
+  await client.replaceRolePermissions("0", "f_01", role(), permissions);
   assert.equal(calls.at(-1).method, "PUT");
-  assert.deepEqual(JSON.parse(calls.at(-1).body), { permissions, expected_version: 3 });
-  assert.deepEqual((await client.replaceRolePermissions("0", role(), [])).permissions, []);
+  assert.deepEqual(JSON.parse(calls.at(-1).body), { permissions: permissions.map(({ business_id, ...permission }) => permission), expected_version: 3 });
+  assert.deepEqual((await client.replaceRolePermissions("0", "f_01", role(), [])).permissions, []);
   const before = calls.length;
-  await assert.rejects(client.replaceRolePermissions("0", role(), [permissions[0], permissions[0]]));
-  await assert.rejects(client.replaceRolePermissions("0", role(), Array.from({ length: 201 }, (_, i) => ({ resource_type: "report", action: `action${i}` }))));
-  await assert.rejects(client.replaceRolePermissions("0", role("0", { kind: "system_admin" }), permissions));
-  await assert.rejects(client.replaceRolePermissions("0", role("other"), permissions));
+  await assert.rejects(client.replaceRolePermissions("0", "f_01", role(), [permissions[0], permissions[0]]));
+  await assert.rejects(client.replaceRolePermissions("0", "f_01", role(), [{ ...permissions[0], business_id: "other" }]));
+  await assert.rejects(client.replaceRolePermissions("0", "f_01", role(), Array.from({ length: 201 }, (_, i) => ({ business_id: "f_01", resource_type: "report", action: `action${i}` }))));
+  await assert.rejects(client.replaceRolePermissions("0", "f_01", role("0", { kind: "system_admin" }), permissions));
+  await assert.rejects(client.replaceRolePermissions("0", "f_01", role("other"), permissions));
   assert.equal(calls.length, before);
 });
 
@@ -463,7 +535,7 @@ test("member and binding reads retain tenant and subject identity without per-ro
   await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
   await client.listMembers("0", "member+tag@example.test", "cursor+/=");
   assert.ok(calls.at(-1).path.includes("email=member%2Btag%40example.test"));
-  const result = await client.listRoleBindings("0", "member-1");
+  const result = await client.listRoleBindings("0", "f_01", "member-1");
   assert.equal(result.items[1].scope.resource_id, "report-42");
   assert.equal(calls.filter(c => c.path.startsWith("/access/roles/")).length, 0);
 });
@@ -476,17 +548,17 @@ test("grants require explicit type or nonempty instance scope and send the exact
   });
   await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
   for (const scope of [{ kind: "type" }, { kind: "instance", resource_id: "report-42" }]) {
-    await client.grantRole("0", "member-1", role(), "report", scope);
+    await client.grantRole("0", "f_01", "member-1", role(), "report", scope);
     assert.equal(calls.at(-1).path, "/access/subjects/member-1/role-bindings");
     assert.deepEqual(JSON.parse(calls.at(-1).body), { role_id: "reader-id", resource_type: "report", scope });
   }
   const before = calls.length;
   for (const scope of [undefined, {}, { kind: "instance", resource_id: "" }, { kind: "instance", resource_id: "../report/42" }, { kind: "type", resource_id: "report-42" }]) {
-    await assert.rejects(client.grantRole("0", "member-1", role(), "report", scope));
+    await assert.rejects(client.grantRole("0", "f_01", "member-1", role(), "report", scope));
   }
-  await assert.rejects(client.grantRole("0", "member-1", role("0", { kind: "system_admin" }), "report", { kind: "type" }));
-  await assert.rejects(client.grantRole("0", "member-1", role("0", { status: "disabled" }), "report", { kind: "type" }));
-  await assert.rejects(client.grantRole("0", "member-1", role(), "order", { kind: "type" }));
+  await assert.rejects(client.grantRole("0", "f_01", "member-1", role("0", { kind: "system_admin" }), "report", { kind: "type" }));
+  await assert.rejects(client.grantRole("0", "f_01", "member-1", role("0", { status: "disabled" }), "report", { kind: "type" }));
+  await assert.rejects(client.grantRole("0", "f_01", "member-1", role(), "order", { kind: "type" }));
   assert.equal(calls.length, before);
 });
 
@@ -497,12 +569,12 @@ test("revocation uses only the binding ID, has no body, and excludes protected r
     return json({ binding: null, audit_id: "synthetic-audit" });
   });
   await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
-  await client.revokeRoleBinding("0", binding(), role());
+  await client.revokeRoleBinding("0", "f_01", binding(), role());
   assert.equal(calls.at(-1).path, "/access/role-bindings/binding-1");
   assert.equal(calls.at(-1).method, "DELETE"); assert.equal(calls.at(-1).body, undefined);
   const before = calls.length;
-  await assert.rejects(client.revokeRoleBinding("0", binding(), role("0", { kind: "tenant_security_admin" })));
-  await assert.rejects(client.revokeRoleBinding("0", binding(), role("0", { role_id: "different" })));
+  await assert.rejects(client.revokeRoleBinding("0", "f_01", binding(), role("0", { kind: "tenant_security_admin" })));
+  await assert.rejects(client.revokeRoleBinding("0", "f_01", binding(), role("0", { role_id: "different" })));
   assert.equal(calls.length, before);
 });
 
@@ -516,10 +588,10 @@ test("unexpected member, permission and assignment projections fail closed", asy
   await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
   payload = page([member("other")]); await assert.rejects(client.listMembers("0"));
   payload = page([{ resource_type: "idp.platform", action: "access.manage", description: "admin", category: "platform", enabled: true }]);
-  await assert.rejects(client.listBusinessPermissions("0"));
-  payload = page([{ ...binding(), subject_id: "other-user" }]); await assert.rejects(client.listRoleBindings("0", "member-1"));
+  await assert.rejects(client.listBusinessPermissions("0", "f_01"));
+  payload = page([{ ...binding(), subject_id: "other-user" }]); await assert.rejects(client.listRoleBindings("0", "f_01", "member-1"));
   payload = { binding: binding({ kind: "type" }), audit_id: "synthetic-audit" };
-  await assert.rejects(client.grantRole("0", "member-1", role(), "report", { kind: "instance", resource_id: "report-42" }));
+  await assert.rejects(client.grantRole("0", "f_01", "member-1", role(), "report", { kind: "instance", resource_id: "report-42" }));
 });
 
 test("permission and binding writes do not retry conflicts or unknown results", async t => {
@@ -531,9 +603,9 @@ test("permission and binding writes do not retry conflicts or unknown results", 
     return json({}, status);
   });
   await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
-  await assert.rejects(client.replaceRolePermissions("0", role(), []), e => e.status === status);
-  await assert.rejects(client.grantRole("0", "member-1", role(), "report", { kind: "type" }), e => e.status === status);
-  await assert.rejects(client.revokeRoleBinding("0", binding(), role()), e => e.status === status);
+  await assert.rejects(client.replaceRolePermissions("0", "f_01", role(), []), e => e.status === status);
+  await assert.rejects(client.grantRole("0", "f_01", "member-1", role(), "report", { kind: "type" }), e => e.status === status);
+  await assert.rejects(client.revokeRoleBinding("0", "f_01", binding(), role()), e => e.status === status);
   assert.equal(calls.length, 5);
   assert.ok(client.getSnapshot().session);
   }
@@ -542,12 +614,12 @@ test("permission and binding writes do not retry conflicts or unknown results", 
 test("all permission and membership operations reject another tenant before fetching", async t => {
   const { client, calls } = setup(t, path => json(path === "/capabilities" ? { ...fixed, tenancy_enabled: true, fixed_tenant_id: "a" } : authenticated("a")));
   await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
-  await assert.rejects(client.listBusinessPermissions("b"));
-  await assert.rejects(client.replaceRolePermissions("b", role("b"), []));
+  await assert.rejects(client.listBusinessPermissions("b", "f_01"));
+  await assert.rejects(client.replaceRolePermissions("b", "f_01", role("b"), []));
   await assert.rejects(client.listMembers("b"));
-  await assert.rejects(client.listRoleBindings("b", "member-1"));
-  await assert.rejects(client.grantRole("b", "member-1", role("b"), "report", { kind: "type" }));
-  await assert.rejects(client.revokeRoleBinding("b", binding({ kind: "type" }, "b"), role("b")));
+  await assert.rejects(client.listRoleBindings("b", "f_01", "member-1"));
+  await assert.rejects(client.grantRole("b", "f_01", "member-1", role("b"), "report", { kind: "type" }));
+  await assert.rejects(client.revokeRoleBinding("b", "f_01", binding({ kind: "type" }, "b"), role("b")));
   assert.equal(calls.length, 2);
 });
 
@@ -698,7 +770,7 @@ test("new tenant administrator sends explicit credentials only in its creation r
 const administratorSnapshot = (tenant = "a", appointed = false) => ({
   tenant_id: tenant, tenant_status: "active", account: member(tenant),
   role: role(tenant, { kind: tenant === "0" ? "system_admin" : "tenant_security_admin" }),
-  binding: appointed ? { ...binding({ kind: "type" }, tenant), resource_type: tenant === "0" ? "idp.platform" : "idp.tenant" } : null,
+  binding: appointed ? { ...binding({ kind: "type" }, tenant), business_id: "idp", resource_type: tenant === "0" ? "idp.platform" : "idp.tenant" } : null,
 });
 
 test("administrator snapshots and bodyless writes use dedicated platform or explicit tenant targets", async t => {
@@ -1115,18 +1187,18 @@ test("permission write preflight rejects protected or cross-tenant definitions",
   const { client, calls } = setup(t, path => json(path === "/capabilities" ? { ...fixed, tenancy_enabled: true, fixed_tenant_id: "tenant-a" } : authenticated("tenant-a")));
   await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
   const permission = directoryPermission({ tenant_id: "tenant-a" }), before = calls.length;
-  await assert.rejects(client.createPermission("tenant-a", { resource_type: "idp.custom", action: "read" }, "Protected"));
-  await assert.rejects(client.updatePermission("tenant-b", permission, "new"));
-  await assert.rejects(client.archivePermission("tenant-b", permission));
-  await assert.rejects(client.setPermissionEnabled("tenant-a", { ...permission, archived: true }, false));
-  await assert.rejects(client.listPermissionDirectory("tenant-b"));
+  await assert.rejects(client.createPermission("tenant-a", "f_01", { business_id: "f_01", resource_type: "idp.custom", action: "read" }, "Protected"));
+  await assert.rejects(client.updatePermission("tenant-b", "f_01", permission, "new"));
+  await assert.rejects(client.archivePermission("tenant-b", "f_01", permission));
+  await assert.rejects(client.setPermissionEnabled("tenant-a", "f_01", { ...permission, archived: true }, false));
+  await assert.rejects(client.listPermissionDirectory("tenant-b", "f_01"));
   assert.equal(calls.length, before);
 });
 
 const auditRecord = (target_domain = "tenant-a", overrides = {}) => ({
   audit_id: "audit-1", occurred_at_unix_secs: 1_700_000_000, actor_id: "admin-1",
   actor_domain: "0", actor_session_id: null, authentication_source: "management",
-  target_domain, operation: "access.check", request_id: "request-1", ...overrides,
+  target_domain, target_business_id: null, operation: "access.check", request_id: "request-1", ...overrides,
 });
 
 test("audit reads keep platform and selected tenant separate and load detail only on demand", async t => {
@@ -1150,6 +1222,10 @@ test("audit reads keep platform and selected tenant separate and load detail onl
   assert.equal(url.searchParams.get("cursor"), "cursor+/=");
   assert.equal(url.searchParams.get("actor_id"), "admin-1");
   assert.equal(url.searchParams.get("operation"), "access.check");
+  assert.equal(tenantCall.headers["X-Embedded-IdP-Business-Id"], undefined);
+  await assert.rejects(client.listAuditEvents("tenant-a", { business_id: "f_01" }));
+  assert.equal(new URL(calls.at(-1).path, "http://test").searchParams.get("business_id"), "f_01");
+  assert.equal(calls.at(-1).headers["X-Embedded-IdP-Business-Id"], undefined);
   assert.equal(url.searchParams.get("occurred_after_unix_secs"), "1699999999");
   assert.equal(tenantCall.headers["X-Embedded-Idp-Tenant-Id"], "tenant-a");
   assert.deepEqual((await client.getAuditEvent("tenant-a", "audit-1")).change, { kind: "permission_checked", allowed: false });
@@ -1185,7 +1261,7 @@ test("audit projections reject cross-domain, mismatched filters and missing deta
 });
 
 test("diagnosis sends only the selected query and rejects mismatched or uncertain results", async t => {
-  let response = { audit_id: "audit-1", tenant_id: "tenant-a", subject_id: "user-1", resource_type: "report", action: "read", resource_id: "report-42", decision: "deny" };
+  let response = { audit_id: "audit-1", tenant_id: "tenant-a", business_id: "f_01", subject_id: "user-1", resource_type: "report", action: "read", resource_id: "report-42", decision: "deny" };
   const { client, calls } = setup(t, path => {
     if (path === "/capabilities") return json({ ...fixed, tenancy_enabled: true });
     if (path === "/login") return json(authenticated("0"));
@@ -1193,22 +1269,22 @@ test("diagnosis sends only the selected query and rejects mismatched or uncertai
     return json(response);
   });
   await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
-  const input = { subject_id: "user-1", resource_type: "report", action: "read", resource_id: "report-42" };
-  assert.deepEqual(await client.diagnosePermission("tenant-a", input), response);
+  const input = { business_id: "f_01", subject_id: "user-1", resource_type: "report", action: "read", resource_id: "report-42" };
+  assert.deepEqual(await client.diagnosePermission("tenant-a", "f_01", input), response);
   const call = calls.at(-1);
   assert.equal(call.path, "/access/check");
   assert.equal(call.headers["X-Embedded-Idp-Tenant-Id"], "tenant-a");
-  assert.deepEqual(JSON.parse(call.body), input);
+  assert.deepEqual(JSON.parse(call.body), (({ business_id, ...body }) => body)(input));
   const count = calls.length;
-  await assert.rejects(client.diagnosePermission("0", input));
-  await assert.rejects(client.diagnosePermission("tenant-a", { ...input, resource_id: "bad id" }));
+  await assert.rejects(client.diagnosePermission("0", "f_01", input));
+  await assert.rejects(client.diagnosePermission("tenant-a", "f_01", { ...input, resource_id: "bad id" }));
   assert.equal(calls.length, count);
   for (const bad of [{ ...response, tenant_id: "tenant-b" }, { ...response, resource_id: null }, { ...response, decision: "allowish" }, { ...response, audit_id: undefined }]) {
     response = bad;
-    await assert.rejects(client.diagnosePermission("tenant-a", input));
+    await assert.rejects(client.diagnosePermission("tenant-a", "f_01", input));
   }
   response = null;
-  await assert.rejects(client.diagnosePermission("tenant-a", input), e => e.message.includes("勿重复提交"));
+  await assert.rejects(client.diagnosePermission("tenant-a", "f_01", input), e => e.message.includes("勿重复提交"));
   assert.equal(calls.filter(c => c.path === "/access/check").length, 6);
 });
 

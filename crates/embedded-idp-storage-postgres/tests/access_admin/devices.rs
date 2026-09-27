@@ -43,6 +43,17 @@ pub(super) fn send(
     tenant: Option<&str>,
     body: &str,
 ) -> (StatusCode, Value) {
+    send_with_business(app, method, path, tenant, body, Some("f_01"))
+}
+
+pub(super) fn send_with_business(
+    app: &Router,
+    method: &str,
+    path: &str,
+    tenant: Option<&str>,
+    body: &str,
+    business_id: Option<&str>,
+) -> (StatusCode, Value) {
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -54,6 +65,14 @@ pub(super) fn send(
                 .header("content-type", "application/json");
             if let Some(tenant) = tenant {
                 builder = builder.header("x-embedded-idp-tenant-id", tenant);
+            }
+            if path.starts_with("/admin/access/")
+                && !path.starts_with("/admin/access/audit-events")
+                && !path.starts_with("/admin/access/security-admins")
+            {
+                if let Some(business_id) = business_id {
+                    builder = builder.header("x-embedded-idp-business-id", business_id);
+                }
             }
             let response = app
                 .clone()

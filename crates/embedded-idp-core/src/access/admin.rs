@@ -24,11 +24,11 @@ pub use audit::*;
 use std::{collections::BTreeSet, time::SystemTime};
 
 use super::{
-    query::{validate_id, validate_name},
+    query::{validate_business_id, validate_id, validate_name},
     AccessActor, AccessAdminOperation, AccessError, AccessQuery, MembershipStatus,
     PermissionCatalog, PermissionCategory, PermissionDefinition, PermissionKey, ResourceScope,
-    Role, RoleBinding, RoleKind, RoleStatus, TenancyMode, Tenant, TenantMembership, TenantStatus,
-    SYSTEM_TENANT_ID,
+    Role, RoleBinding, RoleBindingScope, RoleKind, RoleStatus, TenancyMode, Tenant,
+    TenantMembership, TenantStatus, SYSTEM_TENANT_ID,
 };
 use crate::{Clock, DeviceStatus, IdGenerator, SessionStatus, StoreError};
 
@@ -90,31 +90,40 @@ pub enum AccessAdminMutation {
         expected_version: u64,
     },
     CreateRole {
+        business_id: String,
         key: String,
         name: String,
     },
+    CreateBusinessAdminRole {
+        business_id: String,
+        name: Option<String>,
+    },
     UpdateRole {
+        business_id: String,
         role_id: String,
         name: String,
         status: RoleStatus,
         expected_version: u64,
     },
     DeleteRole {
+        business_id: String,
         role_id: String,
         expected_version: u64,
     },
     ReplaceRolePermissions {
+        business_id: String,
         role_id: String,
         permissions: Vec<PermissionKey>,
         expected_version: u64,
     },
     GrantRole {
+        business_id: String,
         subject_id: String,
         role_id: String,
-        resource_type: String,
-        scope: ResourceScope,
+        scope: RoleBindingScope,
     },
     RevokeRole {
+        business_id: String,
         binding_id: String,
     },
     BindMember {
@@ -225,6 +234,7 @@ pub struct AccessAuditEvent {
     pub occurred_at: SystemTime,
     pub context: AccessAdminContext,
     pub tenant_id: String,
+    pub target_business_id: Option<String>,
     pub operation: &'static str,
     pub change: AccessChange,
 }
@@ -358,6 +368,7 @@ pub trait AccessAdminTransaction {
     fn resource_category(
         &mut self,
         tenant_id: &str,
+        business_id: &str,
         resource_type: &str,
     ) -> Result<Option<PermissionCategory>, StoreError>;
     fn account_is_active(&mut self, subject_id: &str) -> Result<bool, StoreError>;
@@ -371,6 +382,7 @@ pub trait AccessAdminTransaction {
     fn role(
         &mut self,
         tenant_id: &str,
+        business_id: &str,
         role_id: &str,
     ) -> Result<Option<AccessRoleRecord>, StoreError>;
     /// Metadata only, including protected/disabled roles in exactly one tenant.
@@ -379,6 +391,7 @@ pub trait AccessAdminTransaction {
     fn admin_roles(
         &mut self,
         tenant: &str,
+        business_id: Option<&str>,
         page: &super::AccessPageRequest,
     ) -> Result<Vec<Role>, StoreError>;
     fn permission(
@@ -402,6 +415,7 @@ pub trait AccessAdminTransaction {
     fn binding(
         &mut self,
         tenant_id: &str,
+        business_id: &str,
         binding_id: &str,
     ) -> Result<Option<RoleBinding>, StoreError>;
     /// Configured assignments in exactly one tenant and subject, including
@@ -410,6 +424,7 @@ pub trait AccessAdminTransaction {
     fn admin_role_bindings(
         &mut self,
         tenant: &str,
+        business_id: Option<&str>,
         subject: &str,
         page: &super::AccessPageRequest,
     ) -> Result<Vec<RoleBinding>, StoreError>;
@@ -419,6 +434,11 @@ pub trait AccessAdminTransaction {
         tenant_id: &str,
         kind: RoleKind,
     ) -> Result<Option<AccessRoleRecord>, StoreError>;
+    fn business_admin_role(
+        &mut self,
+        tenant_id: &str,
+        business_id: &str,
+    ) -> Result<Option<AccessRoleRecord>, StoreError>;
     fn security_binding(
         &mut self,
         tenant_id: &str,
@@ -426,7 +446,9 @@ pub trait AccessAdminTransaction {
         role_id: &str,
     ) -> Result<Option<RoleBinding>, StoreError>;
     /// Apply with uniqueness/FK checks and compare the before version where present.
-    /// Role deletion removes its bindings. Removing a role's last action for a
+    /// Ordinary role deletion removes its bindings. BusinessAdmin deletion must
+    /// conflict while any binding exists, without deleting bindings. Check this
+    /// atomically with deletion. Removing a role's last action for a
     /// resource type deletes bindings for that type, so re-adding cannot revive them.
     /// Member suspension/removal revokes this domain's sessions/refresh families,
     /// authorization/verification codes and applicable selection tickets. Removal
@@ -503,6 +525,32 @@ impl<S, C, I> CoreAccessAdminService<S, C, I> {
 }
 
 impl AccessAdminMutation {
+    fn business_id(&self) -> Option<String> {
+        match self {
+            Self::SetSecurityAdmin { .. } => Some(super::IDP_BUSINESS_ID.into()),
+            Self::CreateRole { business_id, .. }
+            | Self::CreateBusinessAdminRole { business_id, .. }
+            | Self::UpdateRole { business_id, .. }
+            | Self::DeleteRole { business_id, .. }
+            | Self::ReplaceRolePermissions { business_id, .. }
+            | Self::GrantRole { business_id, .. }
+            | Self::RevokeRole { business_id, .. } => Some(business_id.clone()),
+            Self::SyncPermissions { permissions } => {
+                permissions.first().map(|p| p.business_id.clone())
+            }
+            Self::SetPermissionEnabled { permission, .. }
+            | Self::CreatePermission {
+                key: permission, ..
+            }
+            | Self::UpdatePermission {
+                key: permission, ..
+            }
+            | Self::ArchivePermission {
+                key: permission, ..
+            } => Some(permission.business_id.clone()),
+            _ => None,
+        }
+    }
     fn operation(&self) -> &'static str {
         match self {
             Self::RevokeSession { .. } => "session.revoke",
@@ -519,7 +567,7 @@ impl AccessAdminMutation {
             Self::CreatePermission { .. } => "permission.create",
             Self::UpdatePermission { .. } => "permission.update",
             Self::ArchivePermission { .. } => "permission.archive",
-            Self::CreateRole { .. } => "role.create",
+            Self::CreateRole { .. } | Self::CreateBusinessAdminRole { .. } => "role.create",
             Self::UpdateRole { .. } => "role.update",
             Self::DeleteRole { .. } => "role.delete",
             Self::ReplaceRolePermissions { .. } => "role.permissions.replace",
@@ -582,6 +630,9 @@ impl AccessAdminMutation {
                 let mut unique = BTreeSet::new();
                 for permission in permissions {
                     permission.validate()?;
+                    if permission.business_id != permissions[0].business_id {
+                        return Err(AccessError::InvalidInput("mixed_business_permissions"));
+                    }
                     if !unique.insert(permission) {
                         return Err(AccessError::InvalidInput("duplicate_permission"));
                     }
@@ -593,6 +644,7 @@ impl AccessAdminMutation {
                 key, description, ..
             } => {
                 key.validate()?;
+                validate_business_id(&key.business_id)?;
                 validate_permission_description(description)?;
                 if key.resource_type.starts_with("idp.") {
                     return Err(AccessError::Forbidden);
@@ -611,6 +663,7 @@ impl AccessAdminMutation {
                 expected_version,
             } => {
                 key.validate()?;
+                validate_business_id(&key.business_id)?;
                 if key.resource_type.starts_with("idp.") {
                     return Err(AccessError::Forbidden);
                 }
@@ -618,31 +671,57 @@ impl AccessAdminMutation {
                     return Err(AccessError::InvalidInput("expected_version"));
                 }
             }
-            Self::CreateRole { key, name } => {
+            Self::CreateRole {
+                business_id,
+                key,
+                name,
+            } => {
+                validate_business_id(business_id)?;
                 validate_name(key, "role_key")?;
-                if matches!(key.as_str(), "system_admin" | "tenant_security_admin") {
+                if matches!(
+                    key.as_str(),
+                    "system_admin"
+                        | "tenant_security_admin"
+                        | "idp_system_admin"
+                        | "idp_tenant_security_admin"
+                        | "business_admin"
+                ) {
                     return Err(AccessError::Forbidden);
                 }
                 validate_role_name(name)?;
             }
+            Self::CreateBusinessAdminRole { business_id, name } => {
+                validate_business_id(business_id)?;
+                if let Some(name) = name {
+                    validate_role_name(name)?;
+                }
+            }
             Self::UpdateRole {
+                business_id,
                 role_id,
                 name,
                 expected_version,
                 ..
             } => {
+                validate_business_id(business_id)?;
                 validate_role_name(name)?;
                 validate_version(role_id, *expected_version)?;
             }
             Self::DeleteRole {
+                business_id,
                 role_id,
                 expected_version,
-            } => validate_version(role_id, *expected_version)?,
+            } => {
+                validate_business_id(business_id)?;
+                validate_version(role_id, *expected_version)?
+            }
             Self::ReplaceRolePermissions {
+                business_id,
                 role_id,
                 permissions,
                 expected_version,
             } => {
+                validate_business_id(business_id)?;
                 validate_version(role_id, *expected_version)?;
                 if permissions.len() > MAX_ROLE_PERMISSIONS {
                     return Err(AccessError::InvalidInput("permissions_limit"));
@@ -656,16 +735,22 @@ impl AccessAdminMutation {
                 }
             }
             Self::GrantRole {
+                business_id,
                 role_id,
-                resource_type,
                 scope,
                 ..
             } => {
                 validate_id(role_id, 128, "role_id")?;
-                validate_name(resource_type, "resource_type")?;
+                validate_business_id(business_id)?;
                 scope.validate()?;
             }
-            Self::RevokeRole { binding_id } => validate_id(binding_id, 128, "binding_id")?,
+            Self::RevokeRole {
+                business_id,
+                binding_id,
+            } => {
+                validate_business_id(business_id)?;
+                validate_id(binding_id, 128, "binding_id")?
+            }
             Self::SetMemberStatus {
                 expected_version, ..
             } if *expected_version == 0 => {
@@ -735,18 +820,26 @@ where
         &self,
         tx: &mut impl AccessAdminTransaction,
         tenant: &str,
+        business_id: &str,
         role_id: &str,
     ) -> Result<AccessRoleRecord, AccessError> {
         let record = tx
-            .role(tenant, role_id)?
+            .role(tenant, business_id, role_id)?
             .ok_or(AccessError::NotFound("role"))?;
-        if record.role.tenant_id != tenant || record.role.id != role_id {
+        if record.role.tenant_id != tenant
+            || record.role.business_id != business_id
+            || record.role.id != role_id
+        {
             return Err(AccessError::InvalidStoreResponse);
         }
-        if record.role.kind != RoleKind::Business {
+        if !matches!(
+            record.role.kind,
+            RoleKind::Business | RoleKind::BusinessAdmin
+        ) {
             return Err(AccessError::Forbidden);
         }
         self.mode.validate_business_tenant(tenant)?;
+        validate_business_id(business_id)?;
         Ok(record)
     }
 
@@ -772,9 +865,12 @@ where
         &self,
         tx: &mut impl AccessAdminTransaction,
         tenant: &str,
+        business_id: &str,
         key: &PermissionKey,
     ) -> Result<(), AccessError> {
-        if key.resource_type.starts_with("idp.")
+        if key.business_id != business_id
+            || key.business_id == super::IDP_BUSINESS_ID
+            || key.resource_type.starts_with("idp.")
             || !self.mode.permits(tenant, PermissionCategory::Business)
         {
             return Err(AccessError::Forbidden);
@@ -861,8 +957,9 @@ where
                 role: Role {
                     id: role_id.clone(),
                     tenant_id: tenant.clone(),
-                    key: "tenant_security_admin".into(),
-                    name: "Tenant security administrator".into(),
+                    business_id: super::IDP_BUSINESS_ID.into(),
+                    key: "idp_tenant_security_admin".into(),
+                    name: "IDP租户管理员".into(),
                     status: RoleStatus::Active,
                     kind: RoleKind::TenantSecurityAdmin,
                     version: 1,
@@ -873,10 +970,13 @@ where
             binding: RoleBinding {
                 id: self.new_id("binding")?,
                 tenant_id: tenant.clone(),
+                business_id: super::IDP_BUSINESS_ID.into(),
                 subject_id: administrator_subject_id.clone(),
                 role_id,
-                resource_type: "idp.tenant".into(),
-                scope: ResourceScope::Type,
+                scope: RoleBindingScope::Resource {
+                    resource_type: "idp.tenant".into(),
+                    scope: ResourceScope::Type,
+                },
                 created_at: now,
             },
         })
@@ -985,7 +1085,9 @@ where
                     }
                     after.tenant_id = tenant.clone();
                     after.created_at = Some(now);
-                    if let Some(category) = tx.resource_category(tenant, &key.resource_type)? {
+                    if let Some(category) =
+                        tx.resource_category(tenant, &key.business_id, &key.resource_type)?
+                    {
                         if category != after.category {
                             return Err(AccessError::Conflict("permission_category"));
                         }
@@ -1046,7 +1148,7 @@ where
                     return Err(AccessError::Conflict("permission_exists"));
                 }
                 if tx
-                    .resource_category(tenant, &key.resource_type)?
+                    .resource_category(tenant, &key.business_id, &key.resource_type)?
                     .is_some_and(|category| category != PermissionCategory::Business)
                 {
                     return Err(AccessError::Conflict("permission_category"));
@@ -1117,7 +1219,11 @@ where
                     }],
                 })
             }
-            AccessAdminMutation::CreateRole { key, name } => {
+            AccessAdminMutation::CreateRole {
+                business_id,
+                key,
+                name,
+            } => {
                 self.mode.validate_business_tenant(tenant)?;
                 Ok(AccessChange::Role {
                     before: None,
@@ -1125,6 +1231,7 @@ where
                         role: Role {
                             id: self.new_id("role")?,
                             tenant_id: tenant.clone(),
+                            business_id: business_id.clone(),
                             key: key.clone(),
                             name: name.clone(),
                             status: RoleStatus::Active,
@@ -1136,13 +1243,34 @@ where
                     }),
                 })
             }
+            AccessAdminMutation::CreateBusinessAdminRole { business_id, name } => {
+                self.mode.validate_business_tenant(tenant)?;
+                Ok(AccessChange::Role {
+                    before: None,
+                    after: Some(AccessRoleRecord {
+                        role: Role {
+                            id: self.new_id("role")?,
+                            tenant_id: tenant.clone(),
+                            business_id: business_id.clone(),
+                            key: "business_admin".into(),
+                            name: name.clone().unwrap_or_else(|| "业务管理员".into()),
+                            status: RoleStatus::Active,
+                            kind: RoleKind::BusinessAdmin,
+                            version: 1,
+                            created_at: now,
+                        },
+                        permissions: vec![],
+                    }),
+                })
+            }
             AccessAdminMutation::UpdateRole {
+                business_id,
                 role_id,
                 name,
                 status,
                 expected_version,
             } => {
-                let before = self.business_role(tx, tenant, role_id)?;
+                let before = self.business_role(tx, tenant, business_id, role_id)?;
                 let mut after = before.clone();
                 after.role.version = next_version(before.role.version, *expected_version)?;
                 after.role.name = name.clone();
@@ -1153,10 +1281,11 @@ where
                 })
             }
             AccessAdminMutation::DeleteRole {
+                business_id,
                 role_id,
                 expected_version,
             } => {
-                let before = self.business_role(tx, tenant, role_id)?;
+                let before = self.business_role(tx, tenant, business_id, role_id)?;
                 next_version(before.role.version, *expected_version)?;
                 Ok(AccessChange::Role {
                     before: Some(before),
@@ -1164,15 +1293,19 @@ where
                 })
             }
             AccessAdminMutation::ReplaceRolePermissions {
+                business_id,
                 role_id,
                 permissions,
                 expected_version,
             } => {
-                let before = self.business_role(tx, tenant, role_id)?;
+                let before = self.business_role(tx, tenant, business_id, role_id)?;
+                if before.role.kind == RoleKind::BusinessAdmin {
+                    return Err(AccessError::Forbidden);
+                }
                 let mut after = before.clone();
                 after.role.version = next_version(before.role.version, *expected_version)?;
                 for key in permissions {
-                    self.business_permission(tx, tenant, key)?;
+                    self.business_permission(tx, tenant, business_id, key)?;
                 }
                 after.permissions = permissions.clone();
                 after.permissions.sort();
@@ -1182,48 +1315,73 @@ where
                 })
             }
             AccessAdminMutation::GrantRole {
+                business_id,
                 subject_id,
                 role_id,
-                resource_type,
                 scope,
             } => {
                 self.active_member(tx, tenant, subject_id)?;
-                let role = self.business_role(tx, tenant, role_id)?;
+                let role = tx
+                    .role(tenant, business_id, role_id)?
+                    .ok_or(AccessError::NotFound("role"))?;
+                if role.role.tenant_id != *tenant
+                    || role.role.business_id != *business_id
+                    || role.role.id != *role_id
+                {
+                    return Err(AccessError::InvalidStoreResponse);
+                }
                 if role.role.status != RoleStatus::Active {
                     return Err(AccessError::Forbidden);
                 }
-                let keys: Vec<_> = role
-                    .permissions
-                    .iter()
-                    .filter(|p| p.resource_type == *resource_type)
-                    .collect();
-                if keys.is_empty() {
-                    return Err(AccessError::InvalidInput("role_resource_type"));
-                }
-                for key in keys {
-                    self.business_permission(tx, tenant, key)?;
+                match (&role.role.kind, scope) {
+                    (RoleKind::BusinessAdmin, RoleBindingScope::Business) => {}
+                    (RoleKind::Business, RoleBindingScope::Resource { resource_type, .. }) => {
+                        let keys: Vec<_> = role
+                            .permissions
+                            .iter()
+                            .filter(|p| p.resource_type == *resource_type)
+                            .collect();
+                        if keys.is_empty() {
+                            return Err(AccessError::InvalidInput("role_resource_type"));
+                        }
+                        for key in keys {
+                            self.business_permission(tx, tenant, business_id, key)?;
+                        }
+                    }
+                    _ => return Err(AccessError::Forbidden),
                 }
                 Ok(AccessChange::Binding {
                     before: None,
                     after: Some(RoleBinding {
                         id: self.new_id("binding")?,
                         tenant_id: tenant.clone(),
+                        business_id: business_id.clone(),
                         subject_id: subject_id.clone(),
                         role_id: role_id.clone(),
-                        resource_type: resource_type.clone(),
                         scope: scope.clone(),
                         created_at: now,
                     }),
                 })
             }
-            AccessAdminMutation::RevokeRole { binding_id } => {
+            AccessAdminMutation::RevokeRole {
+                business_id,
+                binding_id,
+            } => {
                 let before = tx
-                    .binding(tenant, binding_id)?
+                    .binding(tenant, business_id, binding_id)?
                     .ok_or(AccessError::NotFound("binding"))?;
-                if before.tenant_id != *tenant || before.id != *binding_id {
+                if before.tenant_id != *tenant
+                    || before.business_id != *business_id
+                    || before.id != *binding_id
+                {
                     return Err(AccessError::InvalidStoreResponse);
                 }
-                self.business_role(tx, tenant, &before.role_id)?;
+                let role = tx
+                    .role(tenant, business_id, &before.role_id)?
+                    .ok_or(AccessError::NotFound("role"))?;
+                if !matches!(role.role.kind, RoleKind::Business | RoleKind::BusinessAdmin) {
+                    return Err(AccessError::Forbidden);
+                }
                 Ok(AccessChange::Binding {
                     before: Some(before),
                     after: None,
@@ -1313,8 +1471,12 @@ where
                     if binding.tenant_id != *tenant
                         || binding.subject_id != *subject_id
                         || binding.role_id != role.role.id
-                        || binding.resource_type != resource_type
-                        || binding.scope != ResourceScope::Type
+                        || binding.business_id != super::IDP_BUSINESS_ID
+                        || binding.scope
+                            != (RoleBindingScope::Resource {
+                                resource_type: resource_type.into(),
+                                scope: ResourceScope::Type,
+                            })
                     {
                         return Err(AccessError::InvalidStoreResponse);
                     }
@@ -1356,10 +1518,13 @@ where
                     Some(RoleBinding {
                         id: self.new_id("binding")?,
                         tenant_id: tenant.clone(),
+                        business_id: super::IDP_BUSINESS_ID.into(),
                         subject_id: subject_id.clone(),
                         role_id: role.role.id,
-                        resource_type: resource_type.into(),
-                        scope: ResourceScope::Type,
+                        scope: RoleBindingScope::Resource {
+                            resource_type: resource_type.into(),
+                            scope: ResourceScope::Type,
+                        },
                         created_at: now,
                     })
                 } else {
@@ -1403,6 +1568,7 @@ where
                 AccessAdminOperation::ManageBusinessPermissions
             }
             AccessAdminMutation::CreateRole { .. }
+            | AccessAdminMutation::CreateBusinessAdminRole { .. }
             | AccessAdminMutation::UpdateRole { .. }
             | AccessAdminMutation::DeleteRole { .. }
             | AccessAdminMutation::ReplaceRolePermissions { .. } => {
@@ -1511,6 +1677,7 @@ where
                 occurred_at: now,
                 context: context.clone(),
                 tenant_id: command.tenant_id.clone(),
+                target_business_id: command.mutation.business_id(),
                 operation: command.mutation.operation(),
                 change,
             };

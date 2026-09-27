@@ -28,13 +28,15 @@ const copy = {
 
 export interface EmbeddedAuthProps {
   client: EmbeddedIdentityClient;
+  /** When supplied, the component lists roles in this explicit business domain. */
+  businessId?: string;
   language?: Language;
   className?: string;
   style?: CSSProperties;
 }
 
 /** Public, host-embeddable sign-in UI. It never imports management routes or styles. */
-export function EmbeddedAuth({ client, language = "zh-CN", className, style }: EmbeddedAuthProps) {
+export function EmbeddedAuth({ client, businessId, language = "zh-CN", className, style }: EmbeddedAuthProps) {
   const t = copy[language];
   const state = useSyncExternalStore(client.subscribe, client.getSnapshot, client.getSnapshot);
   const [busy, setBusy] = useState(false);
@@ -49,7 +51,7 @@ export function EmbeddedAuth({ client, language = "zh-CN", className, style }: E
   const [roleCursors, setRoleCursors] = useState<(string | undefined)[]>([undefined]);
   const [roleLoading, setRoleLoading] = useState(false);
   const restoreAttempted = useRef<EmbeddedIdentityClient | undefined>(undefined);
-  const roleKey = state.session ? `${state.session.tenant_id}/${state.session.account_id}/${state.session.session_id}` : "";
+  const roleKey = state.session && businessId ? `${state.session.tenant_id}/${state.session.account_id}/${state.session.session_id}/${businessId}` : "";
   const emailId = useId(), passwordId = useId();
   const message = (reason: unknown) => language === "zh-CN" && reason instanceof IdentityError ? reason.message : t.error;
 
@@ -80,14 +82,14 @@ export function EmbeddedAuth({ client, language = "zh-CN", className, style }: E
   useEffect(() => { setRolePage(undefined); setRoleCursors([undefined]); }, [client, roleKey]);
 
   useEffect(() => {
-    if (!roleKey || state.selecting) return;
+    if (!roleKey || state.selecting || !businessId) return;
     let live = true;
     setRoleLoading(true);
-    void client.listMyRoles(roleCursors.at(-1)).then(page => { if (live) setRolePage({ key: roleKey, page }); })
+    void client.listMyRoles(businessId, roleCursors.at(-1)).then(page => { if (live) setRolePage({ key: roleKey, page }); })
       .catch(reason => { if (live) setError(message(reason)); })
       .finally(() => { if (live) setRoleLoading(false); });
     return () => { live = false; };
-  }, [client, roleKey, state.selecting, roleCursors]);
+  }, [client, businessId, roleKey, state.selecting, roleCursors]);
 
   useEffect(() => {
     if (!state.selecting) return;
@@ -151,7 +153,7 @@ export function EmbeddedAuth({ client, language = "zh-CN", className, style }: E
         <div><dt>{state.capabilities.tenancy_enabled ? t.tenant : t.system}</dt><dd>{state.capabilities.tenancy_enabled ? state.session.tenant_id : t.system}</dd></div>
         <div><dt>{t.account}</dt><dd>{state.session.account_id}</dd></div>
       </dl>
-      <h3>{t.roles}</h3>
+      {businessId && <><h3>{t.roles}</h3>
       {roleLoading && <p role="status">{t.loadingRoles}</p>}
       {rolePage?.key === roleKey && <>
         {rolePage.page.items.length === 0 && <p>{t.noRoles}</p>}
@@ -163,7 +165,7 @@ export function EmbeddedAuth({ client, language = "zh-CN", className, style }: E
           <span>{t.page} {roleCursors.length}</span>
           <button type="button" disabled={!rolePage.page.has_more || roleLoading} onClick={() => setRoleCursors(v => [...v, rolePage.page.next_cursor])}>{t.next}</button>
         </nav>}
-      </>}
+      </>}</>}
       {verified && <p className={styles.success} role="status">{t.verified}</p>}
       <div className={styles.actions}>
         <button type="button" disabled={busy} onClick={() => void run(async () => { await client.verifySession(); setVerified(true); })}>{t.verify}</button>

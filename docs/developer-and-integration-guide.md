@@ -30,7 +30,7 @@ cargo test --workspace
 ## Local reference runtime
 
 The reference host supports `disabled` and `enabled` modes. Each mode has its
-own schema and configuration file, but both use the `tenant_v2` Access layout
+own schema and configuration file, but both use the `tenant_v3` Access layout
 and must be prepared offline before startup.
 
 ```bash
@@ -139,3 +139,7 @@ host-specific device admission, device self-service UI, and performance
 acceptance. A separate [no-tenant host example](../examples/no-tenant-host/README.md)
 demonstrates business-resource authorization, but does not supply those
 production controls.
+
+## Business authorization upgrade
+
+Access v3 requires an explicit business identifier for permissions, roles and authorization checks. Existing v2 data requires a stopped-service mapping migration; see [the business authorization design](business-domain-authorization-design-v1.md). Schema directory names do not determine the Access version. Do not rerun bootstrap or silently recreate an existing database.

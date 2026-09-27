@@ -1,5 +1,7 @@
 use crate::{
-    tenant_admin::{error, target, ManagementSortOrder},
+    tenant_admin::{
+        business_id, business_target, error, optional_business_target, ManagementSortOrder,
+    },
     tenant_auth::{call, no_store},
 };
 use axum::{
@@ -26,6 +28,10 @@ pub fn role_admin_router(mode: TenancyMode, service: Arc<dyn RoleAdminService>) 
     Router::new()
         .route("/admin/access/roles", get(list).post(create))
         .route(
+            "/admin/access/business-admin",
+            get(business_admin).post(create_business_admin),
+        )
+        .route(
             "/admin/access/roles/:role_id",
             get(detail).patch(update).delete(delete),
         )
@@ -50,6 +56,7 @@ struct PageQuery {
 struct Cursor {
     version: u8,
     tenant_id: String,
+    business_id: Option<String>,
     after: Vec<String>,
     #[serde(default)]
     sort_order: ManagementSortOrder,
@@ -99,13 +106,13 @@ struct Permissions {
     expected_version: u64,
 }
 pub(crate) fn role_json(r: Role) -> Value {
-    json!({"tenant_id":r.tenant_id,"role_id":r.id,"key":r.key,"name":r.name,"version":r.version,
+    json!({"tenant_id":r.tenant_id,"business_id":r.business_id,"role_id":r.id,"key":r.key,"name":r.name,"version":r.version,
         "status":match r.status {RoleStatus::Active=>"active",RoleStatus::Disabled=>"disabled"},
-        "kind":match r.kind {RoleKind::Business=>"business",RoleKind::SystemAdmin=>"system_admin",RoleKind::TenantSecurityAdmin=>"tenant_security_admin"}})
+        "kind":match r.kind {RoleKind::Business=>"business",RoleKind::BusinessAdmin=>"business_admin",RoleKind::SystemAdmin=>"system_admin",RoleKind::TenantSecurityAdmin=>"tenant_security_admin"}})
 }
 fn permission_json(keys: Vec<PermissionKey>) -> Vec<Value> {
     keys.into_iter()
-        .map(|p| json!({"resource_type":p.resource_type,"action":p.action}))
+        .map(|p| json!({"business_id":p.business_id,"resource_type":p.resource_type,"action":p.action}))
         .collect()
 }
 fn record_json(r: AccessRoleRecord) -> Value {
@@ -119,10 +126,11 @@ async fn list(
     headers: HeaderMap,
     Query(query): Query<PageQuery>,
 ) -> Response {
-    let (context, tenant) = match target(state.mode, context, &headers) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
+    let (context, tenant, business_id) =
+        match optional_business_target(state.mode, context, &headers, true) {
+            Ok(v) => v,
+            Err(e) => return e,
+        };
     let cursor = match query.cursor {
         None => None,
         Some(raw) => {
@@ -139,6 +147,7 @@ async fn list(
                 version: c.version,
                 scope: AccessListScope::AdminRoles {
                     tenant_id: c.tenant_id,
+                    business_id: c.business_id,
                 },
                 after: c.after,
                 sort_order: Some(c.sort_order.core()),
@@ -149,6 +158,7 @@ async fn list(
         state.service.list_roles(
             context,
             tenant,
+            business_id,
             AccessPageRequest {
                 limit: query.limit.unwrap_or(50),
                 cursor,
@@ -162,7 +172,11 @@ async fn list(
             let next = match page.next_cursor {
                 None => None,
                 Some(c) => {
-                    let AccessListScope::AdminRoles { tenant_id } = c.scope else {
+                    let AccessListScope::AdminRoles {
+                        tenant_id,
+                        business_id,
+                    } = c.scope
+                    else {
                         return error(AccessError::InvalidStoreResponse);
                     };
                     if c.after.len() != 2 {
@@ -172,6 +186,7 @@ async fn list(
                         &serde_json::to_vec(&Cursor {
                             version: c.version,
                             tenant_id,
+                            business_id,
                             after: c.after,
                             sort_order: ManagementSortOrder::from_core(
                                 c.sort_order.unwrap_or(AccessSortOrder::Desc),
@@ -192,11 +207,12 @@ async fn detail(
     headers: HeaderMap,
     Path(role): Path<String>,
 ) -> Response {
-    let (context, tenant) = match target(state.mode, context, &headers) {
+    let (context, tenant, business_id) = match business_target(state.mode, context, &headers, true)
+    {
         Ok(v) => v,
         Err(e) => return e,
     };
-    match call(move || state.service.get_role(context, tenant, role)).await {
+    match call(move || state.service.get_role(context, tenant, business_id, role)).await {
         Ok(r) => Json(record_json(r)).into_response(),
         Err(e) => error(e),
     }
@@ -207,12 +223,13 @@ async fn permissions(
     headers: HeaderMap,
     Path(role): Path<String>,
 ) -> Response {
-    let (context, tenant) = match target(state.mode, context, &headers) {
+    let (context, tenant, business_id) = match business_target(state.mode, context, &headers, true)
+    {
         Ok(v) => v,
         Err(e) => return e,
     };
-    match call(move ||state.service.get_role(context,tenant,role)).await {
-        Ok(r)=>Json(json!({"tenant_id":r.role.tenant_id,"role_id":r.role.id,"version":r.role.version,"items":permission_json(r.permissions)})).into_response(),Err(e)=>error(e),
+    match call(move ||state.service.get_role(context,tenant,business_id,role)).await {
+        Ok(r)=>Json(json!({"tenant_id":r.role.tenant_id,"business_id":r.role.business_id,"role_id":r.role.id,"version":r.role.version,"items":permission_json(r.permissions)})).into_response(),Err(e)=>error(e),
     }
 }
 async fn change(
@@ -221,7 +238,7 @@ async fn change(
     headers: HeaderMap,
     mutation: AccessAdminMutation,
 ) -> Response {
-    let (context, tenant) = match target(state.mode, context, &headers) {
+    let (context, tenant, _) = match business_target(state.mode, context, &headers, false) {
         Ok(v) => v,
         Err(e) => return e,
     };
@@ -260,11 +277,16 @@ async fn create(
     headers: HeaderMap,
     Json(body): Json<Create>,
 ) -> Response {
+    let business_id = match business_id(&headers, false) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
     change(
         state,
         context,
         headers,
         AccessAdminMutation::CreateRole {
+            business_id: business_id.clone(),
             key: body.key,
             name: body.name,
         },
@@ -278,11 +300,16 @@ async fn update(
     Path(role_id): Path<String>,
     Json(body): Json<Update>,
 ) -> Response {
+    let business_id = match business_id(&headers, false) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
     change(
         state,
         context,
         headers,
         AccessAdminMutation::UpdateRole {
+            business_id: business_id.clone(),
             role_id,
             name: body.name,
             status: body.status.core(),
@@ -298,11 +325,16 @@ async fn delete(
     Path(role_id): Path<String>,
     Json(body): Json<Version>,
 ) -> Response {
+    let business_id = match business_id(&headers, false) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
     change(
         state,
         context,
         headers,
         AccessAdminMutation::DeleteRole {
+            business_id: business_id.clone(),
             role_id,
             expected_version: body.expected_version,
         },
@@ -316,16 +348,22 @@ async fn replace_permissions(
     Path(role_id): Path<String>,
     Json(body): Json<Permissions>,
 ) -> Response {
+    let business_id = match business_id(&headers, false) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
     change(
         state,
         context,
         headers,
         AccessAdminMutation::ReplaceRolePermissions {
+            business_id: business_id.clone(),
             role_id,
             permissions: body
                 .permissions
                 .into_iter()
                 .map(|p| PermissionKey {
+                    business_id: business_id.clone(),
                     resource_type: p.resource_type,
                     action: p.action,
                 })
@@ -335,11 +373,74 @@ async fn replace_permissions(
     )
     .await
 }
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CreateBusinessAdmin {
+    name: Option<String>,
+}
+
+async fn create_business_admin(
+    State(state): State<AdminState>,
+    context: Option<Extension<AccessAdminContext>>,
+    headers: HeaderMap,
+    Json(body): Json<CreateBusinessAdmin>,
+) -> Response {
+    let business_id = match business_id(&headers, false) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    change(
+        state,
+        context,
+        headers,
+        AccessAdminMutation::CreateBusinessAdminRole {
+            business_id,
+            name: body.name,
+        },
+    )
+    .await
+}
+
+async fn business_admin(
+    State(state): State<AdminState>,
+    context: Option<Extension<AccessAdminContext>>,
+    headers: HeaderMap,
+) -> Response {
+    let (context, tenant, business_id) = match business_target(state.mode, context, &headers, false)
+    {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    match call(move || {
+        state
+            .service
+            .get_business_administrator(context, tenant, business_id)
+    })
+    .await
+    {
+        Ok(role) => Json(record_json(role)).into_response(),
+        Err(e) => error(e),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
     fn role_bodies_reject_protected_kind_authority_and_missing_version() {
+        assert!(
+            serde_json::from_str::<CreateBusinessAdmin>(r#"{"name":"Admin","key":"other"}"#)
+                .is_err()
+        );
+        assert!(serde_json::from_str::<CreateBusinessAdmin>(
+            r#"{"name":"Admin","business_id":"other"}"#
+        )
+        .is_err());
+        assert!(serde_json::from_str::<CreateBusinessAdmin>(r#"{"kind":"system_admin"}"#).is_err());
+        assert!(serde_json::from_str::<CreateBusinessAdmin>(r#"{}"#)
+            .unwrap()
+            .name
+            .is_none());
         assert!(serde_json::from_str::<Create>(
             r#"{"key":"reader","name":"Reader","kind":"system_admin"}"#
         )

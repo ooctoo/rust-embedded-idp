@@ -1,5 +1,7 @@
 use crate::{
-    tenant_admin::{error, target, ManagementSortOrder},
+    tenant_admin::{
+        business_id, business_target, error, optional_business_target, ManagementSortOrder,
+    },
     tenant_auth::{call, no_store},
 };
 use axum::{
@@ -46,6 +48,7 @@ struct PageQuery {
 struct Cursor {
     version: u8,
     tenant_id: String,
+    business_id: Option<String>,
     subject_id: String,
     after: Vec<String>,
     #[serde(default)]
@@ -54,28 +57,57 @@ struct Cursor {
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum Scope {
+    Business {},
     Type {},
     Instance { resource_id: String },
 }
 impl Scope {
-    fn core(self) -> ResourceScope {
-        match self {
-            Self::Type {} => ResourceScope::Type,
-            Self::Instance { resource_id } => ResourceScope::Instance(resource_id),
+    fn core(self, resource_type: Option<String>) -> Result<RoleBindingScope, AccessError> {
+        match (self, resource_type) {
+            (Self::Business {}, None) => Ok(RoleBindingScope::Business),
+            (Self::Type {}, Some(resource_type)) => Ok(RoleBindingScope::Resource {
+                resource_type,
+                scope: ResourceScope::Type,
+            }),
+            (Self::Instance { resource_id }, Some(resource_type)) => {
+                Ok(RoleBindingScope::Resource {
+                    resource_type,
+                    scope: ResourceScope::Instance(resource_id),
+                })
+            }
+            _ => Err(AccessError::InvalidInput("role_binding_scope")),
         }
     }
+}
+fn present_string<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+    String::deserialize(d).map(Some)
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Grant {
     role_id: String,
-    resource_type: String,
+    #[serde(default, deserialize_with = "present_string")]
+    resource_type: Option<String>,
     scope: Scope,
 }
 pub(super) fn binding_json(b: RoleBinding) -> Value {
-    json!({"binding_id":b.id,"tenant_id":b.tenant_id,"subject_id":b.subject_id,"role_id":b.role_id,"resource_type":b.resource_type,
-        "scope":match b.scope {ResourceScope::Type=>json!({"kind":"type"}),ResourceScope::Instance(id)=>json!({"kind":"instance","resource_id":id})}})
+    let mut result = json!({"binding_id":b.id,"tenant_id":b.tenant_id,"business_id":b.business_id,"subject_id":b.subject_id,"role_id":b.role_id});
+    match b.scope {
+        RoleBindingScope::Business => result["scope"] = json!({"kind":"business"}),
+        RoleBindingScope::Resource {
+            resource_type,
+            scope,
+        } => {
+            result["resource_type"] = json!(resource_type);
+            result["scope"] = match scope {
+                ResourceScope::Type => json!({"kind":"type"}),
+                ResourceScope::Instance(id) => json!({"kind":"instance","resource_id":id}),
+            };
+        }
+    }
+    result
 }
+
 async fn list(
     State(state): State<AdminState>,
     context: Option<Extension<AccessAdminContext>>,
@@ -83,10 +115,11 @@ async fn list(
     Path(subject): Path<String>,
     Query(query): Query<PageQuery>,
 ) -> Response {
-    let (context, tenant) = match target(state.mode, context, &headers) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
+    let (context, tenant, business_id) =
+        match optional_business_target(state.mode, context, &headers, true) {
+            Ok(v) => v,
+            Err(e) => return e,
+        };
     let cursor = match query.cursor {
         None => None,
         Some(raw) => {
@@ -103,6 +136,7 @@ async fn list(
                 version: c.version,
                 scope: AccessListScope::AdminRoleBindings {
                     tenant_id: c.tenant_id,
+                    business_id: c.business_id,
                     subject_id: c.subject_id,
                 },
                 after: c.after,
@@ -114,6 +148,7 @@ async fn list(
         state.service.list_subject_role_bindings(
             context,
             tenant,
+            business_id,
             subject,
             AccessPageRequest {
                 limit: query.limit.unwrap_or(50),
@@ -130,6 +165,7 @@ async fn list(
                 Some(c) => {
                     let AccessListScope::AdminRoleBindings {
                         tenant_id,
+                        business_id,
                         subject_id,
                     } = c.scope
                     else {
@@ -142,6 +178,7 @@ async fn list(
                         &serde_json::to_vec(&Cursor {
                             version: c.version,
                             tenant_id,
+                            business_id,
                             subject_id,
                             after: c.after,
                             sort_order: ManagementSortOrder::from_core(
@@ -163,7 +200,7 @@ async fn change(
     headers: HeaderMap,
     mutation: AccessAdminMutation,
 ) -> Response {
-    let (context, tenant) = match target(state.mode, context, &headers) {
+    let (context, tenant, _) = match business_target(state.mode, context, &headers, false) {
         Ok(v) => v,
         Err(e) => return e,
     };
@@ -203,15 +240,23 @@ async fn grant(
     Path(subject_id): Path<String>,
     Json(body): Json<Grant>,
 ) -> Response {
+    let business_id = match business_id(&headers, false) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let scope = match body.scope.core(body.resource_type) {
+        Ok(v) => v,
+        Err(e) => return error(e),
+    };
     change(
         state,
         context,
         headers,
         AccessAdminMutation::GrantRole {
+            business_id,
             subject_id,
             role_id: body.role_id,
-            resource_type: body.resource_type,
-            scope: body.scope.core(),
+            scope,
         },
     )
     .await
@@ -222,17 +267,45 @@ async fn revoke(
     headers: HeaderMap,
     Path(binding_id): Path<String>,
 ) -> Response {
+    let business_id = match business_id(&headers, false) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
     change(
         state,
         context,
         headers,
-        AccessAdminMutation::RevokeRole { binding_id },
+        AccessAdminMutation::RevokeRole {
+            business_id,
+            binding_id,
+        },
     )
     .await
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn business_scope_cannot_hide_a_resource_selection() {
+        let body: Grant =
+            serde_json::from_str(r#"{"role_id":"r","scope":{"kind":"business"}}"#).unwrap();
+        assert_eq!(
+            body.scope.core(body.resource_type).unwrap(),
+            RoleBindingScope::Business
+        );
+        for raw in [
+            r#"{"role_id":"r","resource_type":"report","scope":{"kind":"business"}}"#,
+            r#"{"role_id":"r","scope":{"kind":"type"}}"#,
+        ] {
+            let body: Grant = serde_json::from_str(raw).unwrap();
+            assert!(body.scope.core(body.resource_type).is_err());
+        }
+        assert!(serde_json::from_str::<Grant>(
+            r#"{"role_id":"r","resource_type":null,"scope":{"kind":"business"}}"#
+        )
+        .is_err());
+    }
+
     #[test]
     fn assignments_require_explicit_unambiguous_scope_and_reject_authority_fields() {
         for invalid in [
@@ -249,8 +322,20 @@ mod tests {
             r#"{"role_id":"r","resource_type":"report","scope":{"kind":"type"}}"#,
         )
         .unwrap();
-        assert_eq!(g.scope.core(), ResourceScope::Type);
+        assert_eq!(
+            g.scope.core(g.resource_type).unwrap(),
+            RoleBindingScope::Resource {
+                resource_type: "report".into(),
+                scope: ResourceScope::Type
+            }
+        );
         let g:Grant=serde_json::from_str(r#"{"role_id":"r","resource_type":"report","scope":{"kind":"instance","resource_id":"report-1"}}"#).unwrap();
-        assert_eq!(g.scope.core(), ResourceScope::Instance("report-1".into()));
+        assert_eq!(
+            g.scope.core(g.resource_type).unwrap(),
+            RoleBindingScope::Resource {
+                resource_type: "report".into(),
+                scope: ResourceScope::Instance("report-1".into())
+            }
+        );
     }
 }
