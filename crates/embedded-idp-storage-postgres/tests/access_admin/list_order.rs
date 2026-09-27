@@ -1,4 +1,4 @@
-use super::devices::send;
+use super::devices::{send, send_with_business};
 use super::*;
 use axum::{http::StatusCode, Extension, Router};
 use base64ct::{Base64UrlUnpadded, Encoding};
@@ -67,12 +67,12 @@ fn admin_lists_are_newest_first_and_cursor_pages_keep_tied_timestamps() {
         &[],
     )
     .unwrap();
-    tx.execute(&format!("insert into {s}.access_roles(tenant_id,id,key,name,status,kind,created_at_epoch) values('t1',$1,'z-order','Order','active','business',200),('t1',$2,'a-order','Order','active','business',100)"), &[&role_new, &role_old]).unwrap();
-    tx.execute(&format!("insert into {s}.access_role_bindings(id,tenant_id,account_id,role_id,resource_type,created_at_epoch,created_by) values($1,'t1',$3,$4,'order-new',200,$3),($2,'t1',$3,$4,'order-old',100,$3)"), &[&binding_new, &binding_old, &account_new, &role_new]).unwrap();
+    tx.execute(&format!("insert into {s}.access_roles(tenant_id,business_id,id,key,name,status,kind,created_at_epoch) values('t1','f_01',$1,'z-order','Order','active','business',200),('t1','f_01',$2,'a-order','Order','active','business',100)"), &[&role_new, &role_old]).unwrap();
+    tx.execute(&format!("insert into {s}.access_role_bindings(id,tenant_id,business_id,account_id,role_id,scope_kind,resource_type,created_at_epoch,created_by) values($1,'t1','f_01',$3,$4,'type','order-new',200,$3),($2,'t1','f_01',$3,$4,'type','order-old',100,$3)"), &[&binding_new, &binding_old, &account_new, &role_new]).unwrap();
     tx.execute(&format!("insert into {s}.auth_sessions(purpose,tenant_id,id,account_id,client_id,status,created_at_epoch,expires_at_epoch,refresh_token_version,authenticated_at_epoch) values('management','t1',$1,$3,'z-order','active',200,1000,1,200),('management','t1',$2,$3,'z-order','active',100,1000,1,100)"), &[&session_new, &session_old, &account_new]).unwrap();
     tx.execute(&format!("insert into {s}.devices(tenant_id,id,client_id,device_name,status,registered_at_epoch) values('t1',$1,'order-device-client','Order','active',200),('t1',$2,'order-device-client','Order','active',100)"), &[&device_new, &device_old]).unwrap();
     tx.execute(&format!("insert into {s}.access_tenants(id,kind,name,status,allow_registration,created_at_epoch) values('a-order','tenant','Order','active',false,200),('z-order','tenant','Order','active',false,100)"), &[]).unwrap();
-    tx.execute(&format!("insert into {s}.access_permissions(tenant_id,resource_type,action,category,description,enabled,created_at_epoch) values('t1','order','z','business','Order',true,200),('t1','order','y','business','Order',true,200),('t1','order','a','business','Order',true,100),('t1','order','legacy','business','Order',true,null)"), &[]).unwrap();
+    tx.execute(&format!("insert into {s}.access_permissions(tenant_id,business_id,resource_type,action,category,description,enabled,created_at_epoch) values('t1','f_01','order','z','business','Order',true,200),('t1','f_01','order','y','business','Order',true,200),('t1','f_01','order','a','business','Order',true,100),('t1','f_01','order','legacy','business','Order',true,null)"), &[]).unwrap();
     for (id, time) in [(audit_new, 200_i64), (audit_old, 100)] {
         tx.execute(&format!("insert into {s}.access_audit_events(id,occurred_at_epoch,actor_id,actor_domain,actor_session_id,authentication_source,target_domain,operation,request_id,change_json) values($1,$2,$3,'0',$4,'live_test','t1','order.list',$5,'{{\"kind\":\"order\",\"before\":null,\"after\":null}}'::jsonb)"), &[&id, &time, &db.actor, &db.actor_session, &id.to_string()]).unwrap();
     }
@@ -443,5 +443,159 @@ fn admin_lists_are_newest_first_and_cursor_pages_keep_tied_timestamps() {
             }
         }
         assert!(cursor.is_none(), "{path}");
+    }
+}
+
+#[test]
+#[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
+fn admin_access_lists_optionally_filter_business_and_page_tied_permissions() {
+    let db = Db::new(TenancyMode::Enabled);
+    let schema = db.schema();
+    let tenant = db.target();
+    let first_role = Uuid::from_u128(101);
+    let second_role = Uuid::from_u128(102);
+    let first_binding = Uuid::from_u128(103);
+    let second_binding = Uuid::from_u128(104);
+    let mut client = db.adapter.connect().unwrap();
+    let mut tx = client.transaction().unwrap();
+    tx.execute(
+        &format!(
+            "insert into {schema}.access_roles(tenant_id,business_id,id,key,name,status,kind,created_at_epoch) \
+             values('t1','f_01',$1,'first','First','active','business',100), \
+                   ('t1','f_02',$2,'second','Second','active','business',100)"
+        ),
+        &[&first_role, &second_role],
+    )
+    .unwrap();
+    tx.execute(
+        &format!(
+            "insert into {schema}.access_role_bindings(id,tenant_id,business_id,account_id,role_id,scope_kind,resource_type,created_at_epoch,created_by) \
+             values($1,'t1','f_01',$3,$2,'type','shared',100,$3), \
+                   ($4,'t1','f_02',$3,$5,'type','shared',100,$3)"
+        ),
+        &[&first_binding, &first_role, &db.member, &second_binding, &second_role],
+    )
+    .unwrap();
+    tx.execute(
+        &format!(
+            "insert into {schema}.access_permissions(tenant_id,business_id,resource_type,action,category,description,enabled,created_at_epoch) \
+             values('t1','f_01','shared','read','business','First',true,100), \
+                   ('t1','f_02','shared','read','business','Second',true,100)"
+        ),
+        &[],
+    )
+    .unwrap();
+    tx.execute(
+        &format!(
+            "insert into {schema}.access_role_permissions(tenant_id,business_id,role_id,resource_type,action) \
+             values('t1','f_01',$1,'shared','read'),('t1','f_02',$2,'shared','read')"
+        ),
+        &[&first_role, &second_role],
+    )
+    .unwrap();
+    tx.commit().unwrap();
+    let router = app(&db);
+
+    let roles = send_with_business(
+        &router,
+        "GET",
+        "/admin/access/roles",
+        Some(tenant),
+        "",
+        None,
+    );
+    assert_eq!(roles.0, StatusCode::OK);
+    assert!(roles.1["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item["business_id"] == "f_02"));
+    assert_eq!(roles.1["has_more"], false);
+    let filtered_roles = send_with_business(
+        &router,
+        "GET",
+        "/admin/access/roles",
+        Some(tenant),
+        "",
+        Some("f_02"),
+    );
+    assert_eq!(filtered_roles.0, StatusCode::OK);
+    assert_eq!(filtered_roles.1["items"].as_array().unwrap().len(), 1);
+    assert!(filtered_roles.1["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|item| item["business_id"] == "f_02"));
+    assert_eq!(filtered_roles.1["has_more"], false);
+
+    let bindings_path = format!("/admin/access/subjects/{}/role-bindings", db.member);
+    let bindings = send_with_business(&router, "GET", &bindings_path, Some(tenant), "", None);
+    assert_eq!(bindings.0, StatusCode::OK);
+    assert!(bindings.1["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item["business_id"] == "f_02"));
+    assert_eq!(bindings.1["has_more"], false);
+    let filtered_bindings = send_with_business(
+        &router,
+        "GET",
+        &bindings_path,
+        Some(tenant),
+        "",
+        Some("f_01"),
+    );
+    assert_eq!(filtered_bindings.0, StatusCode::OK);
+    assert_eq!(filtered_bindings.1["items"].as_array().unwrap().len(), 1);
+    assert!(filtered_bindings.1["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|item| item["business_id"] == "f_01"));
+    assert_eq!(filtered_bindings.1["has_more"], false);
+
+    for (sort_order, expected) in [("desc", ["f_02", "f_01"]), ("asc", ["f_01", "f_02"])] {
+        let first = send_with_business(
+            &router,
+            "GET",
+            &format!(
+                "/admin/access/permissions?resource_type=shared&limit=1&sort_order={sort_order}"
+            ),
+            Some(tenant),
+            "",
+            None,
+        );
+        assert_eq!(first.0, StatusCode::OK);
+        assert_eq!(first.1["has_more"], true);
+        let cursor = first.1["next_cursor"].as_str().unwrap();
+        let second = send_with_business(
+            &router,
+            "GET",
+            &format!("/admin/access/permissions?resource_type=shared&limit=1&sort_order={sort_order}&cursor={cursor}"),
+            Some(tenant),
+            "",
+            None,
+        );
+        assert_eq!(second.0, StatusCode::OK);
+        assert_eq!(second.1["has_more"], false);
+        assert_eq!(
+            [
+                first.1["items"][0]["business_id"].as_str().unwrap(),
+                second.1["items"][0]["business_id"].as_str().unwrap(),
+            ],
+            expected
+        );
+        assert_eq!(
+            send_with_business(
+                &router,
+                "GET",
+                &format!("/admin/access/permissions?resource_type=shared&sort_order={sort_order}&cursor={cursor}"),
+                Some(tenant),
+                "",
+                Some("f_01"),
+            )
+            .0,
+            StatusCode::BAD_REQUEST
+        );
     }
 }

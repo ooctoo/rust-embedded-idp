@@ -23,7 +23,7 @@ function example(tenantMode: boolean) {
     ], has_more: false });
     if (path === "/api/auth/tenant-selection/complete") return json(authenticated(JSON.parse(String(init.body)).tenant_id));
     if (path === "/api/auth/me/tenant-selection") return json({ status: "tenant_selection_required", selection_ticket: "example-ticket", expires_in: 300 });
-    if (path === "/api/auth/me/roles") return json({ items: [{ tenant_id: tenantMode ? "team-a" : "0", role_id: "example-reader",
+    if (path === "/api/auth/me/roles") return json({ items: [{ tenant_id: tenantMode ? "team-a" : "0", business_id: "demo", role_id: "example-reader",
       key: "reader", name: "报告阅读者", status: "active", kind: "business" }], has_more: false, next_cursor: null });
     if (path === "/api/auth/session") return json(identity(tenantMode ? "team-a" : "0"));
     if (path === "/api/auth/logout") return new Response(null, { status: 200 });
@@ -37,7 +37,7 @@ createRoot(root).render(<div style={{ maxWidth: 1080, margin: "32px auto", paddi
   <h1>宿主页面</h1>
   <p>这一段沿用宿主自己的字体和样式。下方两份组件使用独立状态和主题。</p>
   <div style={{ display: "flex", flexWrap: "wrap", gap: 20, alignItems: "flex-start" }}>
-    <EmbeddedAuth client={example(false)} style={{ flex: "1 1 300px", "--embedded-idp-primary": "#2257bb" } as CSSProperties} />
-    <EmbeddedAuth client={example(true)} language="en-US" style={{ flex: "1 1 300px", "--embedded-idp-primary": "#385542" } as CSSProperties} />
+    <EmbeddedAuth client={example(false)} businessId="demo" style={{ flex: "1 1 300px", "--embedded-idp-primary": "#2257bb" } as CSSProperties} />
+    <EmbeddedAuth client={example(true)} businessId="demo" language="en-US" style={{ flex: "1 1 300px", "--embedded-idp-primary": "#385542" } as CSSProperties} />
   </div>
 </div>);

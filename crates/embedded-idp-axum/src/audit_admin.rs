@@ -37,6 +37,7 @@ pub fn audit_admin_router(mode: TenancyMode, service: Arc<dyn AuditAdminService>
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct Filter {
+    business_id: Option<String>,
     actor_id: Option<String>,
     operation: Option<String>,
     occurred_after_unix_secs: Option<u64>,
@@ -53,6 +54,7 @@ impl Filter {
             .transpose()
         }
         Ok(AdminAuditFilter {
+            business_id: self.business_id.clone(),
             actor_id: self.actor_id.clone(),
             operation: self.operation.clone(),
             occurred_after: time(self.occurred_after_unix_secs)?,
@@ -67,6 +69,7 @@ struct PageQuery {
     cursor: Option<String>,
     #[serde(default)]
     sort_order: ManagementSortOrder,
+    business_id: Option<String>,
     actor_id: Option<String>,
     operation: Option<String>,
     occurred_after_unix_secs: Option<u64>,
@@ -83,7 +86,7 @@ struct Cursor {
     sort_order: ManagementSortOrder,
 }
 fn record_json(r: AdminAuditRecord) -> Value {
-    json!({"audit_id":r.id,"occurred_at_unix_secs":r.occurred_at.duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default().as_secs(),"actor_id":r.actor_id,"actor_domain":r.actor_domain,"actor_session_id":r.actor_session_id,"authentication_source":r.authentication_source,"target_domain":r.target_domain,"operation":r.operation,"request_id":r.request_id})
+    json!({"audit_id":r.id,"occurred_at_unix_secs":r.occurred_at.duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default().as_secs(),"actor_id":r.actor_id,"actor_domain":r.actor_domain,"actor_session_id":r.actor_session_id,"authentication_source":r.authentication_source,"target_domain":r.target_domain,"target_business_id":r.target_business_id,"operation":r.operation,"request_id":r.request_id})
 }
 async fn list(
     State(state): State<AdminState>,
@@ -116,6 +119,7 @@ async fn list_scoped(
     query: PageQuery,
 ) -> Response {
     let filter = Filter {
+        business_id: query.business_id,
         actor_id: query.actor_id,
         operation: query.operation,
         occurred_after_unix_secs: query.occurred_after_unix_secs,
@@ -250,6 +254,7 @@ mod tests {
         }
         for (start, end) in [(Some(1001), Some(1000)), (Some(u64::MAX), None)] {
             let f = Filter {
+                business_id: None,
                 actor_id: None,
                 operation: None,
                 occurred_after_unix_secs: start,

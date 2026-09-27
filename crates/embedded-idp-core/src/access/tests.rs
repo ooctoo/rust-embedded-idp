@@ -36,6 +36,7 @@ fn definition(resource_type: &str, action: &str) -> PermissionDefinition {
     PermissionDefinition {
         tenant_id: "0".into(),
         key: PermissionKey {
+            business_id: "f_01".into(),
             resource_type: resource_type.into(),
             action: action.into(),
         },
@@ -97,6 +98,11 @@ fn grant(
     scope: ResourceScope,
     kind: RoleKind,
 ) {
+    let business_id = if resource.starts_with("idp.") {
+        "idp"
+    } else {
+        "f_01"
+    };
     if !data
         .roles
         .iter()
@@ -105,6 +111,7 @@ fn grant(
         data.roles.push(Role {
             id: role_id.into(),
             tenant_id: tenant.into(),
+            business_id: business_id.into(),
             key: role_id.into(),
             name: role_id.into(),
             status: RoleStatus::Active,
@@ -114,11 +121,13 @@ fn grant(
         });
     }
     let permission = PermissionKey {
+        business_id: business_id.into(),
         resource_type: resource.into(),
         action: action.into(),
     };
     let link = RolePermission {
         tenant_id: tenant.into(),
+        business_id: business_id.into(),
         role_id: role_id.into(),
         permission,
     };
@@ -128,10 +137,13 @@ fn grant(
     data.bindings.push(RoleBinding {
         id: format!("binding-{}", data.bindings.len()),
         tenant_id: tenant.into(),
+        business_id: business_id.into(),
         subject_id: subject.into(),
         role_id: role_id.into(),
-        resource_type: resource.into(),
-        scope,
+        scope: RoleBindingScope::Resource {
+            resource_type: resource.into(),
+            scope,
+        },
         created_at: UNIX_EPOCH,
     });
 }
@@ -169,7 +181,19 @@ fn setup(mode: TenancyMode) -> (CoreAccessService<MemoryStore>, MemoryStore) {
 }
 
 fn q(text: &str) -> AccessQuery {
-    text.parse().unwrap()
+    let (subject, rest) = text.split_once("::").unwrap();
+    if subject.matches('/').count() == 2 {
+        return text.parse().unwrap();
+    }
+    let (tenant, subject) = subject.split_once('/').unwrap();
+    let business_id = if rest.starts_with("idp.") {
+        "idp"
+    } else {
+        "f_01"
+    };
+    format!("{tenant}/{business_id}/{subject}::{rest}")
+        .parse()
+        .unwrap()
 }
 
 fn page_rows<T>(
@@ -217,9 +241,17 @@ impl AccessReadStore for MemoryStore {
                                 d.permissions
                                     .get(&link.permission)
                                     .is_some_and(|permission| {
+                                        let mut permission = permission.clone();
+                                        permission.tenant_id = query.tenant_id.clone();
                                         [TenancyMode::Disabled, TenancyMode::Enabled].iter().any(
                                             |mode| {
-                                                binding.grants(query, role, link, permission, *mode)
+                                                binding.grants(
+                                                    query,
+                                                    role,
+                                                    Some(link),
+                                                    &permission,
+                                                    *mode,
+                                                )
                                             },
                                         )
                                     })
@@ -233,6 +265,7 @@ impl AccessReadStore for MemoryStore {
     fn list_subject_roles(
         &self,
         tenant: &str,
+        business_id: &str,
         subject: &str,
         page: &AccessPageRequest,
     ) -> Result<Vec<Role>, StoreError> {
@@ -240,13 +273,17 @@ impl AccessReadStore for MemoryStore {
         let ids: BTreeSet<_> = d
             .bindings
             .iter()
-            .filter(|b| b.tenant_id == tenant && b.subject_id == subject)
+            .filter(|b| {
+                b.tenant_id == tenant && b.business_id == business_id && b.subject_id == subject
+            })
             .map(|b| &b.role_id)
             .collect();
         Ok(page_rows(
             d.roles
                 .iter()
-                .filter(|r| r.tenant_id == tenant && ids.contains(&r.id))
+                .filter(|r| {
+                    r.tenant_id == tenant && r.business_id == business_id && ids.contains(&r.id)
+                })
                 .cloned()
                 .collect(),
             page,
@@ -257,6 +294,7 @@ impl AccessReadStore for MemoryStore {
     fn list_role_permissions(
         &self,
         tenant: &str,
+        business_id: &str,
         role_id: &str,
         page: &AccessPageRequest,
     ) -> Result<Vec<PermissionDefinition>, StoreError> {
@@ -264,7 +302,9 @@ impl AccessReadStore for MemoryStore {
         Ok(page_rows(
             d.links
                 .iter()
-                .filter(|l| l.tenant_id == tenant && l.role_id == role_id)
+                .filter(|l| {
+                    l.tenant_id == tenant && l.business_id == business_id && l.role_id == role_id
+                })
                 .filter_map(|l| d.permissions.get(&l.permission).cloned())
                 .map(|mut p| {
                     p.tenant_id = tenant.into();
@@ -353,7 +393,19 @@ fn descriptions_round_trip_and_only_empty_trailing_id_is_normalized() {
         "t1/u1::report::read::",
     ] {
         let query = q(text);
-        assert_eq!(query.to_string(), text.strip_suffix("::").unwrap_or(text));
+        assert_eq!(
+            query.to_string(),
+            format!(
+                "{}/{}/{}",
+                text.split_once('/').unwrap().0,
+                "f_01",
+                text.strip_suffix("::")
+                    .unwrap_or(text)
+                    .split_once('/')
+                    .unwrap()
+                    .1
+            )
+        );
         assert_eq!(q(&query.to_string()), query);
     }
     let maximal = format!(
@@ -364,10 +416,80 @@ fn descriptions_round_trip_and_only_empty_trailing_id_is_normalized() {
         "a".repeat(64),
         "i".repeat(256)
     );
-    assert_eq!(q(&maximal).to_string(), maximal);
+    assert_eq!(
+        q(&maximal).to_string(),
+        format!(
+            "{}/f_01/{}",
+            "t".repeat(128),
+            maximal.split_once('/').unwrap().1
+        )
+    );
     let mut structured = q("t1/u1::report::read");
     structured.resource_id = Some(String::new());
     assert!(structured.validate().is_err());
+}
+
+#[test]
+fn business_admin_covers_only_its_active_business_permissions() {
+    let binding = RoleBinding {
+        id: "b1".into(),
+        tenant_id: "t1".into(),
+        business_id: "f_01".into(),
+        subject_id: "u1".into(),
+        role_id: "r1".into(),
+        scope: RoleBindingScope::Business,
+        created_at: UNIX_EPOCH,
+    };
+    let role = Role {
+        id: "r1".into(),
+        tenant_id: "t1".into(),
+        business_id: "f_01".into(),
+        key: "business_admin".into(),
+        name: "业务管理员".into(),
+        status: RoleStatus::Active,
+        kind: RoleKind::BusinessAdmin,
+        version: 1,
+        created_at: UNIX_EPOCH,
+    };
+    let permission = PermissionDefinition {
+        tenant_id: "t1".into(),
+        key: PermissionKey {
+            business_id: "f_01".into(),
+            resource_type: "report".into(),
+            action: "read".into(),
+        },
+        description: "read".into(),
+        category: PermissionCategory::Business,
+        enabled: true,
+        archived: false,
+        version: 1,
+        created_at: None,
+    };
+    let query = AccessQuery {
+        tenant_id: "t1".into(),
+        business_id: "f_01".into(),
+        subject_id: "u1".into(),
+        resource_type: "report".into(),
+        action: "read".into(),
+        resource_id: Some("r1".into()),
+    };
+    assert!(binding.grants(&query, &role, None, &permission, TenancyMode::Enabled));
+    let wrong_business = AccessQuery {
+        business_id: "f_02".into(),
+        ..query.clone()
+    };
+    assert!(!binding.grants(
+        &wrong_business,
+        &role,
+        None,
+        &permission,
+        TenancyMode::Enabled
+    ));
+    let archived = PermissionDefinition {
+        archived: true,
+        ..permission
+    };
+    assert!(!binding.grants(&query, &role, None, &archived, TenancyMode::Enabled));
 }
 
 #[test]
@@ -377,7 +499,7 @@ fn malformed_descriptions_and_identifiers_are_rejected() {
         "t/u",
         "/u::r::a",
         "t/::r::a",
-        "t/u/v::r::a",
+        "t/u/v/x::r::a",
         "t/u::::a",
         "t/u::r::",
         "t/u::R::a",
@@ -496,6 +618,7 @@ fn scopes_roles_and_tenants_follow_the_authorization_matrix() {
     // Another type added to the role must not expand its existing report binding.
     store.data.lock().unwrap().links.push(RolePermission {
         tenant_id: "t1".into(),
+        business_id: "f_01".into(),
         role_id: "editor".into(),
         permission: definition("dataset", "read").key,
     });
@@ -746,6 +869,7 @@ fn role_pages_are_distinct_and_cursors_cannot_cross_subject_or_tenant() {
     let first = service
         .list_subject_roles(
             "t1",
+            "f_01",
             "u1",
             AccessPageRequest {
                 limit: 1,
@@ -762,23 +886,24 @@ fn role_pages_are_distinct_and_cursors_cannot_cross_subject_or_tenant() {
         sort_order: None,
     };
     let second = service
-        .list_subject_roles("t1", "u1", second_request.clone())
+        .list_subject_roles("t1", "f_01", "u1", second_request.clone())
         .unwrap();
     assert_eq!(second.items[0].id, "reader");
     assert!(!second.has_more);
     assert!(second.next_cursor.is_none());
     assert_eq!(
-        service.list_subject_roles("t2", "u1", second_request.clone()),
+        service.list_subject_roles("t2", "f_01", "u1", second_request.clone()),
         Err(AccessError::InvalidCursor)
     );
     assert_eq!(
-        service.list_subject_roles("t1", "u2", second_request),
+        service.list_subject_roles("t1", "f_01", "u2", second_request),
         Err(AccessError::InvalidCursor)
     );
     for limit in [0, 201] {
         assert!(service
             .list_subject_roles(
                 "t1",
+                "f_01",
                 "u1",
                 AccessPageRequest {
                     limit,
@@ -789,10 +914,11 @@ fn role_pages_are_distinct_and_cursors_cannot_cross_subject_or_tenant() {
             .is_err());
     }
     let mut invalid = first.next_cursor.unwrap();
-    invalid.version = 2;
+    invalid.version = 1;
     assert!(service
         .list_subject_roles(
             "t1",
+            "f_01",
             "u1",
             AccessPageRequest {
                 limit: 1,
@@ -827,6 +953,7 @@ fn role_permissions_use_composite_cursor_and_keep_disabled_state_visible() {
     let first = service
         .list_role_permissions(
             "t1",
+            "f_01",
             "reader",
             AccessPageRequest {
                 limit: 1,
@@ -842,11 +969,13 @@ fn role_permissions_use_composite_cursor_and_keep_disabled_state_visible() {
         sort_order: None,
     };
     let second = service
-        .list_role_permissions("t1", "reader", next.clone())
+        .list_role_permissions("t1", "f_01", "reader", next.clone())
         .unwrap();
     assert_eq!(second.items[0].key.action, "update");
     assert!(!second.items[0].enabled);
-    assert!(service.list_role_permissions("t1", "other", next).is_err());
+    assert!(service
+        .list_role_permissions("t1", "f_01", "other", next)
+        .is_err());
     assert_eq!(
         service.check(q("t1/u1::report::update::r1")).unwrap(),
         AccessDecision::Deny
@@ -914,12 +1043,12 @@ fn tenant_lists_require_choose_policy_and_do_not_expose_system_or_removed_member
 fn lists_do_not_mix_tenants_or_subjects_even_when_role_ids_repeat() {
     let (service, store) = setup(TenancyMode::Enabled);
     assert!(service
-        .list_subject_roles("t2", "u1", AccessPageRequest::default())
+        .list_subject_roles("t2", "f_01", "u1", AccessPageRequest::default())
         .unwrap()
         .items
         .is_empty());
     assert!(service
-        .list_role_permissions("t2", "reader", AccessPageRequest::default())
+        .list_role_permissions("t2", "f_01", "reader", AccessPageRequest::default())
         .unwrap()
         .items
         .is_empty());
@@ -938,17 +1067,17 @@ fn lists_do_not_mix_tenants_or_subjects_even_when_role_ids_repeat() {
         );
     }
     assert!(service
-        .list_subject_roles("t2", "u1", AccessPageRequest::default())
+        .list_subject_roles("t2", "f_01", "u1", AccessPageRequest::default())
         .unwrap()
         .items
         .is_empty());
     let roles = service
-        .list_subject_roles("t2", "u2", AccessPageRequest::default())
+        .list_subject_roles("t2", "f_01", "u2", AccessPageRequest::default())
         .unwrap();
     assert_eq!(roles.items.len(), 1);
     assert_eq!(roles.items[0].tenant_id, "t2");
     let permissions = service
-        .list_role_permissions("t2", "reader", AccessPageRequest::default())
+        .list_role_permissions("t2", "f_01", "reader", AccessPageRequest::default())
         .unwrap();
     assert_eq!(permissions.items.len(), 1);
     assert_eq!(permissions.items[0].key.action, "update");

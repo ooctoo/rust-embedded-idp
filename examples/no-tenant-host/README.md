@@ -44,3 +44,9 @@ pnpm --dir web install --frozen-lockfile
 ## 浏览器恢复
 
 示例登录组件使用 Cookie 模式，刷新页面后通过 `/auth/browser/restore` 恢复，访问令牌仍只保存在内存。`NO_TENANT_HOST_BROWSER_ORIGIN` 默认 `http://<NO_TENANT_HOST_BIND_ADDR>`，反向代理部署需设置精确外部源；非 loopback 必须 HTTPS。Cookie 名称为 `idp_<bind-port>_business`，不与参考管理端共用。接口与多标签页规则见[浏览器会话设计](../../docs/browser-session-design.md)。
+
+## 2.0 业务标识
+
+示例配置必须显式提供 `NO_TENANT_HOST_BUSINESS_ID`，模板使用 `reports`。在 IDP 管理端创建权限、角色和用户分配时使用相同业务标识；服务端从配置构造授权查询，不接受前端覆盖该标识。可配置普通 `report/read` 角色范围，也可在该业务创建 `business_admin` 后直接分配用户。
+
+已有 IdP v2 schema 需先执行[显式映射迁移](../../docs/business-domain-authorization-design-v1.md)，示例启动不会自动升级或重新授予权限。业务报告表仍由单业务宿主独占，授权隔离不要求为该表增加第二套身份模型。

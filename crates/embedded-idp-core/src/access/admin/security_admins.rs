@@ -1,4 +1,5 @@
 use super::*;
+use crate::access::IDP_BUSINESS_ID;
 
 /// Secret-free snapshot for the dedicated protected-administrator workflow.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,8 +72,12 @@ impl<S: AccessAdminStore, C: Clock + Send + Sync, I: IdGenerator + Send + Sync> 
                 b.tenant_id != tenant
                     || b.subject_id != subject
                     || b.role_id != role.id
-                    || b.resource_type != resource
-                    || b.scope != ResourceScope::Type
+                    || b.business_id != IDP_BUSINESS_ID
+                    || b.scope
+                        != RoleBindingScope::Resource {
+                            resource_type: resource.into(),
+                            scope: ResourceScope::Type,
+                        }
             }) {
                 return Err(AccessError::InvalidStoreResponse);
             }

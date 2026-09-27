@@ -58,6 +58,18 @@ fn send(
     tenant: Option<&str>,
     body: Value,
 ) -> (StatusCode, HeaderMap, Value) {
+    send_with_business(app, method, path, credential, tenant, None, body)
+}
+
+fn send_with_business(
+    app: &Router,
+    method: &str,
+    path: &str,
+    credential: Option<&str>,
+    tenant: Option<&str>,
+    business: Option<&str>,
+    body: Value,
+) -> (StatusCode, HeaderMap, Value) {
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -73,6 +85,9 @@ fn send(
             }
             if let Some(value) = tenant {
                 request = request.header("x-embedded-idp-tenant-id", value);
+            }
+            if let Some(value) = business {
+                request = request.header("x-embedded-idp-business-id", value);
             }
             let response = app
                 .clone()
@@ -154,16 +169,26 @@ fn management_http_login_authorizes_admin_actions_and_refresh_logout_revoke_live
         };
         let roles = "/admin/access/roles";
         assert_eq!(
-            send(&router, "GET", roles, None, Some(target), Value::Null).0,
+            send_with_business(
+                &router,
+                "GET",
+                roles,
+                None,
+                Some(target),
+                Some("f_01"),
+                Value::Null
+            )
+            .0,
             StatusCode::UNAUTHORIZED
         );
         assert_eq!(
-            send(
+            send_with_business(
                 &router,
                 "GET",
                 roles,
                 Some(&credential),
                 Some(target),
+                Some("f_01"),
                 Value::Null
             )
             .0,
@@ -171,7 +196,7 @@ fn management_http_login_authorizes_admin_actions_and_refresh_logout_revoke_live
         );
         let mut c = db.adapter.connect().unwrap();
         let s = db.schema();
-        c.execute(&format!("insert into {s}.access_role_bindings(id,tenant_id,account_id,role_id,resource_type,created_at_epoch,created_by) select $1,'0',$2,role_id,resource_type,100,created_by from {s}.access_role_bindings where tenant_id='0' limit 1"),&[&Uuid::now_v7(),&subject]).unwrap();
+        c.execute(&format!("insert into {s}.access_role_bindings(id,tenant_id,business_id,account_id,role_id,scope_kind,resource_type,created_at_epoch,created_by) select $1,'0','idp',$2,role_id,'type',resource_type,100,created_by from {s}.access_role_bindings where tenant_id='0' limit 1"),&[&Uuid::now_v7(),&subject]).unwrap();
         if mode == TenancyMode::Enabled {
             let (status, _, created) = send(
                 &router,
@@ -185,12 +210,13 @@ fn management_http_login_authorizes_admin_actions_and_refresh_logout_revoke_live
         }
 
         assert_eq!(
-            send(
+            send_with_business(
                 &router,
                 "GET",
                 roles,
                 Some(&credential),
                 Some(target),
+                Some("f_01"),
                 Value::Null
             )
             .0,
@@ -198,16 +224,26 @@ fn management_http_login_authorizes_admin_actions_and_refresh_logout_revoke_live
         );
         if mode == TenancyMode::Enabled {
             assert_eq!(
-                send(&router, "GET", roles, Some(&credential), None, Value::Null).0,
+                send_with_business(
+                    &router,
+                    "GET",
+                    roles,
+                    Some(&credential),
+                    None,
+                    Some("f_01"),
+                    Value::Null
+                )
+                .0,
                 StatusCode::BAD_REQUEST
             );
         }
-        let (status, headers, created) = send(
+        let (status, headers, created) = send_with_business(
             &router,
             "POST",
             roles,
             Some(&credential),
             Some(target),
+            Some("f_01"),
             json!({"key":"reports","name":"Reports"}),
         );
         assert_eq!(status, StatusCode::CREATED, "{created}");
@@ -224,12 +260,13 @@ fn management_http_login_authorizes_admin_actions_and_refresh_logout_revoke_live
         // Grant changes take effect without issuing a replacement credential.
         c.batch_execute(&format!("update {s}.access_permissions set enabled=false where resource_type='idp.platform' and action='access.manage'")).unwrap();
         assert_eq!(
-            send(
+            send_with_business(
                 &router,
                 "GET",
                 roles,
                 Some(&credential),
                 Some(target),
+                Some("f_01"),
                 Value::Null
             )
             .0,
@@ -252,12 +289,13 @@ fn management_http_login_authorizes_admin_actions_and_refresh_logout_revoke_live
         let business_credential =
             format!("Bearer {}", business.tokens.access_token.expose_secret());
         assert_eq!(
-            send(
+            send_with_business(
                 &router,
                 "GET",
                 roles,
                 Some(&business_credential),
                 Some(target),
+                Some("f_01"),
                 Value::Null
             )
             .0,
@@ -278,12 +316,13 @@ fn management_http_login_authorizes_admin_actions_and_refresh_logout_revoke_live
         let (status, _, rotated) = refresh(&router, &login);
         assert_eq!(status, StatusCode::OK);
         assert_eq!(
-            send(
+            send_with_business(
                 &router,
                 "GET",
                 roles,
                 Some(&bearer(&rotated)),
                 Some(target),
+                Some("f_01"),
                 Value::Null
             )
             .0,
@@ -294,12 +333,13 @@ fn management_http_login_authorizes_admin_actions_and_refresh_logout_revoke_live
             "refresh_token_reuse_detected"
         );
         assert_eq!(
-            send(
+            send_with_business(
                 &router,
                 "GET",
                 roles,
                 Some(&bearer(&rotated)),
                 Some(target),
+                Some("f_01"),
                 Value::Null
             )
             .0,
@@ -335,12 +375,13 @@ fn management_http_login_authorizes_admin_actions_and_refresh_logout_revoke_live
         let active = self::login(&router);
         c.execute(&format!("update {s}.access_memberships set status='suspended' where tenant_id='0' and account_id=$1"),&[&subject]).unwrap();
         assert_eq!(
-            send(
+            send_with_business(
                 &router,
                 "GET",
                 roles,
                 Some(&bearer(&active)),
                 Some(target),
+                Some("f_01"),
                 Value::Null
             )
             .0,

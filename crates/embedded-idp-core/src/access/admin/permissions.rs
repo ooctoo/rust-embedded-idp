@@ -3,28 +3,51 @@ use crate::access::{
     service::{finish_page, time_page_key},
     AccessListScope, AccessPage, AccessPageRequest,
 };
+use crate::access::{validate_access_business_id, IDP_BUSINESS_ID};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AdminPermissionScope {
-    Tenant(String),
+    Tenant {
+        tenant_id: String,
+        business_id: Option<String>,
+    },
     Platform,
 }
 impl AdminPermissionScope {
     pub fn validate(&self, mode: TenancyMode) -> Result<(), AccessError> {
         match self {
-            Self::Tenant(t) => mode.validate_business_tenant(t),
+            Self::Tenant {
+                tenant_id,
+                business_id,
+            } => {
+                mode.validate_business_tenant(tenant_id)?;
+                if let Some(business_id) = business_id {
+                    validate_access_business_id(business_id)?;
+                }
+                Ok(())
+            }
             Self::Platform => Ok(()),
         }
     }
     pub fn permits(&self, mode: TenancyMode, category: PermissionCategory) -> bool {
         match self {
-            Self::Tenant(t) => {
-                mode.validate_business_tenant(t).is_ok() && mode.permits(t, category)
+            Self::Tenant {
+                tenant_id,
+                business_id,
+            } => {
+                mode.permits(tenant_id, category)
+                    && match business_id.as_deref() {
+                        Some(IDP_BUSINESS_ID) => {
+                            matches!(
+                                category,
+                                PermissionCategory::Platform | PermissionCategory::Tenant
+                            )
+                        }
+                        Some(_) => category == PermissionCategory::Business,
+                        None => true,
+                    }
             }
-            Self::Platform => {
-                category == PermissionCategory::Platform
-                    || (mode == TenancyMode::Disabled && mode.permits(SYSTEM_TENANT_ID, category))
-            }
+            Self::Platform => category == PermissionCategory::Platform,
         }
     }
 }
@@ -55,6 +78,7 @@ pub trait PermissionAdminService: AccessAdminService {
         &self,
         context: AccessAdminContext,
         tenant_id: String,
+        business_id: String,
         key: PermissionKey,
     ) -> Result<PermissionDefinition, AccessError>;
     fn list_permissions(
@@ -72,9 +96,11 @@ impl<S: AccessAdminStore, C: Clock + Send + Sync, I: IdGenerator + Send + Sync>
         &self,
         context: AccessAdminContext,
         tenant_id: String,
+        business_id: String,
         key: PermissionKey,
     ) -> Result<PermissionDefinition, AccessError> {
         self.mode.validate_business_tenant(&tenant_id)?;
+        validate_access_business_id(&business_id)?;
         key.validate()?;
         self.store.admin_transaction(|tx| {
             self.authorize_management_read(
@@ -87,6 +113,7 @@ impl<S: AccessAdminStore, C: Clock + Send + Sync, I: IdGenerator + Send + Sync>
                 .tenant_permission(&tenant_id, &key)?
                 .ok_or(AccessError::NotFound("permission"))?;
             if permission.tenant_id != tenant_id
+                || permission.key.business_id != business_id
                 || permission.key != key
                 || !self.mode.permits(&tenant_id, permission.category)
             {
@@ -112,7 +139,9 @@ impl<S: AccessAdminStore, C: Clock + Send + Sync, I: IdGenerator + Send + Sync>
         page.validate(&cursor_scope)?;
         self.store.admin_transaction(|tx| {
             let (tenant, operation) = match &scope {
-                AdminPermissionScope::Tenant(t) => (t.as_str(), AccessAdminOperation::ReadAccess),
+                AdminPermissionScope::Tenant { tenant_id, .. } => {
+                    (tenant_id.as_str(), AccessAdminOperation::ReadAccess)
+                }
                 AdminPermissionScope::Platform => {
                     (SYSTEM_TENANT_ID, AccessAdminOperation::ManageCatalog)
                 }
@@ -123,7 +152,15 @@ impl<S: AccessAdminStore, C: Clock + Send + Sync, I: IdGenerator + Send + Sync>
                 p.key.validate().is_err()
                     || !scope.permits(self.mode, p.category)
                     || match &scope {
-                        AdminPermissionScope::Tenant(t) => &p.tenant_id != t,
+                        AdminPermissionScope::Tenant {
+                            tenant_id,
+                            business_id,
+                        } => {
+                            &p.tenant_id != tenant_id
+                                || business_id
+                                    .as_ref()
+                                    .is_some_and(|id| &p.key.business_id != id)
+                        }
                         AdminPermissionScope::Platform => p.tenant_id != SYSTEM_TENANT_ID,
                     }
                     || !filter.matches(p)
@@ -136,6 +173,7 @@ impl<S: AccessAdminStore, C: Clock + Send + Sync, I: IdGenerator + Send + Sync>
                     p.key.resource_type.clone(),
                 );
                 key.push(p.key.action.clone());
+                key.push(p.key.business_id.clone());
                 key
             })
         })

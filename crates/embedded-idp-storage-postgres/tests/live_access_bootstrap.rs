@@ -40,6 +40,7 @@ fn catalog() -> PermissionCatalog {
         created_at: None,
         tenant_id: "0".into(),
         key: PermissionKey {
+            business_id: "f_01".into(),
             resource_type: "report".into(),
             action: "read".into(),
         },
@@ -326,6 +327,19 @@ fn readiness_requires_prepared_catalog_and_effective_admin_without_mutating_stat
         let before = db.readiness_snapshot();
         store.check_readiness(&catalog()).unwrap();
         assert_eq!(db.readiness_snapshot(), before);
+
+        db.adapter
+            .connect()
+            .unwrap()
+            .execute(
+                &format!(
+                    "insert into {}.access_permissions(tenant_id,business_id,resource_type,action,category,description,enabled) values('0','readiness_test','idp.platform','access.manage','business','duplicate key outside the catalog',true)",
+                    db.schema()
+                ),
+                &[],
+            )
+            .unwrap();
+        store.check_readiness(&catalog()).unwrap();
 
         db.adapter.connect().unwrap().execute(
             &format!("update {}.access_permissions set enabled=false where resource_type='report' and action='read'", db.schema()),

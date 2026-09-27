@@ -35,6 +35,7 @@ fn grants(db: &Db) -> String {
             .execute(
                 context.clone(),
                 db.command(AccessAdminMutation::CreateRole {
+                    business_id: "f_01".into(),
                     key: "reader".into(),
                     name: "Reader".into(),
                 }),
@@ -45,8 +46,10 @@ fn grants(db: &Db) -> String {
         .execute(
             context.clone(),
             db.command(AccessAdminMutation::ReplaceRolePermissions {
+                business_id: "f_01".into(),
                 role_id: role.clone(),
                 permissions: vec![PermissionKey {
+                    business_id: "f_01".into(),
                     resource_type: "report".into(),
                     action: "read".into(),
                 }],
@@ -58,10 +61,13 @@ fn grants(db: &Db) -> String {
         .execute(
             context,
             db.command(AccessAdminMutation::GrantRole {
+                business_id: "f_01".into(),
                 subject_id: db.member.to_string(),
                 role_id: role.clone(),
-                resource_type: "report".into(),
-                scope: ResourceScope::Instance("r1".into()),
+                scope: RoleBindingScope::Resource {
+                    resource_type: "report".into(),
+                    scope: ResourceScope::Instance("r1".into()),
+                },
             }),
         )
         .unwrap();
@@ -86,6 +92,7 @@ fn diagnostic_http_matches_host_decisions_and_audits_caller_target_and_result() 
             assert_eq!(result.1["subject_id"], db.member.to_string());
             let decision = host
                 .check(AccessQuery {
+                    business_id: "f_01".into(),
                     tenant_id: db.target().into(),
                     subject_id: db.member.to_string(),
                     resource_type: "report".into(),

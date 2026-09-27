@@ -1,4 +1,4 @@
-use super::devices::{device, send};
+use super::devices::{device, send, send_with_business};
 use super::*;
 use axum::{http::StatusCode, Extension, Router};
 use embedded_idp_axum::role_admin_router;
@@ -113,10 +113,13 @@ fn role_admin_http_lifecycle_permissions_versions_and_audit_are_atomic_in_both_m
             .execute(
                 db.context(db.actor_session.to_string()),
                 db.command(AccessAdminMutation::GrantRole {
+                    business_id: "f_01".into(),
                     subject_id: db.member.to_string(),
                     role_id: role.clone(),
-                    resource_type: "report".into(),
-                    scope: ResourceScope::Instance("report-1".into()),
+                    scope: RoleBindingScope::Resource {
+                        resource_type: "report".into(),
+                        scope: ResourceScope::Instance("report-1".into()),
+                    },
                 }),
             )
             .unwrap();
@@ -199,7 +202,7 @@ fn role_admin_http_lifecycle_permissions_versions_and_audit_are_atomic_in_both_m
         );
 
         assert_eq!(
-            send(&router, "GET", &protected_path, Some(t), "").0,
+            send_with_business(&router, "GET", &protected_path, Some(t), "", Some("idp")).0,
             StatusCode::OK
         );
         for (method, path, body) in [
@@ -220,8 +223,8 @@ fn role_admin_http_lifecycle_permissions_versions_and_audit_are_atomic_in_both_m
             ),
         ] {
             assert_eq!(
-                send(&router, method, &path, Some(t), &body).0,
-                StatusCode::FORBIDDEN
+                send_with_business(&router, method, &path, Some(t), &body, Some("idp")).0,
+                StatusCode::BAD_REQUEST
             );
         }
         assert_eq!(

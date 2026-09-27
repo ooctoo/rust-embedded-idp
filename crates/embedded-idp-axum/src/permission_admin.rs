@@ -1,5 +1,8 @@
 use crate::{
-    tenant_admin::{error, platform_context, target, ManagementSortOrder},
+    tenant_admin::{
+        business_id, business_target, error, optional_business_target, platform_context,
+        ManagementSortOrder,
+    },
     tenant_auth::{call, no_store},
 };
 use axum::{
@@ -88,6 +91,7 @@ struct PageQuery {
 struct Cursor {
     version: u8,
     tenant_id: Option<String>,
+    business_id: Option<String>,
     filter: Filter,
     after: Vec<String>,
     #[serde(default)]
@@ -118,7 +122,7 @@ struct Enabled {
     expected_enabled: bool,
 }
 fn permission_json(p: PermissionDefinition) -> Value {
-    json!({"tenant_id":p.tenant_id,"resource_type":p.key.resource_type,"action":p.key.action,"description":p.description,"category":match p.category {PermissionCategory::Business=>"business",PermissionCategory::Tenant=>"tenant",PermissionCategory::Platform=>"platform"},"enabled":p.enabled,"archived":p.archived,"version":p.version})
+    json!({"tenant_id":p.tenant_id,"business_id":p.key.business_id,"resource_type":p.key.resource_type,"action":p.key.action,"description":p.description,"category":match p.category {PermissionCategory::Business=>"business",PermissionCategory::Tenant=>"tenant",PermissionCategory::Platform=>"platform"},"enabled":p.enabled,"archived":p.archived,"version":p.version})
 }
 async fn list(
     State(state): State<AdminState>,
@@ -126,11 +130,21 @@ async fn list(
     headers: HeaderMap,
     Query(query): Query<PageQuery>,
 ) -> Response {
-    let (context, tenant) = match target(state.mode, context, &headers) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    list_scoped(state, context, AdminPermissionScope::Tenant(tenant), query).await
+    let (context, tenant, business_id) =
+        match optional_business_target(state.mode, context, &headers, true) {
+            Ok(v) => v,
+            Err(e) => return e,
+        };
+    list_scoped(
+        state,
+        context,
+        AdminPermissionScope::Tenant {
+            tenant_id: tenant,
+            business_id,
+        },
+        query,
+    )
+    .await
 }
 async fn list_platform(
     State(state): State<AdminState>,
@@ -171,9 +185,16 @@ async fn list_scoped(
             Some(AccessCursor {
                 version: c.version,
                 scope: AccessListScope::AdminPermissions {
-                    scope: c
-                        .tenant_id
-                        .map_or(AdminPermissionScope::Platform, AdminPermissionScope::Tenant),
+                    scope: match c.tenant_id {
+                        Some(tenant_id) => AdminPermissionScope::Tenant {
+                            tenant_id,
+                            business_id: c.business_id,
+                        },
+                        None if c.business_id == Some("idp".into()) => {
+                            AdminPermissionScope::Platform
+                        }
+                        None => return error(AccessError::InvalidCursor),
+                    },
                     filter: c.filter.core(),
                 },
                 after: c.after,
@@ -202,17 +223,21 @@ async fn list_scoped(
                     let AccessListScope::AdminPermissions { scope, .. } = c.scope else {
                         return error(AccessError::InvalidStoreResponse);
                     };
-                    if c.after.len() != 3 {
+                    if c.after.len() != 4 {
                         return error(AccessError::InvalidStoreResponse);
                     }
-                    let tenant_id = match scope {
-                        AdminPermissionScope::Tenant(t) => Some(t),
-                        AdminPermissionScope::Platform => None,
+                    let (tenant_id, business_id) = match scope {
+                        AdminPermissionScope::Tenant {
+                            tenant_id,
+                            business_id,
+                        } => (Some(tenant_id), business_id),
+                        AdminPermissionScope::Platform => (None, Some("idp".into())),
                     };
                     Some(Base64UrlUnpadded::encode_string(
                         &serde_json::to_vec(&Cursor {
                             version: c.version,
                             tenant_id,
+                            business_id,
                             filter,
                             after: c.after,
                             sort_order: ManagementSortOrder::from_core(
@@ -234,7 +259,7 @@ async fn change(
     headers: HeaderMap,
     mutation: AccessAdminMutation,
 ) -> Response {
-    let (context, tenant_id) = match target(state.mode, context, &headers) {
+    let (context, tenant_id, _) = match business_target(state.mode, context, &headers, false) {
         Ok(v) => v,
         Err(e) => return e,
     };
@@ -252,15 +277,18 @@ async fn detail(
     headers: HeaderMap,
     Path((resource_type, action)): Path<(String, String)>,
 ) -> Response {
-    let (context, tenant_id) = match target(state.mode, context, &headers) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
+    let (context, tenant_id, business_id) =
+        match business_target(state.mode, context, &headers, true) {
+            Ok(v) => v,
+            Err(e) => return e,
+        };
     match call(move || {
         state.service.get_permission(
             context,
             tenant_id,
+            business_id.clone(),
             PermissionKey {
+                business_id,
                 resource_type,
                 action,
             },
@@ -278,12 +306,17 @@ async fn create(
     headers: HeaderMap,
     Json(body): Json<Create>,
 ) -> Response {
+    let business_id = match business_id(&headers, false) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
     change(
         state,
         context,
         headers,
         AccessAdminMutation::CreatePermission {
             key: PermissionKey {
+                business_id,
                 resource_type: body.resource_type,
                 action: body.action,
             },
@@ -299,12 +332,17 @@ async fn update(
     Path((resource_type, action)): Path<(String, String)>,
     Json(body): Json<Update>,
 ) -> Response {
+    let business_id = match business_id(&headers, false) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
     change(
         state,
         context,
         headers,
         AccessAdminMutation::UpdatePermission {
             key: PermissionKey {
+                business_id,
                 resource_type,
                 action,
             },
@@ -321,12 +359,17 @@ async fn archive(
     Path((resource_type, action)): Path<(String, String)>,
     Json(body): Json<Archive>,
 ) -> Response {
+    let business_id = match business_id(&headers, false) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
     change(
         state,
         context,
         headers,
         AccessAdminMutation::ArchivePermission {
             key: PermissionKey {
+                business_id,
                 resource_type,
                 action,
             },
@@ -342,12 +385,17 @@ async fn set_enabled(
     Path((resource_type, action)): Path<(String, String)>,
     Json(body): Json<Enabled>,
 ) -> Response {
+    let business_id = match business_id(&headers, false) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
     change(
         state,
         context,
         headers,
         AccessAdminMutation::SetPermissionEnabled {
             permission: PermissionKey {
+                business_id,
                 resource_type,
                 action,
             },

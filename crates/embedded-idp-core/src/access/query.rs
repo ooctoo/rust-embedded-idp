@@ -4,6 +4,7 @@ use super::AccessError;
 
 pub const MAX_ACCESS_DESCRIPTION_BYTES: usize = 1024;
 pub const MAX_ACCESS_BATCH_SIZE: usize = 100;
+pub const IDP_BUSINESS_ID: &str = "idp";
 
 pub(crate) fn validate_id(value: &str, max: usize, field: &'static str) -> Result<(), AccessError> {
     if value.is_empty()
@@ -25,14 +26,35 @@ pub(crate) fn validate_name(value: &str, field: &'static str) -> Result<(), Acce
     Ok(())
 }
 
+/// Validates a host business namespace. `idp` and `idp.*` are reserved for
+/// management records and cannot be selected by a host business operation.
+pub fn validate_business_id(value: &str) -> Result<(), AccessError> {
+    validate_name(value, "business_id")?;
+    if value == IDP_BUSINESS_ID || value.starts_with("idp.") {
+        return Err(AccessError::InvalidInput("business_id"));
+    }
+    Ok(())
+}
+
+/// Validates an authorization namespace, including the fixed IDP namespace.
+pub fn validate_access_business_id(value: &str) -> Result<(), AccessError> {
+    if value == IDP_BUSINESS_ID {
+        Ok(())
+    } else {
+        validate_business_id(value)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PermissionKey {
+    pub business_id: String,
     pub resource_type: String,
     pub action: String,
 }
 
 impl PermissionKey {
     pub fn validate(&self) -> Result<(), AccessError> {
+        validate_access_business_id(&self.business_id)?;
         validate_name(&self.resource_type, "resource_type")?;
         validate_name(&self.action, "action")
     }
@@ -42,6 +64,7 @@ impl PermissionKey {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccessQuery {
     pub tenant_id: String,
+    pub business_id: String,
     pub subject_id: crate::AccountId,
     pub resource_type: String,
     pub action: String,
@@ -51,6 +74,7 @@ pub struct AccessQuery {
 impl AccessQuery {
     pub fn validate(&self) -> Result<(), AccessError> {
         validate_id(&self.tenant_id, 128, "tenant_id")?;
+        validate_access_business_id(&self.business_id)?;
         validate_id(&self.subject_id, 128, "subject_id")?;
         self.permission().validate()?;
         if let Some(id) = &self.resource_id {
@@ -61,6 +85,7 @@ impl AccessQuery {
 
     pub fn permission(&self) -> PermissionKey {
         PermissionKey {
+            business_id: self.business_id.clone(),
             resource_type: self.resource_type.clone(),
             action: self.action.clone(),
         }
@@ -75,9 +100,13 @@ impl FromStr for AccessQuery {
             return Err(AccessError::InvalidInput("description_length"));
         }
         let mut parts = value.split("::");
-        let (tenant_id, subject_id) = parts
+        let (tenant_id, business_id, subject_id) = parts
             .next()
-            .and_then(|s| s.split_once('/'))
+            .and_then(|s| {
+                let mut parts = s.split('/');
+                Some((parts.next()?, parts.next()?, parts.next()?))
+                    .filter(|_| parts.next().is_none())
+            })
             .ok_or(AccessError::InvalidInput("subject_scope"))?;
         let resource_type = parts
             .next()
@@ -89,6 +118,7 @@ impl FromStr for AccessQuery {
         }
         let query = Self {
             tenant_id: tenant_id.to_owned(),
+            business_id: business_id.to_owned(),
             subject_id: subject_id.to_owned(),
             resource_type: resource_type.to_owned(),
             action: action.to_owned(),
@@ -103,8 +133,8 @@ impl fmt::Display for AccessQuery {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{}/{}::{}::{}",
-            self.tenant_id, self.subject_id, self.resource_type, self.action
+            "{}/{}/{}::{}::{}",
+            self.tenant_id, self.business_id, self.subject_id, self.resource_type, self.action
         )?;
         if let Some(id) = &self.resource_id {
             write!(f, "::{id}")?;
@@ -127,7 +157,10 @@ impl BatchAccessQuery {
         let first = &self.queries[0];
         for query in &self.queries {
             query.validate()?;
-            if query.tenant_id != first.tenant_id || query.subject_id != first.subject_id {
+            if query.tenant_id != first.tenant_id
+                || query.business_id != first.business_id
+                || query.subject_id != first.subject_id
+            {
                 return Err(AccessError::InvalidInput("batch_subject_scope"));
             }
         }
@@ -140,6 +173,31 @@ impl BatchAccessQuery {
 pub enum ResourceScope {
     Type,
     Instance(String),
+}
+
+/// A role is either assigned to its whole business or to a resource type/instance.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RoleBindingScope {
+    Business,
+    Resource {
+        resource_type: String,
+        scope: ResourceScope,
+    },
+}
+
+impl RoleBindingScope {
+    pub fn validate(&self) -> Result<(), AccessError> {
+        match self {
+            Self::Business => Ok(()),
+            Self::Resource {
+                resource_type,
+                scope,
+            } => {
+                validate_name(resource_type, "resource_type")?;
+                scope.validate()
+            }
+        }
+    }
 }
 
 impl ResourceScope {

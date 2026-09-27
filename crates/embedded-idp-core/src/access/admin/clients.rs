@@ -213,6 +213,7 @@ impl<
                 occurred_at: now,
                 context,
                 tenant_id: SYSTEM_TENANT_ID.into(),
+                target_business_id: None,
                 operation: "client.upsert",
                 change: AccessChange::Client {
                     before: before.map(client_metadata),

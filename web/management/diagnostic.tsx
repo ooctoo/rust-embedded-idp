@@ -32,6 +32,7 @@ export function AccessDiagnostic({ client, tenant }: { client: ManagementClient;
     setError("");
     setResult(undefined);
     setDraft({
+      business_id: values.business_id.trim(),
       subject_id: values.subject_id.trim(),
       resource_type: values.resource_type.trim(),
       action: values.action.trim(),
@@ -44,7 +45,7 @@ export function AccessDiagnostic({ client, tenant }: { client: ManagementClient;
     setBusy(true);
     setError("");
     try {
-      const checked = await client.diagnosePermission(tenant, draft);
+      const checked = await client.diagnosePermission(tenant, draft.business_id, draft);
       if (mounted.current) { setResult(checked); setDraft(undefined); }
     } catch (reason) {
       if (mounted.current) { setError(failure(reason)); setDraft(undefined); }
@@ -55,7 +56,7 @@ export function AccessDiagnostic({ client, tenant }: { client: ManagementClient;
 
   return <Card title="权限诊断" className="management-card">
     <Typography.Paragraph type="secondary">
-      查询指定用户在{tenancyEnabled ? "目标租户" : "当前系统"}、指定资源范围内当前是否允许执行动作。每次查询都会写入审计记录，请确认后再提交。
+      查询指定用户在{tenancyEnabled ? "目标租户" : "当前系统"}中指定业务与资源范围内当前是否允许执行动作。每次查询都会写入审计记录，请确认后再提交。
     </Typography.Paragraph>
     <Alert type="info" showIcon message={`当前目标：${targetLabel}`} description={
       tenancyEnabled ? "诊断只针对当前目标租户生效，不会切换登录租户或修改授权。" : "诊断只针对当前系统生效，不会修改授权。"
@@ -64,6 +65,7 @@ export function AccessDiagnostic({ client, tenant }: { client: ManagementClient;
     {result && <Card size="small" className="management-note" title="查询结果">
       <Typography.Paragraph>
         <Tag color={result.decision === "allow" ? "success" : "error"}>{result.decision === "allow" ? "允许" : "拒绝"}</Tag>
+        <br />业务标识：{result.business_id}
         <br />用户：{result.subject_id}
         <br />权限：{result.resource_type}::{result.action}
         <br />范围：{result.resource_id === null ? "资源类型下的全部资源" : `具体资源 ${result.resource_id}`}
@@ -72,6 +74,10 @@ export function AccessDiagnostic({ client, tenant }: { client: ManagementClient;
       <Typography.Text type="secondary">这是查询时刻的判断结果，不代表永久授权，也不代表用户拥有该资源。</Typography.Text>
     </Card>}
     <Form<Draft> name="permission-diagnostic" form={form} layout="vertical" onValuesChange={() => { setResult(undefined); setError(""); }} onFinish={submit}>
+      <Form.Item name="business_id" label="业务标识" rules={[
+        { required: true, message: "请输入业务标识" }, { pattern: permissionName, message: "请输入有效业务标识" },
+        { validator: (_, value) => value === "idp" || value?.startsWith("idp.") ? Promise.reject(new Error("请选择业务权限标识")) : Promise.resolve() },
+      ]}><Input maxLength={64} placeholder="例如 biz_test" /></Form.Item>
       <Form.Item name="subject_id" label="用户 ID" rules={[{ required: true, whitespace: true, message: "请输入用户 ID" }, { pattern: /^[A-Za-z0-9_.-]{1,128}$/, message: "用户 ID 最多 128 位，仅可使用字母、数字、点、下划线或连字符" }]}>
         <Input maxLength={128} autoComplete="off" />
       </Form.Item>
@@ -91,7 +97,7 @@ export function AccessDiagnostic({ client, tenant }: { client: ManagementClient;
       focusTriggerAfterClose={false} afterClose={() => trigger.current?.focus()} onCancel={() => setDraft(undefined)} onOk={() => void diagnose()}>
       {draft && <>
         <Typography.Paragraph>
-          目标：{targetLabel}<br />用户：{draft.subject_id}<br />权限：{draft.resource_type}::{draft.action}<br />范围：{scopeLabel(draft)}
+          目标：{targetLabel} / {draft.business_id}<br />用户：{draft.subject_id}<br />权限：{draft.resource_type}::{draft.action}<br />范围：{scopeLabel(draft)}
         </Typography.Paragraph>
         <Alert type="warning" showIcon message="本次查询会写入审计记录" description="结果只表示服务端在查询时刻的 Allow 或 Deny，不会授予权限，也不会修改任何角色或资源授权。" />
       </>}

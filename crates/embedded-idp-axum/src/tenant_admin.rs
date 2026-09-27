@@ -34,6 +34,72 @@ pub(super) fn target(
     context: Option<Extension<AccessAdminContext>>,
     headers: &HeaderMap,
 ) -> Result<(AccessAdminContext, String), Response> {
+    reject_business_header(headers)?;
+    target_inner(mode, context, headers)
+}
+
+pub(super) fn business_id(headers: &HeaderMap, allow_idp: bool) -> Result<String, Response> {
+    let mut values = headers.get_all("x-embedded-idp-business-id").iter();
+    let value = values
+        .next()
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| error(AccessError::InvalidInput("business_header")))?;
+    if values.next().is_some() {
+        return Err(error(AccessError::InvalidInput("business_header")));
+    }
+    if allow_idp {
+        validate_access_business_id(value)
+    } else {
+        validate_business_id(value)
+    }
+    .map_err(error)?;
+    Ok(value.to_owned())
+}
+
+pub(super) fn optional_business_id(
+    headers: &HeaderMap,
+    allow_idp: bool,
+) -> Result<Option<String>, Response> {
+    if !headers.contains_key("x-embedded-idp-business-id") {
+        return Ok(None);
+    }
+    business_id(headers, allow_idp).map(Some)
+}
+
+pub(super) fn optional_business_target(
+    mode: TenancyMode,
+    context: Option<Extension<AccessAdminContext>>,
+    headers: &HeaderMap,
+    allow_idp: bool,
+) -> Result<(AccessAdminContext, String, Option<String>), Response> {
+    let (context, tenant) = target_inner(mode, context, headers)?;
+    Ok((context, tenant, optional_business_id(headers, allow_idp)?))
+}
+
+pub(super) fn business_target(
+    mode: TenancyMode,
+    context: Option<Extension<AccessAdminContext>>,
+    headers: &HeaderMap,
+    allow_idp: bool,
+) -> Result<(AccessAdminContext, String, String), Response> {
+    let (context, tenant) = target_inner(mode, context, headers)?;
+    Ok((context, tenant, business_id(headers, allow_idp)?))
+}
+
+fn reject_business_header(headers: &HeaderMap) -> Result<(), Response> {
+    if headers.contains_key("x-embedded-idp-business-id") {
+        return Err(error(AccessError::InvalidInput(
+            "unexpected_business_header",
+        )));
+    }
+    Ok(())
+}
+
+fn target_inner(
+    mode: TenancyMode,
+    context: Option<Extension<AccessAdminContext>>,
+    headers: &HeaderMap,
+) -> Result<(AccessAdminContext, String), Response> {
     let Some(Extension(context)) = context else {
         return Err(tenant_error(
             StatusCode::UNAUTHORIZED,
@@ -105,6 +171,7 @@ pub(super) fn platform_context(
     context: Option<Extension<AccessAdminContext>>,
     headers: &HeaderMap,
 ) -> Result<AccessAdminContext, Response> {
+    reject_business_header(headers)?;
     let Some(Extension(context)) = context else {
         return Err(tenant_error(
             StatusCode::UNAUTHORIZED,
@@ -123,6 +190,39 @@ pub(super) fn platform_context(
 #[cfg(test)]
 mod tests {
     use super::ManagementSortOrder;
+
+    #[test]
+    fn business_selection_is_explicit_and_management_namespace_is_protected() {
+        use super::*;
+        use axum::http::HeaderValue;
+        let mut headers = HeaderMap::new();
+        assert!(business_id(&headers, false).is_err());
+        for invalid in ["", "IDP", "idp.other", "a/b", "*"] {
+            headers.insert(
+                "x-embedded-idp-business-id",
+                HeaderValue::from_str(invalid).unwrap(),
+            );
+            assert!(business_id(&headers, true).is_err());
+        }
+        headers.insert(
+            "x-embedded-idp-business-id",
+            HeaderValue::from_static("f_01"),
+        );
+        assert_eq!(business_id(&headers, false).unwrap(), "f_01");
+        assert!(reject_business_header(&headers).is_err());
+        headers.append(
+            "x-embedded-idp-business-id",
+            HeaderValue::from_static("f_02"),
+        );
+        assert!(business_id(&headers, false).is_err());
+        headers.remove("x-embedded-idp-business-id");
+        headers.insert(
+            "x-embedded-idp-business-id",
+            HeaderValue::from_static("idp"),
+        );
+        assert_eq!(business_id(&headers, true).unwrap(), "idp");
+        assert!(business_id(&headers, false).is_err());
+    }
 
     #[derive(Default, serde::Deserialize)]
     #[serde(default)]

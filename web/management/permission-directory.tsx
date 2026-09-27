@@ -5,29 +5,29 @@ import { useCursorPage } from "./pagination";
 
 export type PermissionDirectoryClient = Pick<ManagementClient,
   "getSnapshot" | "listPermissionDirectory" | "createPermission" | "updatePermission" | "setPermissionEnabled" | "archivePermission">;
-export interface PermissionDirectoryProps { client: PermissionDirectoryClient; tenant: string }
+export interface PermissionDirectoryProps { client: PermissionDirectoryClient; tenant: string; business?: string }
 
 const categories = { business: "业务权限", tenant: "租户管理权限", platform: "平台管理权限" };
 const keyOf = (p: PermissionKey) => `${p.resource_type}::${p.action}`;
 const nameRule = /^[a-z][a-z0-9_.-]{0,63}$/;
 const failure = (reason: unknown) => reason instanceof ManagementError ? reason.message : "操作失败，请重新加载后核对。";
 
-function DirectoryTable({ client, tenant, filter }: PermissionDirectoryProps & { filter: PermissionDirectoryFilter }) {
-  const load = useCallback((cursor?: string) => client.listPermissionDirectory(tenant, filter, cursor), [client, tenant, filter]);
+function DirectoryTable({ client, tenant, business, filter }: PermissionDirectoryProps & { filter: PermissionDirectoryFilter }) {
+  const load = useCallback((cursor?: string) => client.listPermissionDirectory(tenant, business, filter, cursor), [client, tenant, business, filter]);
   const result = useCursorPage(load);
   const [editing, setEditing] = useState<DirectoryPermission | null>();
-  const [form] = Form.useForm<{ resource_type: string; action: string; description: string }>();
+  const [form] = Form.useForm<{ business_id: string; resource_type: string; action: string; description: string }>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const platformOnly = tenant === "0" && !!client.getSnapshot().capabilities?.tenancy_enabled;
+  const platformOnly = business === "idp" || tenant === "0" && !!client.getSnapshot().capabilities?.tenancy_enabled;
   const close = () => { setEditing(undefined); setError(""); result.reload(); };
-  const submit = async (values: { resource_type: string; action: string; description: string }) => {
+  const submit = async (values: { business_id: string; resource_type: string; action: string; description: string }) => {
     setBusy(true); setError("");
     try {
       const permission = editing
-        ? await client.updatePermission(tenant, editing, values.description)
-        : await client.createPermission(tenant, values, values.description);
+        ? await client.updatePermission(tenant, editing.business_id, editing, values.description)
+        : await client.createPermission(tenant, values.business_id, values, values.description);
       setSuccess(`${keyOf(permission)} 已${editing ? "更新" : "创建"}。`); close();
     } catch (reason) { setError(failure(reason)); }
     finally { setBusy(false); }
@@ -35,8 +35,8 @@ function DirectoryTable({ client, tenant, filter }: PermissionDirectoryProps & {
   const act = async (permission: DirectoryPermission, action: "archive" | "toggle") => {
     setBusy(true); setError("");
     try {
-      if (action === "archive") await client.archivePermission(tenant, permission);
-      else await client.setPermissionEnabled(tenant, permission, !permission.enabled);
+      if (action === "archive") await client.archivePermission(tenant, permission.business_id, permission);
+      else await client.setPermissionEnabled(tenant, permission.business_id, permission, !permission.enabled);
       setSuccess(`${keyOf(permission)} 已${action === "archive" ? "归档" : permission.enabled ? "停用" : "启用"}。`);
       result.reload();
     } catch (reason) { setError(failure(reason)); result.reload(); }
@@ -53,13 +53,14 @@ function DirectoryTable({ client, tenant, filter }: PermissionDirectoryProps & {
   };
   return <>
     <div className="management-filter"><Button disabled={busy || result.loading} onClick={result.reload}>刷新目录</Button>{" "}
-      {!platformOnly && <Button type="primary" onClick={() => { form.resetFields(); setError(""); setEditing(null); }}>创建权限</Button>}</div>
+      {!platformOnly && <Button type="primary" onClick={() => { form.resetFields(); form.setFieldsValue({ business_id: business }); setError(""); setEditing(null); }}>创建权限</Button>}</div>
     {success && <Alert type="success" showIcon role="status" message={success} />}
     {error && <Alert type="error" showIcon role="alert" message={error} />}
     {result.error && <Alert type="error" showIcon role="alert" message={result.error} />}
-    <Table<DirectoryPermission> rowKey={keyOf} dataSource={result.page?.items ?? []} loading={result.loading} pagination={false} scroll={{ x: 760 }}
+    <Table<DirectoryPermission> rowKey={p => `${p.business_id}::${keyOf(p)}`} dataSource={result.page?.items ?? []} loading={result.loading} pagination={false} scroll={{ x: 760 }}
       locale={{ emptyText: result.error ? "未能读取权限目录" : "没有符合条件的权限" }} columns={[
         { title: "权限", render: (_, p) => <><Typography.Text code>{keyOf(p)}</Typography.Text><br />{p.description}</> },
+        { title: "业务标识", dataIndex: "business_id" },
         { title: "类别", dataIndex: "category", render: (value: DirectoryPermission["category"]) => categories[value] },
         { title: "状态", render: (_, p) => <Tag>{p.archived ? "已归档" : p.enabled ? "启用" : "停用"}</Tag> },
         { title: "操作", render: (_, p) => p.category !== "business" || p.archived || platformOnly
@@ -71,6 +72,10 @@ function DirectoryTable({ client, tenant, filter }: PermissionDirectoryProps & {
     <Modal rootClassName="management-overlay" open={editing !== undefined} title={editing ? "编辑权限" : "创建权限"}
       onCancel={close} onOk={() => void form.submit()} confirmLoading={busy} okText="保存" okButtonProps={{ disabled: !!error }}>
       <Form form={form} layout="vertical" onFinish={values => void submit(values)}>
+        <Form.Item name="business_id" label="业务标识" rules={[
+          { required: true, message: "请输入所属业务标识" }, { pattern: nameRule, message: "请输入有效业务标识" },
+          { validator: (_, value) => value === "idp" || value?.startsWith("idp.") ? Promise.reject(new Error("不能使用 IDP 保留标识")) : Promise.resolve() },
+        ]}><Input disabled={!!editing || !!business} maxLength={64} placeholder="例如 biz_test" /></Form.Item>
         <Form.Item name="resource_type" label="资源类型" rules={[{ required: true }, { pattern: nameRule }]}><Input disabled={!!editing} maxLength={64} placeholder="report" /></Form.Item>
         <Form.Item name="action" label="动作" rules={[{ required: true }, { pattern: nameRule }]}><Input disabled={!!editing} maxLength={64} placeholder="read" /></Form.Item>
         <Form.Item name="description" label="权限说明" rules={[{ required: true }, { max: 512 }]}><Input.TextArea rows={3} maxLength={512} /></Form.Item>
@@ -80,19 +85,22 @@ function DirectoryTable({ client, tenant, filter }: PermissionDirectoryProps & {
   </>;
 }
 
-export function PermissionDirectory({ client, tenant }: PermissionDirectoryProps) {
+export function PermissionDirectory({ client, tenant, business }: PermissionDirectoryProps) {
   const [filter, setFilter] = useState<PermissionDirectoryFilter>({});
+  const [businessFilter, setBusinessFilter] = useState<string>();
+  const platform = tenant === "0" && !!client.getSnapshot().capabilities?.tenancy_enabled;
   return <Card title="权限目录" className="management-card embedded-idp-permission-directory">
-    <Typography.Paragraph type="secondary">权限定义只属于当前租户。业务含义和调用时机由宿主决定；创建定义不会自动授予角色。</Typography.Paragraph>
-    <Form name="permission-directory-filter" layout="inline" className="management-filter" onFinish={(values: { resource_type?: string; category?: DirectoryPermission["category"]; enabled?: "true" | "false" }) => setFilter({
+    <Typography.Paragraph type="secondary">列出当前租户的权限，可按业务标识筛选。普通角色需配置权限集；已分配的业务管理员自动覆盖新增有效权限。</Typography.Paragraph>
+    <Form name="permission-directory-filter" layout="inline" className="management-filter" onFinish={(values: { business_id?: string; resource_type?: string; category?: DirectoryPermission["category"]; enabled?: "true" | "false" }) => { setBusinessFilter(values.business_id?.trim() || undefined); setFilter({
       ...(values.resource_type?.trim() ? { resource_type: values.resource_type.trim() } : {}), ...(values.category ? { category: values.category } : {}),
       ...(values.enabled ? { enabled: values.enabled === "true" } : {}),
-    })}>
+    }); }}>
+      {!business && !platform && <Form.Item name="business_id" label="业务标识" rules={[{ pattern: /^(?!idp\.)[a-z][a-z0-9_.-]{0,63}$/, message: "请输入有效业务标识" }]}><Input allowClear maxLength={64} placeholder="全部业务" /></Form.Item>}
       <Form.Item name="resource_type" label="资源类型" rules={[{ pattern: nameRule, message: "请输入有效资源类型" }]}><Input allowClear maxLength={64} /></Form.Item>
       <Form.Item name="category" label="类别"><Select allowClear style={{ minWidth: 155 }} options={Object.entries(categories).map(([value, label]) => ({ value, label }))} /></Form.Item>
       <Form.Item name="enabled" label="状态"><Select allowClear style={{ minWidth: 100 }} options={[{ value: "true", label: "启用" }, { value: "false", label: "停用" }]} /></Form.Item>
       <Button htmlType="submit">查询</Button>
     </Form>
-    <DirectoryTable key={`${tenant}:${JSON.stringify(filter)}`} client={client} tenant={tenant} filter={filter} />
+    <DirectoryTable key={`${tenant}:${business ?? businessFilter}:${JSON.stringify(filter)}`} client={client} tenant={tenant} business={business ?? businessFilter} filter={filter} />
   </Card>;
 }

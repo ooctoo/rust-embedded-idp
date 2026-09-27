@@ -27,11 +27,12 @@ export interface JoinedTenantPage {
 
 export interface MyRole {
   tenant_id: string;
+  business_id: string;
   role_id: string;
   key: string;
   name: string;
   status: "active" | "disabled";
-  kind: "business" | "system_admin" | "tenant_security_admin";
+  kind: "business" | "business_admin" | "system_admin" | "tenant_security_admin";
 }
 
 export interface MyRolePage {
@@ -377,18 +378,19 @@ export class EmbeddedIdentityClient {
     });
     return { tenants, has_more: value.has_more, next_cursor: value.next_cursor as string | undefined };
   }
-  async listMyRoles(cursor?: string): Promise<MyRolePage> {
+  async listMyRoles(businessId: string, cursor?: string): Promise<MyRolePage> {
     const session = this.credentials?.session;
     if (!session) throw new IdentityError("请先登录。", 401);
+    if (!/^[a-z][a-z0-9_.-]{0,63}$/.test(businessId) || businessId === "idp" || businessId.startsWith("idp.")) throw new IdentityError("请输入有效业务标识。", 400);
     const query = new URLSearchParams({ limit: "50", ...(cursor ? { cursor } : {}) });
-    const value = record(await this.authenticated(`/auth/me/roles?${query}`));
+    const value = record(await this.authenticated(`/auth/me/roles?business_id=${encodeURIComponent(businessId)}&${query}`));
     if (!Array.isArray(value.items) || value.items.length > 50 || typeof value.has_more !== "boolean" ||
         value.has_more && (typeof value.next_cursor !== "string" || !value.next_cursor)) throw invalidResponse();
     const items = value.items.map(item => {
       const role = record(item);
-      if (role.tenant_id !== session.tenant_id || !id(role.role_id) || !id(role.key) ||
+      if (role.tenant_id !== session.tenant_id || role.business_id !== businessId || !id(role.role_id) || !id(role.key) ||
           typeof role.name !== "string" || !["active", "disabled"].includes(String(role.status)) ||
-          !["business", "system_admin", "tenant_security_admin"].includes(String(role.kind))) throw invalidResponse();
+          !["business", "business_admin", "system_admin", "tenant_security_admin"].includes(String(role.kind))) throw invalidResponse();
       return role as unknown as MyRole;
     });
     return { items, has_more: value.has_more, next_cursor: typeof value.next_cursor === "string" ? value.next_cursor : undefined };

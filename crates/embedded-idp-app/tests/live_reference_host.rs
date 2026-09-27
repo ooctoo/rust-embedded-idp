@@ -193,6 +193,34 @@ impl Host {
         tenant: Option<&str>,
         body: Option<Value>,
     ) -> (u16, String) {
+        let scoped = [
+            "/api/admin/access/roles",
+            "/api/admin/access/permissions",
+            "/api/admin/access/check",
+            "/api/admin/access/business-admin",
+            "/api/admin/access/subjects",
+            "/api/admin/access/role-bindings",
+        ]
+        .iter()
+        .any(|prefix| path.starts_with(prefix));
+        self.raw_business(
+            method,
+            path,
+            token,
+            tenant,
+            body,
+            scoped.then_some("runtime"),
+        )
+    }
+    fn raw_business(
+        &self,
+        method: &str,
+        path: &str,
+        token: Option<&str>,
+        tenant: Option<&str>,
+        body: Option<Value>,
+        business: Option<&str>,
+    ) -> (u16, String) {
         let mut stream = TcpStream::connect(("127.0.0.1", self.port)).unwrap();
         stream
             .set_read_timeout(Some(Duration::from_secs(10)))
@@ -212,6 +240,9 @@ impl Host {
         }
         if let Some(tenant) = tenant {
             request.push_str(&format!("x-embedded-idp-tenant-id: {tenant}\r\n"));
+        }
+        if let Some(business) = business {
+            request.push_str(&format!("x-embedded-idp-business-id: {business}\r\n"));
         }
         request.push_str("\r\n");
         request.push_str(&body);
@@ -321,21 +352,154 @@ fn reference_host_runs_management_and_business_flows_in_both_modes() {
             Some(json!({"key":"reviewer","name":"Reviewer"})),
             201,
         );
+        // End-to-end business-admin behavior uses the same authenticated HTTP boundary.
+        let request_business =
+            |business: &str, method: &str, path: &str, body: Option<Value>, expected| {
+                let (status, body) =
+                    host.raw_business(method, path, Some(bearer), target, body, Some(business));
+                assert_eq!(status, expected, "{method} {path}: {body}");
+                serde_json::from_str::<Value>(&body).unwrap()
+            };
+        for business in ["runtime", "other"] {
+            request_business(
+                business,
+                "POST",
+                "/api/admin/access/permissions",
+                Some(json!({"resource_type":"report","action":"read","description":"Read"})),
+                200,
+            );
+        }
+        let created = request_business(
+            "runtime",
+            "POST",
+            "/api/admin/access/business-admin",
+            Some(json!({"name":"Runtime administrator"})),
+            201,
+        );
+        assert_eq!(created["role"]["kind"], "business_admin");
+        assert_eq!(created["role"]["key"], "business_admin");
+        assert_eq!(created["role"]["business_id"], "runtime");
+        assert_eq!(created["role"]["permissions"], json!([]));
+        let role_id = created["role"]["role_id"].as_str().unwrap();
+        request_business(
+            "runtime",
+            "POST",
+            "/api/admin/access/business-admin",
+            Some(json!({})),
+            409,
+        );
+        request_business(
+            "other",
+            "GET",
+            &format!("/api/admin/access/roles/{role_id}"),
+            None,
+            404,
+        );
+        let binding = request_business(
+            "runtime",
+            "POST",
+            &format!("/api/admin/access/subjects/{subject}/role-bindings"),
+            Some(json!({"role_id":role_id,"scope":{"kind":"business"}})),
+            201,
+        );
+        assert!(binding["binding"].get("resource_type").is_none());
+        request_business(
+            "runtime",
+            "DELETE",
+            &format!("/api/admin/access/roles/{role_id}"),
+            Some(json!({"expected_version":created["role"]["version"]})),
+            409,
+        );
+        let check = json!({"subject_id":subject,"resource_type":"report","action":"read","resource_id":"any-instance"});
+        assert_eq!(
+            request_business(
+                "runtime",
+                "POST",
+                "/api/admin/access/check",
+                Some(check.clone()),
+                200
+            )["decision"],
+            "allow"
+        );
+        assert_eq!(
+            request_business(
+                "other",
+                "POST",
+                "/api/admin/access/check",
+                Some(check.clone()),
+                200
+            )["decision"],
+            "deny"
+        );
+        request_business(
+            "runtime",
+            "POST",
+            "/api/admin/access/permissions",
+            Some(
+                json!({"resource_type":"new_resource","action":"write","description":"Added later"}),
+            ),
+            200,
+        );
+        assert_eq!(
+            request_business(
+                "runtime",
+                "POST",
+                "/api/admin/access/check",
+                Some(json!({"subject_id":subject,"resource_type":"new_resource","action":"write"})),
+                200
+            )["decision"],
+            "allow"
+        );
+        request_business(
+            "runtime",
+            "POST",
+            "/api/admin/access/permissions/report/read/enabled",
+            Some(json!({"enabled":false,"expected_enabled":true})),
+            200,
+        );
+        assert_eq!(
+            request_business(
+                "runtime",
+                "POST",
+                "/api/admin/access/check",
+                Some(check),
+                200
+            )["decision"],
+            "deny"
+        );
+        request_business(
+            "runtime",
+            "DELETE",
+            &format!(
+                "/api/admin/access/role-bindings/{}",
+                binding["binding"]["binding_id"].as_str().unwrap()
+            ),
+            None,
+            200,
+        );
+        assert_eq!(
+            request_business(
+                "runtime",
+                "POST",
+                "/api/admin/access/check",
+                Some(json!({"subject_id":subject,"resource_type":"new_resource","action":"write"})),
+                200
+            )["decision"],
+            "deny"
+        );
+        request_business(
+            "runtime",
+            "DELETE",
+            &format!("/api/admin/access/roles/{role_id}"),
+            Some(json!({"expected_version":created["role"]["version"]})),
+            200,
+        );
         let appointment = format!("/api/admin/access/security-admins/{subject}");
         if mode == TenancyMode::Disabled {
             host.json("POST", &appointment, Some(bearer), target, None, 201);
         }
-        let query = json!({"subject_id":subject,"resource_type":if mode==TenancyMode::Enabled{"idp.tenant"}else{"idp.platform"},"action":if mode==TenancyMode::Enabled{"access.read"}else{"access.manage"}});
-        assert_eq!(
-            host.json(
-                "POST",
-                "/api/admin/access/check",
-                Some(bearer),
-                target,
-                Some(query.clone()),
-                200
-            )["decision"],
-            "allow"
+        assert!(
+            !host.json("GET", &appointment, Some(bearer), target, None, 200)["binding"].is_null()
         );
         let business = login(&host, false, "member@example.test", "Runtime-Member123");
         let business = if mode == TenancyMode::Enabled {
@@ -399,16 +563,8 @@ fn reference_host_runs_management_and_business_flows_in_both_modes() {
             );
         }
         host.json("DELETE", &appointment, Some(bearer), target, None, 200);
-        assert_eq!(
-            host.json(
-                "POST",
-                "/api/admin/access/check",
-                Some(bearer),
-                target,
-                Some(query),
-                200
-            )["decision"],
-            "deny"
+        assert!(
+            host.json("GET", &appointment, Some(bearer), target, None, 200)["binding"].is_null()
         );
         let rotated = host.json(
             "POST",

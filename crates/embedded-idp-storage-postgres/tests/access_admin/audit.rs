@@ -21,6 +21,7 @@ fn seed_events(db: &Db) -> Vec<String> {
                 .execute(
                     db.context(db.actor_session.to_string()),
                     db.command(AccessAdminMutation::CreateRole {
+                        business_id: "f_01".into(),
                         key: format!("reader-{i}"),
                         name: format!("Reader {i}"),
                     }),

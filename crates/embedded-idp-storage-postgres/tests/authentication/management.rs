@@ -110,11 +110,16 @@ fn management_login_enforces_persisted_purpose_live_authority_refresh_and_logout
             "0"
         };
         let roles = || {
-            admin_service.list_roles(context.clone(), target.into(), AccessPageRequest::default())
+            admin_service.list_roles(
+                context.clone(),
+                target.into(),
+                Some("idp".into()),
+                AccessPageRequest::default(),
+            )
         };
         // Authentication alone is not an administrator appointment.
         assert_eq!(roles(), Err(AccessError::Forbidden));
-        c.execute(&format!("insert into {s}.access_role_bindings(id,tenant_id,account_id,role_id,resource_type,created_at_epoch,created_by) select $1,'0',$2,role_id,resource_type,100,created_by from {s}.access_role_bindings where tenant_id='0' limit 1"), &[&Uuid::now_v7(), &account]).unwrap();
+        c.execute(&format!("insert into {s}.access_role_bindings(id,tenant_id,business_id,account_id,role_id,scope_kind,resource_type,created_at_epoch,created_by) select $1,'0','idp',$2,role_id,'type',resource_type,100,created_by from {s}.access_role_bindings where tenant_id='0' limit 1"), &[&Uuid::now_v7(), &account]).unwrap();
         assert!(roles().is_ok());
         c.execute(
             &format!("update {s}.auth_sessions set purpose='business' where id=$1"),

@@ -1,4 +1,5 @@
 use super::*;
+use crate::access::validate_access_business_id;
 use crate::access::{
     service::{finish_page, time_page_key},
     AccessListScope, AccessPage, AccessPageRequest,
@@ -13,6 +14,7 @@ pub struct AdminAuditRecord {
     pub actor_session_id: Option<String>,
     pub authentication_source: String,
     pub target_domain: String,
+    pub target_business_id: Option<String>,
     pub operation: String,
     pub request_id: String,
 }
@@ -35,6 +37,9 @@ impl AdminAuditRecord {
         if let Some(id) = &self.actor_session_id {
             validate_id(id, 128, "actor_session_id")?;
         }
+        if let Some(business_id) = &self.target_business_id {
+            validate_access_business_id(business_id)?;
+        }
         validate_created_range(Some(self.occurred_at), None)?;
         Ok(())
     }
@@ -51,6 +56,7 @@ pub struct AdminAuditDetail {
 }
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct AdminAuditFilter {
+    pub business_id: Option<String>,
     pub actor_id: Option<String>,
     pub operation: Option<String>,
     pub occurred_after: Option<SystemTime>,
@@ -64,12 +70,19 @@ impl AdminAuditFilter {
         if let Some(operation) = &self.operation {
             validate_name(operation, "operation")?;
         }
+        if let Some(business_id) = &self.business_id {
+            validate_access_business_id(business_id)?;
+        }
         validate_created_range(self.occurred_after, self.occurred_before)
     }
     pub fn matches(&self, event: &AdminAuditRecord) -> bool {
         self.actor_id
             .as_ref()
             .is_none_or(|id| id == &event.actor_id)
+            && self
+                .business_id
+                .as_ref()
+                .is_none_or(|business_id| event.target_business_id.as_ref() == Some(business_id))
             && self
                 .operation
                 .as_ref()

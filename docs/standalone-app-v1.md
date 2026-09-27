@@ -8,7 +8,7 @@ operations, and its other security controls.
 ## Prepare a local mode
 
 The reference host has two independent local modes, `disabled` and `enabled`.
-Both use the `tenant_v2` Access schema and require an offline administrator
+Both use the `tenant_v3` Access schema and require an offline administrator
 bootstrap before they can serve traffic. `init` copies templates only; it never
 rewrites an existing `.env` or `.env.<mode>` file.
 
@@ -161,3 +161,7 @@ The management page now uses the optional same-origin [browser session adapter](
 Cookies are host-only and named `idp_<bind-port>_business` and `idp_<bind-port>_management`, scoped to `/auth/browser` and `/api/admin/auth/browser`. The port suffix separates the local profiles because cookies themselves are not port-scoped. Production embedding hosts choose their own unique names and external paths. Serving the UI under another base path does not move these API paths. A Vite development reverse proxy must use the page's origin in this configuration.
 
 The original explicit-token login/refresh/logout and device-proof routes remain available. Browser cookies never authenticate ordinary business or management APIs; those still require the appropriate Bearer token.
+
+## Business authorization upgrade
+
+Access v3 requires an explicit business identifier for permissions, roles and authorization checks. Existing v2 data requires a stopped-service mapping migration; see [the business authorization design](business-domain-authorization-design-v1.md). Schema directory names do not determine the Access version. Do not rerun bootstrap or silently recreate an existing database.

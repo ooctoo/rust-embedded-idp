@@ -1,8 +1,8 @@
 use std::{collections::BTreeMap, time::SystemTime};
 
 use super::{
-    query::{validate_id, validate_name},
-    AccessError, AccessQuery, PermissionKey, ResourceScope,
+    query::{validate_access_business_id, validate_business_id, validate_id, IDP_BUSINESS_ID},
+    AccessError, AccessQuery, PermissionKey, ResourceScope, RoleBindingScope,
 };
 
 pub const SYSTEM_TENANT_ID: &str = "0";
@@ -119,6 +119,7 @@ pub enum RoleKind {
     SystemAdmin,
     TenantSecurityAdmin,
     Business,
+    BusinessAdmin,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -160,6 +161,7 @@ pub struct PermissionDefinition {
 pub struct Role {
     pub id: String,
     pub tenant_id: String,
+    pub business_id: String,
     pub key: String,
     pub name: String,
     pub status: RoleStatus,
@@ -171,6 +173,7 @@ pub struct Role {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RolePermission {
     pub tenant_id: String,
+    pub business_id: String,
     pub role_id: String,
     pub permission: PermissionKey,
 }
@@ -179,10 +182,10 @@ pub struct RolePermission {
 pub struct RoleBinding {
     pub id: String,
     pub tenant_id: String,
+    pub business_id: String,
     pub subject_id: crate::AccountId,
     pub role_id: String,
-    pub resource_type: String,
-    pub scope: ResourceScope,
+    pub scope: RoleBindingScope,
     pub created_at: SystemTime,
 }
 
@@ -196,7 +199,7 @@ impl RoleBinding {
         ] {
             validate_id(value, 128, field)?;
         }
-        validate_name(&self.resource_type, "resource_type")?;
+        validate_access_business_id(&self.business_id)?;
         self.scope.validate()
     }
 
@@ -206,7 +209,7 @@ impl RoleBinding {
         &self,
         query: &AccessQuery,
         role: &Role,
-        link: &RolePermission,
+        link: Option<&RolePermission>,
         permission: &PermissionDefinition,
         mode: TenancyMode,
     ) -> bool {
@@ -216,25 +219,43 @@ impl RoleBinding {
                 | (RoleKind::TenantSecurityAdmin, PermissionCategory::Tenant)
                 | (RoleKind::Business, PermissionCategory::Business)
         );
+        let business_admin = role.kind == RoleKind::BusinessAdmin
+            && permission.category == PermissionCategory::Business
+            && self.scope == RoleBindingScope::Business;
         query.validate().is_ok()
             && self.validate().is_ok()
             && permission.key.validate().is_ok()
             && mode.permits(&query.tenant_id, permission.category)
-            && correct_kind
+            && (correct_kind || business_admin)
             && role.status == RoleStatus::Active
             && permission.enabled
+            && !permission.archived
+            && permission.tenant_id == query.tenant_id
             && self.tenant_id == query.tenant_id
+            && self.business_id == query.business_id
             && self.subject_id == query.subject_id
             && role.tenant_id == self.tenant_id
+            && role.business_id == self.business_id
             && role.id == self.role_id
-            && link.tenant_id == role.tenant_id
-            && link.role_id == role.id
-            && link.permission == permission.key
             && permission.key == query.permission()
-            && self.resource_type == query.resource_type
-            && self.scope.covers(query.resource_id.as_deref())
-            && (permission.category == PermissionCategory::Business
-                || (self.scope == ResourceScope::Type && query.resource_id.is_none()))
+            && ((permission.category == PermissionCategory::Business
+                && permission.key.business_id != IDP_BUSINESS_ID
+                && !permission.key.resource_type.starts_with("idp."))
+                || ((permission.category == PermissionCategory::Platform
+                    || permission.category == PermissionCategory::Tenant)
+                    && permission.key.business_id == IDP_BUSINESS_ID))
+            && (business_admin
+                || link.is_some_and(|link| {
+                    link.tenant_id == role.tenant_id
+                        && link.business_id == role.business_id
+                        && link.role_id == role.id
+                        && link.permission == permission.key
+                        && matches!(&self.scope, RoleBindingScope::Resource { resource_type, scope }
+                        if resource_type == &query.resource_type
+                            && scope.covers(query.resource_id.as_deref())
+                            && (permission.category == PermissionCategory::Business
+                                || (*scope == ResourceScope::Type && query.resource_id.is_none())))
+                }))
     }
 }
 
@@ -283,6 +304,7 @@ impl PermissionCatalog {
                 catalog.insert(PermissionDefinition {
                     tenant_id: SYSTEM_TENANT_ID.to_owned(),
                     key: PermissionKey {
+                        business_id: IDP_BUSINESS_ID.to_owned(),
                         resource_type: resource.to_owned(),
                         action: (*action).to_owned(),
                     },
@@ -296,7 +318,9 @@ impl PermissionCatalog {
             }
         }
         for permission in host_permissions {
-            if permission.key.resource_type.starts_with("idp.") {
+            if permission.key.business_id == IDP_BUSINESS_ID
+                || permission.key.resource_type.starts_with("idp.")
+            {
                 return Err(AccessError::InvalidCatalog("reserved_resource_type"));
             }
             if permission.category != PermissionCategory::Business
@@ -313,6 +337,15 @@ impl PermissionCatalog {
 
     fn insert(&mut self, permission: PermissionDefinition) -> Result<(), AccessError> {
         permission.key.validate()?;
+        match permission.category {
+            PermissionCategory::Business => validate_business_id(&permission.key.business_id)?,
+            PermissionCategory::Platform | PermissionCategory::Tenant
+                if permission.key.business_id != IDP_BUSINESS_ID =>
+            {
+                return Err(AccessError::InvalidCatalog("management_business_id"));
+            }
+            _ => {}
+        }
         if self.definitions.contains_key(&permission.key) {
             return Err(AccessError::InvalidCatalog("duplicate_permission"));
         }

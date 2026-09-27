@@ -46,6 +46,7 @@ impl<S: AccessAdminStore, C: Clock + Send + Sync, I: IdGenerator + Send + Sync>
                 occurred_at: now,
                 context,
                 tenant_id: query.tenant_id.clone(),
+                target_business_id: Some(query.business_id.clone()),
                 operation: "access.check",
                 change: AccessChange::PermissionChecked { query, decision },
             };

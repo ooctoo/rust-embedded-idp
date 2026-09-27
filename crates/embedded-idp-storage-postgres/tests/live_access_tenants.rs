@@ -17,6 +17,7 @@ const NOW: u64 = 1_000;
 
 fn key(resource_type: &str, action: &str) -> PermissionKey {
     PermissionKey {
+        business_id: "f_01".into(),
         resource_type: resource_type.into(),
         action: action.into(),
     }
@@ -596,6 +597,7 @@ fn business_permissions_are_independent_per_tenant_and_archive_denies() {
                 db.command(
                     tenant,
                     AccessAdminMutation::CreateRole {
+                        business_id: "f_01".into(),
                         key: "reader".into(),
                         name: "Reader".into(),
                     },
@@ -614,6 +616,7 @@ fn business_permissions_are_independent_per_tenant_and_archive_denies() {
                 db.command(
                     tenant,
                     AccessAdminMutation::ReplaceRolePermissions {
+                        business_id: "f_01".into(),
                         role_id: role.role.id.clone(),
                         permissions: vec![permission.clone()],
                         expected_version: 1,
@@ -627,24 +630,28 @@ fn business_permissions_are_independent_per_tenant_and_archive_denies() {
                 db.command(
                     tenant,
                     AccessAdminMutation::GrantRole {
+                        business_id: "f_01".into(),
                         subject_id: subject.to_string(),
                         role_id: role.role.id,
-                        resource_type: "invoice".into(),
-                        scope: ResourceScope::Type,
+                        scope: RoleBindingScope::Resource {
+                            resource_type: "invoice".into(),
+                            scope: ResourceScope::Type,
+                        },
                     },
                 ),
             )
             .unwrap();
     }
     let t1 = service
-        .get_permission(db.context(), "t1".into(), permission.clone())
+        .get_permission(db.context(), "t1".into(), "f_01".into(), permission.clone())
         .unwrap();
     let t2 = service
-        .get_permission(db.context(), "t2".into(), permission.clone())
+        .get_permission(db.context(), "t2".into(), "f_01".into(), permission.clone())
         .unwrap();
     assert_ne!(t1.description, t2.description);
     let checker = CoreAccessService::new(TenancyMode::Enabled, catalog(), db.store());
     let query = |tenant: &str, subject: Uuid| AccessQuery {
+        business_id: "f_01".into(),
         tenant_id: tenant.into(),
         subject_id: subject.to_string(),
         resource_type: "invoice".into(),
@@ -681,7 +688,7 @@ fn business_permissions_are_independent_per_tenant_and_archive_denies() {
     );
     assert_eq!(
         service
-            .get_permission(db.context(), "t2".into(), permission.clone())
+            .get_permission(db.context(), "t2".into(), "f_01".into(), permission.clone())
             .unwrap()
             .description,
         t2.description

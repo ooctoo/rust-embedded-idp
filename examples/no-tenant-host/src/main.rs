@@ -138,6 +138,7 @@ fn build_app(config: &Config, business: ReportStore) -> Result<Router, String> {
         .merge(tenant_oidc_resource_router(Arc::new(oidc)))
         .merge(tenant_self_router(authentication.clone(), access.clone()))
         .merge(reports::router(ReportState {
+            business_id: config.business_id.clone(),
             authentication,
             authorization: access,
             store: business,

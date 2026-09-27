@@ -1,10 +1,12 @@
 # 租户、角色与资源权限模块技术设计 v1
 
-设计基线：2026-09-18（提交 `87c386d`）；实施状态核对：2026-09-25。
+> 2.0 授权结构与接口以[租户内业务标识与业务管理员](business-domain-authorization-design-v1.md)为准。本文保留租户认证与既有架构背景；涉及旧授权结构的历史实施记录不构成 v3 兼容接口。
 
-状态：Core Access、PostgreSQL `tenant_v2`、认证/OIDC、租户设备、管理 HTTP、React 管理后台及参考服务两模式装配已接通；租户内业务权限定义可手动创建、查询、更新、启停、归档。宿主嵌入登录、本人角色和权限目录组件已提供，[无租户嵌入宿主示例](../examples/no-tenant-host/README.md)可验证业务资源读取；带租户嵌入体验尚未提供。设备自助界面、报告列表过滤与性能验收仍待完成。本文部分旧实施记录仅供历史对照；当前边界见[当前交付与验收](tenant-access-execution-plan.md)和[README](../README.md)。
+设计基线：2026-09-18（提交 `87c386d`）；历史实施状态核对：2026-09-25。2.0 的当前契约以本文顶部链接为准。
 
-**当前权限模型**：业务权限定义由 IdP Core 按租户提供动态管理，以数据库中的 `(tenant_id, resource_type, action)` 目录作为授权判断依据。IdP 保存标识和管理信息，不规定宿主操作的业务含义；相同 key 在不同租户是独立实体。宿主静态 `PermissionCatalog` 只可作为可选初始化模板，不能替代手工管理，也不是业务授权检查的运行时白名单。内置平台/租户管理权限仍受保护，宿主仍负责在业务操作中调用权限检查。
+状态：Core Access、PostgreSQL `tenant_v3`、认证/OIDC、租户设备、管理 HTTP、React 管理后台及参考服务两模式装配已接通；租户内业务权限定义可手动创建、查询、更新、启停、归档。宿主嵌入登录、本人角色和权限目录组件已提供，[无租户嵌入宿主示例](../examples/no-tenant-host/README.md)可验证业务资源读取；带租户嵌入体验尚未提供。设备自助界面、报告列表过滤与性能验收仍待完成。本文部分旧实施记录仅供历史对照；当前边界见[当前交付与验收](tenant-access-execution-plan.md)和[README](../README.md)。
+
+**2.0 权限模型**：业务权限定义由 IdP Core 按租户提供动态管理，以数据库中的 `(tenant_id, business_id, resource_type, action)` 目录作为授权判断依据。IdP 保存标识和管理信息，不规定宿主操作的业务含义；相同 key 在不同租户是独立实体。宿主静态 `PermissionCatalog` 只可作为可选初始化模板，不能替代手工管理，也不是业务授权检查的运行时白名单。内置平台/租户管理权限仍受保护，宿主仍负责在业务操作中调用权限检查。
 
 ## 1. 目标与已确认约定
 
@@ -15,7 +17,7 @@
 1. 一个用户可以拥有多个角色，一个角色可以包含多个权限。
 2. 用户查看自己在什么范围拥有哪些角色；代码执行层检查具体权限。
 3. 支持自定义资源类型、动作和资源实例，例如读取指定报告。
-4. 授权描述格式为 `tenant_id/subject_id::resource_type::action[::resource_id]`。
+4. 授权描述格式为 `tenant_id/business_id/subject_id::resource_type::action[::resource_id]`。
 5. 缺省或空的 `resource_id` 表示资源类型级范围，覆盖该域内现有和未来的同类型资源。
 6. `0` 是保留的无租户域，不表示所有租户；非 `0` 值是租户 ID。
 7. 服务启动时确定是否开启租户能力；只有开启时才提供租户管理和切换界面、接口。
@@ -25,7 +27,7 @@
 11. 管理端可搜索租户并把已有用户绑定到其他租户；邀请机制留待以后加入。
 12. 登录页面支持固定租户与不固定租户两种服务端策略；不固定租户时，用户认证后查看已加入的租户并选择进入。
 13. 设备属于具体租户，设备管理、密钥、账号设备绑定和设备证明都限制在该租户内。
-14. 系统尚未上线，直接采用新模型，不设计旧接口、旧数据或旧凭证兼容与历史数据迁移。
+14. 1.0 首版直接采用新模型，不提供首版之前的接口或凭证兼容。2.0 对已完成初始化的 tenant_v2 数据另提供显式业务映射迁移。
 
 目标模型是“用户必须归属租户，可被显式绑定到多个租户”。共享 user_id/凭证仅用于识别同一个人，不提供脱离租户的业务账号、角色、会话或权限。身份验证与进入租户分两步；业务会话和 Token 从第一版起绑定具体租户。
 
@@ -48,7 +50,7 @@
 - 分享链接、匿名授权、机器主体、租户自助注册、邀请邮件工作流。
 - 策略语言、独立授权微服务、分布式决策缓存、跨数据库分布式事务。
 - 同一个人在不同租户重复注册不同 user_id/密码；每租户独立的 OIDC issuer 或数据库。
-- 历史数据迁移、兼容入口、旧 Token/设备证明格式的双重解析、部署模式在线转换。
+- 首版之前的历史数据迁移、兼容入口、旧 Token/设备证明格式的双重解析、部署模式在线转换。tenant_v2 → tenant_v3 的显式迁移属于 2.0 新增范围。
 
 工作区成员可以访问报告等规则仍由宿主明确执行，不能仅凭资源 ID 的前缀推导。将来如果这些关系成为主要需求，再设计关系授权扩展。
 
@@ -253,7 +255,7 @@ UI 切换时取消旧请求/丢弃旧响应，数据缓存键包含 tenant_id �
 ### 6.1 授权描述语法
 
 ```text
-tenant_id/subject_id::resource_type::action[::resource_id]
+tenant_id/business_id/subject_id::resource_type::action[::resource_id]
 
 0/u123::report::read
 t001/u123::report::read::r001
@@ -262,7 +264,7 @@ t001/u123::report::update::
 
 最后一个示例规范化为 `t001/u123::report::update`。
 
-这是一条授权查询/有效授权的描述，不是权限目录的主键，也不是独立凭证。当前业务权限定义按 `(tenant_id, resource_type, action)` 建键。主体和具体资源来自角色分配及请求，不能凭相同 key 跨租户复用定义或授权。
+这是一条授权查询/有效授权的描述，不是权限目录的主键，也不是独立凭证。当前业务权限定义按 `(tenant_id, business_id, resource_type, action)` 建键。主体和具体资源来自角色分配及请求，不能凭相同 key 跨租户复用定义或授权。
 
 首版解析规则：
 
@@ -278,7 +280,7 @@ t001/u123::report::update::
 
 ### 6.2 角色与范围的组合
 
-`RolePermission` 只存资源类型和动作；`RoleBinding` 存租户、用户、角色、资源类型和可选资源 ID。
+`RolePermission` 存同业务的资源类型和动作；普通 `RoleBinding` 存租户、业务、用户、角色及明确的资源范围。业务管理员使用 `RoleBindingScope::Business`，不关联具体权限或资源。
 
 ```text
 角色 reader：report/read
@@ -288,11 +290,11 @@ t001/u123::report::update::
 分配 B：t1 / u1 / editor / report / None
 ```
 
-多个角色授权取并集。B 覆盖 t1 的全部报告，包括后来创建的报告。A 对 r1 提供额外来源；删除 A 不影响 B。
+同租户同业务内多个角色授权取并集。B 覆盖 t1 的全部报告，包括后来创建的报告。A 对 r1 提供额外来源；删除 A 不影响 B。
 
-角色可以包含多个资源类型；一次 RoleBinding 只覆盖明确的一个类型。例如角色包含 report/read 和 dataset/read，只分配 report 范围不会同时获得 dataset 权限。UI 的“一次分配多个类型”落为一个事务中的多条 binding，不引入隐式全部类型通配符。
+角色可以包含多个资源类型；普通角色的一次 RoleBinding 只覆盖明确的一个类型。业务管理员的 business scope 则覆盖该业务全部有效业务权限。例如角色包含 report/read 和 dataset/read，只分配 report 范围不会同时获得 dataset 权限。UI 的“一次分配多个类型”落为一个事务中的多条 binding，不引入隐式全部类型通配符。
 
-后续给角色新增同类型动作，会立即扩展该角色已有有效分配；新增其他资源类型，不会自动生成相应 binding。修改角色前应展示受影响用户/绑定数量，修改需版本检查及审计。
+普通角色后续新增同类型动作，会立即扩展该角色已有有效分配；新增其他资源类型，不会自动生成相应 binding。修改角色前应展示受影响用户/绑定数量，修改需版本检查及审计。
 
 ### 6.3 匹配规则
 
@@ -302,7 +304,7 @@ t001/u123::report::update::
 2. 用户身份 active、域 active、该域成员 active；实际执行接口还须通过同域会话认证。
 3. 存在同域同用户的 binding，关联同域 active role。
 4. binding.resource_type 与查询 type 完全相同。
-5. 角色包含目录中仍启用的 `(type, action)`。
+5. 普通角色包含同业务目录中仍启用的 `(type, action)`；业务管理员跳过显式关联与资源范围检查，但不跳过权限有效性。
 6. 查询指定 ID 时，binding ID 为 None 或等于查询 ID；查询类型级时，只有 None 可以匹配。
 
 任一符合全部条件的授权即可 Allow；否则 Deny。数据库不可用或内部错误返回错误，不能伪装成 Allow，也不应统一伪装成普通无权限。
@@ -332,11 +334,11 @@ Access 不维护报告表，不证明目标资源存在。Allow 的精确定义�
 
 IdP Core 定义**租户内**业务权限目录的创建、读取/列表、元数据更新和删除/归档契约；PostgreSQL 适配器实现事务与审计，Axum 提供可选管理路由，独立 App 提供管理页面。嵌入宿主可以复用相同管理接口建设自己的控制台，不能绕过 Core 权限规则。Enabled 下租户管理员可以手动维护本租户的业务权限及其角色/分配；平台管理员跨租户操作须显式选定目标域并通过管理授权。Disabled 下由 `0` 域管理员维护。内置 `platform`/`tenant` 定义仍由 IdP 控制，不可通过业务 CRUD 创建、修改或删除。
 
-业务权限定义的唯一键是 `(tenant_id, resource_type, action)`。同一个 `resource_type::action` 在两个租户中可以有不同的展示名称、说明、启停状态与角色关联，互不继承、互不回退；Enabled 的平台 `0` 不作为真实租户业务目录。IdP 不解释某个标识代表读取报告还是其他操作，创建权限也不会自动保护宿主接口。宿主/业务调用方自行约定该标识的含义，并以可信的租户、用户和实际资源调用授权检查。
+业务权限定义的唯一键是 `(tenant_id, business_id, resource_type, action)`。同一个 `resource_type::action` 在两个租户中可以有不同的展示名称、说明、启停状态与角色关联，互不继承、互不回退；Enabled 的平台 `0` 不作为真实租户业务目录。IdP 不解释某个标识代表读取报告还是其他操作，创建权限也不会自动保护宿主接口。宿主/业务调用方自行约定该标识的含义，并以可信的租户、用户和实际资源调用授权检查。
 
-落地时使用同一张 `access_permissions` 表，以 `(tenant_id, resource_type, action)` 为主键；角色权限通过同域复合外键引用。内置 `idp.platform` 仅位于 `0`，内置 `idp.tenant` 随真实租户创建受保护的同域记录；Disabled 模式的管理定义位于 `0`。业务权限在 Enabled 的真实租户中手动创建，Disabled 固定在 `0`。不再从平台目录或其他租户回退读取业务定义。为避免旧结构被误当成新版，改变表结构时提升 schema 版本；旧开发 IdP 结构不原地改写，需显式准备不与新版 IdP 对象冲突的 schema。
+落地时使用同一张 `access_permissions` 表，以 `(tenant_id, business_id, resource_type, action)` 为主键；角色权限通过同域复合外键引用。内置 `idp.platform` 仅位于 `0`，内置 `idp.tenant` 随真实租户创建受保护的同域记录；Disabled 模式的管理定义位于 `0`。业务权限在 Enabled 的真实租户中手动创建，Disabled 固定在 `0`。不再从平台目录或其他租户回退读取业务定义。为避免旧结构被误当成新版，改变表结构时提升 schema 版本；旧开发 IdP 结构不原地改写，需显式准备不与新版 IdP 对象冲突的 schema。
 
-写接口需要带可信管理上下文和明确目标域：创建业务权限、读取单条/游标列表、更新展示信息及启停状态、归档删除。权限键和租户归属不可编辑；每次修改带读取时版本，写入在同域事务内重验管理员身份与权限并审计。租户安全管理员持受保护的 `permissions.manage` 能力管理本域业务定义；平台管理员经 `access.manage` 可显式选择目标域，不能把平台会话当作业务租户会话。归档是不可恢复的逻辑删除：保留标识与审计，立即拒绝授权，不能被普通创建重用；停用可恢复，界面必须说明恢复可能让旧角色授权重新生效。
+写接口需要带可信管理上下文和明确目标域：创建业务权限必须在表单提供 business_id；单条读取、更新展示信息、启停和归档删除按记录的精确业务域校验；游标列表可省略 business_id 作为全租户业务筛选。权限键和租户归属不可编辑；每次修改带读取时版本，写入在同域事务内重验管理员身份与权限并审计。租户安全管理员持受保护的 `permissions.manage` 能力管理本域业务定义；平台管理员经 `access.manage` 可显式选择目标租户，不能把平台会话当作业务租户会话。归档是不可恢复的逻辑删除：保留标识与审计，立即拒绝授权，不能被普通创建重用；停用可恢复，界面必须说明恢复可能让旧角色授权重新生效。
 
 独立 App 的管理页面与宿主控制台都调用同一套管理契约。IdP 可提供前端组件供宿主组合，接口不依赖页面是否挂载。宿主仍必须在对应业务操作中调用授权服务；IdP 无法仅凭目录标签发现宿主的实际业务逻辑。
 
@@ -344,7 +346,7 @@ IdP Core 定义**租户内**业务权限目录的创建、读取/列表、元数
 
 `PermissionDefinition` 包含 tenant_id、resource_type、action、description、category、enabled、archived 和 version。业务定义只允许使用非 `idp.` 资源类型；同一租户内同一 resource_type 的所有动作保持相同 category。内置管理权限只能由模块初始化，业务 CRUD 不能修改。
 
-创建定义不会自动加入角色；角色授权仍需同租户显式关联。停用保留关联，重新启用可能恢复已有授权；归档保留关联和审计但不允许恢复。请求缺失、停用或归档的业务键都默认拒绝。管理页面不再调用旧的部署级同步接口；Core 内保留 `SyncPermissions` 供显式宿主模板初始化，但按目标租户执行且只插入缺失定义，不覆盖该租户已有的业务说明或状态。
+创建定义不会自动加入普通角色；普通角色授权仍需同租户同业务显式关联。该业务已有 business_admin 的用户自动覆盖新增的有效定义。停用保留关联，重新启用可能恢复已有授权；归档保留关联和审计但不允许恢复。请求缺失、停用或归档的业务键都默认拒绝。管理页面不再调用旧的部署级同步接口；Core 内保留 `SyncPermissions` 供显式宿主模板初始化，但按目标租户执行且只插入缺失定义，不覆盖该租户已有的业务说明或状态。
 
 ### 7.2 管理角色
 
@@ -352,8 +354,8 @@ IdP Core 定义**租户内**业务权限目录的创建、读取/列表、元数
 
 | 角色 | 域与能力 | 限制 |
 | --- | --- | --- |
-| system_admin | `0` 域，`idp.platform` 下的 users.read / users.security / tenants.manage / users.bind / clients.manage / access.manage / audit.read | 跨租户管理走显式受审计方法，不对业务查询做万能 bypass |
-| tenant_security_admin | 指定域，`idp.tenant` 下 members.manage / roles.manage / grants.manage / access.read / devices.manage / sessions.manage / audit.read | 可管理本租户成员、设备和会话；不能重置共享凭证、管理其他租户或平台角色 |
+| idp_system_admin | `0` 域，`idp.platform` 下的 users.read / users.security / tenants.manage / users.bind / clients.manage / access.manage / audit.read | 跨租户管理走显式受审计方法，不对业务查询做万能 bypass |
+| idp_tenant_security_admin | 指定域，`idp.tenant` 下 members.manage / roles.manage / grants.manage / access.read / devices.manage / sessions.manage / audit.read | 可管理本租户成员、设备和会话；不能重置共享凭证、管理其他租户或平台角色 |
 | 普通业务角色 | 同域内的业务权限 | 不能包含 platform 或 tenant 安全管理权限 |
 
 受保护管理角色只能通过专门的管理员任命/撤任操作分配，不能由普通角色 CRUD 复制或修改。平台管理员可以任命真实租户的安全管理员；这条跨域操作由平台管理服务显式执行和审计，不表示平台授权自动匹配真实租户。
@@ -382,6 +384,8 @@ IdP Core 定义**租户内**业务权限目录的创建、读取/列表、元数
 
 ## 8. 数据模型、约束与索引
 
+本节保留 tenant_v2 的历史设计草图；tenant_v3 的复合键、business_id、scope_kind、业务管理员约束与迁移，以[业务标识设计第 5 节](business-domain-authorization-design-v1.md#5-postgresql-目标结构)及 `sql/tenant_v3.sql` 为准，不能按本节旧表结构创建 2.0 数据库。
+
 ### 8.1 表设计
 
 直接修改现有身份表，并新增 Access 表；不保留历史数据转换逻辑。Account 继续存一份共享 user_id 与凭证，成员关系表达这个人在哪些租户可使用该身份。新增 Access 表在当前配置的 Postgres schema 内以 `access_` 前缀隔离。
@@ -392,7 +396,7 @@ IdP Core 定义**租户内**业务权限目录的创建、读取/列表、元数
 | accounts（修改） | id uuid PK、registration_tenant_id NOT NULL、email UNIQUE、password_hash、status(pending_verification/active/disabled/closed)、display_name、created_at；来源租户 FK，注册必须同时插入首个 membership |
 | access_tenants | id text PK、kind(system/tenant)、name、status(active/suspended/archived)、allow_registration、version、created_at；`id='0'` 当且仅当 kind=system |
 | access_memberships | tenant_id、account_id uuid、status(active/suspended/removed)、version、joined_at、removed_at；PK(tenant_id, account_id)，FK 域和用户记录；removed 仅保留历史引用，不算已加入 |
-| access_permissions | tenant_id、resource_type、action、category、description、enabled、archived、version；PK(tenant_id, resource_type, action)；保留 IdP 内置管理权限的保护边界 |
+| access_permissions | tenant_id、resource_type、action、category、description、enabled、archived、version；PK(tenant_id, business_id, resource_type, action)；保留 IdP 内置管理权限的保护边界 |
 | access_roles | tenant_id、id uuid、key、name、status(active/disabled)、system_kind nullable、version、created_at；PK(tenant_id,id)，UNIQUE(tenant_id,key) |
 | access_role_permissions | tenant_id、role_id、resource_type、action；复合 PK 全字段，复合 FK 到同域 role 和 permission，不能引用其他租户的同名定义 |
 | access_role_bindings | id uuid PK、tenant_id、account_id、role_id、resource_type、resource_id nullable、created_at、created_by；复合 FK 到 membership 和同域 role |
@@ -486,6 +490,7 @@ ON access_memberships (account_id, tenant_id) INCLUDE (status);
 ```rust
 pub struct AccessQuery {
     pub tenant_id: String,
+    pub business_id: String,
     pub subject_id: AccountId,
     pub resource_type: String,
     pub action: String,
@@ -514,7 +519,7 @@ pub trait AuthorizationService: Send + Sync {
 | 用户有哪些角色 | list_subject_roles：去重角色摘要，带 role 状态 | tenant+subject 必填，role_id 游标；不在每个角色内塞无限范围列表 |
 | 用户角色的具体范围 | list_subject_bindings：role/type/optional id | 可按 role/type/resource 过滤，binding_id 游标 |
 | 用户是否有某权限 | check：Allow/Deny | 包含活跃状态与授权匹配，单次数据库读往返 |
-| 一组动作是否允许 | check_many：与输入位置对应的决策 | 同 tenant+subject，1–100 项，一次批量查询，无 N+1 |
+| 一组动作是否允许 | check_many：与输入位置对应的决策 | 同 tenant+business+subject，1–100 项，一次批量查询，无 N+1 |
 | 角色有哪些权限 | list_role_permissions | 同域校验，按 type/action 复合游标 |
 | 用户属于哪些租户 | list_subject_tenants：tenant+membership 状态 | account_id 索引；本人选择页展示非 removed 的业务租户及可进入状态，平台管理可查完整历史 |
 | 用户有哪些有效授权 | list_effective_grants | 返回 type/action/scope，不展开类型级授权为所有实例 |
@@ -529,9 +534,9 @@ pub trait AuthorizationService: Send + Sync {
 
 管理列表通过查询参数 `sort_order=asc|desc` 选择顺序，省略时默认 `desc`；其他值返回 HTTP 400。时间和唯一标识始终按同一方向排列：全局账号按创建时间、租户成员按加入时间、设备按注册时间、审计按发生时间，租户、角色、角色分配、客户端和权限目录按创建时间。排序在数据库分页之前完成；页面直接保留接口顺序。账号／成员接口原有 `created_after` / `created_before` 过滤仍针对账号创建时间，成员排序则使用加入时间。权限目录历史记录若无创建时间，保留未知值，排序时按 epoch 0 处理（默认倒序在末尾，顺序在开头），不以升级时间冒充创建时间。
 
-管理游标为 v2，包含排序方向及 `(19 位补零 epoch 秒, 唯一标识)`；权限目录以 `(时间, resource_type, action)` 唯一定位。后续页必须传相同 `sort_order`，方向与游标不符返回 HTTP 400；切换方向时去掉游标、从第一页重新读取。已有缺少排序方向的 v2 游标按 `desc` 解释，v1 管理游标仍被拒绝。本人角色、角色权限和登录租户选择等业务查询继续使用既有 v1 ID／权限键顺序。游标包含版本及查询过滤摘要，解析时验证长度和过滤一致性。游标从来不是授权凭证，篡改它也不能改变查询 tenant/subject 条件。
+2.0 的角色、权限目录、绑定管理游标为 v3，绑定可选业务筛选；本人角色与角色权限游标为 v2，绑定必填的精确业务标识；其他管理游标保持 v2，其他本人查询保持 v1。管理排序键仍为 `(19 位补零 epoch 秒, 唯一标识)`，权限目录增加 `business_id` 作为跨业务相同 resource/action 时的稳定 tie-breaker。后续页必须传相同 `sort_order` 和业务筛选；改变方向、业务筛选或其他过滤条件时从第一页读取。游标只是分页信息，不能改变授权域。
 
-现有 `tenant_v2` 数据库上线前须显式执行 [列表时间排序升级脚本](../scripts/migrate_list_time_desc.sql)，补充权限创建时间列与分页索引；新库初始化自带这些结构。初始化和在线启动均不会自动升级现有 schema。审计既有时间索引可反向扫描；其余管理列表有对应时间复合索引，权限目录索引按未知时间为 0 的排序表达式建立。
+历史 tenant_v2 的列表时间升级使用[旧排序脚本](../scripts/migrate_list_time_desc.sql)。升级到 2.0 必须另执行[业务映射迁移](business-domain-authorization-design-v1.md#10-tenant_v2--tenant_v3-显式迁移)；旧排序脚本不能代替它。新库直接创建 tenant_v3，初始化和在线启动均不自动升级已有 schema。
 
 例如（外层 `/api` 前缀由宿主决定）：
 
@@ -702,6 +707,8 @@ All 仍只覆盖指定租户，不代表跨租户全部资源。有限 ID 页不
 | GET /admin/access/audit-events/{id} | 同域审计详情，含已持久化变更快照 |
 | GET /admin/platform/audit-events | 平台 audit.read 查看 target_domain=0 的审计，不混合各业务租户 |
 | GET /admin/platform/audit-events/{id} | 平台 0 域审计详情 |
+
+角色、权限和绑定列表的 `X-Embedded-IdP-Business-Id` 是可选筛选；缺失时按租户模式返回允许查看的全部业务记录。对应详情、创建、修改、删除、权限替换、分配和撤销必须带精确业务 Header，body 不重复 `business_id`。Disabled 的 `0` 域未筛选时包含 Platform、Tenant、Business，筛选 `idp` 时包含 Platform、Tenant；Enabled 的真实租户未筛选时包含 Tenant、Business。成员、账号、设备和会话列表不使用业务筛选，审计使用独立可选筛选。
 
 租户关闭时，保留 `0` 域角色与权限管理；不挂载 tenant CRUD、跨租户绑定和选择路由。`0` 的关系在用户创建时一并建立，不伪装成可切换租户。Enabled 时也只有配置为可选策略的客户端能调用选择/切换接口；Fixed 客户端直接调用时拒绝。
 

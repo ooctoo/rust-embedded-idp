@@ -18,6 +18,7 @@ pub trait AccessReadStore: Send + Sync {
     fn list_subject_roles(
         &self,
         tenant_id: &str,
+        business_id: &str,
         subject_id: &str,
         page: &AccessPageRequest,
     ) -> Result<Vec<Role>, StoreError>;
@@ -27,6 +28,7 @@ pub trait AccessReadStore: Send + Sync {
     fn list_role_permissions(
         &self,
         tenant_id: &str,
+        business_id: &str,
         role_id: &str,
         page: &AccessPageRequest,
     ) -> Result<Vec<PermissionDefinition>, StoreError>;

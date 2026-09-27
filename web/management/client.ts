@@ -52,11 +52,11 @@ export interface ManagedTenant {
 export type InitialAdministrator = { kind: "existing"; subject_id: string } | { kind: "new"; email: string; password: string; display_name?: string };
 export interface TenantDetail extends ManagedTenant { allow_registration: boolean; version: number }
 export interface Role {
-  tenant_id: string; role_id: string; key: string; name: string; version: number;
+  tenant_id: string; business_id: string; role_id: string; key: string; name: string; version: number;
   status: "active" | "disabled";
-  kind: "business" | "system_admin" | "tenant_security_admin";
+  kind: "business" | "business_admin" | "system_admin" | "tenant_security_admin";
 }
-export interface PermissionKey { resource_type: string; action: string }
+export interface PermissionKey { business_id: string; resource_type: string; action: string }
 export interface RoleDetail extends Role { permissions: PermissionKey[] }
 export interface PermissionDefinition extends PermissionKey { tenant_id: string; description: string; category: "business"; enabled: boolean; archived: boolean; version: number }
 export interface DirectoryPermission extends PermissionKey { tenant_id: string; description: string; category: "business" | "tenant" | "platform"; enabled: boolean; archived: boolean; version: number }
@@ -65,33 +65,33 @@ export interface PermissionChange { before: DirectoryPermission | null; after: D
 export interface AuditRecord {
   audit_id: string; occurred_at_unix_secs: number; actor_id: string; actor_domain: string;
   actor_session_id: string | null; authentication_source: string; target_domain: string;
-  operation: string; request_id: string;
+  target_business_id: string | null; operation: string; request_id: string;
 }
 export interface AuditDetail extends AuditRecord { change: Record<string, unknown> }
 export interface AuditFilter {
-  actor_id?: string; operation?: string;
+  business_id?: string; actor_id?: string; operation?: string;
   occurred_after_unix_secs?: number; occurred_before_unix_secs?: number;
 }
 export interface DiagnosticInput extends PermissionKey { subject_id: string; resource_id?: string }
 export interface DiagnosticResult extends Omit<DiagnosticInput, "resource_id"> { audit_id: string; tenant_id: string; resource_id: string | null; decision: "allow" | "deny" }
 const permissionName = (value: unknown): value is string => typeof value === "string" && /^[a-z][a-z0-9_.-]{0,63}$/.test(value);
-const permissionId = (key: PermissionKey) => `${key.resource_type}::${key.action}`;
+const permissionId = (key: PermissionKey) => `${key.business_id}::${key.resource_type}::${key.action}`;
 function auditRecordFrom(value: unknown, target: string): AuditRecord {
   const r = object(value);
-  if (r.target_domain !== target || ![r.audit_id, r.actor_id, r.actor_domain, r.authentication_source, r.request_id].every(validId) ||
+  if (!(r.target_business_id === null || permissionName(r.target_business_id)) || r.target_domain !== target || ![r.audit_id, r.actor_id, r.actor_domain, r.authentication_source, r.request_id].every(validId) ||
       !(r.actor_session_id === null || validId(r.actor_session_id)) || !permissionName(r.operation) || !validTime(r.occurred_at_unix_secs)) throw invalidResponse();
   return { audit_id: r.audit_id as string, occurred_at_unix_secs: r.occurred_at_unix_secs as number,
     actor_id: r.actor_id as string, actor_domain: r.actor_domain as string, actor_session_id: r.actor_session_id as string | null,
-    authentication_source: r.authentication_source as string, target_domain: target, operation: r.operation as string, request_id: r.request_id as string };
+    authentication_source: r.authentication_source as string, target_domain: target, target_business_id: r.target_business_id as string | null, operation: r.operation as string, request_id: r.request_id as string };
 }
 function auditFilterQuery(filter: AuditFilter, cursor?: string) {
-  if (filter.actor_id !== undefined && !validId(filter.actor_id) || filter.operation !== undefined && !permissionName(filter.operation) ||
+  if (filter.business_id !== undefined && (!permissionName(filter.business_id) || filter.business_id.startsWith("idp.")) || filter.actor_id !== undefined && !validId(filter.actor_id) || filter.operation !== undefined && !permissionName(filter.operation) ||
       filter.occurred_after_unix_secs !== undefined && !validTime(filter.occurred_after_unix_secs) ||
       filter.occurred_before_unix_secs !== undefined && !validTime(filter.occurred_before_unix_secs) ||
       filter.occurred_after_unix_secs !== undefined && filter.occurred_before_unix_secs !== undefined &&
       filter.occurred_after_unix_secs > filter.occurred_before_unix_secs) throw new ManagementError("请核对审计筛选条件。", 400);
   const query = new URLSearchParams({ limit: "50", ...(cursor ? { cursor } : {}) });
-  for (const key of ["actor_id", "operation", "occurred_after_unix_secs", "occurred_before_unix_secs"] as const)
+  for (const key of ["business_id", "actor_id", "operation", "occurred_after_unix_secs", "occurred_before_unix_secs"] as const)
     if (filter[key] !== undefined) query.set(key, String(filter[key]));
   return query;
 }
@@ -102,10 +102,10 @@ function sortOrderQuery(query: URLSearchParams, sortOrder: SortOrder) {
 }
 function directoryPermissionFrom(value: unknown): DirectoryPermission {
   const p = object(value);
-  if (!validId(p.tenant_id) || !permissionName(p.resource_type) || !permissionName(p.action) || typeof p.description !== "string" ||
+  if (!validId(p.tenant_id) || !returnedBusiness(p.business_id) || !permissionName(p.resource_type) || !permissionName(p.action) || typeof p.description !== "string" ||
       !["business", "tenant", "platform"].includes(String(p.category)) || typeof p.enabled !== "boolean" ||
       typeof p.archived !== "boolean" || !Number.isSafeInteger(p.version) || (p.version as number) < 1) throw invalidResponse();
-  return { tenant_id: p.tenant_id, resource_type: p.resource_type, action: p.action, description: p.description, category: p.category as DirectoryPermission["category"], enabled: p.enabled, archived: p.archived, version: p.version as number };
+  return { tenant_id: p.tenant_id, business_id: p.business_id, resource_type: p.resource_type, action: p.action, description: p.description, category: p.category as DirectoryPermission["category"], enabled: p.enabled, archived: p.archived, version: p.version as number };
 }
 function permissionChangesFrom(value: unknown): PermissionChange[] {
   const result = auditResult(value);
@@ -129,10 +129,9 @@ export interface Member extends Account {
   membership: Membership;
 }
 export type ResourceScope = { kind: "type" } | { kind: "instance"; resource_id: string };
-export interface RoleBinding {
-  binding_id: string; tenant_id: string; subject_id: string; role_id: string;
-  resource_type: string; scope: ResourceScope;
-}
+export type BusinessRoleBinding = { binding_id: string; tenant_id: string; business_id: string; subject_id: string; role_id: string; scope: { kind: "business" } };
+export type ResourceRoleBinding = { binding_id: string; tenant_id: string; business_id: string; subject_id: string; role_id: string; resource_type: string; scope: ResourceScope };
+export type RoleBinding = BusinessRoleBinding | ResourceRoleBinding;
 
 export interface ManagedDevice {
   tenant_id: string; device_id: string; client_id: string; device_name: string;
@@ -261,14 +260,20 @@ function memberFrom(value: unknown, tenant: string): Member {
   return { ...account, membership: membershipFrom(object(value).membership, tenant, account.account_id) };
 }
 
-function bindingFrom(value: unknown, tenant: string, subject: string): RoleBinding {
+function returnedBusiness(value: unknown): value is string {
+  return permissionName(value) && !value.startsWith("idp.");
+}
+
+function bindingFrom(value: unknown, tenant: string, business: string | undefined, subject: string): RoleBinding {
   const b = object(value);
   const scope = object(b.scope);
-  if (b.tenant_id !== tenant || b.subject_id !== subject ||
-      ![b.binding_id, b.role_id, b.resource_type].every(v => typeof v === "string" && v.length) ||
+  if (b.tenant_id !== tenant || !returnedBusiness(b.business_id) || business !== undefined && b.business_id !== business || b.subject_id !== subject ||
+      ![b.binding_id, b.role_id].every(v => typeof v === "string" && v.length)) throw invalidResponse();
+  if (scope.kind === "business" && b.resource_type === undefined) return b as unknown as BusinessRoleBinding;
+  if (typeof b.resource_type !== "string" || !b.resource_type ||
       !(scope.kind === "type" && scope.resource_id === undefined ||
         scope.kind === "instance" && typeof scope.resource_id === "string" && /^[A-Za-z0-9_.-]{1,256}$/.test(scope.resource_id))) throw invalidResponse();
-  return b as unknown as RoleBinding;
+  return b as unknown as ResourceRoleBinding;
 }
 
 function pageFrom<T>(value: unknown, decode: (item: unknown) => T): AdminPage<T> {
@@ -278,21 +283,21 @@ function pageFrom<T>(value: unknown, decode: (item: unknown) => T): AdminPage<T>
   return { items: page.items.map(decode), has_more: page.has_more, next_cursor: page.has_more ? page.next_cursor as string : undefined };
 }
 
-function roleFrom(value: unknown, tenant: string): Role {
+function roleFrom(value: unknown, tenant: string, business?: string): Role {
   const r = object(value);
-  if (r.tenant_id !== tenant || ![r.role_id, r.key, r.name].every(v => typeof v === "string" && v.length) ||
+  if (r.tenant_id !== tenant || !returnedBusiness(r.business_id) || business !== undefined && r.business_id !== business || ![r.role_id, r.key, r.name].every(v => typeof v === "string" && v.length) ||
       typeof r.version !== "number" || !Number.isSafeInteger(r.version) || r.version < 1 ||
-      !["active", "disabled"].includes(String(r.status)) || !["business", "system_admin", "tenant_security_admin"].includes(String(r.kind))) throw invalidResponse();
+      !["active", "disabled"].includes(String(r.status)) || !["business", "business_admin", "system_admin", "tenant_security_admin"].includes(String(r.kind))) throw invalidResponse();
   return r as unknown as Role;
 }
 
-function detailFrom(value: unknown, tenant: string): RoleDetail {
-  const role = roleFrom(value, tenant);
+function detailFrom(value: unknown, tenant: string, business: string): RoleDetail {
+  const role = roleFrom(value, tenant, business);
   const permissions = object(value).permissions;
   if (!Array.isArray(permissions) || permissions.length > 200) throw invalidResponse();
   for (const entry of permissions) {
     const p = object(entry);
-    if (![p.resource_type, p.action].every(v => typeof v === "string" && v.length)) throw invalidResponse();
+    if (p.business_id !== business || ![p.resource_type, p.action].every(v => typeof v === "string" && v.length)) throw invalidResponse();
   }
   return { ...role, permissions: permissions as RoleDetail["permissions"] };
 }
@@ -377,7 +382,7 @@ export class ManagementClient {
     this.publish();
   }
 
-  private async request(path: string, method = "GET", body?: unknown, authorization?: string, target?: string): Promise<unknown> {
+  private async request(path: string, method = "GET", body?: unknown, authorization?: string, target?: string, business?: string): Promise<unknown> {
     let response: Response;
     try {
       response = await fetch(`${this.basePath}/admin${path}`, {
@@ -387,6 +392,7 @@ export class ManagementClient {
           ...(body === undefined ? {} : { "Content-Type": "application/json" }),
           ...(authorization ? { Authorization: authorization } : {}),
           ...(target === undefined ? {} : { "X-Embedded-Idp-Tenant-Id": target }),
+          ...(business === undefined ? {} : { "X-Embedded-IdP-Business-Id": business }),
         },
         body: body === undefined ? undefined : JSON.stringify(body),
         credentials: "omit", cache: "no-store", redirect: "error",
@@ -570,12 +576,12 @@ export class ManagementClient {
     return pending;
   }
 
-  private async authenticated(path: string, method = "GET", body?: unknown, target?: string) {
+  private async authenticated(path: string, method = "GET", body?: unknown, target?: string, business?: string) {
     const revision = this.revision;
     try {
       const c = await this.access();
       this.current(revision);
-      const result = await this.request(path, method, body, `Bearer ${c.tokens.access_token}`, target);
+      const result = await this.request(path, method, body, `Bearer ${c.tokens.access_token}`, target, business);
       this.current(revision);
       return result;
     } catch (error) {
@@ -593,6 +599,16 @@ export class ManagementClient {
         (session.tenant_id !== "0" && session.tenant_id !== tenant)) {
       throw new ManagementError("请选择当前身份可管理的目标租户。", 403);
     }
+  }
+
+  private requireBusiness(business: string, allowIdp = false) {
+    if (!permissionName(business) || business === "idp" && !allowIdp || business.startsWith("idp.")) {
+      throw new ManagementError("请输入有效业务标识。", 400);
+    }
+  }
+
+  private requireOptionalBusiness(business: string | undefined, allowIdp = false) {
+    if (business !== undefined) this.requireBusiness(business, allowIdp);
   }
 
   private requirePlatform() {
@@ -831,58 +847,74 @@ export class ManagementClient {
     });
   }
 
-  async listRoles(tenant: string, cursor?: string, sortOrder: SortOrder = "desc"): Promise<AdminPage<Role>> {
-    this.requireTarget(tenant);
+  async listRoles(tenant: string, business?: string, cursor?: string, sortOrder: SortOrder = "desc"): Promise<AdminPage<Role>> {
+    this.requireTarget(tenant); this.requireOptionalBusiness(business, true);
     const query = sortOrderQuery(new URLSearchParams({ limit: "50", ...(cursor ? { cursor } : {}) }), sortOrder);
-    return pageFrom(await this.authenticated(`/access/roles?${query}`, "GET", undefined, tenant), value => roleFrom(value, tenant));
+    return pageFrom(await this.authenticated(`/access/roles?${query}`, "GET", undefined, tenant, business), value => roleFrom(value, tenant, business));
   }
 
-  async getRole(tenant: string, roleId: string): Promise<RoleDetail> {
-    this.requireTarget(tenant);
-    const role = detailFrom(await this.authenticated(`/access/roles/${encodeURIComponent(roleId)}`, "GET", undefined, tenant), tenant);
+  async getRole(tenant: string, business: string, roleId: string): Promise<RoleDetail> {
+    this.requireTarget(tenant); this.requireBusiness(business, true);
+    const role = detailFrom(await this.authenticated(`/access/roles/${encodeURIComponent(roleId)}`, "GET", undefined, tenant, business), tenant, business);
     if (role.role_id !== roleId) throw invalidResponse();
     return role;
   }
 
-  async createRole(tenant: string, key: string, name: string): Promise<RoleDetail> {
-    this.requireTarget(tenant);
-    const result = object(await this.authenticated("/access/roles", "POST", { key, name }, tenant));
-    const role = detailFrom(result.role, tenant);
+  async createRole(tenant: string, business: string, key: string, name: string): Promise<RoleDetail> {
+    this.requireTarget(tenant); this.requireBusiness(business);
+    const result = object(await this.authenticated("/access/roles", "POST", { key, name }, tenant, business));
+    const role = detailFrom(result.role, tenant, business);
     if (role.kind !== "business" || role.key !== key) throw invalidResponse();
     return role;
   }
 
-  async updateRole(tenant: string, role: RoleDetail, name: string, status: Role["status"]): Promise<RoleDetail> {
-    this.requireTarget(tenant);
-    if (role.tenant_id !== tenant || role.kind !== "business") throw new ManagementError("保护角色不能通过业务角色页面修改。", 403);
+  async createBusinessAdmin(tenant: string, business: string, name?: string): Promise<RoleDetail> {
+    this.requireTarget(tenant); this.requireBusiness(business);
+    const result = object(await this.authenticated("/access/business-admin", "POST", name?.trim() ? { name: name.trim() } : {}, tenant, business));
+    const role = detailFrom(result.role, tenant, business);
+    if (role.kind !== "business_admin" || role.key !== "business_admin") throw invalidResponse();
+    return role;
+  }
+
+  async getBusinessAdmin(tenant: string, business: string): Promise<RoleDetail> {
+    this.requireTarget(tenant); this.requireBusiness(business);
+    const role = detailFrom(await this.authenticated("/access/business-admin", "GET", undefined, tenant, business), tenant, business);
+    if (role.kind !== "business_admin" || role.key !== "business_admin") throw invalidResponse();
+    return role;
+  }
+
+  async updateRole(tenant: string, business: string, role: RoleDetail, name: string, status: Role["status"]): Promise<RoleDetail> {
+    this.requireTarget(tenant); this.requireBusiness(business);
+    if (role.tenant_id !== tenant || role.business_id !== business || !["business", "business_admin"].includes(role.kind)) throw new ManagementError("保护角色不能通过业务角色页面修改。", 403);
     const result = object(await this.authenticated(`/access/roles/${encodeURIComponent(role.role_id)}`, "PATCH", {
       name, status, expected_version: role.version,
-    }, tenant));
-    const updated = detailFrom(result.role, tenant);
+    }, tenant, business));
+    const updated = detailFrom(result.role, tenant, business);
     if (updated.role_id !== role.role_id) throw invalidResponse();
     return updated;
   }
 
-  async deleteRole(tenant: string, role: RoleDetail) {
-    this.requireTarget(tenant);
-    if (role.tenant_id !== tenant || role.kind !== "business") throw new ManagementError("保护角色不能通过业务角色页面删除。", 403);
-    const result = object(await this.authenticated(`/access/roles/${encodeURIComponent(role.role_id)}`, "DELETE", { expected_version: role.version }, tenant));
+  async deleteRole(tenant: string, business: string, role: RoleDetail) {
+    this.requireTarget(tenant); this.requireBusiness(business);
+    if (role.tenant_id !== tenant || role.business_id !== business || !["business", "business_admin"].includes(role.kind)) throw new ManagementError("保护角色不能通过业务角色页面删除。", 403);
+    const result = object(await this.authenticated(`/access/roles/${encodeURIComponent(role.role_id)}`, "DELETE", { expected_version: role.version }, tenant, business));
     if (result.role !== null || typeof result.audit_id !== "string" || !result.audit_id) throw invalidResponse();
   }
 
-  async listBusinessPermissions(tenant: string, resourceType?: string, cursor?: string, sortOrder: SortOrder = "desc"): Promise<AdminPage<PermissionDefinition>> {
-    this.requireTarget(tenant);
+  async listBusinessPermissions(tenant: string, business: string, resourceType?: string, cursor?: string, sortOrder: SortOrder = "desc"): Promise<AdminPage<PermissionDefinition>> {
+    this.requireTarget(tenant); this.requireBusiness(business);
     const query = sortOrderQuery(new URLSearchParams({ limit: "50", category: "business", enabled: "true",
       ...(resourceType ? { resource_type: resourceType } : {}), ...(cursor ? { cursor } : {}) }), sortOrder);
-    return pageFrom(await this.authenticated(`/access/permissions?${query}`, "GET", undefined, tenant), value => {
+    return pageFrom(await this.authenticated(`/access/permissions?${query}`, "GET", undefined, tenant, business), value => {
       const p = object(value);
       if (![p.resource_type, p.action, p.description].every(v => typeof v === "string") ||
-          !p.resource_type || !p.action || p.category !== "business" || p.enabled !== true || p.archived !== false || p.tenant_id !== tenant) throw invalidResponse();
+          !p.resource_type || !p.action || p.category !== "business" || p.enabled !== true || p.archived !== false || p.tenant_id !== tenant || p.business_id !== business) throw invalidResponse();
       return p as unknown as PermissionDefinition;
     });
   }
 
-  async listPermissionDirectory(tenant: string, filter: PermissionDirectoryFilter = {}, cursor?: string, sortOrder: SortOrder = "desc"): Promise<AdminPage<DirectoryPermission>> {
+  async listPermissionDirectory(tenant: string, business?: string, filter: PermissionDirectoryFilter = {}, cursor?: string, sortOrder: SortOrder = "desc"): Promise<AdminPage<DirectoryPermission>> {
+    this.requireOptionalBusiness(business, true);
     const platform = tenant === "0" && this.state.capabilities?.tenancy_enabled;
     if (platform) this.requirePlatform(); else this.requireTarget(tenant);
     if (filter.resource_type !== undefined && !permissionName(filter.resource_type) ||
@@ -891,61 +923,61 @@ export class ManagementClient {
     const query = new URLSearchParams({ limit: "50", ...(cursor ? { cursor } : {}) });
     for (const key of ["resource_type", "category", "enabled"] as const) if (filter[key] !== undefined) query.set(key, String(filter[key]));
     sortOrderQuery(query, sortOrder);
-    return pageFrom(await this.authenticated(`${platform ? "/platform" : "/access"}/permissions?${query}`, "GET", undefined, platform ? undefined : tenant), value => {
+    return pageFrom(await this.authenticated(`${platform ? "/platform" : "/access"}/permissions?${query}`, "GET", undefined, platform ? undefined : tenant, platform ? undefined : business), value => {
       const p = directoryPermissionFrom(value);
-      if (p.tenant_id !== tenant || filter.resource_type !== undefined && p.resource_type !== filter.resource_type ||
+      if (p.tenant_id !== tenant || platform && p.business_id !== "idp" || !platform && business !== undefined && p.business_id !== business || filter.resource_type !== undefined && p.resource_type !== filter.resource_type ||
           filter.category !== undefined && p.category !== filter.category || filter.enabled !== undefined && p.enabled !== filter.enabled) throw invalidResponse();
       return p;
     });
   }
 
-  private permissionChange(value: unknown, tenant: string, key: PermissionKey, created: boolean): DirectoryPermission {
+  private permissionChange(value: unknown, tenant: string, business: string, key: PermissionKey, created: boolean): DirectoryPermission {
     const changes = permissionChangesFrom(value), change = changes[0];
     if (changes.length !== 1 || !change || (change.before === null) !== created ||
-        change.after.tenant_id !== tenant || permissionId(change.after) !== permissionId(key) || change.after.category !== "business") throw invalidResponse();
+        change.after.tenant_id !== tenant || change.after.business_id !== business || permissionId(change.after) !== permissionId(key) || change.after.category !== "business") throw invalidResponse();
     return change.after;
   }
 
-  async getPermission(tenant: string, key: PermissionKey): Promise<DirectoryPermission> {
-    this.requireTarget(tenant);
-    if (!permissionName(key.resource_type) || !permissionName(key.action)) throw new ManagementError("权限标识无效。", 400);
-    const p = directoryPermissionFrom(await this.authenticated(`/access/permissions/${encodeURIComponent(key.resource_type)}/${encodeURIComponent(key.action)}`, "GET", undefined, tenant));
-    if (p.tenant_id !== tenant || permissionId(p) !== permissionId(key)) throw invalidResponse();
+  async getPermission(tenant: string, business: string, key: PermissionKey): Promise<DirectoryPermission> {
+    this.requireTarget(tenant); this.requireBusiness(business, true);
+    if (key.business_id !== business || !permissionName(key.resource_type) || !permissionName(key.action)) throw new ManagementError("权限标识无效。", 400);
+    const p = directoryPermissionFrom(await this.authenticated(`/access/permissions/${encodeURIComponent(key.resource_type)}/${encodeURIComponent(key.action)}`, "GET", undefined, tenant, business));
+    if (p.tenant_id !== tenant || p.business_id !== business || permissionId(p) !== permissionId(key)) throw invalidResponse();
     return p;
   }
 
-  async createPermission(tenant: string, key: PermissionKey, description: string): Promise<DirectoryPermission> {
-    this.requireTarget(tenant);
-    if (!permissionName(key.resource_type) || key.resource_type.startsWith("idp.") || !permissionName(key.action) || !description.trim() || description.length > 512) throw new ManagementError("请填写有效的权限标识和说明。", 400);
-    return this.permissionChange(await this.authenticated("/access/permissions", "POST", { ...key, description: description.trim() }, tenant), tenant, key, true);
+  async createPermission(tenant: string, business: string, key: PermissionKey, description: string): Promise<DirectoryPermission> {
+    this.requireTarget(tenant); this.requireBusiness(business);
+    if (key.business_id !== business || !permissionName(key.resource_type) || key.resource_type.startsWith("idp.") || !permissionName(key.action) || !description.trim() || description.length > 512) throw new ManagementError("请填写有效的权限标识和说明。", 400);
+    return this.permissionChange(await this.authenticated("/access/permissions", "POST", { resource_type: key.resource_type, action: key.action, description: description.trim() }, tenant, business), tenant, business, key, true);
   }
 
-  async updatePermission(tenant: string, permission: DirectoryPermission, description: string): Promise<DirectoryPermission> {
-    this.requireTarget(tenant);
-    if (permission.tenant_id !== tenant || permission.category !== "business" || permission.archived || !description.trim() || description.length > 512) throw new ManagementError("权限不能修改。", 400);
+  async updatePermission(tenant: string, business: string, permission: DirectoryPermission, description: string): Promise<DirectoryPermission> {
+    this.requireTarget(tenant); this.requireBusiness(business);
+    if (permission.tenant_id !== tenant || permission.business_id !== business || permission.category !== "business" || permission.archived || !description.trim() || description.length > 512) throw new ManagementError("权限不能修改。", 400);
     const path = `/access/permissions/${encodeURIComponent(permission.resource_type)}/${encodeURIComponent(permission.action)}`;
-    return this.permissionChange(await this.authenticated(path, "PATCH", { description: description.trim(), expected_version: permission.version }, tenant), tenant, permission, false);
+    return this.permissionChange(await this.authenticated(path, "PATCH", { description: description.trim(), expected_version: permission.version }, tenant, business), tenant, business, permission, false);
   }
 
-  async archivePermission(tenant: string, permission: DirectoryPermission): Promise<DirectoryPermission> {
-    this.requireTarget(tenant);
-    if (permission.tenant_id !== tenant || permission.category !== "business" || permission.archived) throw new ManagementError("权限不能归档。", 400);
+  async archivePermission(tenant: string, business: string, permission: DirectoryPermission): Promise<DirectoryPermission> {
+    this.requireTarget(tenant); this.requireBusiness(business);
+    if (permission.tenant_id !== tenant || permission.business_id !== business || permission.category !== "business" || permission.archived) throw new ManagementError("权限不能归档。", 400);
     const path = `/access/permissions/${encodeURIComponent(permission.resource_type)}/${encodeURIComponent(permission.action)}`;
-    return this.permissionChange(await this.authenticated(path, "DELETE", { expected_version: permission.version }, tenant), tenant, permission, false);
+    return this.permissionChange(await this.authenticated(path, "DELETE", { expected_version: permission.version }, tenant, business), tenant, business, permission, false);
   }
 
-  async setPermissionEnabled(tenant: string, permission: DirectoryPermission, enabled: boolean): Promise<DirectoryPermission> {
-    this.requireTarget(tenant);
-    if (permission.tenant_id !== tenant || permission.category !== "business" || permission.archived || enabled === permission.enabled) throw new ManagementError("权限状态无效，请重新加载。", 400);
+  async setPermissionEnabled(tenant: string, business: string, permission: DirectoryPermission, enabled: boolean): Promise<DirectoryPermission> {
+    this.requireTarget(tenant); this.requireBusiness(business);
+    if (permission.tenant_id !== tenant || permission.business_id !== business || permission.category !== "business" || permission.archived || enabled === permission.enabled) throw new ManagementError("权限状态无效，请重新加载。", 400);
     const path = `/access/permissions/${encodeURIComponent(permission.resource_type)}/${encodeURIComponent(permission.action)}/enabled`;
-    return this.permissionChange(await this.authenticated(path, "POST", { enabled, expected_enabled: permission.enabled }, tenant), tenant, permission, false);
+    return this.permissionChange(await this.authenticated(path, "POST", { enabled, expected_enabled: permission.enabled }, tenant, business), tenant, business, permission, false);
   }
 
   private async auditPage(path: string, target: string, filter: AuditFilter, cursor?: string, header?: string, sortOrder: SortOrder = "desc"): Promise<AdminPage<AuditRecord>> {
     const query = sortOrderQuery(auditFilterQuery(filter, cursor), sortOrder);
     return pageFrom(await this.authenticated(`${path}?${query}`, "GET", undefined, header), value => {
       const record = auditRecordFrom(value, target);
-      if (filter.actor_id !== undefined && record.actor_id !== filter.actor_id ||
+      if (filter.business_id !== undefined && record.target_business_id !== filter.business_id || filter.actor_id !== undefined && record.actor_id !== filter.actor_id ||
           filter.operation !== undefined && record.operation !== filter.operation ||
           filter.occurred_after_unix_secs !== undefined && record.occurred_at_unix_secs < filter.occurred_after_unix_secs ||
           filter.occurred_before_unix_secs !== undefined && record.occurred_at_unix_secs > filter.occurred_before_unix_secs) throw invalidResponse();
@@ -981,34 +1013,34 @@ export class ManagementClient {
     return this.auditDetail("/platform/audit-events", "0", id);
   }
 
-  async diagnosePermission(tenant: string, input: DiagnosticInput): Promise<DiagnosticResult> {
-    this.requireTarget(tenant);
-    if (!input || !validId(input.subject_id) || !permissionName(input.resource_type) || !permissionName(input.action) ||
+  async diagnosePermission(tenant: string, business: string, input: DiagnosticInput): Promise<DiagnosticResult> {
+    this.requireTarget(tenant); this.requireBusiness(business);
+    if (!input || input.business_id !== business || !validId(input.subject_id) || !permissionName(input.resource_type) || !permissionName(input.action) ||
         input.resource_id !== undefined && (typeof input.resource_id !== "string" || !/^[A-Za-z0-9_.-]{1,256}$/.test(input.resource_id)))
       throw new ManagementError("请核对目标用户与权限标识。", 400);
     const result = object(await this.authenticated("/access/check", "POST", {
       subject_id: input.subject_id, resource_type: input.resource_type, action: input.action,
       ...(input.resource_id === undefined ? {} : { resource_id: input.resource_id }),
-    }, tenant));
-    if (result.tenant_id !== tenant || result.subject_id !== input.subject_id || result.resource_type !== input.resource_type ||
+    }, tenant, business));
+    if (result.tenant_id !== tenant || result.business_id !== business || result.subject_id !== input.subject_id || result.resource_type !== input.resource_type ||
         result.action !== input.action || result.resource_id !== (input.resource_id ?? null) || !validId(result.audit_id) ||
         !["allow", "deny"].includes(String(result.decision))) throw invalidResponse();
-    return { audit_id: result.audit_id as string, tenant_id: tenant, subject_id: input.subject_id,
+    return { audit_id: result.audit_id as string, tenant_id: tenant, business_id: business, subject_id: input.subject_id,
       resource_type: input.resource_type, action: input.action, resource_id: input.resource_id ?? null,
       decision: result.decision as DiagnosticResult["decision"] };
   }
 
-  async replaceRolePermissions(tenant: string, role: RoleDetail, permissions: PermissionKey[]): Promise<RoleDetail> {
-    this.requireTarget(tenant);
-    if (role.tenant_id !== tenant || role.kind !== "business") throw new ManagementError("保护角色的权限不能在此修改。", 403);
+  async replaceRolePermissions(tenant: string, business: string, role: RoleDetail, permissions: PermissionKey[]): Promise<RoleDetail> {
+    this.requireTarget(tenant); this.requireBusiness(business);
+    if (role.tenant_id !== tenant || role.business_id !== business || role.kind !== "business") throw new ManagementError("保护角色的权限不能在此修改。", 403);
     if (permissions.length > 200 || new Set(permissions.map(p => `${p.resource_type}::${p.action}`)).size !== permissions.length ||
-        permissions.some(p => !/^[a-z][a-z0-9_.-]{0,63}$/.test(p.resource_type) || !/^[a-z][a-z0-9_.-]{0,63}$/.test(p.action))) {
+        permissions.some(p => p.business_id !== business || !/^[a-z][a-z0-9_.-]{0,63}$/.test(p.resource_type) || !/^[a-z][a-z0-9_.-]{0,63}$/.test(p.action))) {
       throw new ManagementError("权限集合无效，最多选择 200 项且不能重复。", 400);
     }
     const result = object(await this.authenticated(`/access/roles/${encodeURIComponent(role.role_id)}/permissions`, "PUT", {
       permissions: permissions.map(({ resource_type, action }) => ({ resource_type, action })), expected_version: role.version,
-    }, tenant));
-    const updated = detailFrom(result.role, tenant);
+    }, tenant, business));
+    const updated = detailFrom(result.role, tenant, business);
     if (updated.role_id !== role.role_id) throw invalidResponse();
     return updated;
   }
@@ -1019,37 +1051,39 @@ export class ManagementClient {
     return pageFrom(await this.authenticated(`/accounts?${query}`, "GET", undefined, tenant), value => memberFrom(value, tenant));
   }
 
-  async listRoleBindings(tenant: string, subject: string, cursor?: string, sortOrder: SortOrder = "desc"): Promise<AdminPage<RoleBinding>> {
-    this.requireTarget(tenant);
+  async listRoleBindings(tenant: string, business: string | undefined, subject: string, cursor?: string, sortOrder: SortOrder = "desc"): Promise<AdminPage<RoleBinding>> {
+    this.requireTarget(tenant); this.requireOptionalBusiness(business, true);
     const query = sortOrderQuery(new URLSearchParams({ limit: "50", ...(cursor ? { cursor } : {}) }), sortOrder);
-    return pageFrom(await this.authenticated(`/access/subjects/${encodeURIComponent(subject)}/role-bindings?${query}`, "GET", undefined, tenant), value => bindingFrom(value, tenant, subject));
+    return pageFrom(await this.authenticated(`/access/subjects/${encodeURIComponent(subject)}/role-bindings?${query}`, "GET", undefined, tenant, business), value => bindingFrom(value, tenant, business, subject));
   }
 
-  async grantRole(tenant: string, subject: string, role: RoleDetail, resourceType: string, scope: ResourceScope): Promise<RoleBinding> {
-    this.requireTarget(tenant);
-    if (role.tenant_id !== tenant || role.kind !== "business" || role.status !== "active" || !role.permissions.some(p => p.resource_type === resourceType)) {
+  async grantRole(tenant: string, business: string, subject: string, role: RoleDetail, resourceType?: string, scope: ResourceScope | { kind: "business" } = { kind: "business" }): Promise<RoleBinding> {
+    this.requireTarget(tenant); this.requireBusiness(business);
+    if (role.tenant_id !== tenant || role.business_id !== business || !["business", "business_admin"].includes(role.kind) || role.status !== "active" ||
+        role.kind === "business" && (!resourceType || !role.permissions.some(p => p.resource_type === resourceType))) {
       throw new ManagementError("请选择当前域中启用的业务角色及其资源类型。", 403);
     }
-    if (!scope || !(scope.kind === "type" && !("resource_id" in scope) ||
-        scope.kind === "instance" && typeof scope.resource_id === "string" && /^[A-Za-z0-9_.-]{1,256}$/.test(scope.resource_id))) {
+    if (role.kind === "business_admin" && scope.kind !== "business") throw new ManagementError("业务管理员必须按业务范围分配。", 400);
+    if (role.kind === "business" && (!scope || !(scope.kind === "type" && !("resource_id" in scope) ||
+        scope.kind === "instance" && typeof scope.resource_id === "string" && /^[A-Za-z0-9_.-]{1,256}$/.test(scope.resource_id)))) {
       throw new ManagementError("必须明确选择全部资源或一个有效的资源 ID。", 400);
     }
     const result = object(await this.authenticated(`/access/subjects/${encodeURIComponent(subject)}/role-bindings`, "POST", {
-      role_id: role.role_id, resource_type: resourceType,
-      scope: scope.kind === "type" ? { kind: "type" } : { kind: "instance", resource_id: scope.resource_id },
-    }, tenant));
-    const binding = bindingFrom(result.binding, tenant, subject);
-    if (binding.role_id !== role.role_id || binding.resource_type !== resourceType || binding.scope.kind !== scope.kind ||
+      role_id: role.role_id, ...(role.kind === "business" ? { resource_type: resourceType, scope: scope.kind === "instance" ? { kind: "instance", resource_id: scope.resource_id } : { kind: "type" } } : { scope: { kind: "business" } }),
+    }, tenant, business));
+    const binding = bindingFrom(result.binding, tenant, business, subject);
+    if (binding.role_id !== role.role_id || binding.scope.kind !== scope.kind ||
+        role.kind === "business" && (!("resource_type" in binding) || binding.resource_type !== resourceType) ||
         (scope.kind === "instance" && binding.scope.kind === "instance" && binding.scope.resource_id !== scope.resource_id)) throw invalidResponse();
     return binding;
   }
 
-  async revokeRoleBinding(tenant: string, binding: RoleBinding, role: RoleDetail) {
-    this.requireTarget(tenant);
-    if (binding.tenant_id !== tenant || role.tenant_id !== tenant || role.role_id !== binding.role_id || role.kind !== "business") {
+  async revokeRoleBinding(tenant: string, business: string, binding: RoleBinding, role: RoleDetail) {
+    this.requireTarget(tenant); this.requireBusiness(business);
+    if (binding.tenant_id !== tenant || binding.business_id !== business || role.tenant_id !== tenant || role.business_id !== business || role.role_id !== binding.role_id || !["business", "business_admin"].includes(role.kind)) {
       throw new ManagementError("保护角色请通过专用管理员任命流程管理。", 403);
     }
-    const result = object(await this.authenticated(`/access/role-bindings/${encodeURIComponent(binding.binding_id)}`, "DELETE", undefined, tenant));
+    const result = object(await this.authenticated(`/access/role-bindings/${encodeURIComponent(binding.binding_id)}`, "DELETE", undefined, tenant, business));
     if (result.binding !== null || typeof result.audit_id !== "string" || !result.audit_id) throw invalidResponse();
   }
 
@@ -1063,12 +1097,12 @@ export class ManagementClient {
   async getSecurityAdministrator(tenant: string, subject: string): Promise<SecurityAdministrator> {
     const { path, target } = this.securityAdministratorTarget(tenant, subject);
     const value = object(await this.authenticated(path, "GET", undefined, target));
-    const account = accountFrom(value.account), role = roleFrom(value.role, tenant);
+    const account = accountFrom(value.account), role = roleFrom(value.role, tenant, "idp");
     const member = object(value.account).membership;
-    const binding = value.binding === null ? null : bindingFrom(value.binding, tenant, subject);
+    const binding = value.binding === null ? null : bindingFrom(value.binding, tenant, "idp", subject);
     if (value.tenant_id !== tenant || !["active", "suspended", "archived"].includes(String(value.tenant_status)) || account.account_id !== subject ||
         role.kind !== (tenant === "0" ? "system_admin" : "tenant_security_admin") ||
-        (binding && (binding.role_id !== role.role_id || binding.resource_type !== (tenant === "0" ? "idp.platform" : "idp.tenant") || binding.scope.kind !== "type"))) throw invalidResponse();
+        (binding && (!("resource_type" in binding) || binding.role_id !== role.role_id || binding.resource_type !== (tenant === "0" ? "idp.platform" : "idp.tenant") || binding.scope.kind !== "type"))) throw invalidResponse();
     return { tenant_id: tenant, tenant_status: value.tenant_status as ManagedTenant["status"],
       account: { ...account, membership: member === null ? null : membershipFrom(member, tenant, subject) }, role, binding };
   }
@@ -1085,8 +1119,8 @@ export class ManagementClient {
     const result = object(await this.authenticated(path, appointed ? "POST" : "DELETE", undefined, target));
     if (typeof result.audit_id !== "string" || !result.audit_id) throw invalidResponse();
     if (!appointed) { if (result.binding !== null) throw invalidResponse(); return null; }
-    const binding = bindingFrom(result.binding, tenant, subject);
-    if (binding.role_id !== snapshot.role.role_id || binding.resource_type !== (tenant === "0" ? "idp.platform" : "idp.tenant") || binding.scope.kind !== "type") throw invalidResponse();
+    const binding = bindingFrom(result.binding, tenant, "idp", subject);
+    if (!("resource_type" in binding) || binding.role_id !== snapshot.role.role_id || binding.resource_type !== (tenant === "0" ? "idp.platform" : "idp.tenant") || binding.scope.kind !== "type") throw invalidResponse();
     return binding;
   }
 
