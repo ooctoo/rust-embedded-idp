@@ -17,6 +17,7 @@ struct Data {
     clients: Vec<crate::OidcClient>,
     admin_sessions: Vec<TenantSession>,
     devices: Vec<AccessDeviceRecord>,
+    device_bindings: Vec<AccessDeviceBindingRecord>,
     active_device_bindings: Vec<(String, String, String)>,
     mode: TenancyMode,
     accounts: BTreeMap<String, bool>,
@@ -28,6 +29,7 @@ struct Data {
     permissions: BTreeMap<PermissionKey, PermissionDefinition>,
     sessions: BTreeMap<String, (String, String, bool)>,
     audits: Vec<AccessAuditEvent>,
+    device_operations: Vec<(String, String, String, String, [u8; 32], AccessAuditEvent)>,
     fail_audit: bool,
     revoke_before_permission: bool,
     lock_clock: Option<Arc<AtomicU64>>,
@@ -53,6 +55,10 @@ impl IdGenerator for SeqIds {
         static NEXT: AtomicU64 = AtomicU64::new(1);
         format!("{prefix}-test-{}", NEXT.fetch_add(1, Ordering::Relaxed))
     }
+}
+fn operation_id() -> String {
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    uuid::Uuid::from_u128(NEXT.fetch_add(1, Ordering::Relaxed) as u128).to_string()
 }
 
 fn key(resource: &str, action: &str) -> PermissionKey {
@@ -236,6 +242,7 @@ fn seeded() -> Store {
         clients: vec![],
         admin_sessions: vec![],
         devices: vec![],
+        device_bindings: vec![],
         active_device_bindings: vec![],
         mode: TenancyMode::Enabled,
         accounts,
@@ -247,6 +254,7 @@ fn seeded() -> Store {
         permissions,
         sessions,
         audits: vec![],
+        device_operations: vec![],
         fail_audit: false,
         revoke_before_permission: false,
         lock_clock: None,
@@ -551,6 +559,55 @@ impl AccessAdminTransaction for Tx {
             .iter()
             .find(|r| r.device.tenant_id == t && r.device.id == d)
             .cloned())
+    }
+    fn admin_device_key_metadata(
+        &mut self,
+        _: &str,
+        _: &str,
+        _: &str,
+    ) -> Result<Option<DeviceKeyMetadata>, StoreError> {
+        Ok(None)
+    }
+    fn device_has_active_key(&mut self, t: &str, d: &str) -> Result<bool, StoreError> {
+        Ok(self.data.devices.iter().any(|r| {
+            r.device.tenant_id == t && r.device.id == d && r.device.proof_key_id.is_some()
+        }))
+    }
+    fn admin_device_binding(
+        &mut self,
+        tenant: &str,
+        device: &str,
+        binding_id: &str,
+    ) -> Result<Option<AccessDeviceBindingRecord>, StoreError> {
+        Ok(self
+            .data
+            .device_bindings
+            .iter()
+            .find(|r| r.tenant_id == tenant && r.device_id == device && r.id == binding_id)
+            .cloned())
+    }
+    fn admin_device_bindings(
+        &mut self,
+        tenant: &str,
+        device: &str,
+        status: Option<&crate::AccountDeviceBindingStatus>,
+        page: &AccessPageRequest,
+    ) -> Result<Vec<AccessDeviceBindingRecord>, StoreError> {
+        let mut rows: Vec<_> = self
+            .data
+            .device_bindings
+            .iter()
+            .filter(|r| {
+                r.tenant_id == tenant
+                    && r.device_id == device
+                    && status.is_none_or(|s| s == &r.status)
+                    && management_after(time_page_key(r.bound_at, r.id.clone()), page)
+            })
+            .cloned()
+            .collect();
+        sort_management(&mut rows, page, |r| time_page_key(r.bound_at, r.id.clone()));
+        rows.truncate(page.fetch_limit());
+        Ok(rows)
     }
     fn admin_devices(
         &mut self,
@@ -932,7 +989,7 @@ impl AccessAdminTransaction for Tx {
                     }
                 }
             }
-            AccessChange::Device { before, after } => {
+            AccessChange::Device { before, after, .. } => {
                 let row = self
                     .data
                     .devices
@@ -944,6 +1001,19 @@ impl AccessAdminTransaction for Tx {
                     .unwrap();
                 *row = after.clone();
             }
+            AccessChange::DeviceBinding { before, after, .. } => {
+                let row = self
+                    .data
+                    .device_bindings
+                    .iter_mut()
+                    .find(|r| r.id == before.id && r.tenant_id == before.tenant_id)
+                    .ok_or(StoreError::NotFound("device_binding"))?;
+                if row != before {
+                    return Err(StoreError::Conflict("device_binding_version"));
+                }
+                *row = after.clone();
+            }
+            AccessChange::DeviceReceipt(_) => unreachable!("receipts are read-only"),
             AccessChange::TenantCreated {
                 record,
                 administrator,
@@ -1175,6 +1245,46 @@ impl AccessAdminTransaction for Tx {
             return Err(StoreError::Conflict("audit.id"));
         }
         self.data.audits.push(e.clone());
+        Ok(())
+    }
+    fn device_operation(
+        &mut self,
+        actor: &AccessActor,
+        tenant: &str,
+        operation_id: &str,
+    ) -> Result<Option<([u8; 32], AccessAuditEvent)>, StoreError> {
+        Ok(self
+            .data
+            .device_operations
+            .iter()
+            .find(|(domain, subject, target, id, _, _)| {
+                domain == &actor.tenant_id
+                    && subject == &actor.subject_id
+                    && target == tenant
+                    && id == operation_id
+            })
+            .map(|(_, _, _, _, digest, event)| {
+                let mut event = event.clone();
+                event.change =
+                    AccessChange::DeviceReceipt(event.device_receipt(operation_id).unwrap());
+                (*digest, event)
+            }))
+    }
+    fn append_device_audit(
+        &mut self,
+        event: &AccessAuditEvent,
+        operation_id: &str,
+        digest: &[u8; 32],
+    ) -> Result<(), StoreError> {
+        self.append_audit(event)?;
+        self.data.device_operations.push((
+            event.context.actor.tenant_id.clone(),
+            event.context.actor.subject_id.clone(),
+            event.tenant_id.clone(),
+            operation_id.into(),
+            *digest,
+            event.clone(),
+        ));
         Ok(())
     }
 }
@@ -2551,6 +2661,8 @@ fn device_admin_requires_current_permission_and_audits_terminal_state_changes_at
             client_id: "web".into(),
             proof_key_id: None,
             status: DeviceStatus::Active,
+            version: 1,
+            key_version: None,
         },
         name: "Device".into(),
         registered_at: UNIX_EPOCH,
@@ -2558,13 +2670,15 @@ fn device_admin_requires_current_permission_and_audits_terminal_state_changes_at
     };
     store.0.lock().unwrap().devices.push(row.clone());
     let (svc, store) = service(store);
-    let mutation = |status, expected_status| {
+    let mutation = |status, _expected_status| {
         command(
             "t1",
             AccessAdminMutation::SetDeviceStatus {
                 device_id: id.clone(),
                 status,
-                expected_status,
+                expected_version: store.0.lock().unwrap().devices[0].device.version,
+                operation_id: operation_id(),
+                reason: "test".into(),
             },
         )
     };
@@ -2583,13 +2697,6 @@ fn device_admin_requires_current_permission_and_audits_terminal_state_changes_at
         svc.execute(
             ctx("t1", "u1", "s1"),
             mutation(DeviceStatus::Active, DeviceStatus::Active)
-        ),
-        Err(AccessError::InvalidInput("device_status"))
-    );
-    assert_eq!(
-        svc.execute(
-            ctx("t1", "u1", "s1"),
-            mutation(DeviceStatus::Disabled, DeviceStatus::Pending)
         ),
         Err(AccessError::Conflict("device_status"))
     );
@@ -2617,6 +2724,13 @@ fn device_admin_requires_current_permission_and_audits_terminal_state_changes_at
             .status,
         DeviceStatus::Disabled
     );
+    assert_eq!(
+        svc.execute(
+            ctx("0", "u1", "s0"),
+            mutation(DeviceStatus::Active, DeviceStatus::Disabled)
+        ),
+        Err(AccessError::Conflict("device_status"))
+    );
     svc.execute(
         ctx("0", "u1", "s0"),
         mutation(DeviceStatus::Revoked, DeviceStatus::Disabled),
@@ -2640,6 +2754,201 @@ fn device_admin_requires_current_permission_and_audits_terminal_state_changes_at
         Err(AccessError::Forbidden)
     );
     assert_eq!(store.0.lock().unwrap().audits.len(), 2);
+}
+
+#[test]
+fn device_enable_requires_current_key_and_exact_version() {
+    use crate::DeviceStatus;
+    let store = seeded();
+    let id = uuid::Uuid::from_u128(2).to_string();
+    store.0.lock().unwrap().devices.push(AccessDeviceRecord {
+        device: TenantProofDevice {
+            tenant_id: "t1".into(),
+            id: id.clone(),
+            client_id: "web".into(),
+            proof_key_id: Some("key-1".into()),
+            status: DeviceStatus::Disabled,
+            version: 2,
+            key_version: None,
+        },
+        name: "Device".into(),
+        registered_at: UNIX_EPOCH,
+        last_seen_at: None,
+    });
+    let (svc, store) = service(store);
+    let enable = |expected_version| {
+        command(
+            "t1",
+            AccessAdminMutation::SetDeviceStatus {
+                device_id: id.clone(),
+                status: DeviceStatus::Active,
+                expected_version,
+                operation_id: operation_id(),
+                reason: "test".into(),
+            },
+        )
+    };
+    store
+        .0
+        .lock()
+        .unwrap()
+        .tenants
+        .get_mut("t1")
+        .unwrap()
+        .status = TenantStatus::Suspended;
+    assert_eq!(
+        svc.execute(ctx("0", "u1", "s0"), enable(2)),
+        Err(AccessError::Forbidden)
+    );
+    store
+        .0
+        .lock()
+        .unwrap()
+        .tenants
+        .get_mut("t1")
+        .unwrap()
+        .status = TenantStatus::Active;
+    assert_eq!(
+        svc.execute(ctx("0", "u1", "s0"), enable(1)),
+        Err(AccessError::Conflict("device_version"))
+    );
+    assert_eq!(
+        store.0.lock().unwrap().devices[0].device.status,
+        DeviceStatus::Disabled
+    );
+    assert_eq!(
+        svc.execute(ctx("0", "u1", "s0"), enable(2))
+            .unwrap()
+            .operation,
+        "device.enable"
+    );
+    assert_eq!(store.0.lock().unwrap().devices[0].device.version, 3);
+    assert_eq!(
+        svc.execute(ctx("0", "u1", "s0"), enable(2)),
+        Err(AccessError::Conflict("device_version"))
+    );
+    assert_eq!(store.0.lock().unwrap().audits.len(), 1);
+}
+
+#[test]
+fn admin_unbind_targets_one_binding_version_and_audits_atomically() {
+    let store = seeded();
+    let device = uuid::Uuid::from_u128(91).to_string();
+    let binding = uuid::Uuid::from_u128(92).to_string();
+    let row = AccessDeviceBindingRecord {
+        tenant_id: "t1".into(),
+        id: binding.clone(),
+        device_id: device.clone(),
+        account_id: "u2".into(),
+        status: crate::AccountDeviceBindingStatus::Active,
+        version: 1,
+        bound_at: UNIX_EPOCH,
+        unbound_at: None,
+        last_authenticated_at: None,
+    };
+    store.0.lock().unwrap().devices.push(AccessDeviceRecord {
+        device: TenantProofDevice {
+            tenant_id: "t1".into(),
+            id: device.clone(),
+            client_id: "web".into(),
+            proof_key_id: None,
+            status: crate::DeviceStatus::Active,
+            version: 1,
+            key_version: None,
+        },
+        name: "Device".into(),
+        registered_at: UNIX_EPOCH,
+        last_seen_at: None,
+    });
+    store.0.lock().unwrap().device_bindings.push(row.clone());
+    let (svc, store) = service(store);
+    let unbind = |version| {
+        svc.unbind_device_binding(
+            ctx("t1", "u1", "s1"),
+            "t1".into(),
+            device.clone(),
+            binding.clone(),
+            version,
+            operation_id(),
+            "lost".into(),
+        )
+    };
+    assert_eq!(
+        svc.get_device_binding(
+            ctx("t1", "u2", "s2"),
+            "t1".into(),
+            device.clone(),
+            binding.clone()
+        ),
+        Err(AccessError::Forbidden)
+    );
+    assert_eq!(
+        unbind(2),
+        Err(AccessError::Conflict("device_binding_version"))
+    );
+    store.0.lock().unwrap().fail_audit = true;
+    assert!(unbind(1).is_err());
+    assert_eq!(store.0.lock().unwrap().device_bindings[0], row);
+    store.0.lock().unwrap().fail_audit = false;
+    let event = unbind(1).unwrap();
+    assert_eq!(event.operation, "device.binding.unbind");
+    assert_eq!(store.0.lock().unwrap().device_bindings[0].version, 2);
+    assert_eq!(
+        store.0.lock().unwrap().device_bindings[0].status,
+        crate::AccountDeviceBindingStatus::Unbound
+    );
+    let mut newer = row;
+    newer.id = uuid::Uuid::from_u128(93).to_string();
+    store.0.lock().unwrap().device_bindings.push(newer.clone());
+    assert_eq!(
+        unbind(1),
+        Err(AccessError::Conflict("device_binding_version"))
+    );
+    assert_eq!(store.0.lock().unwrap().device_bindings[1], newer);
+    let page = svc
+        .list_device_bindings(
+            ctx("t1", "u1", "s1"),
+            "t1".into(),
+            device.clone(),
+            None,
+            AccessPageRequest {
+                limit: 1,
+                cursor: None,
+                sort_order: Some(AccessSortOrder::Desc),
+            },
+        )
+        .unwrap();
+    assert_eq!(page.items[0].id, newer.id);
+    assert!(page.has_more);
+    let next = svc
+        .list_device_bindings(
+            ctx("t1", "u1", "s1"),
+            "t1".into(),
+            device.clone(),
+            None,
+            AccessPageRequest {
+                limit: 1,
+                cursor: page.next_cursor,
+                sort_order: Some(AccessSortOrder::Desc),
+            },
+        )
+        .unwrap();
+    assert_eq!(next.items[0].id, binding);
+    assert_eq!(
+        next.items[0].status,
+        crate::AccountDeviceBindingStatus::Unbound
+    );
+    assert!(!next.has_more);
+    let filtered = svc
+        .list_device_bindings(
+            ctx("t1", "u1", "s1"),
+            "t1".into(),
+            device,
+            Some(crate::AccountDeviceBindingStatus::Active),
+            AccessPageRequest::default(),
+        )
+        .unwrap();
+    assert_eq!(filtered.items, vec![newer]);
 }
 
 #[test]
@@ -3462,6 +3771,8 @@ fn device_admin_filters_validate_bounds_and_bind_every_cursor_condition() {
             client_id: "web".into(),
             proof_key_id: None,
             status: DeviceStatus::Active,
+            version: 1,
+            key_version: None,
         },
         name: "Device".into(),
         registered_at: FixedClock.now(),

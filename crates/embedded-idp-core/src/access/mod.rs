@@ -8,6 +8,7 @@
 mod admin;
 mod authentication;
 mod bootstrap;
+mod device_operation;
 mod device_proof;
 mod model;
 mod query;
@@ -18,6 +19,7 @@ mod store;
 pub use admin::*;
 pub use authentication::*;
 pub use bootstrap::*;
+pub use device_operation::*;
 pub use device_proof::*;
 pub use model::*;
 pub use query::*;

@@ -546,8 +546,8 @@ fn reference_host_runs_management_and_business_flows_in_both_modes() {
             "/devices/provision",
             None,
             None,
-            Some(json!({"tenant_id":tenant,"device_name":"Not admitted"})),
-            403,
+            Some(json!({"tenant_id":tenant,"device_id":UuidV7IdGenerator.next_id("device"),"registration_request_id":UuidV7IdGenerator.next_id("registration"),"device_name":"Not admitted","public_jwk":{}})),
+            401,
         );
         // Create a second tenant admin before revoking the initial administrator.
         if mode == TenancyMode::Enabled {

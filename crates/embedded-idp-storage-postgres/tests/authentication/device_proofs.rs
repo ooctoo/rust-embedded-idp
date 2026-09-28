@@ -2,8 +2,8 @@ use super::*;
 use base64ct::{Base64UrlUnpadded, Encoding};
 use embedded_idp_core::{
     build_device_key_rotation_proof_bytes, build_device_registration_proof_bytes,
-    build_request_proof_bytes, CanonicalHttpMethod, DeviceProofPresentation, DeviceProofProfile,
-    DeviceProofPurpose, DeviceRequestBinding, DEVICE_KEY_ROTATION_PURPOSE,
+    build_request_proof_bytes, CanonicalHttpMethod, DeviceProofKeyStatus, DeviceProofPresentation,
+    DeviceProofProfile, DeviceProofPurpose, DeviceRequestBinding, DEVICE_KEY_ROTATION_PURPOSE,
     DEVICE_REGISTRATION_PURPOSE,
 };
 use embedded_idp_security::{
@@ -234,12 +234,39 @@ fn tenant_proof_consume_failure_rolls_back_and_concurrent_replay_has_one_winner(
 
 struct AdmitTenant<'a>(&'a str);
 impl TenantDeviceAdmission for AdmitTenant<'_> {
-    fn authorize_provision(&self, tenant: &str, client: &str) -> Result<(), AccessError> {
+    fn authorize(
+        &self,
+        tenant: &str,
+        client: &str,
+        _: &str,
+        _: DeviceAdmissionAction,
+        _: &TrustedDeviceAdmission,
+    ) -> Result<(), AccessError> {
         if tenant == self.0 && client == "web" {
             Ok(())
         } else {
             Err(AccessError::Forbidden)
         }
+    }
+}
+fn trusted() -> TrustedDeviceAdmission {
+    TrustedDeviceAdmission {
+        registration_scope: "test_scope".into(),
+        valid_until: SystemTime::now() + Duration::from_secs(3600),
+    }
+}
+fn provision(
+    tenant: &str,
+    device_id: Uuid,
+    request_id: Uuid,
+    jwk: String,
+) -> ProvisionTenantDevice {
+    ProvisionTenantDevice {
+        tenant_id: tenant.into(),
+        device_id: device_id.to_string(),
+        registration_request_id: request_id.to_string(),
+        device_name: "Laptop".into(),
+        public_jwk: jwk,
     }
 }
 fn material(seed: u8) -> (String, String, Ed25519KeyPair) {
@@ -258,18 +285,22 @@ fn registration(
     let svc = proofs(db);
     let (jwk, kid, pair) = material(seed);
     let pending = svc
-        .provision_device(tenant, "Laptop", &AdmitTenant(tenant))
+        .provision_device(
+            provision(tenant, Uuid::now_v7(), Uuid::now_v7(), jwk.clone()),
+            &trusted(),
+            &AdmitTenant(tenant),
+        )
         .unwrap();
     let challenge = svc
         .issue_challenge(
             tenant,
-            &pending.id,
+            &pending.device.id,
             DeviceProofPurpose::new(DEVICE_REGISTRATION_PURPOSE).unwrap(),
         )
         .unwrap();
     let bytes = build_device_registration_proof_bytes(
         tenant,
-        &pending.id,
+        &pending.device.id,
         &kid,
         challenge.challenge.expose_secret(),
     )
@@ -277,7 +308,7 @@ fn registration(
     (
         CompleteTenantDeviceRegistration {
             tenant_id: tenant.into(),
-            device_id: pending.id,
+            device_id: pending.device.id,
             public_jwk: jwk,
             challenge: challenge.challenge,
             signature: SecretString::new(Base64UrlUnpadded::encode_string(
@@ -315,6 +346,8 @@ fn rotation(
         RotateTenantDeviceKey {
             actor,
             device_id: current.device_id.clone(),
+            expected_key_id: current.key_id.clone(),
+            expected_key_version: current.version,
             proposed_public_jwk: jwk,
             challenge: nonce.challenge,
             current_key_signature: SecretString::new(Base64UrlUnpadded::encode_string(
@@ -342,6 +375,26 @@ fn nonce_unused(db: &Db, challenge: &SecretString) -> bool {
         .unwrap()
         .get(0)
 }
+
+fn wait_for_auth_state_lock(db: &Db) {
+    let mut observer = db.adapter.connect().unwrap();
+    let schema = db.schema();
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let waiting: bool = observer.query_one(
+            "select exists(select 1 from pg_stat_activity where application_name='idp-registration-test' and wait_event_type='Lock' and query like $1)",
+            &[&format!("%{schema}.access_state%")],
+        ).unwrap().get(0);
+        if waiting {
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "authentication did not reach the state lock"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
 #[test]
 #[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
 fn provision_and_registration_enforce_admission_and_activate_atomically_in_both_modes() {
@@ -350,11 +403,24 @@ fn provision_and_registration_enforce_admission_and_activate_atomically_in_both_
         prepare(&db);
         let service = proofs(&db);
         assert!(matches!(
-            service.provision_device(tenant, "Laptop", &AdmitTenant("other")),
+            service.provision_device(
+                provision(tenant, Uuid::now_v7(), Uuid::now_v7(), material(21).0),
+                &trusted(),
+                &AdmitTenant("other")
+            ),
             Err(TenantAuthError::Access(AccessError::Forbidden))
         ));
         assert_eq!(count(&db, "devices"), 0);
         let (cmd, _) = registration(&db, tenant, 21);
+        assert!(matches!(
+            service.provision_device(
+                provision(tenant, Uuid::now_v7(), Uuid::now_v7(), material(21).0),
+                &trusted(),
+                &AdmitTenant(tenant),
+            ),
+            Err(TenantAuthError::Access(AccessError::Conflict("device_key")))
+        ));
+        assert_eq!(count(&db, "devices"), 1);
         let s = db.schema();
         let mut bad = cmd.clone();
         bad.signature = SecretString::new(Base64UrlUnpadded::encode_string(&[0; 64]));
@@ -430,6 +496,15 @@ fn rotation_verifies_both_keys_preserves_old_authority_on_failure_and_retires_on
         &old,
     );
     let (cmd, new) = rotation(&db, actor.clone(), &current, &old, 23);
+    let mut stale_expected = cmd.clone();
+    stale_expected.expected_key_version = 99;
+    assert!(matches!(
+        svc.rotate_key(stale_expected),
+        Err(TenantAuthError::Access(AccessError::Conflict(
+            "device_key_changed"
+        )))
+    ));
+    assert!(nonce_unused(&db, &cmd.challenge));
     for bad_old in [false, true] {
         let mut bad = cmd.clone();
         let sig = SecretString::new(Base64UrlUnpadded::encode_string(&[0; 64]));
@@ -459,6 +534,17 @@ fn rotation_verifies_both_keys_preserves_old_authority_on_failure_and_retires_on
             "drop trigger fail_rotation on {s}.device_proof_keys"
         ))
         .unwrap();
+    db.adapter.connect().unwrap().batch_execute(&format!("create function {s}.fail_rotation_audit() returns trigger language plpgsql as $$ begin raise exception 'injected rotation audit failure'; end $$; create trigger fail_rotation_audit before insert on {s}.access_audit_events for each row execute function {s}.fail_rotation_audit();")).unwrap();
+    assert!(svc.rotate_key(cmd.clone()).is_err());
+    assert!(nonce_unused(&db, &cmd.challenge));
+    assert_eq!(count(&db, "device_proof_keys"), 1);
+    db.adapter
+        .connect()
+        .unwrap()
+        .batch_execute(&format!(
+            "drop trigger fail_rotation_audit on {s}.access_audit_events"
+        ))
+        .unwrap();
     let stale = command(
         &db,
         actor.clone(),
@@ -468,11 +554,19 @@ fn rotation_verifies_both_keys_preserves_old_authority_on_failure_and_retires_on
     );
     let next = svc.rotate_key(cmd.clone()).unwrap();
     assert_eq!(next.version, 2);
+    let rotation_audit: i64 = db.adapter.connect().unwrap().query_one(&format!("select count(*) from {s}.access_audit_events where operation='device.key.rotate' and actor_id=$1 and actor_session_id=$2 and authentication_source='device_session'"), &[&Uuid::parse_str(&actor.subject_id).unwrap(),&Uuid::parse_str(&actor.session_id).unwrap()]).unwrap().get(0);
+    assert_eq!(rotation_audit, 1);
     assert!(!nonce_unused(&db, &cmd.challenge));
     assert!(svc.verify_request(stale.clone()).is_err());
     assert!(unused(&db, &stale));
     assert!(svc
-        .verify_request(command(&db, actor, &next.device_id, &next.key_id, &new))
+        .verify_request(command(
+            &db,
+            actor.clone(),
+            &next.device_id,
+            &next.key_id,
+            &new
+        ))
         .is_ok());
     assert!(svc.rotate_key(cmd).is_err());
     assert_eq!(
@@ -487,10 +581,100 @@ fn rotation_verifies_both_keys_preserves_old_authority_on_failure_and_retires_on
             .get::<_, String>(0),
         "retired"
     );
+    let (second_rotation, newest_pair) = rotation(&db, actor.clone(), &next, &new, 25);
+    let newest = svc.rotate_key(second_rotation).unwrap();
+    assert_eq!(newest.version, 3);
+    assert_eq!(
+        svc.subject_device_key_metadata(actor.clone(), &next.device_id, &next.key_id)
+            .unwrap()
+            .status,
+        DeviceProofKeyStatus::Retired
+    );
+    assert_eq!(
+        svc.subject_device_key_metadata(actor.clone(), &newest.device_id, &newest.key_id)
+            .unwrap()
+            .status,
+        DeviceProofKeyStatus::Active
+    );
+    assert!(svc
+        .verify_request(command(
+            &db,
+            actor,
+            &newest.device_id,
+            &newest.key_id,
+            &newest_pair
+        ))
+        .is_ok());
+}
+
+#[test]
+#[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
+fn concurrent_rotations_install_only_one_key_and_audit_once_in_both_modes() {
+    for (mode, tenant) in [(TenancyMode::Disabled, "0"), (TenancyMode::Enabled, "t1")] {
+        let db = Db::new(mode);
+        prepare(&db);
+        let svc = proofs(&db);
+        let (registration, old_pair) = registration(&db, tenant, 42);
+        let current = svc.complete_registration(registration).unwrap();
+        let login = auth(
+            &db,
+            LoginTenantPolicy::Fixed {
+                tenant_id: tenant.into(),
+            },
+            "proof-login",
+            true,
+            false,
+        );
+        let proof = authentication_proof(
+            &db,
+            &current,
+            &old_pair,
+            TENANT_DEVICE_LOGIN_PURPOSE,
+            tenant_password_proof_context("web", "proof-login", &password()),
+        );
+        let session = password_session(login.login_with_proof(password(), proof, &svc).unwrap());
+        let actor = login.authenticate(session.tokens.access_token).unwrap();
+        let first = rotation(&db, actor.clone(), &current, &old_pair, 43).0;
+        let second = rotation(&db, actor, &current, &old_pair, 44).0;
+        let gate = Arc::new(Barrier::new(2));
+        let outcomes = std::thread::scope(|scope| {
+            let handles: Vec<_> = [first.clone(), second.clone()]
+                .into_iter()
+                .map(|request| {
+                    let gate = gate.clone();
+                    let service = proofs(&db);
+                    scope.spawn(move || {
+                        gate.wait();
+                        service.rotate_key(request)
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|handle| handle.join().unwrap())
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(outcomes.iter().filter(|result| result.is_ok()).count(), 1);
+        assert!(outcomes.iter().any(|result| matches!(
+            result,
+            Err(TenantAuthError::Access(AccessError::Conflict(
+                "device_key_changed"
+            )))
+        )));
+        let s = db.schema();
+        let row = db.adapter.connect().unwrap().query_one(&format!("select (select count(*) from {s}.device_proof_keys where tenant_id=$1 and device_id=$2 and status='active'),(select count(*) from {s}.access_audit_events where operation='device.key.rotate'),(select version from {s}.devices where tenant_id=$1 and id=$2)"), &[&tenant,&Uuid::parse_str(&current.device_id).unwrap()]).unwrap();
+        assert_eq!(row.get::<_, i64>(0), 1);
+        assert_eq!(row.get::<_, i64>(1), 1);
+        assert_eq!(row.get::<_, i64>(2), 3);
+        assert_ne!(
+            nonce_unused(&db, &first.challenge),
+            nonce_unused(&db, &second.challenge)
+        );
+    }
 }
 #[test]
 #[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
-fn concurrent_completion_has_one_winner_and_global_key_reuse_rolls_back_nonce() {
+fn concurrent_completion_has_one_winner_and_global_key_reuse_is_rejected_at_provision() {
     let db = Db::new(TenancyMode::Enabled);
     prepare(&db);
     let (cmd, _) = registration(&db, "t1", 24);
@@ -515,10 +699,16 @@ fn concurrent_completion_has_one_winner_and_global_key_reuse_rolls_back_nonce() 
     });
     assert_eq!(wins, 1);
     assert_eq!(count(&db, "device_proof_keys"), 1);
-    // The same key cannot be registered as a second logical device in another tenant.
-    let (other, _) = registration(&db, "t2", 24);
-    assert!(proofs(&db).complete_registration(other.clone()).is_err());
-    assert!(nonce_unused(&db, &other.challenge));
+    // Key reservation rejects the same key before a second logical device is created.
+    assert!(matches!(
+        proofs(&db).provision_device(
+            provision("t2", Uuid::now_v7(), Uuid::now_v7(), material(24).0),
+            &trusted(),
+            &AdmitTenant("t2"),
+        ),
+        Err(TenantAuthError::Access(AccessError::Conflict("device_key")))
+    ));
+    assert_eq!(count(&db, "devices"), 1);
     assert_eq!(count(&db, "device_proof_keys"), 1);
 }
 
@@ -618,6 +808,20 @@ fn proof_login_binds_and_issues_atomically_in_both_modes_and_rechecks_device_aut
         assert!(nonce_unused(&db, &nonce));
         assert_eq!(count(&db, "account_device_bindings"), 0);
         let s = db.schema();
+        db.adapter.connect().unwrap().batch_execute(&format!("create function {s}.fail_binding_audit() returns trigger language plpgsql as $$ begin if new.operation='device.binding.create' then raise exception 'injected binding audit failure'; end if; return new; end $$; create trigger fail_binding_audit before insert on {s}.access_audit_events for each row execute function {s}.fail_binding_audit();")).unwrap();
+        assert!(service
+            .login_with_proof(password(), proof.clone(), &devices)
+            .is_err());
+        assert!(nonce_unused(&db, &nonce));
+        assert_eq!(count(&db, "account_device_bindings"), 0);
+        assert_eq!(count(&db, "auth_sessions"), 0);
+        db.adapter
+            .connect()
+            .unwrap()
+            .batch_execute(&format!(
+                "drop trigger fail_binding_audit on {s}.access_audit_events"
+            ))
+            .unwrap();
         db.adapter.connect().unwrap().batch_execute(&format!("create function {s}.fail_device_login() returns trigger language plpgsql as $$ begin raise exception 'injected refresh write failure'; end $$; create trigger fail_device_login after insert on {s}.refresh_tokens for each row execute function {s}.fail_device_login();")).unwrap();
         assert!(service
             .login_with_proof(password(), proof.clone(), &devices)
@@ -648,6 +852,19 @@ fn proof_login_binds_and_issues_atomically_in_both_modes_and_rechecks_device_aut
             .is_ok());
         assert_eq!(count(&db, "account_device_bindings"), 1);
         assert_eq!(count(&db, "refresh_tokens"), 1);
+        let binding_audit = db.adapter.connect().unwrap().query_one(&format!("select actor_id,actor_session_id,authentication_source,change_json::text from {s}.access_audit_events where operation='device.binding.create'"), &[]).unwrap();
+        assert_eq!(
+            binding_audit.get::<_, Uuid>(0).to_string(),
+            session.session.account_id
+        );
+        assert_eq!(
+            binding_audit.get::<_, Uuid>(1).to_string(),
+            session.session.id
+        );
+        assert_eq!(binding_audit.get::<_, String>(2), "device_session");
+        let audit_change: String = binding_audit.get(3);
+        assert!(!audit_change.contains("public_jwk"));
+        assert!(!audit_change.contains("signature"));
         assert!(!nonce_unused(&db, &nonce));
         assert!(service
             .login_with_proof(password(), proof, &devices)
@@ -687,6 +904,61 @@ fn proof_login_binds_and_issues_atomically_in_both_modes_and_rechecks_device_aut
             .login_with_proof(password(), fresh.clone(), &devices)
             .is_err());
         assert!(nonce_unused(&db, &SecretString::new(fresh.proof.challenge)));
+    }
+}
+#[test]
+#[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
+fn revoked_device_cannot_complete_proof_login_in_both_modes() {
+    for (mode, tenant) in [(TenancyMode::Disabled, "0"), (TenancyMode::Enabled, "t1")] {
+        let db = Db::new(mode);
+        prepare(&db);
+        let devices = proofs(&db);
+        let (registration, pair) = registration(&db, tenant, 43);
+        let key = devices.complete_registration(registration).unwrap();
+        let login = auth(
+            &db,
+            LoginTenantPolicy::Fixed {
+                tenant_id: tenant.into(),
+            },
+            "proof-login",
+            true,
+            false,
+        );
+        let proof = authentication_proof(
+            &db,
+            &key,
+            &pair,
+            TENANT_DEVICE_LOGIN_PURPOSE,
+            tenant_password_proof_context("web", "proof-login", &password()),
+        );
+        let nonce = SecretString::new(proof.proof.challenge.clone());
+        let s = db.schema();
+        let mut connection = db.adapter.connect().unwrap();
+        let mut tx = connection.transaction().unwrap();
+        tx.query_one(
+            &format!("select singleton from {s}.access_state where singleton for update"),
+            &[],
+        )
+        .unwrap();
+        let worker =
+            std::thread::spawn(move || login.login_with_proof(password(), proof, &devices));
+        wait_for_auth_state_lock(&db);
+        tx.execute(
+            &format!("update {s}.devices set status='revoked' where tenant_id=$1 and id=$2"),
+            &[&tenant, &Uuid::parse_str(&key.device_id).unwrap()],
+        )
+        .unwrap();
+        tx.execute(
+            &format!("update {s}.device_proof_keys set status='retired',retired_at_epoch=100 where tenant_id=$1 and key_id=$2"),
+            &[&tenant, &key.key_id],
+        )
+        .unwrap();
+        tx.commit().unwrap();
+        assert!(worker.join().unwrap().is_err());
+        assert!(nonce_unused(&db, &nonce));
+        assert_eq!(count(&db, "auth_sessions"), 0);
+        assert_eq!(count(&db, "refresh_tokens"), 0);
+        assert_eq!(count(&db, "account_device_bindings"), 0);
     }
 }
 #[test]
@@ -783,6 +1055,69 @@ fn proof_selection_signs_exact_ticket_and_switch_requires_live_source_and_target
     assert!(service.authenticate(session2.tokens.access_token).is_ok());
     assert_eq!(count(&db, "account_device_bindings"), 2);
 }
+
+#[test]
+#[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
+fn source_unbind_committed_while_tenant_switch_waits_prevents_issuance() {
+    let db = Db::new(TenancyMode::Enabled);
+    prepare(&db);
+    let devices = proofs(&db);
+    let (first, first_pair) = registration(&db, "t1", 35);
+    let first = devices.complete_registration(first).unwrap();
+    let (second, second_pair) = registration(&db, "t2", 36);
+    let second = devices.complete_registration(second).unwrap();
+    let service = auth(
+        &db,
+        LoginTenantPolicy::ChooseAfterAuthentication,
+        "proof-choose",
+        true,
+        false,
+    );
+    let TenantLoginOutcome::SelectionRequired(initial) = service.login(password()).unwrap() else {
+        panic!()
+    };
+    let source_proof = authentication_proof(
+        &db,
+        &first,
+        &first_pair,
+        TENANT_DEVICE_SELECTION_PURPOSE,
+        tenant_selection_proof_context("web", "proof-choose", &initial.ticket),
+    );
+    let source = service
+        .select_tenant_with_proof(initial.ticket, "t1".into(), source_proof, &devices)
+        .unwrap();
+    let switch = service.begin_switch(source.tokens.access_token).unwrap();
+    let target_proof = authentication_proof(
+        &db,
+        &second,
+        &second_pair,
+        TENANT_DEVICE_SELECTION_PURPOSE,
+        tenant_selection_proof_context("web", "proof-choose", &switch.ticket),
+    );
+    let nonce = SecretString::new(target_proof.proof.challenge.clone());
+    let before = count(&db, "auth_sessions");
+    let s = db.schema();
+    let mut connection = db.adapter.connect().unwrap();
+    let mut tx = connection.transaction().unwrap();
+    tx.query_one(
+        &format!("select singleton from {s}.access_state where singleton for update"),
+        &[],
+    )
+    .unwrap();
+    let worker = std::thread::spawn(move || {
+        service.select_tenant_with_proof(switch.ticket, "t2".into(), target_proof, &devices)
+    });
+    wait_for_auth_state_lock(&db);
+    tx.execute(
+        &format!("update {s}.account_device_bindings set status='unbound',unbound_at_epoch=100,version=version+1 where tenant_id='t1' and device_id=$1"),
+        &[&Uuid::parse_str(&first.device_id).unwrap()],
+    ).unwrap();
+    tx.commit().unwrap();
+    assert!(worker.join().unwrap().is_err());
+    assert!(nonce_unused(&db, &nonce));
+    assert_eq!(count(&db, "auth_sessions"), before);
+}
+
 #[test]
 #[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
 fn concurrent_proven_login_consumes_one_nonce_and_creates_one_binding_session_and_refresh() {

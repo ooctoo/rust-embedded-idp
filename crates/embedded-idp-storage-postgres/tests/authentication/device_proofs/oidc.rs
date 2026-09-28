@@ -423,6 +423,64 @@ fn tenant_oidc_proof_and_code_roll_back_on_signing_and_database_failures() {
     }
 }
 
+#[test]
+#[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
+fn device_revocation_committed_while_oidc_exchange_waits_prevents_issuance() {
+    for (mode, tenant) in [(TenancyMode::Disabled, "0"), (TenancyMode::Enabled, "t1")] {
+        let db = Db::new(mode);
+        setup(&db, tenant);
+        let devices = proofs(&db);
+        let (registration, pair) = registration(&db, tenant, 74);
+        let key = devices.complete_registration(registration).unwrap();
+        let login_proof = authentication_proof(
+            &db,
+            &key,
+            &pair,
+            TENANT_DEVICE_LOGIN_PURPOSE,
+            tenant_password_proof_context("web", "oidc", &password()),
+        );
+        let initial = password_session(
+            entry(&db, tenant)
+                .login_with_proof(password(), login_proof, &devices)
+                .unwrap(),
+        );
+        let grant = oidc(&db, tenant, false)
+            .authorize(actor(&initial.session), request("openid"))
+            .unwrap();
+        let exchange = exchange(grant.code.clone());
+        let proof = authentication_proof(
+            &db,
+            &key,
+            &pair,
+            TENANT_OIDC_EXCHANGE_PURPOSE,
+            tenant_code_proof_context("oidc", &exchange),
+        );
+        let nonce = SecretString::new(proof.proof.challenge.clone());
+        let before = count(&db, "auth_sessions");
+        let s = db.schema();
+        let mut connection = db.adapter.connect().unwrap();
+        let mut tx = connection.transaction().unwrap();
+        tx.query_one(
+            &format!("select singleton from {s}.access_state where singleton for update"),
+            &[],
+        )
+        .unwrap();
+        let svc = oidc(&db, tenant, false);
+        let worker = std::thread::spawn(move || svc.exchange_with_proof(exchange, proof, &devices));
+        wait_for_auth_state_lock(&db);
+        tx.execute(
+            &format!("update {s}.devices set status='revoked' where tenant_id=$1 and id=$2"),
+            &[&tenant, &Uuid::parse_str(&key.device_id).unwrap()],
+        )
+        .unwrap();
+        tx.commit().unwrap();
+        assert!(worker.join().unwrap().is_err());
+        assert!(unused(&db, &grant.code));
+        assert!(nonce_unused(&db, &nonce));
+        assert_eq!(count(&db, "auth_sessions"), before);
+    }
+}
+
 mod resource;
 
 mod http;

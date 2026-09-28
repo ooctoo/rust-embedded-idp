@@ -180,6 +180,40 @@ fn tenant_proof_refresh_rotation_and_reuse_write_failures_roll_back_all_state_in
 }
 #[test]
 #[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
+fn revoked_device_cannot_refresh_a_proof_bound_session_in_both_modes() {
+    for (mode, tenant) in [(TenancyMode::Disabled, "0"), (TenancyMode::Enabled, "t1")] {
+        let db = Db::new(mode);
+        prepare(&db);
+        let (key, pair, initial) = prepared(&db, tenant, 45);
+        let refresh = command(&db, &key, &pair, initial.tokens.refresh_token);
+        let s = db.schema();
+        let mut connection = db.adapter.connect().unwrap();
+        let mut tx = connection.transaction().unwrap();
+        tx.query_one(
+            &format!("select singleton from {s}.access_state where singleton for update"),
+            &[],
+        )
+        .unwrap();
+        let svc = service(&db, tenant, false);
+        let devices = proofs(&db);
+        let attempt = refresh.clone();
+        let worker = std::thread::spawn(move || svc.rotate_refresh_with_proof(attempt, &devices));
+        wait_for_auth_state_lock(&db);
+        tx.execute(
+            &format!("update {s}.devices set status='revoked' where tenant_id=$1 and id=$2"),
+            &[&tenant, &Uuid::parse_str(&key.device_id).unwrap()],
+        )
+        .unwrap();
+        // Keep the session/token live to prove the device check independently denies refresh.
+        tx.commit().unwrap();
+        assert!(worker.join().unwrap().is_err());
+        assert_unused(&db, &refresh);
+        assert_eq!(state(&db, &initial.session), ("active".into(), 1));
+        assert_eq!(count(&db, "refresh_tokens"), 1);
+    }
+}
+#[test]
+#[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
 fn tenant_refresh_cannot_transplant_credentials_devices_or_revoke_another_tenant() {
     let db = Db::new(TenancyMode::Enabled);
     prepare(&db);

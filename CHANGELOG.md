@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased — device identity lifecycle (breaking)
+
+### Device contracts
+
+- Registration requires a host-approved canonical device UUID, stable registration request UUID, pinned public key and trusted admission scope. A matching retry or scoped result lookup returns the same registration and current device state without replaying a consumed proof. The reference host still denies production admission by default.
+- Device and binding versions guard changes. Administrators can enable eligible disabled devices, disable or revoke devices, inspect bindings and key metadata, and unbind one exact binding. Self-service unbind requires the exact binding ID and version. Scoped, auditable operation receipts support recovery after a lost response.
+- The management page shows current device/key versions, reasons and precise bindings. Its client resolves uncertain writes through the original operation ID and reloads current detail; the page does not expose registration records or render the receipt itself.
+- Device login, refresh, OIDC exchange and tenant selection recheck current device authority. Enabling a device never restores old sessions, tokens or challenges. V2 proof bytes and business authorization remain unchanged. Historical public-JWK access and an independent machine principal remain outside this release.
+
+### Upgrade
+
+- Access storage moves from `tenant_v3` to `tenant_v4`. Existing schemas require the explicit [upgrade procedure](docs/device-identity-lifecycle-upgrade.md): stop all writers, verify a backup, review the dry-run list, apply with `--apply`, then start the new binary and verify identity and authorization. Startup never migrates. Old device write DTOs and old binaries are incompatible with v4.
+- The migration lists and revokes legacy pending or keyless disabled identities with associated credentials and bindings. Valid existing devices and business permissions are retained; the change is transactional and audited. The script uses libpq connection environment variables instead of a command-line connection URI.
+- Both local reference schemas were upgraded and passed readiness checks. Production deployment, real-account checks on those existing schemas, and the remaining management-browser scenarios still require acceptance; this unreleased entry is not a production release claim.
+
 ## 2.0.0 — 2026-09-27
 
 ### Business-scoped authorization (breaking)

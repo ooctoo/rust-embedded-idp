@@ -23,8 +23,8 @@ use uuid::Uuid;
 
 use crate::PostgresStorageAdapter;
 
-pub const ACCESS_SCHEMA_VERSION: &str = "tenant_v3";
-const DDL: &str = include_str!("sql/tenant_v3.sql");
+pub const ACCESS_SCHEMA_VERSION: &str = "tenant_v4";
+const DDL: &str = include_str!("sql/tenant_v4.sql");
 const ACCESS_TABLES: &[&str] = &[
     "access_state",
     "access_tenants",
@@ -44,6 +44,7 @@ const ACCESS_TABLES: &[&str] = &[
     "email_verification_codes",
     "auth_tenant_selections",
     "device_proof_keys",
+    "device_registrations",
     "device_nonces",
 ];
 
@@ -63,6 +64,10 @@ fn validate_layout(client: &mut impl GenericClient, schema: &str) -> Result<(), 
     let constraints = [
         "account_registration_membership",
         "device_current_key_tenant",
+        "devices_tenant_id_id_client_id_key",
+        "device_registrations_expected_key_id_key",
+        "device_registrations_tenant_id_device_id_key",
+        "device_registrations_tenant_id_device_id_client_id_fkey",
         "auth_session_scope_length",
         "auth_session_auth_time",
         "auth_session_purpose",
@@ -100,6 +105,15 @@ fn validate_layout(client: &mut impl GenericClient, schema: &str) -> Result<(), 
     if !business_layout {
         return Err(StoreError::Backend(
             "access business schema layout is incomplete".into(),
+        ));
+    }
+    let device_versions: bool = client.query_one(
+        "select not exists(select 1 from (values ('devices'),('account_device_bindings')) expected(table_name) where not exists(select 1 from information_schema.columns c where c.table_schema=$1 and c.table_name=expected.table_name and c.column_name='version' and c.data_type='bigint' and c.is_nullable='NO')) and exists(select 1 from pg_index i join pg_class c on c.oid=i.indexrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname=$1 and c.relname='device_binding_device_page' and i.indisvalid) and (select count(*) from information_schema.columns where table_schema=$1 and table_name='access_audit_events' and column_name in ('device_operation_id','device_command_sha256'))=2 and exists(select 1 from pg_index i join pg_class c on c.oid=i.indexrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname=$1 and c.relname='access_audit_device_operation' and i.indisunique and i.indisvalid)",
+        &[&schema],
+    ).map_err(access_db_error)?.get(0);
+    if !device_versions {
+        return Err(StoreError::Backend(
+            "access device lifecycle layout is incomplete".into(),
         ));
     }
     Ok(())
@@ -466,7 +480,7 @@ fn check_grants(
     // One parameterized SQL statement, one snapshot, stable duplicate/input order.
     let sql = format!(
         r#"
-with state as (select tenancy_mode=$7 and module_version='tenant_v3' and bootstrap_completed_at_epoch is not null as valid from {schema}.access_state where singleton)
+with state as (select tenancy_mode=$7 and module_version='tenant_v4' and bootstrap_completed_at_epoch is not null as valid from {schema}.access_state where singleton)
 select coalesce((select valid from state),false) as valid, exists (
  select 1 from {schema}.accounts a
  join {schema}.access_memberships m on m.account_id=a.id and m.tenant_id=$1

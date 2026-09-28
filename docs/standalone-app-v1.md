@@ -8,9 +8,12 @@ operations, and its other security controls.
 ## Prepare a local mode
 
 The reference host has two independent local modes, `disabled` and `enabled`.
-Both use the `tenant_v3` Access schema and require an offline administrator
+Both use the `tenant_v4` Access schema and require an offline administrator
 bootstrap before they can serve traffic. `init` copies templates only; it never
 rewrites an existing `.env` or `.env.<mode>` file.
+An existing `tenant_v3` schema must be backed up and upgraded with the explicit
+[device lifecycle upgrade procedure](device-identity-lifecycle-upgrade.md)
+before starting this branch; `db-init` does not upgrade it.
 
 ```bash
 ./scripts/dev_env.sh disabled init
