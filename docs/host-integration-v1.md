@@ -861,6 +861,20 @@ Core tenant authentication and device-proof services. Both must use the same inj
 IdP store, tenancy mode and client. The object-safe composition delegates to the
 existing transactions; it does not own another state machine or database connection.
 
+For each terminal business request, the embedding host calls
+`TenantDeviceAuthenticationService::authenticate_device(access_token)` and uses its
+`AuthenticatedDeviceSession { tenant_id, subject_id, session_id, device_id,
+session_expires_at }` result for subsequent host authorization. The device ID comes
+from the validated current session, never a request field. This method performs
+the same token, account, membership, session, device, key and binding checks as
+`authenticate`, then rejects sessions without a device. Logout, disable and exact
+unbind therefore affect the next call; re-enabling a device cannot restore a
+revoked session. `session_expires_at` is the session deadline, not permission to
+cache authentication across requests or ignore access-token expiry. Keep
+`authenticate` for ordinary browser requests. This Rust Core API does not add an
+HTTP route, JWT claim or database column, and it does not replace the host's
+business permission or resource-ownership checks.
+
 Mount `tenant_device_auth_router(service, config)` **instead of** `tenant_auth_router`.
 It retains capabilities, current session, tenant listing and switch-ticket routes,
 replaces login/selection handlers, and adds refresh and authentication challenges.

@@ -850,6 +850,30 @@ fn proof_login_binds_and_issues_atomically_in_both_modes_and_rechecks_device_aut
         assert!(service
             .authenticate(session.tokens.access_token.clone())
             .is_ok());
+        let strict = CoreTenantDeviceAuthenticationService::new(
+            auth(
+                &db,
+                LoginTenantPolicy::Fixed {
+                    tenant_id: tenant.into(),
+                },
+                "proof-login",
+                true,
+                false,
+            ),
+            proofs(&db),
+        );
+        assert_eq!(
+            strict
+                .authenticate_device(session.tokens.access_token.clone())
+                .unwrap(),
+            AuthenticatedDeviceSession {
+                tenant_id: tenant.into(),
+                subject_id: session.session.account_id.clone(),
+                session_id: session.session.id.clone(),
+                device_id: key.device_id.clone(),
+                session_expires_at: session.session.expires_at,
+            }
+        );
         assert_eq!(count(&db, "account_device_bindings"), 1);
         assert_eq!(count(&db, "refresh_tokens"), 1);
         let binding_audit = db.adapter.connect().unwrap().query_one(&format!("select actor_id,actor_session_id,authentication_source,change_json::text from {s}.access_audit_events where operation='device.binding.create'"), &[]).unwrap();
@@ -880,6 +904,9 @@ fn proof_login_binds_and_issues_atomically_in_both_modes_and_rechecks_device_aut
         assert!(service
             .authenticate(session.tokens.access_token.clone())
             .is_err());
+        assert!(strict
+            .authenticate_device(session.tokens.access_token.clone())
+            .is_err());
         db.adapter
             .connect()
             .unwrap()
@@ -898,6 +925,9 @@ fn proof_login_binds_and_issues_atomically_in_both_modes_and_rechecks_device_aut
                 &[&tenant],
             )
             .unwrap();
+        assert!(strict
+            .authenticate_device(session.tokens.access_token.clone())
+            .is_err());
         assert!(service.authenticate(session.tokens.access_token).is_err());
         let fresh = authentication_proof(&db, &key, &pair, TENANT_DEVICE_LOGIN_PURPOSE, context);
         assert!(service
