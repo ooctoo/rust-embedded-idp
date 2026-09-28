@@ -1494,6 +1494,79 @@ mod device_proofs {
         assert!(auth.authenticate(session.tokens.access_token).is_err());
     }
     #[test]
+    fn device_authentication_uses_the_current_session_and_rejects_device_less_tokens() {
+        let (s, devices) = login_devices();
+        let auth = svc_proof(
+            LoginTenantPolicy::Fixed {
+                tenant_id: "t1".into(),
+            },
+            s.clone(),
+        );
+        let TenantLoginOutcome::Authenticated(proven_login) = auth
+            .login_with_proof(
+                login(),
+                login_proof(&devices, TENANT_DEVICE_LOGIN_PURPOSE),
+                &devices,
+            )
+            .unwrap()
+        else {
+            panic!()
+        };
+        let token = proven_login.tokens.access_token.clone();
+        let service = CoreTenantDeviceAuthenticationService::new(auth, devices);
+        assert_eq!(
+            service.authenticate_device(token.clone()).unwrap(),
+            AuthenticatedDeviceSession {
+                tenant_id: "t1".into(),
+                subject_id: "a".into(),
+                session_id: proven_login.session.id,
+                device_id: "d1".into(),
+                session_expires_at: proven_login.session.expires_at,
+            }
+        );
+        let valid = s.0.lock().unwrap().clone();
+        for case in 0..8 {
+            let mut changed = valid.clone();
+            match case {
+                0 => changed.accounts.get_mut("a").unwrap().active = false,
+                1 => changed.members[0].status = MembershipStatus::Suspended,
+                2 => changed.sessions[0].status = SessionStatus::Revoked,
+                3 => changed.proof_devices[0].status = DeviceStatus::Disabled,
+                4 => changed.proof_keys[0].status = DeviceProofKeyStatus::Retired,
+                5 => changed.proof_bindings[0].status = AccountDeviceBindingStatus::Unbound,
+                6 => changed.sessions[0].expires_at = C.now(),
+                _ => changed.tenants.get_mut("t1").unwrap().status = TenantStatus::Suspended,
+            }
+            *s.0.lock().unwrap() = changed;
+            assert!(
+                service.authenticate_device(token.clone()).is_err(),
+                "case {case}"
+            );
+        }
+        *s.0.lock().unwrap() = valid;
+        assert!(service.authenticate_device(token).is_ok());
+
+        let browser = CoreTenantDeviceAuthenticationService::new(
+            svc(
+                LoginTenantPolicy::Fixed {
+                    tenant_id: "t1".into(),
+                },
+                s.clone(),
+            ),
+            lifecycle(TenancyMode::Enabled, s),
+        );
+        let TenantLoginOutcome::Authenticated(login) = browser.login(login()).unwrap() else {
+            panic!()
+        };
+        assert!(browser
+            .authenticate(login.tokens.access_token.clone())
+            .is_ok());
+        assert_eq!(
+            browser.authenticate_device(login.tokens.access_token),
+            Err(TenantAuthError::DeviceProofRequired)
+        );
+    }
+    #[test]
     fn proven_selection_consumes_ticket_and_nonce_only_with_committed_session() {
         let (s, devices) = login_devices();
         let auth = svc_proof(LoginTenantPolicy::ChooseAfterAuthentication, s.clone());

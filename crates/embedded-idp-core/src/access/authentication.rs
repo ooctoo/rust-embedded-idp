@@ -58,6 +58,15 @@ pub struct TenantLoginSession {
     pub session: TenantSession,
     pub tokens: IssuedTokenBundle,
 }
+/// Current person and device from a validated business access token.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuthenticatedDeviceSession {
+    pub tenant_id: String,
+    pub subject_id: String,
+    pub session_id: String,
+    pub device_id: String,
+    pub session_expires_at: SystemTime,
+}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TenantSelectionTicket {
     pub ticket: SecretString,
@@ -743,11 +752,11 @@ where
         }
         Ok(())
     }
-    fn locked_token(
+    fn locked_token_session(
         &self,
         tx: &mut impl TenantAuthTransaction,
         token: &ValidatedAccessToken,
-    ) -> Result<AccessActor, TenantAuthError> {
+    ) -> Result<(AccessActor, TenantSession), TenantAuthError> {
         tx.lock_tenants(&[token.tenant_id.clone()])?;
         let account = tx
             .lock_account(&token.subject_account_id)?
@@ -771,10 +780,38 @@ where
         {
             return Err(TenantAuthError::InvalidSession);
         }
-        Ok(AccessActor {
-            tenant_id: token.tenant_id.clone(),
-            subject_id: account.id,
-            session_id: session.id,
+        Ok((
+            AccessActor {
+                tenant_id: token.tenant_id.clone(),
+                subject_id: account.id,
+                session_id: session.id.clone(),
+            },
+            session,
+        ))
+    }
+    fn locked_token(
+        &self,
+        tx: &mut impl TenantAuthTransaction,
+        token: &ValidatedAccessToken,
+    ) -> Result<AccessActor, TenantAuthError> {
+        self.locked_token_session(tx, token).map(|(actor, _)| actor)
+    }
+    pub(crate) fn authenticate_device(
+        &self,
+        access_token: SecretString,
+    ) -> Result<AuthenticatedDeviceSession, TenantAuthError> {
+        let token = self.validate_token(&access_token)?;
+        self.store.auth_transaction(self.mode, |tx| {
+            let (actor, session) = self.locked_token_session(tx, &token)?;
+            Ok(AuthenticatedDeviceSession {
+                tenant_id: actor.tenant_id,
+                subject_id: actor.subject_id,
+                session_id: actor.session_id,
+                device_id: session
+                    .device_id
+                    .ok_or(TenantAuthError::DeviceProofRequired)?,
+                session_expires_at: session.expires_at,
+            })
         })
     }
 }

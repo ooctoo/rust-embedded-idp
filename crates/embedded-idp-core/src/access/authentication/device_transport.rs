@@ -8,6 +8,12 @@ use crate::{
 /// Request bindings are reconstructed by the host; their tenant is an assertion
 /// that the underlying transaction checks against the selected/session tenant.
 pub trait TenantDeviceAuthenticationService: TenantAuthenticationService {
+    /// Authenticate one business request and require its current session to be device-bound.
+    /// The device ID comes only from the validated session, never from caller input.
+    fn authenticate_device(
+        &self,
+        access_token: SecretString,
+    ) -> Result<AuthenticatedDeviceSession, TenantAuthError>;
     fn login_proven(
         &self,
         command: TenantPasswordLogin,
@@ -89,6 +95,12 @@ where
     K: Clock + Send + Sync,
     Z: IdGenerator + Send + Sync,
 {
+    fn authenticate_device(
+        &self,
+        access_token: SecretString,
+    ) -> Result<AuthenticatedDeviceSession, TenantAuthError> {
+        self.auth.authenticate_device(access_token)
+    }
     fn login_proven(
         &self,
         command: TenantPasswordLogin,

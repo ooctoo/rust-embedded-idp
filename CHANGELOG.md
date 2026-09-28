@@ -8,6 +8,7 @@
 - Device and binding versions guard changes. Administrators can enable eligible disabled devices, disable or revoke devices, inspect bindings and key metadata, and unbind one exact binding. Self-service unbind requires the exact binding ID and version. Scoped, auditable operation receipts support recovery after a lost response.
 - The management page shows current device/key versions, reasons and precise bindings. Its client resolves uncertain writes through the original operation ID and reloads current detail; the page does not expose registration records or render the receipt itself.
 - Device login, refresh, OIDC exchange and tenant selection recheck current device authority. Enabling a device never restores old sessions, tokens or challenges. V2 proof bytes and business authorization remain unchanged. Historical public-JWK access and an independent machine principal remain outside this release.
+- Embedding hosts can call `TenantDeviceAuthenticationService::authenticate_device` for each terminal request. It returns the validated session's tenant, person, session, device and expiry, and rejects device-less browser sessions. The existing `authenticate` remains available; no JWT or schema change is needed.
 
 ### Upgrade
 
