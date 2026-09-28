@@ -424,7 +424,8 @@ impl AccessAdminTransaction for PostgresAccessAdminTransaction<'_> {
         self.tx
             .query_opt(
                 &format!(
-                    "select * from {}.devices where tenant_id=$1 and id=$2",
+                    "select d.*,(select k.version from {}.device_proof_keys k where k.tenant_id=d.tenant_id and k.device_id=d.id and k.key_id=d.proof_key_id) as key_version from {}.devices d where d.tenant_id=$1 and d.id=$2",
+                    self.schema,
                     self.schema
                 ),
                 &[&tenant, &device],
@@ -433,6 +434,70 @@ impl AccessAdminTransaction for PostgresAccessAdminTransaction<'_> {
             .as_ref()
             .map(super::device_management::decode_admin_device)
             .transpose()
+    }
+    fn admin_device_key_metadata(
+        &mut self,
+        tenant: &str,
+        device: &str,
+        key: &str,
+    ) -> Result<Option<DeviceKeyMetadata>, StoreError> {
+        let Ok(device) = Uuid::parse_str(device) else {
+            return Ok(None);
+        };
+        self.tx.query_opt(&format!("select tenant_id,device_id,key_id,algorithm,version,status,registered_at_epoch,retired_at_epoch from {}.device_proof_keys where tenant_id=$1 and device_id=$2 and key_id=$3",self.schema), &[&tenant,&device,&key]).map_err(access_db_error)?.map(|r| Ok(DeviceKeyMetadata {
+            tenant_id:r.get("tenant_id"),device_id:r.get::<_,Uuid>("device_id").to_string(),key_id:r.get("key_id"),algorithm:r.get("algorithm"),
+            version:u64::try_from(r.get::<_,i64>("version")).map_err(|_|invalid())?,
+            status:match r.get::<_,&str>("status") {"active"=>embedded_idp_core::DeviceProofKeyStatus::Active,"retired"=>embedded_idp_core::DeviceProofKeyStatus::Retired,_=>return Err(invalid())},
+            registered_at:time(r.get("registered_at_epoch"))?,retired_at:r.get::<_,Option<i64>>("retired_at_epoch").map(time).transpose()?,
+        })).transpose()
+    }
+    fn device_has_active_key(&mut self, tenant: &str, device: &str) -> Result<bool, StoreError> {
+        let device = uuid(device)?;
+        Ok(self.tx.query_one(&format!("select exists(select 1 from {s}.devices d join {s}.device_proof_keys k on k.tenant_id=d.tenant_id and k.device_id=d.id and k.key_id=d.proof_key_id where d.tenant_id=$1 and d.id=$2 and d.status='disabled' and k.status='active')",s=self.schema),&[&tenant,&device]).map_err(access_db_error)?.get(0))
+    }
+    fn admin_device_binding(
+        &mut self,
+        tenant: &str,
+        device: &str,
+        binding_id: &str,
+    ) -> Result<Option<AccessDeviceBindingRecord>, StoreError> {
+        let (Ok(device), Ok(binding)) = (Uuid::parse_str(device), Uuid::parse_str(binding_id))
+        else {
+            return Ok(None);
+        };
+        self.tx.query_opt(&format!("select * from {}.account_device_bindings where tenant_id=$1 and device_id=$2 and id=$3",self.schema),&[&tenant,&device,&binding]).map_err(access_db_error)?.as_ref().map(super::device_management::decode_device_binding).transpose()
+    }
+    fn admin_device_bindings(
+        &mut self,
+        tenant: &str,
+        device: &str,
+        status: Option<&embedded_idp_core::AccountDeviceBindingStatus>,
+        page: &AccessPageRequest,
+    ) -> Result<Vec<AccessDeviceBindingRecord>, StoreError> {
+        page.validate(&AccessListScope::AdminDeviceBindings {
+            tenant_id: tenant.into(),
+            device_id: device.into(),
+            status: status.cloned(),
+        })
+        .map_err(|_| invalid())?;
+        let device = uuid(device)?;
+        let after = page
+            .cursor
+            .as_ref()
+            .map(|c| uuid(&c.after[1]))
+            .transpose()?;
+        let after_time = page
+            .cursor
+            .as_ref()
+            .map(|c| c.after[0].parse::<i64>().map_err(|_| invalid()))
+            .transpose()?;
+        let status = status.map(|s| match s {
+            embedded_idp_core::AccountDeviceBindingStatus::Active => "active",
+            embedded_idp_core::AccountDeviceBindingStatus::Suspended => "suspended",
+            embedded_idp_core::AccountDeviceBindingStatus::Unbound => "unbound",
+        });
+        let (order, comparison) = list_order(page);
+        self.tx.query(&format!("select * from {s}.account_device_bindings where tenant_id=$1 and device_id=$2 and ($3::text is null or status=$3) and ($4::uuid is null or (bound_at_epoch,id){comparison}($5,$4)) order by bound_at_epoch {order},id {order} limit $6",s=self.schema),&[&tenant,&device,&status,&after,&after_time,&(page.fetch_limit() as i64)]).map_err(access_db_error)?.iter().map(super::device_management::decode_device_binding).collect()
     }
     fn admin_devices(
         &mut self,
@@ -472,7 +537,7 @@ impl AccessAdminTransaction for PostgresAccessAdminTransaction<'_> {
         // ponytail: optional filters can scan a tenant's time range; add a
         // measured composite index when acceptance benchmarks justify it.
         self.tx.query(&format!(
-            "select d.* from {s}.devices d where d.tenant_id=$1
+            "select d.*,(select k.version from {s}.device_proof_keys k where k.tenant_id=d.tenant_id and k.device_id=d.id and k.key_id=d.proof_key_id) as key_version from {s}.devices d where d.tenant_id=$1
              and ($2::uuid is null or (d.registered_at_epoch,d.id){comparison}($9,$2))
              and ($3::uuid is null or exists(select 1 from {s}.account_device_bindings b
                  where b.tenant_id=d.tenant_id and b.device_id=d.id and b.account_id=$3 and b.status='active'))
@@ -906,7 +971,8 @@ impl AccessAdminTransaction for PostgresAccessAdminTransaction<'_> {
             AccessChange::PermissionChecked { .. }
             | AccessChange::Client { .. }
             | AccessChange::AccountCreated { .. }
-            | AccessChange::AccountSecurity { .. } => return Err(invalid()),
+            | AccessChange::AccountSecurity { .. }
+            | AccessChange::DeviceReceipt(_) => return Err(invalid()),
             AccessChange::Session { before, .. } => {
                 self.revoke_session_scope(&before.tenant_id, Some(&before.id), None, now)?;
             }
@@ -921,10 +987,22 @@ impl AccessAdminTransaction for PostgresAccessAdminTransaction<'_> {
                     return Err(StoreError::Conflict("session.concurrent_write"));
                 }
             }
-            AccessChange::Device { before, after } => {
+            AccessChange::Device { before, after, .. } => {
                 let tenant = &before.device.tenant_id;
                 let device = uuid(&before.device.id)?;
-                changed(self.tx.execute(&format!("update {s}.devices set status=$3 where tenant_id=$1 and id=$2 and status=$4"),&[tenant,&device,&device_status(&after.device.status),&device_status(&before.device.status)]).map_err(access_db_error)?)?;
+                changed(self.tx.execute(&format!("update {s}.devices set status=$3,version=$5 where tenant_id=$1 and id=$2 and status=$4 and version=$6"),&[tenant,&device,&device_status(&after.device.status),&device_status(&before.device.status),&i64::try_from(after.device.version).map_err(|_| invalid())?,&i64::try_from(before.device.version).map_err(|_| invalid())?]).map_err(access_db_error)?)?;
+                if after.device.status == embedded_idp_core::DeviceStatus::Active {
+                    // Old sessions and refresh credentials remain revoked; a fresh login is required.
+                    self.tx
+                        .execute(
+                            &format!(
+                                "delete from {s}.device_nonces where tenant_id=$1 and device_id=$2"
+                            ),
+                            &[tenant, &device],
+                        )
+                        .map_err(access_db_error)?;
+                    return Ok(());
+                }
                 // The exclusive tenant lock excludes every authentication transaction
                 // in this domain before any session/key/binding state is changed.
                 self.tx.execute(&format!("update {s}.auth_sessions set status='revoked' where tenant_id=$1 and device_id=$2 and status in ('active','pending')"),&[tenant,&device]).map_err(access_db_error)?;
@@ -941,8 +1019,24 @@ impl AccessAdminTransaction for PostgresAccessAdminTransaction<'_> {
                     .map_err(access_db_error)?;
                 if after.device.status == embedded_idp_core::DeviceStatus::Revoked {
                     self.tx.execute(&format!("update {s}.device_proof_keys set status='retired',retired_at_epoch=$3 where tenant_id=$1 and device_id=$2 and status='active'"),&[tenant,&device,&now]).map_err(access_db_error)?;
-                    self.tx.execute(&format!("update {s}.account_device_bindings set status='unbound',unbound_at_epoch=$3 where tenant_id=$1 and device_id=$2 and status<>'unbound'"),&[tenant,&device,&now]).map_err(access_db_error)?;
+                    self.tx.execute(&format!("update {s}.account_device_bindings set status='unbound',unbound_at_epoch=$3,version=version+1 where tenant_id=$1 and device_id=$2 and status<>'unbound'"),&[tenant,&device,&now]).map_err(access_db_error)?;
                 }
+            }
+            AccessChange::DeviceBinding { before, after, .. } => {
+                let tenant = &before.tenant_id;
+                let account = uuid(&before.account_id)?;
+                let device = uuid(&before.device_id)?;
+                let binding = uuid(&before.id)?;
+                super::device_management::revoke_device_account_credentials(
+                    &mut self.tx,
+                    s,
+                    tenant,
+                    &account,
+                    &device,
+                    now,
+                    "administrative",
+                )?;
+                changed(self.tx.execute(&format!("update {s}.account_device_bindings set status='unbound',unbound_at_epoch=$5,version=$6 where tenant_id=$1 and device_id=$2 and account_id=$3 and id=$4 and version=$7 and status in ('active','suspended')"),&[tenant,&device,&account,&binding,&now,&version(after.version)?,&version(before.version)?]).map_err(access_db_error)?)?;
             }
             AccessChange::TenantCreated {
                 record,
@@ -1106,7 +1200,7 @@ impl AccessAdminTransaction for PostgresAccessAdminTransaction<'_> {
                 }
                 if after.status == MembershipStatus::Removed {
                     self.tx.execute(&format!("delete from {s}.access_role_bindings where tenant_id=$1 and account_id=$2"), &[&tenant,&subject]).map_err(access_db_error)?;
-                    self.tx.execute(&format!("update {s}.account_device_bindings set status='unbound',unbound_at_epoch=$3 where tenant_id=$1 and account_id=$2 and status<>'unbound'"), &[&tenant,&subject,&now]).map_err(access_db_error)?;
+                    self.tx.execute(&format!("update {s}.account_device_bindings set status='unbound',unbound_at_epoch=$3,version=version+1 where tenant_id=$1 and account_id=$2 and status<>'unbound'"), &[&tenant,&subject,&now]).map_err(access_db_error)?;
                 }
             }
         }
@@ -1205,6 +1299,93 @@ impl AccessAdminTransaction for PostgresAccessAdminTransaction<'_> {
         self.tx.execute(&format!("insert into {}.access_audit_events(id,occurred_at_epoch,actor_id,actor_domain,actor_session_id,authentication_source,target_domain,target_business_id,operation,request_id,change_json) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::text::jsonb)",self.schema), &[&uuid(&event.id)?,&epoch(event.occurred_at)?,&uuid(&event.context.actor.subject_id)?,&event.context.actor.tenant_id,&uuid(&event.context.actor.session_id)?,&event.context.authentication_source,&event.tenant_id,&event.target_business_id,&event.operation,&event.context.request_id,&change]).map_err(access_db_error)?;
         Ok(())
     }
+    fn device_operation(
+        &mut self,
+        actor: &AccessActor,
+        target_tenant: &str,
+        operation_id: &str,
+    ) -> Result<Option<([u8; 32], AccessAuditEvent)>, StoreError> {
+        let key = uuid(operation_id)?;
+        let row = self.tx.query_opt(&format!(
+            "select id,occurred_at_epoch,actor_session_id,authentication_source,operation,request_id,change_json::text as change_text,device_command_sha256 from {}.access_audit_events where actor_domain=$1 and actor_id=$2 and target_domain=$3 and device_operation_id=$4",
+            self.schema
+        ), &[&actor.tenant_id, &uuid(&actor.subject_id)?, &target_tenant, &key]).map_err(access_db_error)?;
+        row.map(|row| {
+            let digest: [u8; 32] = row
+                .get::<_, Vec<u8>>("device_command_sha256")
+                .try_into()
+                .map_err(|_| invalid())?;
+            let operation: String = row.get("operation");
+            let operation = match operation.as_str() {
+                "device.enable" => "device.enable",
+                "device.disable" => "device.disable",
+                "device.revoke" => "device.revoke",
+                "device.binding.unbind" => "device.binding.unbind",
+                _ => return Err(invalid()),
+            };
+            let change: Value = serde_json::from_str(&row.get::<_, String>("change_text"))
+                .map_err(|_| invalid())?;
+            let after = change.get("after").ok_or_else(invalid)?;
+            let field = |key: &str| after.get(key).and_then(Value::as_str).ok_or_else(invalid);
+            let result_version = after
+                .get("version")
+                .and_then(Value::as_u64)
+                .ok_or_else(invalid)?;
+            let device_id = field("device_id")?.to_owned();
+            let binding_id = if operation == "device.binding.unbind" {
+                Some(field("binding_id")?.to_owned())
+            } else {
+                None
+            };
+            let receipt = DeviceOperationReceipt {
+                operation_id: operation_id.into(),
+                audit_id: row.get::<_, Uuid>("id").to_string(),
+                device_id,
+                binding_id,
+                operation,
+                occurred_at: time(row.get("occurred_at_epoch"))?,
+                result_version,
+                result_status: field("status")?.to_owned(),
+            };
+            let session = row
+                .get::<_, Option<Uuid>>("actor_session_id")
+                .ok_or_else(invalid)?;
+            Ok((
+                digest,
+                AccessAuditEvent {
+                    id: receipt.audit_id.clone(),
+                    occurred_at: receipt.occurred_at,
+                    context: AccessAdminContext {
+                        actor: AccessActor {
+                            tenant_id: actor.tenant_id.clone(),
+                            subject_id: actor.subject_id.clone(),
+                            session_id: session.to_string(),
+                        },
+                        authentication_source: row.get("authentication_source"),
+                        request_id: row.get("request_id"),
+                    },
+                    tenant_id: target_tenant.into(),
+                    target_business_id: None,
+                    operation,
+                    change: AccessChange::DeviceReceipt(receipt),
+                },
+            ))
+        })
+        .transpose()
+    }
+    fn append_device_audit(
+        &mut self,
+        event: &AccessAuditEvent,
+        operation_id: &str,
+        digest: &[u8; 32],
+    ) -> Result<(), StoreError> {
+        if self.actor != Some(uuid(&event.context.actor.subject_id)?) {
+            return Err(invalid());
+        }
+        let change = change_json(&event.change)?.to_string();
+        self.tx.execute(&format!("insert into {}.access_audit_events(id,occurred_at_epoch,actor_id,actor_domain,actor_session_id,authentication_source,target_domain,target_business_id,operation,request_id,change_json,device_operation_id,device_command_sha256) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::text::jsonb,$12,$13)",self.schema), &[&uuid(&event.id)?,&epoch(event.occurred_at)?,&uuid(&event.context.actor.subject_id)?,&event.context.actor.tenant_id,&uuid(&event.context.actor.session_id)?,&event.context.authentication_source,&event.tenant_id,&event.target_business_id,&event.operation,&event.context.request_id,&change,&uuid(operation_id)?,&digest.as_slice()]).map_err(access_db_error)?;
+        Ok(())
+    }
 }
 
 // Explicit projection: never serialize the account/session models or credentials.
@@ -1282,10 +1463,27 @@ fn change_json(change: &AccessChange) -> Result<Value, StoreError> {
         } => {
             json!({"kind":"subject.sessions","tenant_id":tenant_id,"subject_id":subject_id,"before":{"active_pending_sessions":active_session_count},"after":{"active_pending_sessions":0}})
         }
-        AccessChange::Device { before, after } => {
-            let device = |r: &AccessDeviceRecord| json!({"device_id":r.device.id,"tenant_id":r.device.tenant_id,"client_id":r.device.client_id,"status":device_status(&r.device.status)});
-            json!({"kind":"device","before":device(before),"after":device(after)})
+        AccessChange::Device {
+            before,
+            after,
+            reason,
+        } => {
+            let device = |r: &AccessDeviceRecord| json!({"device_id":r.device.id,"tenant_id":r.device.tenant_id,"client_id":r.device.client_id,"status":device_status(&r.device.status),"version":r.device.version});
+            json!({"kind":"device","reason":reason,"before":device(before),"after":device(after)})
         }
+        AccessChange::DeviceBinding {
+            before,
+            after,
+            reason,
+        } => {
+            let binding = |r: &AccessDeviceBindingRecord| -> Result<Value, StoreError> {
+                Ok(
+                    json!({"tenant_id":r.tenant_id,"device_id":r.device_id,"binding_id":r.id,"account_id":r.account_id,"status":match r.status {embedded_idp_core::AccountDeviceBindingStatus::Active=>"active",embedded_idp_core::AccountDeviceBindingStatus::Suspended=>"suspended",embedded_idp_core::AccountDeviceBindingStatus::Unbound=>"unbound"},"version":r.version,"bound_at_unix_secs":epoch(r.bound_at)?,"unbound_at_unix_secs":r.unbound_at.map(epoch).transpose()?}),
+                )
+            };
+            json!({"kind":"device.binding","reason":reason,"before":binding(before)?,"after":binding(after)?})
+        }
+        AccessChange::DeviceReceipt(_) => return Err(invalid()),
         AccessChange::TenantCreated {
             record,
             administrator,

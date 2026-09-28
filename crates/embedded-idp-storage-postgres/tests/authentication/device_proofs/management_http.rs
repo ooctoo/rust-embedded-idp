@@ -2,7 +2,7 @@ use super::*;
 use axum::{
     body::{to_bytes, Body},
     http::{HeaderMap, Request, StatusCode},
-    Router,
+    Extension, Router,
 };
 use embedded_idp_axum::{
     tenant_device_auth_router, tenant_device_router, TenantDeviceAuthHttpConfig,
@@ -13,7 +13,14 @@ use tower::ServiceExt;
 
 struct Admission(String);
 impl TenantDeviceAdmission for Admission {
-    fn authorize_provision(&self, tenant: &str, client: &str) -> Result<(), AccessError> {
+    fn authorize(
+        &self,
+        tenant: &str,
+        client: &str,
+        _: &str,
+        _: DeviceAdmissionAction,
+        _: &TrustedDeviceAdmission,
+    ) -> Result<(), AccessError> {
         if tenant == self.0 && client == "web" {
             Ok(())
         } else {
@@ -42,6 +49,10 @@ fn app(db: &Db, tenant: &str, admitted: &str) -> Router {
             Arc::new(Admission(admitted.into())),
             TenantDeviceHttpConfig::new("test-api", "/api/devices/heartbeat").unwrap(),
         )
+        .layer(Extension(TrustedDeviceAdmission {
+            registration_scope: "test_scope".into(),
+            valid_until: SystemTime::now() + Duration::from_secs(3600),
+        }))
         .merge(tenant_device_auth_router(
             service,
             TenantDeviceAuthHttpConfig::new(
@@ -154,17 +165,44 @@ fn http_device_lifecycle_and_heartbeat_use_real_proofs_in_both_modes() {
         let db = Db::new(mode);
         prepare(&db);
         let app = app(&db, tenant, tenant);
+        let (jwk, kid, pair) = material(111);
+        let supplied_device_id = Uuid::now_v7().to_string();
+        let registration_request_id = Uuid::now_v7().to_string();
+        let provision_body = json!({"tenant_id":tenant,"device_id":supplied_device_id,"registration_request_id":registration_request_id,"device_name":"Laptop","public_jwk":serde_json::from_str::<Value>(&jwk).unwrap()}).to_string();
         let (status, device) = send(
             &app,
             "POST",
             "/devices/provision",
-            &json!({"tenant_id":tenant,"device_name":"Laptop"}).to_string(),
+            &provision_body,
             &HeaderMap::new(),
         );
         assert_eq!(status, StatusCode::CREATED);
         assert_eq!(device["status"], "pending");
+        assert!(device["completed_at_unix_secs"].is_null());
+        assert_eq!(
+            send(
+                &app,
+                "POST",
+                "/devices/provision",
+                &provision_body,
+                &HeaderMap::new()
+            ),
+            (StatusCode::CREATED, device.clone())
+        );
         let device = device["device_id"].as_str().unwrap();
-        let (jwk, kid, pair) = material(111);
+        assert_eq!(device, supplied_device_id);
+        let lookup = json!({"tenant_id":tenant,"device_id":device,"registration_request_id":registration_request_id}).to_string();
+        assert_eq!(
+            send(
+                &app,
+                "POST",
+                "/devices/registration-result",
+                &lookup,
+                &HeaderMap::new()
+            )
+            .0,
+            StatusCode::OK
+        );
         let nonce = challenge(&app, tenant, device, DEVICE_REGISTRATION_PURPOSE);
         let sig = Base64UrlUnpadded::encode_string(
             pair.sign(
@@ -177,6 +215,16 @@ fn http_device_lifecycle_and_heartbeat_use_real_proofs_in_both_modes() {
             send(&app, "POST", "/devices/complete", &body, &HeaderMap::new()).0,
             StatusCode::OK
         );
+        let (status, result) = send(
+            &app,
+            "POST",
+            "/devices/registration-result",
+            &lookup,
+            &HeaderMap::new(),
+        );
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(result["status"], "active");
+        assert!(result["completed_at_unix_secs"].is_number());
         assert!(
             !send(&app, "POST", "/devices/complete", &body, &HeaderMap::new())
                 .0
@@ -264,7 +312,7 @@ fn http_device_lifecycle_and_heartbeat_use_real_proofs_in_both_modes() {
         let bytes =
             build_device_key_rotation_proof_bytes(tenant, device, &key.key_id, &new_kid, 2, &nonce)
                 .unwrap();
-        let mut rotate = json!({"device_id":device,"proposed_public_jwk":serde_json::from_str::<Value>(&new_jwk).unwrap(),"challenge":nonce,"current_key_signature":Base64UrlUnpadded::encode_string(pair.sign(&bytes).as_ref()),"proposed_key_signature":Base64UrlUnpadded::encode_string(&[0;64])});
+        let mut rotate = json!({"device_id":device,"expected_key_id":key.key_id,"expected_key_version":1,"proposed_public_jwk":serde_json::from_str::<Value>(&new_jwk).unwrap(),"challenge":nonce,"current_key_signature":Base64UrlUnpadded::encode_string(pair.sign(&bytes).as_ref()),"proposed_key_signature":Base64UrlUnpadded::encode_string(&[0;64])});
         assert_eq!(
             send(
                 &app,
@@ -296,6 +344,37 @@ fn http_device_lifecycle_and_heartbeat_use_real_proofs_in_both_modes() {
             version: 2,
             ..key.clone()
         };
+        let previous_metadata = send(
+            &app,
+            "GET",
+            &format!("/devices/{device}/keys/{}", key.key_id),
+            "",
+            &headers,
+        );
+        assert_eq!(previous_metadata.0, StatusCode::OK);
+        assert_eq!(previous_metadata.1["status"], "retired");
+        assert!(previous_metadata.1.get("public_jwk").is_none());
+        let proposed_metadata = send(
+            &app,
+            "GET",
+            &format!("/devices/{device}/keys/{}", new_key.key_id),
+            "",
+            &headers,
+        );
+        assert_eq!(proposed_metadata.0, StatusCode::OK);
+        assert_eq!(proposed_metadata.1["status"], "active");
+        assert_eq!(proposed_metadata.1["version"], 2);
+        assert_eq!(
+            send(
+                &app,
+                "GET",
+                &format!("/devices/{device}/keys/missing"),
+                "",
+                &headers
+            )
+            .0,
+            StatusCode::NOT_FOUND
+        );
         let old = heartbeat_headers(&app, &key, &pair, &body, access);
         assert_eq!(
             send(&app, "POST", "/devices/heartbeat", &body, &old).0,
@@ -394,7 +473,7 @@ fn http_device_unbind_rolls_back_and_revokes_only_own_device_sessions_in_both_mo
                 &app,
                 "POST",
                 "/devices/unbind",
-                &json!({"device_id":key.device_id}).to_string(),
+                &json!({"device_id":key.device_id,"binding_id":Uuid::nil().to_string(),"expected_version":1,"operation_id":Uuid::now_v7().to_string()}).to_string(),
                 &unrelated_headers
             )
             .0,
@@ -407,7 +486,16 @@ fn http_device_unbind_rolls_back_and_revokes_only_own_device_sessions_in_both_mo
             None
         };
         let headers = bearer(first.tokens.access_token.expose_secret());
-        let body = json!({"device_id":key.device_id}).to_string();
+        let detail = send(
+            &app,
+            "GET",
+            &format!("/devices/{}", key.device_id),
+            "",
+            &headers,
+        )
+        .1;
+        let operation_id = Uuid::now_v7().to_string();
+        let body = json!({"device_id":key.device_id,"binding_id":detail["binding_id"],"expected_version":detail["binding_version"],"operation_id":operation_id}).to_string();
         let s = db.schema();
         db.adapter.connect().unwrap().batch_execute(&format!("create function {s}.fail_unbind() returns trigger language plpgsql as $$ begin raise exception 'injected unbind failure'; end $$; create trigger fail_unbind after update on {s}.account_device_bindings for each row execute function {s}.fail_unbind();")).unwrap();
         assert_eq!(
@@ -436,9 +524,20 @@ fn http_device_unbind_rolls_back_and_revokes_only_own_device_sessions_in_both_mo
                 "drop trigger fail_unbind on {s}.account_device_bindings"
             ))
             .unwrap();
+        let unbound = send(&app, "POST", "/devices/unbind", &body, &headers);
+        assert_eq!(unbound.0, StatusCode::OK);
+        assert_eq!(unbound.1["result_status"], "unbound");
+        assert_eq!(unbound.1["operation_id"], operation_id);
         assert_eq!(
-            send(&app, "POST", "/devices/unbind", &body, &headers).0,
-            StatusCode::NO_CONTENT
+            send(
+                &app,
+                "GET",
+                &format!("/devices/operations/{operation_id}"),
+                "",
+                &bearer(other_user.tokens.access_token.expose_secret())
+            )
+            .0,
+            StatusCode::NOT_FOUND
         );
         for session in [&first, &second] {
             assert!(service
@@ -483,6 +582,53 @@ fn http_device_unbind_rolls_back_and_revokes_only_own_device_sessions_in_both_mo
         );
         assert_eq!(remaining.1["items"].as_array().unwrap().len(), 0);
         let renewed = login_device(&db, tenant, &key, &pair, password());
+        let renewed_headers = bearer(renewed.tokens.access_token.expose_secret());
+        let repeated = send(&app, "POST", "/devices/unbind", &body, &renewed_headers);
+        assert_eq!(repeated.0, StatusCode::OK);
+        assert_eq!(repeated.1["audit_id"], unbound.1["audit_id"]);
+        let found = send(
+            &app,
+            "GET",
+            &format!("/devices/operations/{operation_id}"),
+            "",
+            &renewed_headers,
+        );
+        assert_eq!(found.0, StatusCode::OK);
+        assert_eq!(found.1["audit_id"], unbound.1["audit_id"]);
+        let changed_intent = json!({"device_id":key.device_id,"binding_id":Uuid::now_v7().to_string(),"expected_version":1,"operation_id":operation_id}).to_string();
+        assert_eq!(
+            send(
+                &app,
+                "POST",
+                "/devices/unbind",
+                &changed_intent,
+                &renewed_headers
+            )
+            .0,
+            StatusCode::CONFLICT
+        );
+        let receipt_count: i64 = db
+            .adapter
+            .connect()
+            .unwrap()
+            .query_one(
+                &format!(
+                    "select count(*) from {s}.access_audit_events where device_operation_id=$1"
+                ),
+                &[&Uuid::parse_str(&operation_id).unwrap()],
+            )
+            .unwrap()
+            .get(0);
+        assert_eq!(receipt_count, 1);
+        let renewed_detail = send(
+            &app,
+            "GET",
+            &format!("/devices/{}", key.device_id),
+            "",
+            &renewed_headers,
+        )
+        .1;
+        assert_ne!(renewed_detail["binding_id"], detail["binding_id"]);
         assert!(service.authenticate(renewed.tokens.access_token).is_ok());
         assert!(service.authenticate(first.tokens.access_token).is_err());
     }
@@ -492,7 +638,7 @@ fn http_device_unbind_rolls_back_and_revokes_only_own_device_sessions_in_both_mo
 #[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
 fn http_device_queries_enforce_actor_client_tenant_cursor_and_admission() {
     let db = Db::new(TenancyMode::Enabled);
-    prepare(&db);
+    let account = prepare(&db);
     let app = app(&db, "t1", "t1");
     let devices = proofs(&db);
     let mut ids = vec![];
@@ -568,28 +714,45 @@ fn http_device_queries_enforce_actor_client_tenant_cursor_and_admission() {
     assert!(devices
         .get_subject_device(outsider.clone(), &ids[0])
         .is_err());
-    assert!(devices.unbind_subject_device(outsider, &ids[0]).is_err());
+    assert!(devices
+        .unbind_subject_device(
+            outsider,
+            &ids[0],
+            &Uuid::nil().to_string(),
+            1,
+            &Uuid::now_v7().to_string()
+        )
+        .is_err());
     let schema = db.schema();
     db.adapter.connect().unwrap().batch_execute(&format!("insert into {schema}.oidc_clients(client_id,client_name,redirect_uris_json,client_type,pkce_required,created_at_epoch) values('other','Other','[]','public_desktop',true,100)")).unwrap();
+    let other_device = Uuid::now_v7();
     db.adapter
         .connect()
         .unwrap()
         .execute(
             &format!(
-                "update {schema}.devices set client_id='other' where tenant_id='t1' and id=$1"
+                "insert into {schema}.devices(tenant_id,id,client_id,device_name,status,registered_at_epoch) values('t1',$1,'other','Other','pending',100)"
             ),
-            &[&Uuid::parse_str(&ids[1]).unwrap()],
+            &[&other_device],
         )
         .unwrap();
+    db.adapter.connect().unwrap().execute(&format!("insert into {schema}.account_device_bindings(tenant_id,id,account_id,device_id,status,bound_at_epoch) values('t1',$1,$2,$3,'active',100)"),&[&Uuid::now_v7(),&Uuid::parse_str(&account).unwrap(),&other_device]).unwrap();
     assert_eq!(
         send(&app, "GET", "/devices", "", &headers).1["items"]
             .as_array()
             .unwrap()
             .len(),
-        2
+        3
     );
     assert_eq!(
-        send(&app, "GET", &format!("/devices/{}", ids[1]), "", &headers).0,
+        send(
+            &app,
+            "GET",
+            &format!("/devices/{other_device}"),
+            "",
+            &headers
+        )
+        .0,
         StatusCode::FORBIDDEN
     );
     assert_eq!(
@@ -597,7 +760,8 @@ fn http_device_queries_enforce_actor_client_tenant_cursor_and_admission() {
             &app,
             "POST",
             "/devices/unbind",
-            &json!({"device_id":ids[1]}).to_string(),
+            &json!({"device_id":other_device.to_string(),"binding_id":Uuid::nil().to_string(),"expected_version":1,"operation_id":Uuid::now_v7().to_string()})
+                .to_string(),
             &headers
         )
         .0,
@@ -610,7 +774,7 @@ fn http_device_queries_enforce_actor_client_tenant_cursor_and_admission() {
             router,
             "POST",
             "/devices/provision",
-            &json!({"tenant_id":tenant,"device_name":"denied"}).to_string(),
+            &json!({"tenant_id":tenant,"device_id":Uuid::now_v7().to_string(),"registration_request_id":Uuid::now_v7().to_string(),"device_name":"denied","public_jwk":serde_json::from_str::<Value>(&material(112).0).unwrap()}).to_string(),
             &HeaderMap::new()
         )
         .0
@@ -639,7 +803,13 @@ fn http_device_queries_enforce_actor_client_tenant_cursor_and_admission() {
         Err(TenantAuthError::InvalidSession)
     );
     assert_eq!(
-        devices.unbind_subject_device(stale.clone(), &ids[0]),
+        devices.unbind_subject_device(
+            stale.clone(),
+            &ids[0],
+            &Uuid::nil().to_string(),
+            1,
+            &Uuid::now_v7().to_string()
+        ),
         Err(TenantAuthError::InvalidSession)
     );
     db.adapter.connect().unwrap().execute(&format!("update {schema}.auth_sessions set authenticated_at_epoch=100,created_at_epoch=100,expires_at_epoch=700 where tenant_id='t1' and id=$1"),&[&session_id]).unwrap();
@@ -679,5 +849,13 @@ fn http_device_queries_enforce_actor_client_tenant_cursor_and_admission() {
     assert!(devices
         .list_subject_devices(stale.clone(), AccessPageRequest::default())
         .is_err());
-    assert!(devices.unbind_subject_device(stale, &ids[0]).is_err());
+    assert!(devices
+        .unbind_subject_device(
+            stale,
+            &ids[0],
+            &Uuid::nil().to_string(),
+            1,
+            &Uuid::now_v7().to_string()
+        )
+        .is_err());
 }

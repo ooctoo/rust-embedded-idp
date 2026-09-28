@@ -329,6 +329,7 @@ where
             &mut S::Transaction<'_>,
             &str,
             &str,
+            &str,
         ) -> Result<Option<String>, TenantAuthError>,
     ) -> Result<TenantLoginOutcome, TenantAuthError> {
         if command.email.trim().is_empty()
@@ -358,9 +359,17 @@ where
                     if !self.require_member(tx, tenant_id, &account.id)? {
                         return Err(TenantAuthError::InvalidCredentials);
                     }
-                    let device = attach(tx, tenant_id, &account.id)?;
-                    self.issue_session(tx, tenant_id, &account.id, self.clock.now(), device)
-                        .map(TenantLoginOutcome::Authenticated)
+                    let session_id = self.ids.next_id("sess");
+                    let device = attach(tx, tenant_id, &account.id, &session_id)?;
+                    self.issue_session(
+                        tx,
+                        tenant_id,
+                        &account.id,
+                        self.clock.now(),
+                        device,
+                        session_id,
+                    )
+                    .map(TenantLoginOutcome::Authenticated)
                 }
                 LoginTenantPolicy::ChooseAfterAuthentication => self
                     .issue_selection(tx, &account.id, None, self.clock.now())
@@ -374,6 +383,7 @@ where
         tenant_id: String,
         attach: impl FnOnce(
             &mut S::Transaction<'_>,
+            &str,
             &str,
             &str,
         ) -> Result<Option<String>, TenantAuthError>,
@@ -390,7 +400,8 @@ where
             if !self.require_member(tx, &tenant_id, &record.account_id)? {
                 return Err(TenantAuthError::InvalidSelection);
             }
-            let device = attach(tx, &tenant_id, &record.account_id)?;
+            let session_id = self.ids.next_id("sess");
+            let device = attach(tx, &tenant_id, &record.account_id, &session_id)?;
             let now = self.clock.now();
             if record.expires_at <= now {
                 return Err(TenantAuthError::InvalidSelection);
@@ -422,6 +433,7 @@ where
                 device,
                 scope.clone(),
                 authenticated_at,
+                session_id,
                 |session| {
                     if let Some(scope) = scope {
                         let access = self.tokens.issue_scoped_access_token(
@@ -482,17 +494,28 @@ where
         account: &str,
         now: SystemTime,
         device_id: Option<String>,
+        session_id: String,
     ) -> Result<TenantLoginSession, TenantAuthError> {
-        self.issue_session_using(tx, tenant, account, now, device_id, None, now, |session| {
-            self.tokens.issue_session_tokens(
-                tenant,
-                &session.id,
-                account,
-                &session.client_id,
-                1,
-                now,
-            )
-        })
+        self.issue_session_using(
+            tx,
+            tenant,
+            account,
+            now,
+            device_id,
+            None,
+            now,
+            session_id,
+            |session| {
+                self.tokens.issue_session_tokens(
+                    tenant,
+                    &session.id,
+                    account,
+                    &session.client_id,
+                    1,
+                    now,
+                )
+            },
+        )
     }
     fn issue_session_using(
         &self,
@@ -503,6 +526,7 @@ where
         device_id: Option<String>,
         scope: Option<String>,
         authenticated_at: SystemTime,
+        session_id: String,
         issue: impl FnOnce(&TenantSession) -> Result<IssuedTokenBundle, TokenError>,
     ) -> Result<TenantLoginSession, TenantAuthError> {
         if self.entry.require_device_proof && device_id.is_none() {
@@ -511,7 +535,7 @@ where
         let session = TenantSession {
             purpose: self.purpose,
             tenant_id: tenant.into(),
-            id: self.ids.next_id("sess"),
+            id: session_id,
             account_id: account.into(),
             client_id: self.entry.client_id.clone(),
             device_id,
@@ -771,7 +795,7 @@ where
         }
     }
     fn login(&self, command: TenantPasswordLogin) -> Result<TenantLoginOutcome, TenantAuthError> {
-        self.login_with_device_step(command, |_, _, _| Ok(None))
+        self.login_with_device_step(command, |_, _, _, _| Ok(None))
     }
     fn list_tenants(
         &self,
@@ -808,7 +832,7 @@ where
         ticket: SecretString,
         tenant_id: String,
     ) -> Result<TenantLoginSession, TenantAuthError> {
-        self.select_with_device_step(ticket, tenant_id, |_, _, _| Ok(None))
+        self.select_with_device_step(ticket, tenant_id, |_, _, _, _| Ok(None))
     }
     fn authenticate(&self, access_token: SecretString) -> Result<AccessActor, TenantAuthError> {
         let token = self.validate_token(&access_token)?;

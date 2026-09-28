@@ -868,7 +868,8 @@ test("platform administrator search includes disabled accounts so existing autho
 });
 
 const account = (id = "account-1", overrides = {}) => ({ account_id: id, email: `${id}@example.test`, display_name: "Account", status: "active", ...overrides });
-const device = (tenant = "tenant-a", overrides = {}) => ({ tenant_id: tenant, device_id: "device-1", client_id: "client-1", device_name: "Scanner", proof_key_id: null, status: "active", registered_at_unix_secs: 100, last_seen_at_unix_secs: 200, ...overrides });
+const device = (tenant = "tenant-a", overrides = {}) => ({ tenant_id: tenant, device_id: "device-1", client_id: "client-1", device_name: "Scanner", proof_key_id: null, status: "active", version: 1, key_version: null, registered_at_unix_secs: 100, last_seen_at_unix_secs: 200, ...overrides });
+const deviceBinding = (overrides = {}) => ({ tenant_id: "tenant-a", binding_id: "binding-1", device_id: "device-1", account_id: "account-1", status: "active", version: 1, bound_at_unix_secs: 100, unbound_at_unix_secs: null, last_authenticated_at_unix_secs: 150, ...overrides });
 const managedSession = (tenant = "tenant-a", overrides = {}) => ({ tenant_id: tenant, session_id: "session-1", account_id: "account-1", client_id: "client-1", device_id: "device-1", status: "active", created_at_unix_secs: 100, expires_at_unix_secs: 300, authenticated_at_unix_secs: 110, scope: "openid", ...overrides });
 
 test("platform account security reads and writes preserve projections, initial tenant, and platform scope", async t => {
@@ -916,7 +917,7 @@ test("device lifecycle sends target headers, exact filters and cursors, and reje
   const { client, calls } = setup(t, (path, init) => {
     if (path === "/capabilities") return json({ ...fixed, tenancy_enabled: true, fixed_tenant_id: "tenant-a" });
     if (path === "/login") return json(authenticated("tenant-a"));
-    if (path.endsWith("/disable")) return json({ device: device("tenant-a", { status: "disabled" }), audit_id: "audit" });
+    if (path.endsWith("/disable")) { payload = device("tenant-a", { status: "disabled", version: 2 }); return json({ operation_id: JSON.parse(init.body).operation_id, device_id: "device-1", binding_id: null, result_status: "disabled", result_version: 2, audit_id: "audit" }); }
     return json(path.startsWith("/devices/device-1") ? payload : payload);
   });
   await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
@@ -925,10 +926,61 @@ test("device lifecycle sends target headers, exact filters and cursors, and reje
   assert.equal(url.searchParams.get("client_id"), "client-1"); assert.equal(url.searchParams.get("registered_after_unix_secs"), "50");
   assert.equal(url.searchParams.get("cursor"), "cursor+/="); assert.equal(calls.at(-1).headers["X-Embedded-Idp-Tenant-Id"], "tenant-a");
   assert.equal(result.items[0].device_id, "device-1");
-  await client.setDeviceStatus("tenant-a", device(), "disabled");
-  assert.deepEqual(JSON.parse(calls.at(-1).body), { expected_status: "active" });
+  await client.setDeviceStatus("tenant-a", device(), "disabled", "device retired");
+  const statusBody = JSON.parse(calls.findLast(call => call.path.endsWith("/disable")).body);
+  assert.equal(statusBody.expected_version, 1); assert.equal(statusBody.reason, "device retired"); assert.match(statusBody.operation_id, /^[0-9a-f-]{36}$/);
   payload = { ...device(), tenant_id: "other" }; await assert.rejects(client.getDevice("tenant-a", "device-1"));
   await assert.rejects(client.listDevices("tenant-a", { registered_after_unix_secs: 151, registered_before_unix_secs: 150 }));
+});
+
+test("device binding administration targets the exact binding and validates the result", async t => {
+  let payload = { ...deviceBinding(), public_jwk: "must-not-escape" };
+  const { client, calls } = setup(t, (path, init) => {
+    if (path === "/capabilities") return json({ ...fixed, tenancy_enabled: true, fixed_tenant_id: "tenant-a" });
+    if (path === "/login") return json(authenticated("tenant-a"));
+    if (path.endsWith("/unbind")) { payload = deviceBinding({ status: "unbound", version: 2, unbound_at_unix_secs: 200 }); return json({ operation_id: JSON.parse(init.body).operation_id, device_id: "device-1", binding_id: "binding-1", result_status: "unbound", result_version: 2, audit_id: "audit" }); }
+    return json(path.includes("?") ? page([payload]) : payload);
+  });
+  await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
+  const listed = await client.listDeviceBindings("tenant-a", "device-1", "next+/=");
+  assert.equal(listed.items[0].binding_id, "binding-1");
+  assert.equal("public_jwk" in listed.items[0], false);
+  assert.equal(new URL(calls.at(-1).path, "http://test").searchParams.get("cursor"), "next+/=");
+  assert.equal(calls.at(-1).headers["X-Embedded-Idp-Tenant-Id"], "tenant-a");
+  const current = await client.getDeviceBinding("tenant-a", "device-1", "binding-1");
+  assert.equal(current.account_id, "account-1");
+  const unbound = await client.unbindDeviceBinding("tenant-a", current, "retired scanner");
+  assert.equal(unbound.status, "unbound");
+  const unbindBody = JSON.parse(calls.findLast(call => call.path.endsWith("/unbind")).body);
+  assert.equal(unbindBody.expected_version, 1); assert.equal(unbindBody.reason, "retired scanner"); assert.match(unbindBody.operation_id, /^[0-9a-f-]{36}$/);
+  payload = deviceBinding({ account_id: "other" });
+  await assert.rejects(client.getDeviceBinding("tenant-a", "device-1", "binding-1").then(value => client.unbindDeviceBinding("tenant-a", value, "ok")), error => error.message.includes("管理服务响应无效"));
+  payload = deviceBinding({ device_id: "other" });
+  await assert.rejects(client.listDeviceBindings("tenant-a", "device-1"));
+  const before = calls.length;
+  await assert.rejects(client.unbindDeviceBinding("tenant-a", current, ""));
+  assert.equal(calls.length, before);
+});
+
+test("device status recovers a committed operation after its response is lost", async t => {
+  let current = device();
+  let committedId;
+  const { client, calls } = setup(t, (path, init) => {
+    if (path === "/capabilities") return json({ ...fixed, tenancy_enabled: true, fixed_tenant_id: "tenant-a" });
+    if (path === "/login") return json(authenticated("tenant-a"));
+    if (path.endsWith("/disable")) {
+      committedId = JSON.parse(init.body).operation_id;
+      current = device("tenant-a", { status: "disabled", version: 2 });
+      throw new TypeError("response lost");
+    }
+    if (path.endsWith(`/operations/${committedId}`)) return json({ operation_id: committedId, device_id: "device-1", binding_id: null, result_status: "disabled", result_version: 2, audit_id: "audit" });
+    return json(current);
+  });
+  await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
+  const result = await client.setDeviceStatus("tenant-a", device(), "disabled", "retired");
+  assert.equal(result.status, "disabled");
+  assert.equal(calls.filter(call => call.path.endsWith("/disable")).length, 1);
+  assert.equal(calls.filter(call => call.path.endsWith(`/operations/${committedId}`)).length, 1);
 });
 
 test("session lifecycle uses target filters and exact projections, including empty mutation bodies", async t => {

@@ -349,6 +349,7 @@ where
                 source.device_id.clone(),
                 Some(code.scope.clone()),
                 source.authenticated_at,
+                self.auth.ids.next_id("sess"),
                 |session| {
                     let access = self.auth.tokens.issue_scoped_access_token(
                         &code.tenant_id,

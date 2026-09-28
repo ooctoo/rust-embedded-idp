@@ -6,6 +6,8 @@
 
 授权设计：[租户内业务标识与业务管理员](docs/business-domain-authorization-design-v1.md)，包含业务权限隔离、`business_admin`、IDP 管理角色重命名及 `tenant_v2 → tenant_v3` 显式迁移。这是 2.0.0 的破坏性授权契约升级。
 
+设备升级设计：[设备身份与安全生命周期](docs/device-identity-lifecycle-design-v1.md)及[实施计划](docs/device-identity-lifecycle-implementation-plan.md)。本分支已接通宿主提交设备 ID、固定预期公钥、设备版本与启停/撤销、精确解绑、操作回执、当前/历史密钥元数据和身份操作审计；v3→v4 迁移已在隔离 PostgreSQL schema 回归，并在停机和备份后升级了本机两套参考服务 schema。管理浏览器的停用/恢复已实测，更多浏览器与生产规模性能等完整 P0 发布验收仍未完成，**不能据此作为生产部署**。设备不增加业务归属。
+
 - **按模块接入**：Core 定义身份和授权规则，Axum 提供可组合路由，PostgreSQL 适配器由宿主注入数据库配置。宿主决定外层路由前缀、业务资源归属及运行环境。
 - **两种租户模式**：`disabled` 使用单一业务域 `0`；`enabled` 使用真实租户，保留 `0` 作为平台管理域。模式由启动配置固定，不由请求选择。用户创建时必须属于一个域，同一 user ID 和凭证可以加入多个租户。
 - **先认证、再授权**：业务会话绑定租户。用户可查看自己的角色；宿主在实际业务接口中以经过认证的用户、租户、资源类型、动作和资源 ID 调用权限检查。IdP 不代替宿主检查报告等业务资源是否存在或属于该租户。
@@ -25,7 +27,7 @@
 
 ## 当前能力与限制
 
-两种模式均使用 `tenant_v3`。已接通注册与邮箱验证、登录与选租户、会话/refresh、OIDC、租户设备、角色与资源授权，以及租户/成员/角色/权限目录/设备/会话/客户端/审计管理。业务权限定义可按租户和业务标识创建、读取、修改、启停和归档，并与同租户同业务角色关联。React 管理后台接入真实 API；本地 `@embedded-idp/react` 主入口提供登录、租户选择和本人角色列表，`/admin` 子入口提供权限目录组件，React 19 由宿主提供。
+本分支两种模式均使用 `tenant_v4`；已发布的 2.0.0 使用 `tenant_v3`。已接通注册与邮箱验证、登录与选租户、会话/refresh、OIDC、租户设备、角色与资源授权，以及租户/成员/角色/权限目录/设备/会话/客户端/审计管理。业务权限定义可按租户和业务标识创建、读取、修改、启停和归档，并与同租户同业务角色关联。React 管理后台接入真实 API；本地 `@embedded-idp/react` 主入口提供登录、租户选择和本人角色列表，`/admin` 子入口提供权限目录组件，React 19 由宿主提供。
 
 仓库提供[无租户嵌入宿主示例](examples/no-tenant-host/README.md)：另起 Axum 业务进程，复用 IdP 业务路由和 React 登录组件，并在宿主报告接口中检查 `report::read::<id>`。该示例的配置模板和启动命令均在 `examples/no-tenant-host` 内，不依赖根目录的开发环境脚本；带租户的嵌入体验留待后续。`web/embedded/demo.html` 仍只使用模拟响应。设备自助界面、部分管理页面浏览器补验和性能验收仍未完成。
 
@@ -57,7 +59,7 @@ pnpm --dir web build
 ./scripts/dev_env.sh enabled db-init
 ```
 
-`key-init` 只在密钥不存在时创建 `.local/idp-signing-key.der`，不会覆盖。`db-init` 在目标 schema 中创建 `tenant_v3` 的 IdP 对象，允许保留不冲突的宿主对象；重复执行只核对同模式的现有结构和状态，不清除数据，也不创建管理员。对象重名、旧版或不兼容的 IdP 结构会被拒绝；本次不自动迁移旧开发 schema。
+`key-init` 只在密钥不存在时创建 `.local/idp-signing-key.der`，不会覆盖。`db-init` 在目标 schema 中创建本分支的 `tenant_v4` IdP 对象，允许保留不冲突的宿主对象；重复执行只核对同模式的现有结构和状态，不清除数据，也不创建管理员。对象重名、旧版或不兼容的 IdP 结构会被拒绝；启动不会自动迁移旧 schema。
 
 每个模式需单独执行一次**离线管理员初始化**，邮箱由你指定，密码只能通过标准输入传入，不能放进命令参数或 `.env`。下面是在 zsh/bash 中输入不回显密码的示例：
 
@@ -101,6 +103,8 @@ cargo test --workspace --locked
 管理列表支持 `sort_order=asc|desc`，省略时默认时间倒序。管理页面只选择租户；同租户内权限、角色、绑定列表默认展示全部授权业务，并支持业务标识筛选。权限、角色、绑定的管理游标升级为 v3，并绑定可选业务筛选；本人角色和角色权限游标升级为 v2，绑定必填的精确业务标识。改变业务、过滤条件或排序方向须从第一页开始。权限列表增加 `business_id` 稳定排序键，其他账号、成员、设备、会话列表不增加业务语义。
 
 已有 `tenant_v2` 数据必须停机并按[业务隔离迁移说明](docs/business-domain-authorization-design-v1.md#10-tenant_v2--tenant_v3-显式迁移)提供显式业务映射，通过 `scripts/migrate_business_scope.sh` 执行迁移；不能直接启动新版本或用旧列表排序脚本代替本次迁移。运行时不自动升级。业务标识没有默认值，旧调用方必须更新；现有 schema 名称可保留，数据库内的 `access_state.module_version` 才是结构版本。
+
+本分支的 `tenant_v3 → tenant_v4` 显式升级见[设备生命周期升级手册](docs/device-identity-lifecycle-upgrade.md)。迁移脚本默认预演；正式应用须停写、验证备份并审阅撤销清单。数据库连接通过 libpq 环境变量传递，不放在命令参数中。
 
 内置角色键为 `idp_system_admin`（IDP管理员）、`idp_tenant_security_admin`（IDP租户管理员），其 kind 和职责不变；`business_admin` 只授予所属租户、业务下的业务权限，不授予 IDP 管理能力。
 

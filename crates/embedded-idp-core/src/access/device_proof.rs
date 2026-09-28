@@ -24,6 +24,8 @@ pub struct TenantProofDevice {
     pub client_id: String,
     pub proof_key_id: Option<String>,
     pub status: DeviceStatus,
+    pub version: u64,
+    pub key_version: Option<u64>,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TenantProofKey {
@@ -33,6 +35,17 @@ pub struct TenantProofKey {
     pub public_jwk: String,
     pub version: u64,
     pub status: DeviceProofKeyStatus,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeviceKeyMetadata {
+    pub tenant_id: String,
+    pub device_id: String,
+    pub key_id: String,
+    pub algorithm: String,
+    pub version: u64,
+    pub status: DeviceProofKeyStatus,
+    pub registered_at: SystemTime,
+    pub retired_at: Option<SystemTime>,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TenantProofBinding {
@@ -56,6 +69,17 @@ pub struct TenantProofChallenge {
 /// State -> tenant -> account -> device -> key -> binding -> challenge.
 /// The surrounding TenantAuthStore transaction commits only on Ok.
 pub trait TenantDeviceProofTransaction: TenantAuthTransaction {
+    fn key_metadata(
+        &mut self,
+        tenant: &str,
+        device: &str,
+        key: &str,
+    ) -> Result<Option<DeviceKeyMetadata>, StoreError>;
+    fn registration_for_device(
+        &mut self,
+        tenant: &str,
+        device: &str,
+    ) -> Result<Option<TenantDeviceRegistration>, StoreError>;
     fn lock_proof_device(
         &mut self,
         tenant: &str,
@@ -178,10 +202,22 @@ where
                 .is_some_and(|t| t.id == tenant && t.status == TenantStatus::Active);
             let device_record = tx.lock_proof_device(tenant, device)?;
             let now = self.clock.now();
+            let registration_valid = if purpose.as_str() == DEVICE_REGISTRATION_PURPOSE {
+                tx.registration_for_device(tenant, device)?
+                    .is_some_and(|r| {
+                        r.client_id == self.config.client_id
+                            && r.completed_at.is_none()
+                            && r.created_at <= now
+                            && now < r.expires_at
+                    })
+            } else {
+                true
+            };
             let expires_at = now
                 .checked_add(Duration::from_secs(self.config.challenge_ttl_secs))
                 .ok_or(AccessError::InvalidInput("challenge_expiry"))?;
             if domain_active
+                && registration_valid
                 && tx.client_exists(&self.config.client_id)?
                 && device_record.is_some_and(|d| {
                     d.tenant_id == tenant

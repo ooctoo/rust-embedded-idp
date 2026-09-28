@@ -129,6 +129,9 @@ pub trait TenantDeviceLoginTransaction: TenantDeviceProofTransaction {
         binding: &TenantProofBinding,
         id: &str,
         now: SystemTime,
+        session_id: &str,
+        audit_id: &str,
+        request_id: &str,
     ) -> Result<(), StoreError>;
 }
 
@@ -162,7 +165,7 @@ where
         }
         let context =
             tenant_password_proof_context(&self.entry.client_id, &self.entry.login_entry, &command);
-        self.login_with_device_step(command, |tx, tenant, account| {
+        self.login_with_device_step(command, |tx, tenant, account, session_id| {
             self.attach_proven_device(
                 tx,
                 tenant,
@@ -171,6 +174,7 @@ where
                 &context,
                 &proof,
                 devices,
+                session_id,
             )
             .map(Some)
         })
@@ -191,7 +195,7 @@ where
     {
         let context =
             tenant_selection_proof_context(&self.entry.client_id, &self.entry.login_entry, &ticket);
-        self.select_with_device_step(ticket, tenant, |tx, tenant, account| {
+        self.select_with_device_step(ticket, tenant, |tx, tenant, account, session_id| {
             self.attach_proven_device(
                 tx,
                 tenant,
@@ -200,6 +204,7 @@ where
                 &context,
                 &proof,
                 devices,
+                session_id,
             )
             .map(Some)
         })
@@ -213,6 +218,7 @@ where
         context: &[u8; 32],
         proof: &TenantAuthenticationProof,
         devices: &CoreTenantDeviceProofService<S, J, V, N, K, Z>,
+        session_id: &str,
     ) -> Result<String, TenantAuthError>
     where
         J: DevicePublicJwkValidator,
@@ -246,6 +252,9 @@ where
                 },
                 &self.ids.next_id("binding"),
                 verified.verified_at,
+                session_id,
+                &self.ids.next_id("audit"),
+                &self.ids.next_id("request"),
             )?;
         }
         Ok(verified.device_id)

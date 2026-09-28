@@ -4,6 +4,8 @@
 
 > 浏览器 Cookie 接入的新增契约见[浏览器会话设计](browser-session-design.md)。原显式令牌与设备证明接口继续适用；本期不支持跨标签页同时使用不同业务租户。
 
+> 本分支的设备身份接口及 `tenant_v4` 显式迁移见[设备生命周期设计](device-identity-lifecycle-design-v1.md)和[实施计划](device-identity-lifecycle-implementation-plan.md)。下文按历史阶段保留的 `tenant_v3` 描述不代表当前参考服务可连接旧结构。
+
 ## Current reference-host composition
 
 The reference host now uses tenant-aware services in both modes. See
@@ -225,7 +227,7 @@ transaction. A successful call consumes the challenge and returns
 `VerifiedDeviceRequest`; the host must not perform a separate precheck or consume
 the challenge itself.
 
-When `DeviceHttpSecurity::ProofBound` is selected, `POST /devices/provision`
+In the historical single-domain `DeviceHttpSecurity::ProofBound` router, `POST /devices/provision`
 calls `CoreDeviceSecurityService::provision_pending_device`. It creates only the
 pending device. Registration challenges are obtained separately from
 `POST /device-proof/challenges`; no legacy nonce is created or discarded.
@@ -271,6 +273,11 @@ The module no longer trusts request-supplied `account_id` for self-service devic
 
 The host should not treat the whole embedded router as one security bucket.
 It should classify mounted routes into distinct trust levels:
+
+The list below describes the historical single-domain router. The current
+tenant device router requires host-authenticated `TrustedDeviceAdmission` for
+`/devices/provision` and `/devices/registration-result`; those are not public
+anonymous operations.
 
 - public anonymous endpoints
   - `POST /auth/register`
@@ -570,7 +577,7 @@ supplying a tenant to a byte builder alone.
 ### Tenant device challenges and protected-request transactions (P3)
 
 `access::CoreTenantDeviceProofService` now connects V2 proof verification to
-`tenant_v3` PostgreSQL authority. Construct it with the existing independent
+`tenant_v4` PostgreSQL authority. Construct it with the existing independent
 `PostgresAccessStore`, `TenantDeviceProofConfig`, `Ed25519PublicJwkParser`,
 `RingEd25519Verifier`, `SecureDeviceChallengeGenerator`, clock and ID generator.
 The typed configuration fixes the client, allowed purposes, challenge lifetime and
@@ -616,16 +623,20 @@ The same `CoreTenantDeviceProofService` provides lifecycle methods when its
 transaction implements `TenantDeviceLifecycleTransaction`; `PostgresAccessStore`
 already implements this contract. No second pool or separate service is required.
 
-- `provision_device(tenant_id, name, &admission)` requires a host implementation of
-  `TenantDeviceAdmission`. It must authorize the caller to provision for this tenant
-  and configured client; never build this policy from caller JSON. There is no
-  default allow policy. Admission runs before the transaction, and the module
-  rechecks active tenant/client under the domain lock before inserting a pending
-  device. The host owns authentication, rate limits and any external admission
-  policy consistency; no cross-system atomicity is implied.
+- `provision_device(ProvisionTenantDevice, &trusted, &admission)` requires a
+  host-supplied canonical device UUID, registration request UUID and public JWK.
+  The host constructs `TrustedDeviceAdmission` from authenticated state and
+  injects `TenantDeviceAdmission`; neither its registration scope nor expiry may
+  come from untrusted JSON. Admission checks the device ID for the tenant and
+  configured client before and inside the transaction. Identical requests return
+  the same registration result; the caller can query it by tenant, device and
+  request ID under the same current admission. There is no default allow policy.
+  The host owns authentication, rate limits and external admission consistency;
+  no cross-system atomicity is implied.
 - `complete_registration(CompleteTenantDeviceRegistration)` requires a pending
-  device and a live registration challenge for that exact tenant/device. Validate
-  the submitted JWK and sign V2 registration bytes with its private key. Successful
+  device, unexpired registration with the same pinned JWK, and a live registration
+  challenge for that exact tenant/device. Sign V2 registration bytes with the
+  pinned key's private key. Successful
   verification atomically consumes the challenge, inserts active key version 1 and
   activates the device. It creates no account binding or login session.
 - `rotate_key(RotateTenantDeviceKey)` requires a host-authenticated `AccessActor`,
@@ -1046,12 +1057,15 @@ request V2 profile and POST method for heartbeat, including the actual host pref
 
 | Route | Input and authority |
 | --- | --- |
-| POST `/devices/provision` | JSON tenant_id/device_name; trusted entry policy plus host admission creates a pending device |
+| POST `/devices/provision` | JSON tenant_id/device_id/registration_request_id/device_name/public_jwk; authenticated host admission creates or recovers a pending registration |
+| POST `/devices/registration-result` | JSON tenant_id/device_id/registration_request_id; authenticated host admission returns the original registration and current device state |
 | POST `/devices/complete` | JSON tenant_id/device_id/public_jwk/challenge/signature; registration V2 proof atomically activates the device, without binding an account |
-| POST `/devices/rotate-key` | Bearer plus JSON device_id/proposed_public_jwk/challenge/current_key_signature/proposed_key_signature; both keys sign the rotation V2 bytes |
+| POST `/devices/rotate-key` | Bearer plus JSON device_id/expected_key_id/expected_key_version/proposed_public_jwk/challenge/current_key_signature/proposed_key_signature; both keys sign the rotation V2 bytes |
 | GET `/devices` | Bearer plus optional limit/cursor; only this actor's non-unbound devices in this tenant/client; default 50, maximum 200 |
 | GET `/devices/:device_id` | Bearer; same ownership scope, no JWK or other-user bindings returned |
-| POST `/devices/unbind` | Bearer plus JSON device_id; atomically unbind and revoke all this account's associated sessions/refresh credentials in this tenant |
+| GET `/devices/:device_id/keys/:key_id` | Bearer; exact owned key status/version/times, without public JWK |
+| POST `/devices/unbind` | Bearer plus JSON device_id/binding_id/expected_version/operation_id; atomically unbind only the current active binding and revoke this account's associated device sessions/refresh credentials in this tenant; returns a minimal receipt |
+| GET `/devices/operations/:operation_id` | Bearer; reauthorized receipt for this account's own self-unbind command |
 | POST `/devices/heartbeat` | Bearer, five proof headers, JSON device_id matching proof device; generic request V2 proof with purpose heartbeat |
 
 Registration and rotation use existing canonical-byte builders. Heartbeat hashes
@@ -1095,8 +1109,14 @@ The reference host now adopts this management login/composition boundary.
 | --- | --- |
 | GET `/admin/devices` | Optional limit/cursor, account_id, client_id, status, registered_after_unix_secs, registered_before_unix_secs; default 50/max 200, no total count |
 | GET `/admin/devices/:device_id` | Device metadata/status, no JWK, credential or user-binding collection |
-| POST `/admin/devices/:device_id/disable` | JSON `{"expected_status":"active"}`; source may also be pending/disabled; revoked cannot be disabled |
-| POST `/admin/devices/:device_id/revoke` | JSON expected_status matching current state; revoke is terminal |
+| POST `/admin/devices/:device_id/enable` | JSON `{"expected_version":N,"operation_id":"UUID","reason":"..."}`; requires a current active proof key |
+| POST `/admin/devices/:device_id/disable` | Same version, operation ID and reason contract; source may be pending/active; revoked cannot be disabled |
+| POST `/admin/devices/:device_id/revoke` | Same version, operation ID and reason contract; revoke is terminal |
+| GET `/admin/devices/:device_id/operations/:operation_id` | Reauthorized minimal receipt for the current management actor and exact device |
+| GET `/admin/devices/:device_id/keys/:key_id` | Reauthorized key status/version/times; excludes public JWK and credentials |
+| GET `/admin/devices/:device_id/bindings` | Optional `limit`, `cursor`, `status`, `sort_order=asc\|desc`; returns binding metadata without credentials |
+| GET `/admin/devices/:device_id/bindings/:binding_id` | Exact binding metadata in the authorized tenant and device |
+| POST `/admin/devices/:device_id/bindings/:binding_id/unbind` | JSON `{"expected_version":N,"operation_id":"UUID","reason":"..."}`; atomically unbinds that binding and invalidates that account's device credentials; returns a minimal receipt |
 
 An Enabled platform actor (domain 0) must supply exactly one
 `X-Embedded-Idp-Tenant-Id` target, which must be a real business tenant; Core checks
@@ -1104,19 +1124,23 @@ An Enabled platform actor (domain 0) must supply exactly one
 target defaults to its own tenant and cannot name another; Core requires
 `idp.tenant/devices.manage`. Disabled defaults to domain 0 and rejects real tenants.
 Duplicated target headers or caller-supplied actor/time/status overrides are rejected.
-Lists use ascending device ID keyset pagination and fetch at most limit + 1 rows.
+Lists default to descending registration or binding time, then ID, with
+`sort_order=asc|desc` and fetch at most limit + 1 rows.
 Cursors bind the target tenant and every filter; repeat the same filters on each
 page. Changed filters or tenants are rejected, and permission is rechecked on
 every page. Registration time bounds are inclusive, nonnegative whole Unix seconds;
 reversed ranges, unknown fields/statuses and malformed cursors are rejected.
-The account filter matches only active account-device bindings in the target
+The device-list account filter matches only active account-device bindings in the target
 tenant; suspended and unbound records do not match. Shared devices and historical
 bindings do not duplicate rows. Without an account filter, unbound devices and
 all four device statuses remain visible. An unknown account or client yields an
-empty list. Binding metadata and keys are not returned.
+empty list. The device list does not return binding metadata or keys; the binding
+routes return only the selected binding metadata. Binding cursors bind tenant,
+device, status and sort order. Administrators may unbind active or suspended
+bindings. A stale binding version cannot change a newer binding or another user.
 
-PostgreSQL uses a same-tenant EXISTS predicate for account filtering and existing
-tenant/device, tenant/client/device and tenant/account/device indexes. There is no
+PostgreSQL uses a same-tenant EXISTS predicate for account filtering and
+tenant/device, tenant/client/device, tenant/account/device and binding-page indexes. There is no
 total-count or application-side collection scan. Sparse status/time queries may
 still scan a tenant's ID range; workload-specific indexes remain subject to the
 planned performance acceptance, which has not yet been run.
@@ -1124,17 +1148,20 @@ planned performance acceptance, which has not yet been run.
 Every service call rechecks current actor account, tenant, membership, session time
 and source-device/key/binding state plus permission inside the transaction. This
 also protects direct Rust calls and covers the existing role/member mutations.
-A non-current expected_status returns 409; unauthorized returns 403; an authorized
+A non-current expected_version returns 409; unauthorized returns 403; an authorized
 lookup of a missing tenant/device returns 404. Body size is limited to 16 KiB and
-all responses disable caching. The HTTP response includes device metadata and an
-audit ID, never an arbitrary audit payload or key material.
+all responses disable caching. Writes return operation/audit IDs and the committed
+result status/version; clients reload details for the current state. An identical
+operation ID and command returns that receipt without repeating the mutation;
+the same ID with a different command conflicts. Receipts are never a substitute
+for a current management identity or full audit-read permission.
 
 Disable revokes every associated active/pending session and refresh credential,
 removes source authorization codes, revokes source selection tickets and removes
 nonces in this device's tenant. It retains keys and bindings without making them
 usable while disabled. Revoke additionally retires active keys and unbinds all users.
-There is no re-enable endpoint. Repeated commands can use the current expected_status;
-a stale pre-disable expectation cannot override a later revoke.
+Enable requires a disabled device and its current active proof key. It does not
+restore old credentials; a stale expected version cannot override a later change.
 
 The entire update, cleanup and secret-free before/after audit commit together;
 audit failure rolls everything back. Management holds the existing exclusive tenant
@@ -1717,8 +1744,8 @@ revokes only its current session and refresh family; a switch ticket whose sourc
 session was logged out also fails validation.
 
 This reuses existing tables, row locks and indexed lookups; it does not copy the
-business authentication state machine or load roles on every login. The fresh
-`tenant_v3` layout requires `auth_session_purpose`; readiness rejects incomplete
+business authentication state machine or load roles on every login. The current
+`tenant_v4` layout requires `auth_session_purpose`; readiness rejects incomplete
 layouts instead of migrating them. No environment variables or application data
 were added by this module change.
 

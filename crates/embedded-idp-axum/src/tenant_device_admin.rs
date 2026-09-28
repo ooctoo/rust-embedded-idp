@@ -2,7 +2,7 @@ use crate::{
     http_support::unix_time_secs,
     tenant_admin::{error, target, ManagementSortOrder},
     tenant_auth::{call, no_store},
-    tenant_devices::device_json,
+    tenant_devices::{device_json, key_metadata_json},
 };
 use axum::{
     extract::{DefaultBodyLimit, Path, Query, State},
@@ -35,8 +35,23 @@ pub fn tenant_device_admin_router(
     Router::new()
         .route("/admin/devices", get(list))
         .route("/admin/devices/:device_id", get(detail))
+        .route("/admin/devices/:device_id/keys/:key_id", get(key_metadata))
+        .route("/admin/devices/:device_id/enable", post(enable))
         .route("/admin/devices/:device_id/disable", post(disable))
         .route("/admin/devices/:device_id/revoke", post(revoke))
+        .route(
+            "/admin/devices/:device_id/operations/:operation_id",
+            get(operation_result),
+        )
+        .route("/admin/devices/:device_id/bindings", get(binding_list))
+        .route(
+            "/admin/devices/:device_id/bindings/:binding_id",
+            get(binding_detail),
+        )
+        .route(
+            "/admin/devices/:device_id/bindings/:binding_id/unbind",
+            post(unbind_binding),
+        )
         .with_state(AdminState { mode, service })
         .layer(DefaultBodyLimit::max(16384))
         .layer(middleware::from_fn(no_store))
@@ -114,7 +129,44 @@ impl Filter {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChangeBody {
-    expected_status: ExpectedStatus,
+    expected_version: u64,
+    operation_id: String,
+    reason: String,
+}
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum BindingStatus {
+    Active,
+    Suspended,
+    Unbound,
+}
+impl BindingStatus {
+    fn core(&self) -> embedded_idp_core::AccountDeviceBindingStatus {
+        match self {
+            Self::Active => embedded_idp_core::AccountDeviceBindingStatus::Active,
+            Self::Suspended => embedded_idp_core::AccountDeviceBindingStatus::Suspended,
+            Self::Unbound => embedded_idp_core::AccountDeviceBindingStatus::Unbound,
+        }
+    }
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BindingPageQuery {
+    limit: Option<u32>,
+    cursor: Option<String>,
+    status: Option<BindingStatus>,
+    #[serde(default)]
+    sort_order: ManagementSortOrder,
+}
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct BindingCursor {
+    version: u8,
+    tenant_id: String,
+    device_id: String,
+    status: Option<BindingStatus>,
+    after: Vec<String>,
+    sort_order: ManagementSortOrder,
 }
 fn record_json(record: AccessDeviceRecord) -> Value {
     let mut value = device_json(record.device);
@@ -122,6 +174,208 @@ fn record_json(record: AccessDeviceRecord) -> Value {
     value["registered_at_unix_secs"] = json!(unix_time_secs(record.registered_at));
     value["last_seen_at_unix_secs"] = json!(record.last_seen_at.map(unix_time_secs));
     value
+}
+fn binding_json(r: AccessDeviceBindingRecord) -> Value {
+    json!({"tenant_id":r.tenant_id,"binding_id":r.id,"device_id":r.device_id,"account_id":r.account_id,
+        "status":match r.status {embedded_idp_core::AccountDeviceBindingStatus::Active=>"active",embedded_idp_core::AccountDeviceBindingStatus::Suspended=>"suspended",embedded_idp_core::AccountDeviceBindingStatus::Unbound=>"unbound"},
+        "version":r.version,"bound_at_unix_secs":unix_time_secs(r.bound_at),
+        "unbound_at_unix_secs":r.unbound_at.map(unix_time_secs),
+        "last_authenticated_at_unix_secs":r.last_authenticated_at.map(unix_time_secs)})
+}
+fn receipt_json(r: DeviceOperationReceipt) -> Value {
+    json!({"operation_id":r.operation_id,"audit_id":r.audit_id,"device_id":r.device_id,
+        "binding_id":r.binding_id,"operation":r.operation,"occurred_at_unix_secs":unix_time_secs(r.occurred_at),
+        "result_version":r.result_version,"result_status":r.result_status})
+}
+async fn operation_result(
+    State(state): State<AdminState>,
+    context: Option<Extension<AccessAdminContext>>,
+    headers: HeaderMap,
+    Path((device, operation_id)): Path<(String, String)>,
+) -> Response {
+    let (context, tenant) = match target(state.mode, context, &headers) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    match call(move || {
+        state
+            .service
+            .device_operation_result(context, tenant, device, operation_id)
+    })
+    .await
+    {
+        Ok(receipt) => Json(receipt_json(receipt)).into_response(),
+        Err(e) => error(e),
+    }
+}
+async fn key_metadata(
+    State(state): State<AdminState>,
+    context: Option<Extension<AccessAdminContext>>,
+    headers: HeaderMap,
+    Path((device, key)): Path<(String, String)>,
+) -> Response {
+    let (context, tenant) = match target(state.mode, context, &headers) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    match call(move || {
+        state
+            .service
+            .get_device_key_metadata(context, tenant, device, key)
+    })
+    .await
+    {
+        Ok(metadata) => Json(key_metadata_json(metadata)).into_response(),
+        Err(cause) => error(cause),
+    }
+}
+async fn binding_list(
+    State(state): State<AdminState>,
+    context: Option<Extension<AccessAdminContext>>,
+    headers: HeaderMap,
+    Path(device): Path<String>,
+    Query(query): Query<BindingPageQuery>,
+) -> Response {
+    let (context, tenant) = match target(state.mode, context, &headers) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let cursor = match query.cursor {
+        None => None,
+        Some(raw) => {
+            if raw.len() > 4096 {
+                return error(AccessError::InvalidCursor);
+            }
+            let Some(c) = Base64UrlUnpadded::decode_vec(&raw)
+                .ok()
+                .and_then(|bytes| serde_json::from_slice::<BindingCursor>(&bytes).ok())
+            else {
+                return error(AccessError::InvalidCursor);
+            };
+            Some(AccessCursor {
+                version: c.version,
+                scope: AccessListScope::AdminDeviceBindings {
+                    tenant_id: c.tenant_id,
+                    device_id: c.device_id,
+                    status: c.status.map(|s| s.core()),
+                },
+                after: c.after,
+                sort_order: Some(c.sort_order.core()),
+            })
+        }
+    };
+    match call(move || {
+        state.service.list_device_bindings(
+            context,
+            tenant,
+            device,
+            query.status.map(|s| s.core()),
+            AccessPageRequest {
+                limit: query.limit.unwrap_or(50),
+                cursor,
+                sort_order: Some(query.sort_order.core()),
+            },
+        )
+    })
+    .await
+    {
+        Ok(page) => {
+            let next = match page.next_cursor {
+                None => None,
+                Some(c) => {
+                    let AccessListScope::AdminDeviceBindings {
+                        tenant_id,
+                        device_id,
+                        status,
+                    } = c.scope
+                    else {
+                        return error(AccessError::InvalidStoreResponse);
+                    };
+                    if c.after.len() != 2 {
+                        return error(AccessError::InvalidStoreResponse);
+                    }
+                    Some(Base64UrlUnpadded::encode_string(
+                        &serde_json::to_vec(&BindingCursor {
+                            version: c.version,
+                            tenant_id,
+                            device_id,
+                            status: status.map(|s| match s {
+                                embedded_idp_core::AccountDeviceBindingStatus::Active => {
+                                    BindingStatus::Active
+                                }
+                                embedded_idp_core::AccountDeviceBindingStatus::Suspended => {
+                                    BindingStatus::Suspended
+                                }
+                                embedded_idp_core::AccountDeviceBindingStatus::Unbound => {
+                                    BindingStatus::Unbound
+                                }
+                            }),
+                            after: c.after,
+                            sort_order: ManagementSortOrder::from_core(
+                                c.sort_order.unwrap_or(AccessSortOrder::Desc),
+                            ),
+                        })
+                        .unwrap(),
+                    ))
+                }
+            };
+            Json(json!({"items":page.items.into_iter().map(binding_json).collect::<Vec<_>>(),"has_more":page.has_more,"next_cursor":next})).into_response()
+        }
+        Err(e) => error(e),
+    }
+}
+async fn binding_detail(
+    State(state): State<AdminState>,
+    context: Option<Extension<AccessAdminContext>>,
+    headers: HeaderMap,
+    Path((device, binding)): Path<(String, String)>,
+) -> Response {
+    let (context, tenant) = match target(state.mode, context, &headers) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    match call(move || {
+        state
+            .service
+            .get_device_binding(context, tenant, device, binding)
+    })
+    .await
+    {
+        Ok(row) => Json(binding_json(row)).into_response(),
+        Err(e) => error(e),
+    }
+}
+async fn unbind_binding(
+    State(state): State<AdminState>,
+    context: Option<Extension<AccessAdminContext>>,
+    headers: HeaderMap,
+    Path((device, binding)): Path<(String, String)>,
+    Json(body): Json<ChangeBody>,
+) -> Response {
+    let operation_id = body.operation_id.clone();
+    let (context, tenant) = match target(state.mode, context, &headers) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    match call(move || {
+        state.service.unbind_device_binding(
+            context,
+            tenant,
+            device,
+            binding,
+            body.expected_version,
+            body.operation_id,
+            body.reason,
+        )
+    })
+    .await
+    {
+        Ok(event) => match event.device_receipt(&operation_id) {
+            Some(receipt) => Json(receipt_json(receipt)).into_response(),
+            None => error(AccessError::InvalidStoreResponse),
+        },
+        Err(e) => error(e),
+    }
 }
 async fn list(
     State(state): State<AdminState>,
@@ -246,6 +500,15 @@ async fn disable(
     )
     .await
 }
+async fn enable(
+    State(state): State<AdminState>,
+    context: Option<Extension<AccessAdminContext>>,
+    headers: HeaderMap,
+    Path(device): Path<String>,
+    Json(body): Json<ChangeBody>,
+) -> Response {
+    change(state, context, headers, device, body, DeviceStatus::Active).await
+}
 async fn revoke(
     State(state): State<AdminState>,
     context: Option<Extension<AccessAdminContext>>,
@@ -263,6 +526,7 @@ async fn change(
     body: ChangeBody,
     status: DeviceStatus,
 ) -> Response {
+    let operation_id = body.operation_id.clone();
     let (context, tenant) = match target(state.mode, context, &headers) {
         Ok(v) => v,
         Err(e) => return e,
@@ -275,18 +539,18 @@ async fn change(
                 mutation: AccessAdminMutation::SetDeviceStatus {
                     device_id: device,
                     status,
-                    expected_status: body.expected_status.into(),
+                    expected_version: body.expected_version,
+                    operation_id: body.operation_id,
+                    reason: body.reason,
                 },
             },
         )
     })
     .await
     {
-        Ok(event) => match event.change {
-            AccessChange::Device { after, .. } => {
-                Json(json!({"device":record_json(after),"audit_id":event.id})).into_response()
-            }
-            _ => error(AccessError::InvalidStoreResponse),
+        Ok(event) => match event.device_receipt(&operation_id) {
+            Some(receipt) => Json(receipt_json(receipt)).into_response(),
+            None => error(AccessError::InvalidStoreResponse),
         },
         Err(e) => error(e),
     }

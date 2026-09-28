@@ -9,6 +9,111 @@ use embedded_idp_core::{DeviceStatus, SessionStatus};
 use serde_json::Value;
 use tower::ServiceExt;
 
+fn device_body(expected_version: u64, reason: &str) -> String {
+    serde_json::json!({"expected_version":expected_version,"operation_id":Uuid::now_v7().to_string(),"reason":reason}).to_string()
+}
+
+#[test]
+#[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
+fn device_operation_receipt_replays_once_and_is_scoped_to_target() {
+    for mode in [TenancyMode::Disabled, TenancyMode::Enabled] {
+        let db = Db::new(mode);
+        let tenant = db.target();
+        let id = Uuid::now_v7();
+        device(&db, tenant, id, db.member, 17);
+        let router = app(&db, Some(db.context(db.actor_session.to_string())));
+        let key_id = "r".repeat(43);
+        let metadata = send(
+            &router,
+            "GET",
+            &format!("/admin/devices/{id}/keys/{key_id}"),
+            Some(tenant),
+            "",
+        );
+        assert_eq!(metadata.0, StatusCode::OK);
+        assert_eq!(metadata.1["version"], 1);
+        assert!(metadata.1.get("public_jwk").is_none());
+        assert_eq!(
+            send(
+                &router,
+                "GET",
+                &format!("/admin/devices/{id}"),
+                Some(tenant),
+                ""
+            )
+            .1["key_version"],
+            1
+        );
+        let operation_id = Uuid::now_v7();
+        let body = serde_json::json!({"expected_version":1,"operation_id":operation_id.to_string(),"reason":"maintenance"}).to_string();
+        let path = format!("/admin/devices/{id}/disable");
+        let first = send(&router, "POST", &path, Some(tenant), &body);
+        assert_eq!(first.0, StatusCode::OK);
+        assert_eq!(first.1["result_status"], "disabled");
+        assert_eq!(first.1["result_version"], 2);
+        let replay = send(&router, "POST", &path, Some(tenant), &body);
+        assert_eq!(replay.0, StatusCode::OK);
+        assert_eq!(replay.1, first.1);
+        let lookup = send(
+            &router,
+            "GET",
+            &format!("/admin/devices/{id}/operations/{operation_id}"),
+            Some(tenant),
+            "",
+        );
+        assert_eq!(lookup.0, StatusCode::OK);
+        assert_eq!(lookup.1, first.1);
+        let changed =
+            serde_json::json!({"expected_version":1,"operation_id":operation_id.to_string(),"reason":"other"})
+                .to_string();
+        assert_eq!(
+            send(&router, "POST", &path, Some(tenant), &changed).0,
+            StatusCode::CONFLICT
+        );
+        assert_eq!(
+            send(
+                &router,
+                "GET",
+                &format!(
+                    "/admin/devices/{}/operations/{operation_id}",
+                    Uuid::now_v7()
+                ),
+                Some(tenant),
+                ""
+            )
+            .0,
+            StatusCode::NOT_FOUND
+        );
+        let s = db.schema();
+        let mut connection = db.adapter.connect().unwrap();
+        let row = connection.query_one(&format!("select count(*),min(change_json->>'reason') from {s}.access_audit_events where device_operation_id=$1"), &[&operation_id]).unwrap();
+        assert_eq!(row.get::<_, i64>(0), 1);
+        assert_eq!(
+            row.get::<_, Option<String>>(1).as_deref(),
+            Some("maintenance")
+        );
+        let revoke = send(
+            &router,
+            "POST",
+            &format!("/admin/devices/{id}/revoke"),
+            Some(tenant),
+            &device_body(2, "retired"),
+        );
+        assert_eq!(revoke.0, StatusCode::OK);
+        let historical_key = send(
+            &router,
+            "GET",
+            &format!("/admin/devices/{id}/keys/{key_id}"),
+            Some(tenant),
+            "",
+        );
+        assert_eq!(historical_key.0, StatusCode::OK);
+        assert_eq!(historical_key.1["status"], "retired");
+        assert_eq!(historical_key.1["version"], 1);
+        assert!(historical_key.1.get("public_jwk").is_none());
+    }
+}
+
 // Synthetic trusted management-session fixture, including device authority checks.
 pub(super) fn device(db: &Db, tenant: &str, id: Uuid, subject: Uuid, seed: u8) -> Uuid {
     let s = db.schema();
@@ -26,6 +131,177 @@ pub(super) fn device(db: &Db, tenant: &str, id: Uuid, subject: Uuid, seed: u8) -
     tx.execute(&format!("insert into {s}.device_nonces(tenant_id,id,device_id,purpose,challenge_digest,issued_at_epoch,expires_at_epoch) values($1,$2,$3,'heartbeat',$4,1000,1100)"),&[&tenant,&Uuid::now_v7(),&id,&vec![seed;32]]).unwrap();
     tx.commit().unwrap();
     session
+}
+
+#[test]
+#[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
+fn admin_unbind_cleans_only_the_exact_binding_and_rolls_back_with_audit() {
+    for mode in [TenancyMode::Disabled, TenancyMode::Enabled] {
+        let db = Db::new(mode);
+        let tenant = db.target();
+        let device_id = Uuid::now_v7();
+        let target_session = device(&db, tenant, device_id, db.member, 4);
+        let s = db.schema();
+        let mut c = db.adapter.connect().unwrap();
+        let binding: Uuid = c.query_one(&format!("select id from {s}.account_device_bindings where tenant_id=$1 and device_id=$2 and account_id=$3"),&[&tenant,&device_id,&db.member]).unwrap().get(0);
+        let other_binding = Uuid::now_v7();
+        let other_session = Uuid::now_v7();
+        c.execute(&format!("insert into {s}.account_device_bindings(tenant_id,id,account_id,device_id,status,bound_at_epoch) values($1,$2,$3,$4,'active',1000)"),&[&tenant,&other_binding,&db.owner,&device_id]).unwrap();
+        c.execute(&format!("insert into {s}.auth_sessions(tenant_id,id,account_id,client_id,device_id,status,created_at_epoch,expires_at_epoch,refresh_token_version,authenticated_at_epoch) values($1,$2,$3,'live-admin-client',$4,'active',1000,2000,1,1000)"),&[&tenant,&other_session,&db.owner,&device_id]).unwrap();
+        drop(c);
+        let router = app(&db, Some(db.context(db.actor_session.to_string())));
+        let path = format!("/admin/devices/{device_id}/bindings/{binding}");
+        let detail = send(&router, "GET", &path, Some(tenant), "");
+        assert_eq!(detail.0, StatusCode::OK);
+        assert_eq!(detail.1["account_id"], db.member.to_string());
+        assert_eq!(detail.1["version"], 1);
+        let first = send(
+            &router,
+            "GET",
+            &format!("/admin/devices/{device_id}/bindings?limit=1"),
+            Some(tenant),
+            "",
+        );
+        assert_eq!(first.0, StatusCode::OK);
+        assert_eq!(first.1["items"].as_array().unwrap().len(), 1);
+        assert_eq!(first.1["has_more"], true);
+        let cursor = first.1["next_cursor"].as_str().unwrap();
+        let second = send(
+            &router,
+            "GET",
+            &format!("/admin/devices/{device_id}/bindings?limit=1&cursor={cursor}"),
+            Some(tenant),
+            "",
+        );
+        assert_eq!(second.1["items"].as_array().unwrap().len(), 1);
+        assert_eq!(second.1["has_more"], false);
+        let unbind_path = format!("{path}/unbind");
+        assert_eq!(
+            send(
+                &router,
+                "POST",
+                &unbind_path,
+                Some(tenant),
+                &device_body(2, "lost")
+            )
+            .0,
+            StatusCode::CONFLICT
+        );
+        db.adapter.connect().unwrap().batch_execute(&format!("create function {s}.fail_binding_audit() returns trigger language plpgsql as $$ begin raise exception 'injected audit failure'; end $$; create trigger fail_binding_audit before insert on {s}.access_audit_events for each row execute function {s}.fail_binding_audit();")).unwrap();
+        assert_eq!(
+            send(
+                &router,
+                "POST",
+                &unbind_path,
+                Some(tenant),
+                &device_body(1, "lost")
+            )
+            .0,
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+        let row = db.adapter.connect().unwrap().query_one(&format!("select status,version from {s}.account_device_bindings where tenant_id=$1 and id=$2"),&[&tenant,&binding]).unwrap();
+        assert_eq!(row.get::<_, String>(0), "active");
+        assert_eq!(row.get::<_, i64>(1), 1);
+        db.adapter
+            .connect()
+            .unwrap()
+            .batch_execute(&format!(
+                "drop trigger fail_binding_audit on {s}.access_audit_events"
+            ))
+            .unwrap();
+        let result = send(
+            &router,
+            "POST",
+            &unbind_path,
+            Some(tenant),
+            &device_body(1, "lost"),
+        );
+        assert_eq!(result.0, StatusCode::OK);
+        assert_eq!(result.1["result_status"], "unbound");
+        assert_eq!(result.1["result_version"], 2);
+        assert_eq!(
+            send(&router, "GET", &path, Some(tenant), "").1["status"],
+            "unbound"
+        );
+        let history = send(
+            &router,
+            "GET",
+            &format!("/admin/devices/{device_id}/bindings?status=unbound"),
+            Some(tenant),
+            "",
+        );
+        assert_eq!(history.1["items"][0]["binding_id"], binding.to_string());
+        let sessions = db
+            .adapter
+            .connect()
+            .unwrap()
+            .query(
+                &format!(
+                    "select id,status from {s}.auth_sessions where tenant_id=$1 and id=any($2)"
+                ),
+                &[&tenant, &vec![target_session, other_session]],
+            )
+            .unwrap();
+        assert_eq!(
+            sessions
+                .iter()
+                .find(|r| r.get::<_, Uuid>("id") == target_session)
+                .unwrap()
+                .get::<_, String>("status"),
+            "revoked"
+        );
+        assert_eq!(
+            sessions
+                .iter()
+                .find(|r| r.get::<_, Uuid>("id") == other_session)
+                .unwrap()
+                .get::<_, String>("status"),
+            "active"
+        );
+        let mut check = db.adapter.connect().unwrap();
+        let refresh: Option<i64> = check.query_one(&format!("select revoked_at_epoch from {s}.refresh_tokens where tenant_id=$1 and session_id=$2"),&[&tenant,&target_session]).unwrap().get(0);
+        assert!(refresh.is_some());
+        let codes: i64 = check.query_one(&format!("select count(*) from {s}.authorization_codes where tenant_id=$1 and source_session_id=$2"),&[&tenant,&target_session]).unwrap().get(0);
+        assert_eq!(codes, 0);
+        let selections: Option<i64> = check.query_one(&format!("select revoked_at_epoch from {s}.auth_tenant_selections where source_tenant_id=$1 and source_session_id=$2"),&[&tenant,&target_session]).unwrap().get(0);
+        assert!(selections.is_some());
+        let audit: String = check
+            .query_one(
+                &format!("select change_json::text from {s}.access_audit_events where id=$1"),
+                &[&Uuid::parse_str(result.1["audit_id"].as_str().unwrap()).unwrap()],
+            )
+            .unwrap()
+            .get(0);
+        let audit: Value = serde_json::from_str(&audit).unwrap();
+        assert_eq!(audit["reason"], "lost");
+        drop(check);
+        let new_binding = Uuid::now_v7();
+        db.adapter.connect().unwrap().execute(&format!("insert into {s}.account_device_bindings(tenant_id,id,account_id,device_id,status,bound_at_epoch) values($1,$2,$3,$4,'active',1001)"),&[&tenant,&new_binding,&db.member,&device_id]).unwrap();
+        assert_eq!(
+            send(
+                &router,
+                "POST",
+                &unbind_path,
+                Some(tenant),
+                &device_body(1, "lost")
+            )
+            .0,
+            StatusCode::CONFLICT
+        );
+        let fresh: String = db
+            .adapter
+            .connect()
+            .unwrap()
+            .query_one(
+                &format!(
+                    "select status from {s}.account_device_bindings where tenant_id=$1 and id=$2"
+                ),
+                &[&tenant, &new_binding],
+            )
+            .unwrap()
+            .get(0);
+        assert_eq!(fresh, "active");
+    }
 }
 fn app(db: &Db, context: Option<AccessAdminContext>) -> Router {
     let router = tenant_device_admin_router(db.mode, Arc::new(db.service()));
@@ -92,14 +368,29 @@ fn mutate(
     db: &Db,
     id: Uuid,
     status: DeviceStatus,
-    expected_status: DeviceStatus,
+    _expected_status: DeviceStatus,
 ) -> Result<AccessAuditEvent, AccessError> {
+    let version: i64 = db
+        .adapter
+        .connect()
+        .unwrap()
+        .query_one(
+            &format!(
+                "select version from {}.devices where tenant_id=$1 and id=$2",
+                db.schema()
+            ),
+            &[&db.target(), &id],
+        )
+        .unwrap()
+        .get(0);
     db.service().execute(
         db.context(db.actor_session.to_string()),
         db.command(AccessAdminMutation::SetDeviceStatus {
             device_id: id.to_string(),
             status,
-            expected_status,
+            expected_version: version as u64,
+            operation_id: Uuid::now_v7().to_string(),
+            reason: "test".into(),
         }),
     )
 }
@@ -201,7 +492,7 @@ fn device_admin_http_is_scoped_and_disable_revoke_cleanup_is_atomic_in_both_mode
                 "POST",
                 &path,
                 Some(tenant),
-                r#"{"expected_status":"active"}"#
+                &device_body(1, "test")
             )
             .0,
             StatusCode::INTERNAL_SERVER_ERROR
@@ -219,7 +510,7 @@ fn device_admin_http_is_scoped_and_disable_revoke_cleanup_is_atomic_in_both_mode
             "POST",
             &format!("/admin/devices/{id}/disable"),
             Some(tenant),
-            r#"{"expected_status":"active"}"#,
+            &device_body(1, "test"),
         );
         assert_eq!(result.0, StatusCode::OK);
         assert!(result.1["audit_id"].is_string());
@@ -242,7 +533,7 @@ fn device_admin_http_is_scoped_and_disable_revoke_cleanup_is_atomic_in_both_mode
                 "POST",
                 &path,
                 Some(tenant),
-                r#"{"expected_status":"active"}"#
+                &device_body(1, "test")
             )
             .0,
             StatusCode::CONFLICT
@@ -253,7 +544,7 @@ fn device_admin_http_is_scoped_and_disable_revoke_cleanup_is_atomic_in_both_mode
                 "POST",
                 &path,
                 Some(tenant),
-                r#"{"expected_status":"disabled"}"#
+                &device_body(2, "test")
             )
             .0,
             StatusCode::OK
@@ -268,7 +559,7 @@ fn device_admin_http_is_scoped_and_disable_revoke_cleanup_is_atomic_in_both_mode
                 "POST",
                 &format!("/admin/devices/{id}/disable"),
                 Some(tenant),
-                r#"{"expected_status":"revoked"}"#
+                &device_body(3, "test")
             )
             .0,
             StatusCode::CONFLICT
@@ -289,6 +580,53 @@ fn device_admin_http_is_scoped_and_disable_revoke_cleanup_is_atomic_in_both_mode
         assert!(!audit[1]
             .get::<_, String>(1)
             .contains("synthetic-management-fixture"));
+    }
+}
+
+#[test]
+#[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
+fn disabled_device_can_be_enabled_without_restoring_old_credentials() {
+    for mode in [TenancyMode::Disabled, TenancyMode::Enabled] {
+        let db = Db::new(mode);
+        let tenant = db.target();
+        let id = Uuid::now_v7();
+        device(&db, tenant, id, db.member, 7);
+        let router = app(&db, Some(db.context(db.actor_session.to_string())));
+        let disable = send(
+            &router,
+            "POST",
+            &format!("/admin/devices/{id}/disable"),
+            Some(tenant),
+            &device_body(1, "test"),
+        );
+        assert_eq!(disable.0, StatusCode::OK);
+        assert_eq!(disable.1["result_version"], 2);
+        assert_eq!(
+            snapshot(&db, tenant, id),
+            ("disabled".into(), 0, 0, 0, 1, 1, 0)
+        );
+        let stale = send(
+            &router,
+            "POST",
+            &format!("/admin/devices/{id}/enable"),
+            Some(tenant),
+            &device_body(1, "test"),
+        );
+        assert_eq!(stale.0, StatusCode::CONFLICT);
+        let enabled = send(
+            &router,
+            "POST",
+            &format!("/admin/devices/{id}/enable"),
+            Some(tenant),
+            &device_body(2, "test"),
+        );
+        assert_eq!(enabled.0, StatusCode::OK);
+        assert_eq!(enabled.1["result_status"], "active");
+        assert_eq!(enabled.1["result_version"], 3);
+        assert_eq!(
+            snapshot(&db, tenant, id),
+            ("active".into(), 0, 0, 0, 1, 1, 0)
+        );
     }
 }
 
@@ -321,7 +659,7 @@ fn device_admin_rechecks_tenant_grants_and_actor_device_authority() {
     for sql in [format!("update {s}.device_proof_keys set status='retired',retired_at_epoch=1000 where tenant_id='t1'"),format!("update {s}.account_device_bindings set status='suspended' where tenant_id='t1'")] {
         c.batch_execute(&sql).unwrap();
         assert_eq!(db.service().get_device(context.clone(),"t1".into(),id.to_string()),Err(AccessError::Forbidden));
-        assert_eq!(db.service().execute(context.clone(),db.command(AccessAdminMutation::SetDeviceStatus{device_id:id.to_string(),status:DeviceStatus::Disabled,expected_status:DeviceStatus::Active})),Err(AccessError::Forbidden));
+        assert_eq!(db.service().execute(context.clone(),db.command(AccessAdminMutation::SetDeviceStatus{device_id:id.to_string(),status:DeviceStatus::Disabled,expected_version:1,operation_id:Uuid::now_v7().to_string(),reason:"test".into()})),Err(AccessError::Forbidden));
         c.batch_execute(&format!("update {s}.device_proof_keys set status='active',retired_at_epoch=null where tenant_id='t1'; update {s}.account_device_bindings set status='active' where tenant_id='t1'")).unwrap();
     }
     mutate(&db, id, DeviceStatus::Disabled, DeviceStatus::Active).unwrap();
@@ -366,7 +704,9 @@ fn device_revocation_serializes_with_waiting_authentication() {
     let command = db.command(AccessAdminMutation::SetDeviceStatus {
         device_id: id.to_string(),
         status: DeviceStatus::Revoked,
-        expected_status: DeviceStatus::Active,
+        expected_version: 1,
+        operation_id: Uuid::now_v7().to_string(),
+        reason: "test".into(),
     });
     let revocation = thread::spawn(move || svc.execute(context, command));
     ready.recv_timeout(Duration::from_secs(5)).unwrap();

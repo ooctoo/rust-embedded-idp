@@ -1109,4 +1109,4 @@ React 管理后台与宿主嵌入组件的建议选型、独立入口、样式�
 
 设备管理通过独立 `/admin/devices` 路由接入 `CoreAccessAdminService`。宿主注入经过管理用途认证的 actor，模块在同一事务内复查身份、权限和目标租户。租户设备管理要求 devices.manage；平台通过明确目标与 access.manage 执行专用跨域管理，不把平台凭证当作业务身份。
 
-停用/撤销带 expected_status；设备状态、全部关联用户的会话与凭证清理及审计原子提交。撤销另外退休密钥、解绑用户，不能恢复已撤销设备。元数据列表默认 50、上限 200，无 COUNT；不返回 JWK 或用户凭证。具体宿主装配与剩余边界见[宿主集成](host-integration-v1.md#tenant-device-administration)及[执行计划](tenant-access-execution-plan.md)。
+2.0.0 的停用/撤销带 `expected_status`；本分支已改用 `expected_version`、操作 ID 与原因，并支持符合条件的恢复启用及定向解绑，详见[设备生命周期设计](device-identity-lifecycle-design-v1.md)和[升级手册](device-identity-lifecycle-upgrade.md)。设备状态、全部关联用户的会话与凭证清理及审计原子提交。撤销另外退休密钥、解绑用户，不能恢复已撤销设备。元数据列表默认 50、上限 200，无 COUNT；不返回 JWK 或用户凭证。具体宿主装配见[宿主集成](host-integration-v1.md#tenant-device-administration)。

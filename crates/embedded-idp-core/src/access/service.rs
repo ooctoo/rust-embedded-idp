@@ -44,6 +44,11 @@ pub enum AccessListScope {
         tenant_id: String,
         filter: super::AdminDeviceFilter,
     },
+    AdminDeviceBindings {
+        tenant_id: String,
+        device_id: String,
+        status: Option<crate::AccountDeviceBindingStatus>,
+    },
     SubjectDevices {
         tenant_id: String,
         subject_id: String,
@@ -83,6 +88,7 @@ impl AccessListScope {
                 | Self::AdminClients { .. }
                 | Self::AdminSessions { .. }
                 | Self::AdminDevices { .. }
+                | Self::AdminDeviceBindings { .. }
         )
     }
 

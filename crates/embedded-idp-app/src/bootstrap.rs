@@ -1,7 +1,7 @@
 use crate::admin_ui::admin_console_router;
 use crate::config::{EmbeddedIdpAppConfig, SeedClientConfig, SeedConfidentialClientConfig};
 use crate::email_sender::AppEmailSenderProvider;
-use axum::{http::StatusCode, routing::get, Json, Router};
+use axum::{http::StatusCode, routing::get, Extension, Json, Router};
 use embedded_idp_axum::*;
 use embedded_idp_core::{access::*, *};
 use embedded_idp_email::{DefaultVerificationEmailService, VerificationEmailConfig};
@@ -11,7 +11,7 @@ use postgres::Client;
 use serde_json::json;
 use std::io::Read;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const BUSINESS_AUDIENCE: &str = "embedded-idp-business";
 const MANAGEMENT_CLIENT: &str = "idp-management";
@@ -20,8 +20,15 @@ const MANAGEMENT_CLIENT: &str = "idp-management";
 /// login policy and live tenant checks. Production hosts inject their own admission.
 struct DeviceAdmission(bool);
 impl TenantDeviceAdmission for DeviceAdmission {
-    fn authorize_provision(&self, _: &str, _: &str) -> Result<(), AccessError> {
-        if self.0 {
+    fn authorize(
+        &self,
+        _: &str,
+        _: &str,
+        _: &str,
+        _: DeviceAdmissionAction,
+        trusted: &TrustedDeviceAdmission,
+    ) -> Result<(), AccessError> {
+        if self.0 && trusted.registration_scope == "reference_dev" {
             Ok(())
         } else {
             Err(AccessError::Forbidden)
@@ -263,6 +270,18 @@ pub fn build_app(config: &EmbeddedIdpAppConfig) -> Result<Router, String> {
             AccessTokenPurpose::Management,
         )?,
     )?;
+    let mut device_routes = tenant_device_router(
+        devices.clone(),
+        Arc::new(DeviceAdmission(config.allow_device_provisioning)),
+        TenantDeviceHttpConfig::new(BUSINESS_AUDIENCE, "/devices/heartbeat")
+            .map_err(|_| "invalid device routes")?,
+    );
+    if config.allow_device_provisioning {
+        device_routes = device_routes.layer(Extension(TrustedDeviceAdmission {
+            registration_scope: "reference_dev".into(),
+            valid_until: SystemTime::now() + Duration::from_secs(365 * 24 * 60 * 60),
+        }));
+    }
     let public = tenant_device_auth_router(
         devices.clone(),
         TenantDeviceAuthHttpConfig::new(
@@ -273,12 +292,7 @@ pub fn build_app(config: &EmbeddedIdpAppConfig) -> Result<Router, String> {
         )
         .map_err(|_| "invalid auth routes")?,
     )
-    .merge(tenant_device_router(
-        devices,
-        Arc::new(DeviceAdmission(config.allow_device_provisioning)),
-        TenantDeviceHttpConfig::new(BUSINESS_AUDIENCE, "/devices/heartbeat")
-            .map_err(|_| "invalid device routes")?,
-    ))
+    .merge(device_routes)
     .merge(
         tenant_registration_router(Arc::new(registration), config.login_policy.clone(), email)
             .map_err(|_| "invalid registration routes")?,

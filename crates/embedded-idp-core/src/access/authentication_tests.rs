@@ -24,6 +24,7 @@ struct D {
     fail_insert: bool,
     confidential_client: bool,
     proof_devices: Vec<TenantProofDevice>,
+    registrations: Vec<TenantDeviceRegistration>,
     proof_keys: Vec<TenantProofKey>,
     proof_bindings: Vec<TenantProofBinding>,
     proof_challenges: Vec<TenantProofChallenge>,
@@ -305,6 +306,7 @@ fn seed() -> S {
         fail_insert: false,
         confidential_client: false,
         proof_devices: vec![],
+        registrations: vec![],
         proof_keys: vec![],
         proof_bindings: vec![],
         proof_challenges: vec![],
@@ -752,6 +754,26 @@ mod device_proofs {
     use base64ct::{Base64UrlUnpadded, Encoding};
 
     impl TenantDeviceProofTransaction for T<'_> {
+        fn key_metadata(
+            &mut self,
+            _: &str,
+            _: &str,
+            _: &str,
+        ) -> Result<Option<DeviceKeyMetadata>, StoreError> {
+            Ok(None)
+        }
+        fn registration_for_device(
+            &mut self,
+            tenant: &str,
+            device: &str,
+        ) -> Result<Option<TenantDeviceRegistration>, StoreError> {
+            Ok(self
+                .d
+                .registrations
+                .iter()
+                .find(|r| r.tenant_id == tenant && r.device_id == device)
+                .cloned())
+        }
         fn lock_proof_device(
             &mut self,
             tenant: &str,
@@ -839,6 +861,9 @@ mod device_proofs {
             binding: &TenantProofBinding,
             _: &str,
             _: SystemTime,
+            _: &str,
+            _: &str,
+            _: &str,
         ) -> Result<(), StoreError> {
             self.d.proof_bindings.push(binding.clone());
             Ok(())
@@ -904,6 +929,8 @@ mod device_proofs {
                 client_id: "web".into(),
                 proof_key_id: Some(key.clone()),
                 status: DeviceStatus::Active,
+                version: 1,
+                key_version: None,
             });
             data.proof_keys.push(TenantProofKey {
                 tenant_id: "t1".into(),
@@ -1047,6 +1074,69 @@ mod device_proofs {
         assert_eq!(s.0.lock().unwrap().proof_challenges.len(), 1);
     }
     impl TenantDeviceLifecycleTransaction for T<'_> {
+        fn append_rotation_audit(
+            &mut self,
+            _: &AccessActor,
+            _: &TenantProofDevice,
+            _: &TenantProofKey,
+            _: &TenantProofKey,
+            _: SystemTime,
+            _: &str,
+            _: &str,
+        ) -> Result<(), StoreError> {
+            Ok(())
+        }
+        fn registration(
+            &mut self,
+            tenant: &str,
+            client: &str,
+            scope: &str,
+            request_id: &str,
+        ) -> Result<Option<TenantDeviceRegistration>, StoreError> {
+            Ok(self
+                .d
+                .registrations
+                .iter()
+                .find(|r| {
+                    r.tenant_id == tenant
+                        && r.client_id == client
+                        && r.registration_scope == scope
+                        && r.registration_request_id == request_id
+                })
+                .cloned())
+        }
+        fn insert_registration(&mut self, r: &TenantDeviceRegistration) -> Result<(), StoreError> {
+            if self.d.registrations.iter().any(|x| {
+                x.expected_key_id == r.expected_key_id
+                    || x.tenant_id == r.tenant_id && x.device_id == r.device_id
+            }) || self
+                .d
+                .proof_keys
+                .iter()
+                .any(|k| k.key_id == r.expected_key_id)
+            {
+                return Err(StoreError::Conflict("device_key"));
+            }
+            self.d.registrations.push(r.clone());
+            Ok(())
+        }
+        fn complete_registration_record(
+            &mut self,
+            tenant: &str,
+            device: &str,
+            now: SystemTime,
+        ) -> Result<(), StoreError> {
+            let r = self
+                .d
+                .registrations
+                .iter_mut()
+                .find(|r| {
+                    r.tenant_id == tenant && r.device_id == device && r.completed_at.is_none()
+                })
+                .ok_or(StoreError::Conflict("device_registration"))?;
+            r.completed_at = Some(now);
+            Ok(())
+        }
         fn insert_pending_device(
             &mut self,
             d: &TenantProofDevice,
@@ -1083,6 +1173,8 @@ mod device_proofs {
                 .unwrap();
             device.status = DeviceStatus::Active;
             device.proof_key_id = Some(key.key_id.clone());
+            device.key_version = Some(key.version);
+            device.version += 1;
             if self.d.fail_insert {
                 return Err(StoreError::Backend("injected key write failure".into()));
             }
@@ -1091,12 +1183,34 @@ mod device_proofs {
     }
     struct Admission(bool);
     impl TenantDeviceAdmission for Admission {
-        fn authorize_provision(&self, _: &str, _: &str) -> Result<(), AccessError> {
+        fn authorize(
+            &self,
+            _: &str,
+            _: &str,
+            _: &str,
+            _: DeviceAdmissionAction,
+            _: &TrustedDeviceAdmission,
+        ) -> Result<(), AccessError> {
             if self.0 {
                 Ok(())
             } else {
                 Err(AccessError::Forbidden)
             }
+        }
+    }
+    fn trusted() -> TrustedDeviceAdmission {
+        TrustedDeviceAdmission {
+            registration_scope: "test_scope".into(),
+            valid_until: C.now() + Duration::from_secs(3600),
+        }
+    }
+    fn provision(tenant: &str) -> ProvisionTenantDevice {
+        ProvisionTenantDevice {
+            tenant_id: tenant.into(),
+            device_id: uuid::Uuid::from_u128(42).to_string(),
+            registration_request_id: uuid::Uuid::from_u128(43).to_string(),
+            device_name: "Laptop".into(),
+            public_jwk: "test".into(),
         }
     }
     fn lifecycle(mode: TenancyMode, s: S) -> ProofService {
@@ -1129,29 +1243,86 @@ mod device_proofs {
             let s = seed();
             let service = lifecycle(mode, s.clone());
             assert_eq!(
-                service.provision_device(tenant, "Laptop", &Admission(false)),
+                service.provision_device(provision(tenant), &trusted(), &Admission(false)),
+                Err(TenantAuthError::Access(AccessError::Forbidden))
+            );
+            assert!(s.0.lock().unwrap().proof_devices.is_empty());
+            let mut short_admission = trusted();
+            short_admission.valid_until = C.now() + Duration::from_millis(500);
+            assert_eq!(
+                service.provision_device(provision(tenant), &short_admission, &Admission(true)),
                 Err(TenantAuthError::Access(AccessError::Forbidden))
             );
             assert!(s.0.lock().unwrap().proof_devices.is_empty());
             let device = service
-                .provision_device(tenant, "Laptop", &Admission(true))
+                .provision_device(provision(tenant), &trusted(), &Admission(true))
                 .unwrap();
-            assert_eq!(device.status, DeviceStatus::Pending);
+            assert_eq!(device.device.status, DeviceStatus::Pending);
+            assert_eq!(
+                service
+                    .provision_device(provision(tenant), &trusted(), &Admission(true))
+                    .unwrap(),
+                device
+            );
+            let mut changed = provision(tenant);
+            changed.device_name = "Different".into();
+            assert_eq!(
+                service.provision_device(changed, &trusted(), &Admission(true)),
+                Err(TenantAuthError::Access(AccessError::Conflict(
+                    "device_registration"
+                )))
+            );
+            let lookup = DeviceRegistrationLookup {
+                tenant_id: tenant.into(),
+                device_id: device.device.id.clone(),
+                registration_request_id: provision(tenant).registration_request_id,
+            };
+            assert_eq!(
+                service
+                    .registration_result(lookup.clone(), &trusted(), &Admission(true))
+                    .unwrap(),
+                device
+            );
+            let mut different_scope = trusted();
+            different_scope.registration_scope = "other".into();
+            assert_eq!(
+                service.registration_result(lookup.clone(), &different_scope, &Admission(true)),
+                Err(TenantAuthError::Access(AccessError::NotFound(
+                    "device_registration"
+                )))
+            );
+            assert_eq!(s.0.lock().unwrap().proof_devices.len(), 1);
+            s.0.lock().unwrap().registrations[0].expires_at = C.now();
+            service
+                .issue_challenge(
+                    tenant,
+                    &device.device.id,
+                    DeviceProofPurpose::new(DEVICE_REGISTRATION_PURPOSE).unwrap(),
+                )
+                .unwrap();
+            assert!(s.0.lock().unwrap().proof_challenges.is_empty());
+            s.0.lock().unwrap().registrations[0].expires_at = C.now() + Duration::from_secs(3600);
             assert!(s.0.lock().unwrap().proof_challenges.is_empty());
             let challenge = service
                 .issue_challenge(
                     tenant,
-                    &device.id,
+                    &device.device.id,
                     DeviceProofPurpose::new(DEVICE_REGISTRATION_PURPOSE).unwrap(),
                 )
                 .unwrap();
             let command = CompleteTenantDeviceRegistration {
                 tenant_id: tenant.into(),
-                device_id: device.id,
+                device_id: device.device.id,
                 public_jwk: "test".into(),
                 challenge: challenge.challenge,
                 signature: SecretString::new(Base64UrlUnpadded::encode_string(&[3; 64])),
             };
+            let mut wrong_key = command.clone();
+            wrong_key.public_jwk = "new".into();
+            assert!(service.complete_registration(wrong_key).is_err());
+            assert!(s.0.lock().unwrap().proof_challenges[0]
+                .consumed_at
+                .is_none());
             s.0.lock().unwrap().fail_insert = true;
             assert!(service.complete_registration(command.clone()).is_err());
             {
@@ -1163,6 +1334,11 @@ mod device_proofs {
             s.0.lock().unwrap().fail_insert = false;
             let key = service.complete_registration(command.clone()).unwrap();
             assert_eq!(key.version, 1);
+            let result = service
+                .registration_result(lookup, &trusted(), &Admission(true))
+                .unwrap();
+            assert_eq!(result.device.version, 2);
+            assert_eq!(result.completed_at, Some(C.now()));
             assert!(service.complete_registration(command).is_err());
             let data = s.0.lock().unwrap();
             assert_eq!(data.proof_devices[0].status, DeviceStatus::Active);
@@ -1184,9 +1360,12 @@ mod device_proofs {
                 DeviceProofPurpose::new(DEVICE_KEY_ROTATION_PURPOSE).unwrap(),
             )
             .unwrap();
+        let current_key_id = s.0.lock().unwrap().proof_keys[0].key_id.clone();
         let command = RotateTenantDeviceKey {
             actor: request.actor,
             device_id: "d1".into(),
+            expected_key_id: current_key_id,
+            expected_key_version: 1,
             proposed_public_jwk: "new".into(),
             challenge: nonce.challenge,
             current_key_signature: SecretString::new(Base64UrlUnpadded::encode_string(&[3; 64])),

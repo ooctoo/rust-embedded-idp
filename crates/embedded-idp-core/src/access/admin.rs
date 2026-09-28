@@ -35,6 +35,13 @@ use crate::{Clock, DeviceStatus, IdGenerator, SessionStatus, StoreError};
 pub const MAX_ROLE_PERMISSIONS: usize = 200;
 pub const MAX_PERMISSION_CHANGES: usize = 200;
 
+fn validate_device_reason(reason: &str) -> Result<(), AccessError> {
+    if reason.trim().is_empty() || reason.len() > 512 || reason.chars().any(char::is_control) {
+        return Err(AccessError::InvalidInput("reason"));
+    }
+    Ok(())
+}
+
 /// Constructed by the trusted management authentication adapter, never from a body.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccessAdminContext {
@@ -54,7 +61,18 @@ pub enum AccessAdminMutation {
     SetDeviceStatus {
         device_id: String,
         status: DeviceStatus,
-        expected_status: DeviceStatus,
+        expected_version: u64,
+        operation_id: String,
+        reason: String,
+    },
+    /// account_id is resolved by the authorized service, never accepted from HTTP.
+    UnbindDeviceBinding {
+        device_id: String,
+        binding_id: String,
+        account_id: String,
+        expected_version: u64,
+        operation_id: String,
+        reason: String,
     },
     CreateTenant {
         name: String,
@@ -199,7 +217,15 @@ pub enum AccessChange {
     Device {
         before: AccessDeviceRecord,
         after: AccessDeviceRecord,
+        reason: String,
     },
+    DeviceBinding {
+        before: AccessDeviceBindingRecord,
+        after: AccessDeviceBindingRecord,
+        reason: String,
+    },
+    /// Returned for an already committed operation; never written as a new change.
+    DeviceReceipt(super::DeviceOperationReceipt),
     TenantCreated {
         record: AccessTenantRecord,
         administrator: TenantMembership,
@@ -237,6 +263,48 @@ pub struct AccessAuditEvent {
     pub target_business_id: Option<String>,
     pub operation: &'static str,
     pub change: AccessChange,
+}
+
+impl AccessAuditEvent {
+    pub fn device_receipt(&self, operation_id: &str) -> Option<super::DeviceOperationReceipt> {
+        match &self.change {
+            AccessChange::Device { after, .. } => Some(super::DeviceOperationReceipt {
+                operation_id: operation_id.into(),
+                audit_id: self.id.clone(),
+                device_id: after.device.id.clone(),
+                binding_id: None,
+                operation: self.operation,
+                occurred_at: self.occurred_at,
+                result_version: after.device.version,
+                result_status: match after.device.status {
+                    DeviceStatus::Pending => "pending",
+                    DeviceStatus::Active => "active",
+                    DeviceStatus::Disabled => "disabled",
+                    DeviceStatus::Revoked => "revoked",
+                }
+                .into(),
+            }),
+            AccessChange::DeviceBinding { after, .. } => Some(super::DeviceOperationReceipt {
+                operation_id: operation_id.into(),
+                audit_id: self.id.clone(),
+                device_id: after.device_id.clone(),
+                binding_id: Some(after.id.clone()),
+                operation: self.operation,
+                occurred_at: self.occurred_at,
+                result_version: after.version,
+                result_status: match after.status {
+                    crate::AccountDeviceBindingStatus::Active => "active",
+                    crate::AccountDeviceBindingStatus::Suspended => "suspended",
+                    crate::AccountDeviceBindingStatus::Unbound => "unbound",
+                }
+                .into(),
+            }),
+            AccessChange::DeviceReceipt(receipt) if receipt.operation_id == operation_id => {
+                Some(receipt.clone())
+            }
+            _ => None,
+        }
+    }
 }
 
 /// Locks precede every read/authorization. Use the persisted mode, not just config.
@@ -333,6 +401,26 @@ pub trait AccessAdminTransaction {
         tenant: &str,
         device: &str,
     ) -> Result<Option<AccessDeviceRecord>, StoreError>;
+    fn admin_device_key_metadata(
+        &mut self,
+        tenant: &str,
+        device: &str,
+        key: &str,
+    ) -> Result<Option<super::DeviceKeyMetadata>, StoreError>;
+    fn device_has_active_key(&mut self, tenant: &str, device: &str) -> Result<bool, StoreError>;
+    fn admin_device_binding(
+        &mut self,
+        tenant: &str,
+        device: &str,
+        binding_id: &str,
+    ) -> Result<Option<AccessDeviceBindingRecord>, StoreError>;
+    fn admin_device_bindings(
+        &mut self,
+        tenant: &str,
+        device: &str,
+        status: Option<&crate::AccountDeviceBindingStatus>,
+        page: &super::AccessPageRequest,
+    ) -> Result<Vec<AccessDeviceBindingRecord>, StoreError>;
     /// Tenant-scoped caller-selected v2 keyset scan by `(registered_at, device_id)`,
     /// descending by default and returning at most limit + 1 records.
     /// Account filtering requires an active binding in this same tenant;
@@ -468,6 +556,18 @@ pub trait AccessAdminTransaction {
         kind: RoleKind,
     ) -> Result<bool, StoreError>;
     fn append_audit(&mut self, event: &AccessAuditEvent) -> Result<(), StoreError>;
+    fn device_operation(
+        &mut self,
+        actor: &AccessActor,
+        target_tenant: &str,
+        operation_id: &str,
+    ) -> Result<Option<([u8; 32], AccessAuditEvent)>, StoreError>;
+    fn append_device_audit(
+        &mut self,
+        event: &AccessAuditEvent,
+        operation_id: &str,
+        digest: &[u8; 32],
+    ) -> Result<(), StoreError>;
     /// Metadata only, caller-selected v2 `(occurred_at, id)` keyset scan,
     /// descending by default with at most limit + 1 records in the exact target domain.
     fn admin_audit_events(
@@ -525,6 +625,48 @@ impl<S, C, I> CoreAccessAdminService<S, C, I> {
 }
 
 impl AccessAdminMutation {
+    fn device_operation(&self, tenant: &str) -> Option<(&str, [u8; 32])> {
+        match self {
+            Self::SetDeviceStatus {
+                device_id,
+                expected_version,
+                operation_id,
+                reason,
+                ..
+            } => Some((
+                operation_id,
+                super::device_command_digest(
+                    self.operation(),
+                    tenant,
+                    device_id,
+                    None,
+                    None,
+                    *expected_version,
+                    reason,
+                ),
+            )),
+            Self::UnbindDeviceBinding {
+                device_id,
+                binding_id,
+                account_id,
+                expected_version,
+                operation_id,
+                reason,
+            } => Some((
+                operation_id,
+                super::device_command_digest(
+                    self.operation(),
+                    tenant,
+                    device_id,
+                    Some(binding_id),
+                    Some(account_id),
+                    *expected_version,
+                    reason,
+                ),
+            )),
+            _ => None,
+        }
+    }
     fn business_id(&self) -> Option<String> {
         match self {
             Self::SetSecurityAdmin { .. } => Some(super::IDP_BUSINESS_ID.into()),
@@ -559,7 +701,12 @@ impl AccessAdminMutation {
                 status: DeviceStatus::Revoked,
                 ..
             } => "device.revoke",
+            Self::SetDeviceStatus {
+                status: DeviceStatus::Active,
+                ..
+            } => "device.enable",
             Self::SetDeviceStatus { .. } => "device.disable",
+            Self::UnbindDeviceBinding { .. } => "device.binding.unbind",
             Self::CreateTenant { .. } => "tenant.create",
             Self::UpdateTenant { .. } => "tenant.update",
             Self::SyncPermissions { .. } => "catalog.sync",
@@ -586,6 +733,10 @@ impl AccessAdminMutation {
                 ..
             } => Some(administrator_subject_id),
             Self::RevokeSubjectSessions { subject_id }
+            | Self::UnbindDeviceBinding {
+                account_id: subject_id,
+                ..
+            }
             | Self::GrantRole { subject_id, .. }
             | Self::BindMember { subject_id }
             | Self::SetMemberStatus { subject_id, .. }
@@ -601,12 +752,44 @@ impl AccessAdminMutation {
         match self {
             Self::RevokeSession { session_id } => validate_id(session_id, 128, "session_id")?,
             Self::SetDeviceStatus {
-                device_id, status, ..
+                device_id,
+                status,
+                expected_version,
+                operation_id,
+                reason,
+                ..
             } => {
                 validate_id(device_id, 128, "device_id")?;
-                if !matches!(status, DeviceStatus::Disabled | DeviceStatus::Revoked) {
+                super::validate_device_operation_id(operation_id)?;
+                validate_device_reason(reason)?;
+                if !matches!(
+                    status,
+                    DeviceStatus::Active | DeviceStatus::Disabled | DeviceStatus::Revoked
+                ) {
                     return Err(AccessError::InvalidInput("device_status"));
                 }
+                if *expected_version == 0 || i64::try_from(*expected_version).is_err() {
+                    return Err(AccessError::InvalidInput("expected_version"));
+                }
+            }
+            Self::UnbindDeviceBinding {
+                device_id,
+                binding_id,
+                expected_version,
+                operation_id,
+                reason,
+                ..
+            } => {
+                super::validate_device_operation_id(operation_id)?;
+                for (value, field) in [(device_id, "device_id"), (binding_id, "binding_id")] {
+                    if uuid::Uuid::parse_str(value).map_or(true, |id| id.to_string() != *value) {
+                        return Err(AccessError::InvalidInput(field));
+                    }
+                }
+                if *expected_version == 0 || i64::try_from(*expected_version).is_err() {
+                    return Err(AccessError::InvalidInput("expected_version"));
+                }
+                validate_device_reason(reason)?;
             }
             Self::CreateTenant { name, .. } | Self::UpdateTenant { name, .. } => {
                 if name.trim().is_empty() || name.len() > 256 || name.chars().any(char::is_control)
@@ -1019,7 +1202,9 @@ where
             AccessAdminMutation::SetDeviceStatus {
                 device_id,
                 status,
-                expected_status,
+                expected_version,
+                reason,
+                ..
             } => {
                 self.mode.validate_business_tenant(tenant)?;
                 let before = tx
@@ -1028,15 +1213,74 @@ where
                 if before.device.tenant_id != *tenant || before.device.id != *device_id {
                     return Err(AccessError::InvalidStoreResponse);
                 }
-                if before.device.status != *expected_status
-                    || (before.device.status == DeviceStatus::Revoked
-                        && *status != DeviceStatus::Revoked)
-                {
+                if before.device.version != *expected_version {
+                    return Err(AccessError::Conflict("device_version"));
+                }
+                let allowed = match (&before.device.status, status) {
+                    (
+                        DeviceStatus::Pending | DeviceStatus::Active,
+                        DeviceStatus::Disabled | DeviceStatus::Revoked,
+                    )
+                    | (DeviceStatus::Disabled, DeviceStatus::Revoked) => true,
+                    (DeviceStatus::Disabled, DeviceStatus::Active) => {
+                        before.device.proof_key_id.is_some()
+                            && tx.device_has_active_key(tenant, device_id)?
+                    }
+                    _ => false,
+                };
+                if !allowed {
                     return Err(AccessError::Conflict("device_status"));
                 }
                 let mut after = before.clone();
                 after.device.status = status.clone();
-                Ok(AccessChange::Device { before, after })
+                after.device.version = before
+                    .device
+                    .version
+                    .checked_add(1)
+                    .ok_or(AccessError::InvalidInput("device_version"))?;
+                Ok(AccessChange::Device {
+                    before,
+                    after,
+                    reason: reason.clone(),
+                })
+            }
+            AccessAdminMutation::UnbindDeviceBinding {
+                device_id,
+                binding_id,
+                account_id,
+                expected_version,
+                reason,
+                ..
+            } => {
+                self.mode.validate_business_tenant(tenant)?;
+                let before = tx
+                    .admin_device_binding(tenant, device_id, binding_id)?
+                    .ok_or(AccessError::NotFound("device_binding"))?;
+                if before.tenant_id != *tenant
+                    || before.device_id != *device_id
+                    || before.id != *binding_id
+                    || before.account_id != *account_id
+                {
+                    return Err(AccessError::InvalidStoreResponse);
+                }
+                if before.version != *expected_version {
+                    return Err(AccessError::Conflict("device_binding_version"));
+                }
+                if before.status == crate::AccountDeviceBindingStatus::Unbound {
+                    return Err(AccessError::Conflict("device_binding_status"));
+                }
+                let mut after = before.clone();
+                after.status = crate::AccountDeviceBindingStatus::Unbound;
+                after.version = before
+                    .version
+                    .checked_add(1)
+                    .ok_or(AccessError::InvalidInput("binding_version"))?;
+                after.unbound_at = Some(now);
+                Ok(AccessChange::DeviceBinding {
+                    before,
+                    after,
+                    reason: reason.clone(),
+                })
             }
             AccessAdminMutation::CreateTenant {
                 administrator_subject_id,
@@ -1556,7 +1800,10 @@ where
             | AccessAdminMutation::RevokeSubjectSessions { .. } => {
                 AccessAdminOperation::ManageSessions
             }
-            AccessAdminMutation::SetDeviceStatus { .. } => AccessAdminOperation::ManageDevices,
+            AccessAdminMutation::SetDeviceStatus { .. }
+            | AccessAdminMutation::UnbindDeviceBinding { .. } => {
+                AccessAdminOperation::ManageDevices
+            }
             AccessAdminMutation::CreateTenant { .. } | AccessAdminMutation::UpdateTenant { .. } => {
                 AccessAdminOperation::ManageTenants
             }
@@ -1633,7 +1880,11 @@ where
                     command.mutation,
                     AccessAdminMutation::RevokeSession { .. }
                         | AccessAdminMutation::RevokeSubjectSessions { .. }
-                        | AccessAdminMutation::SetDeviceStatus { .. }
+                        | AccessAdminMutation::SetDeviceStatus {
+                            status: DeviceStatus::Disabled | DeviceStatus::Revoked,
+                            ..
+                        }
+                        | AccessAdminMutation::UnbindDeviceBinding { .. }
                         | AccessAdminMutation::UpdateTenant { .. }
                         | AccessAdminMutation::RevokeRole { .. }
                         | AccessAdminMutation::DeleteRole { .. }
@@ -1650,6 +1901,18 @@ where
                     && !(actor.tenant_id == SYSTEM_TENANT_ID && cleanup)
                 {
                     return Err(AccessError::Forbidden);
+                }
+            }
+            if let Some((operation_id, digest)) =
+                command.mutation.device_operation(&command.tenant_id)
+            {
+                if let Some((stored_digest, event)) =
+                    tx.device_operation(actor, &command.tenant_id, operation_id)?
+                {
+                    if stored_digest != digest {
+                        return Err(AccessError::Conflict("device_operation_conflict"));
+                    }
+                    return Ok(event);
                 }
             }
             let change = self.prepare_change(tx, &command, now)?;
@@ -1681,7 +1944,13 @@ where
                 operation: command.mutation.operation(),
                 change,
             };
-            tx.append_audit(&event)?;
+            if let Some((operation_id, digest)) =
+                command.mutation.device_operation(&command.tenant_id)
+            {
+                tx.append_device_audit(&event, operation_id, &digest)?;
+            } else {
+                tx.append_audit(&event)?;
+            }
             Ok(event)
         })
     }

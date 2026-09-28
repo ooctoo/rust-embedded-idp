@@ -10,7 +10,7 @@ use axum::{
     middleware,
     response::{IntoResponse, Response},
     routing::{get, post},
-    Json, Router,
+    Extension, Json, Router,
 };
 use base64ct::{Base64UrlUnpadded, Encoding};
 use embedded_idp_core::{
@@ -53,11 +53,14 @@ pub fn tenant_device_router(
 ) -> Router {
     Router::new()
         .route("/devices/provision", post(provision))
+        .route("/devices/registration-result", post(registration_result))
         .route("/devices/complete", post(complete))
         .route("/devices/rotate-key", post(rotate))
         .route("/devices", get(list))
         .route("/devices/:device_id", get(detail))
+        .route("/devices/:device_id/keys/:key_id", get(key_metadata))
         .route("/devices/unbind", post(unbind))
+        .route("/devices/operations/:operation_id", get(operation_result))
         .route("/devices/heartbeat", post(heartbeat))
         .with_state(DeviceState {
             service,
@@ -71,7 +74,17 @@ pub fn tenant_device_router(
 #[serde(deny_unknown_fields)]
 struct ProvisionBody {
     tenant_id: String,
+    device_id: String,
+    registration_request_id: String,
     device_name: String,
+    public_jwk: Box<RawValue>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RegistrationResultBody {
+    tenant_id: String,
+    device_id: String,
+    registration_request_id: String,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -86,6 +99,8 @@ struct CompleteBody {
 #[serde(deny_unknown_fields)]
 struct RotateBody {
     device_id: String,
+    expected_key_id: String,
+    expected_key_version: u64,
     proposed_public_jwk: Box<RawValue>,
     challenge: String,
     current_key_signature: String,
@@ -95,6 +110,19 @@ struct RotateBody {
 #[serde(deny_unknown_fields)]
 struct DeviceBody {
     device_id: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UnbindBody {
+    device_id: String,
+    binding_id: String,
+    expected_version: u64,
+    operation_id: String,
+}
+fn operation_receipt_json(r: DeviceOperationReceipt) -> Value {
+    json!({"operation_id":r.operation_id,"audit_id":r.audit_id,"device_id":r.device_id,
+        "binding_id":r.binding_id,"operation":r.operation,"occurred_at_unix_secs":unix_time_secs(r.occurred_at),
+        "result_version":r.result_version,"result_status":r.result_status})
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -112,10 +140,20 @@ struct DeviceCursor {
     after: String,
 }
 pub(super) fn device_json(d: TenantProofDevice) -> Value {
-    json!({"tenant_id":d.tenant_id,"device_id":d.id,"client_id":d.client_id,"proof_key_id":d.proof_key_id,"status":match d.status {DeviceStatus::Pending=>"pending",DeviceStatus::Active=>"active",DeviceStatus::Disabled=>"disabled",DeviceStatus::Revoked=>"revoked"}})
+    json!({"tenant_id":d.tenant_id,"device_id":d.id,"client_id":d.client_id,"proof_key_id":d.proof_key_id,"status":match d.status {DeviceStatus::Pending=>"pending",DeviceStatus::Active=>"active",DeviceStatus::Disabled=>"disabled",DeviceStatus::Revoked=>"revoked"},"version":d.version,"key_version":d.key_version})
+}
+fn registration_json(r: DeviceRegistrationResult) -> Value {
+    let mut value = device_json(r.device);
+    value["expected_key_id"] = json!(r.expected_key_id);
+    value["created_at_unix_secs"] = json!(unix_time_secs(r.created_at));
+    value["expires_at_unix_secs"] = json!(unix_time_secs(r.expires_at));
+    value["completed_at_unix_secs"] = json!(r.completed_at.map(unix_time_secs));
+    value
 }
 fn subject_device_json(r: TenantSubjectDevice) -> Value {
     let mut body = device_json(r.device);
+    body["binding_id"] = json!(r.binding_id);
+    body["binding_version"] = json!(r.binding_version);
     body["device_name"] = json!(r.name);
     body["registered_at_unix_secs"] = json!(unix_time_secs(r.registered_at));
     body["last_seen_at_unix_secs"] = json!(r.last_seen_at.map(unix_time_secs));
@@ -128,6 +166,25 @@ fn subject_device_json(r: TenantSubjectDevice) -> Value {
 }
 fn key_json(k: TenantProofKey) -> Response {
     Json(json!({"tenant_id":k.tenant_id,"device_id":k.device_id,"key_id":k.key_id,"version":k.version})).into_response()
+}
+pub(super) fn key_metadata_json(k: DeviceKeyMetadata) -> Value {
+    json!({"tenant_id":k.tenant_id,"device_id":k.device_id,"key_id":k.key_id,"algorithm":k.algorithm,
+        "version":k.version,"status":match k.status {embedded_idp_core::DeviceProofKeyStatus::Active=>"active",embedded_idp_core::DeviceProofKeyStatus::Retired=>"retired"},
+        "registered_at_unix_secs":unix_time_secs(k.registered_at),"retired_at_unix_secs":k.retired_at.map(unix_time_secs)})
+}
+async fn key_metadata(
+    State(state): State<DeviceState>,
+    headers: HeaderMap,
+    Path((device, key)): Path<(String, String)>,
+) -> Response {
+    let actor = match actor(&state, &headers).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    match call(move || state.service.key_metadata(actor, device, key)).await {
+        Ok(metadata) => Json(key_metadata_json(metadata)).into_response(),
+        Err(error) => device_error(error),
+    }
 }
 async fn actor(state: &DeviceState, headers: &HeaderMap) -> Result<AccessActor, Response> {
     if headers.get_all(header::AUTHORIZATION).iter().count() != 1 {
@@ -148,20 +205,69 @@ async fn actor(state: &DeviceState, headers: &HeaderMap) -> Result<AccessActor, 
 }
 async fn provision(
     State(state): State<DeviceState>,
+    trusted: Option<Extension<TrustedDeviceAdmission>>,
     headers: HeaderMap,
     Json(body): Json<ProvisionBody>,
 ) -> Response {
     if !tenant_header_matches(&headers, &body.tenant_id) {
         return bad_request();
     }
+    let Some(Extension(trusted)) = trusted else {
+        return tenant_error(
+            StatusCode::UNAUTHORIZED,
+            "device_admission_required",
+            "device admission is required",
+        );
+    };
     match call(move || {
-        state
-            .service
-            .provision(body.tenant_id, body.device_name, state.admission.as_ref())
+        state.service.provision(
+            ProvisionTenantDevice {
+                tenant_id: body.tenant_id,
+                device_id: body.device_id,
+                registration_request_id: body.registration_request_id,
+                device_name: body.device_name,
+                public_jwk: body.public_jwk.get().into(),
+            },
+            &trusted,
+            state.admission.as_ref(),
+        )
     })
     .await
     {
-        Ok(device) => (StatusCode::CREATED, Json(device_json(device))).into_response(),
+        Ok(result) => (StatusCode::CREATED, Json(registration_json(result))).into_response(),
+        Err(e) => device_error(e),
+    }
+}
+async fn registration_result(
+    State(state): State<DeviceState>,
+    trusted: Option<Extension<TrustedDeviceAdmission>>,
+    headers: HeaderMap,
+    Json(body): Json<RegistrationResultBody>,
+) -> Response {
+    if !tenant_header_matches(&headers, &body.tenant_id) {
+        return bad_request();
+    }
+    let Some(Extension(trusted)) = trusted else {
+        return tenant_error(
+            StatusCode::UNAUTHORIZED,
+            "device_admission_required",
+            "device admission is required",
+        );
+    };
+    match call(move || {
+        state.service.registration_result(
+            DeviceRegistrationLookup {
+                tenant_id: body.tenant_id,
+                device_id: body.device_id,
+                registration_request_id: body.registration_request_id,
+            },
+            &trusted,
+            state.admission.as_ref(),
+        )
+    })
+    .await
+    {
+        Ok(result) => Json(registration_json(result)).into_response(),
         Err(e) => device_error(e),
     }
 }
@@ -201,6 +307,8 @@ async fn rotate(
         state.service.rotate(RotateTenantDeviceKey {
             actor,
             device_id: body.device_id,
+            expected_key_id: body.expected_key_id,
+            expected_key_version: body.expected_key_version,
             proposed_public_jwk: body.proposed_public_jwk.get().into(),
             challenge: SecretString::new(body.challenge),
             current_key_signature: SecretString::new(body.current_key_signature),
@@ -306,15 +414,39 @@ async fn detail(
 async fn unbind(
     State(state): State<DeviceState>,
     headers: HeaderMap,
-    Json(body): Json<DeviceBody>,
+    Json(body): Json<UnbindBody>,
 ) -> Response {
     let actor = match actor(&state, &headers).await {
         Ok(a) => a,
         Err(r) => return r,
     };
-    match call(move || state.service.unbind(actor, body.device_id)).await {
-        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+    match call(move || {
+        state.service.unbind(
+            actor,
+            body.device_id,
+            body.binding_id,
+            body.expected_version,
+            body.operation_id,
+        )
+    })
+    .await
+    {
+        Ok(receipt) => Json(operation_receipt_json(receipt)).into_response(),
         Err(e) => device_error(e),
+    }
+}
+async fn operation_result(
+    State(state): State<DeviceState>,
+    headers: HeaderMap,
+    Path(operation_id): Path<String>,
+) -> Response {
+    let actor = match actor(&state, &headers).await {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    match call(move || state.service.operation_result(actor, operation_id)).await {
+        Ok(receipt) => Json(operation_receipt_json(receipt)).into_response(),
+        Err(error) => device_error(error),
     }
 }
 async fn heartbeat(
@@ -355,7 +487,77 @@ fn bad_request() -> Response {
     )
 }
 fn device_error(e: TenantAuthError) -> Response {
-    if matches!(e, TenantAuthError::Access(AccessError::Forbidden)) {
+    if matches!(
+        e,
+        TenantAuthError::Access(AccessError::Conflict("device_binding_version"))
+    ) {
+        return tenant_error(
+            StatusCode::CONFLICT,
+            "device_binding_conflict",
+            "device binding has changed",
+        );
+    }
+    if matches!(
+        e,
+        TenantAuthError::Access(AccessError::Conflict("device_operation_conflict"))
+    ) {
+        return tenant_error(
+            StatusCode::CONFLICT,
+            "device_operation_conflict",
+            "device operation ID has different content",
+        );
+    }
+    if matches!(
+        e,
+        TenantAuthError::Access(AccessError::Conflict("device_key_changed"))
+    ) {
+        return tenant_error(
+            StatusCode::CONFLICT,
+            "device_key_changed",
+            "current device key has changed",
+        );
+    }
+    if matches!(
+        e,
+        TenantAuthError::Access(AccessError::NotFound("device_operation"))
+    ) {
+        return tenant_error(
+            StatusCode::NOT_FOUND,
+            "device_operation_not_found",
+            "device operation was not found",
+        );
+    }
+    if matches!(
+        e,
+        TenantAuthError::Access(AccessError::NotFound("device_key"))
+    ) {
+        return tenant_error(
+            StatusCode::NOT_FOUND,
+            "device_key_not_found",
+            "device key was not found",
+        );
+    }
+    if matches!(
+        e,
+        TenantAuthError::Access(AccessError::Conflict(
+            "device_registration" | "device_key" | "access.unique"
+        ))
+    ) {
+        tenant_error(
+            StatusCode::CONFLICT,
+            "device_registration_conflict",
+            "device registration conflicts with an existing identity",
+        )
+    } else if matches!(
+        e,
+        TenantAuthError::Access(AccessError::NotFound("device_registration"))
+    ) {
+        tenant_error(
+            StatusCode::NOT_FOUND,
+            "device_registration_not_found",
+            "device registration was not found",
+        )
+    } else if matches!(e, TenantAuthError::Access(AccessError::Forbidden)) {
         tenant_error(
             StatusCode::FORBIDDEN,
             "device_forbidden",

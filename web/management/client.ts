@@ -136,7 +136,14 @@ export type RoleBinding = BusinessRoleBinding | ResourceRoleBinding;
 export interface ManagedDevice {
   tenant_id: string; device_id: string; client_id: string; device_name: string;
   proof_key_id: string | null; status: "pending" | "active" | "disabled" | "revoked";
+  version: number; key_version: number | null;
   registered_at_unix_secs: number; last_seen_at_unix_secs: number | null;
+}
+export interface ManagedDeviceBinding {
+  tenant_id: string; binding_id: string; device_id: string; account_id: string;
+  status: "active" | "suspended" | "unbound"; version: number;
+  bound_at_unix_secs: number; unbound_at_unix_secs: number | null;
+  last_authenticated_at_unix_secs: number | null;
 }
 export interface ManagedSession {
   tenant_id: string; session_id: string; account_id: string; client_id: string; device_id: string | null;
@@ -182,11 +189,24 @@ function deviceFrom(value: unknown, tenant: string): ManagedDevice {
   const d = object(value);
   if (d.tenant_id !== tenant || !validId(d.device_id) || !validId(d.client_id) || typeof d.device_name !== "string" ||
       !(d.proof_key_id === null || typeof d.proof_key_id === "string" && d.proof_key_id.length > 0) ||
-      !["pending", "active", "disabled", "revoked"].includes(String(d.status)) || !validTime(d.registered_at_unix_secs) ||
+      !(d.key_version === null || Number.isSafeInteger(d.key_version) && (d.key_version as number) > 0) ||
+      !["pending", "active", "disabled", "revoked"].includes(String(d.status)) || !Number.isSafeInteger(d.version) || (d.version as number) <= 0 || !validTime(d.registered_at_unix_secs) ||
       !(d.last_seen_at_unix_secs === null || validTime(d.last_seen_at_unix_secs))) throw invalidResponse();
   return { tenant_id: tenant, device_id: d.device_id, client_id: d.client_id, device_name: d.device_name,
     proof_key_id: d.proof_key_id as string | null, status: d.status as ManagedDevice["status"],
+    version: d.version as number, key_version: d.key_version as number | null,
     registered_at_unix_secs: d.registered_at_unix_secs, last_seen_at_unix_secs: d.last_seen_at_unix_secs as number | null };
+}
+function deviceBindingFrom(value: unknown, tenant: string, device: string): ManagedDeviceBinding {
+  const b = object(value);
+  if (b.tenant_id !== tenant || b.device_id !== device || !validId(b.binding_id) || !validId(b.account_id) ||
+      !["active", "suspended", "unbound"].includes(String(b.status)) || !Number.isSafeInteger(b.version) || (b.version as number) < 1 ||
+      !validTime(b.bound_at_unix_secs) || !(b.unbound_at_unix_secs === null || validTime(b.unbound_at_unix_secs)) ||
+      !(b.last_authenticated_at_unix_secs === null || validTime(b.last_authenticated_at_unix_secs))) throw invalidResponse();
+  return { tenant_id: tenant, binding_id: b.binding_id as string, device_id: device, account_id: b.account_id as string,
+    status: b.status as ManagedDeviceBinding["status"], version: b.version as number,
+    bound_at_unix_secs: b.bound_at_unix_secs as number, unbound_at_unix_secs: b.unbound_at_unix_secs as number | null,
+    last_authenticated_at_unix_secs: b.last_authenticated_at_unix_secs as number | null };
 }
 function managedSessionFrom(value: unknown, tenant: string): ManagedSession {
   const s = object(value);
@@ -340,6 +360,7 @@ export class ManagementClient {
   private sessionChanged = false;
   private readonly browser?: BrowserSessionCoordinator;
   private restoring?: Promise<Session | undefined>;
+  private deviceIntents = new Map<string, string>();
 
   constructor(basePath = "/api", options: { mode?: "token" | "cookie" } = {}) {
     if (!/^\/(?!\/)[\w/.-]*$/.test(basePath) || basePath.split("/").includes("..")) {
@@ -762,13 +783,66 @@ export class ManagementClient {
     return d;
   }
 
-  async setDeviceStatus(tenant: string, device: ManagedDevice, status: "disabled" | "revoked"): Promise<ManagedDevice> {
+  async setDeviceStatus(tenant: string, device: ManagedDevice, status: "active" | "disabled" | "revoked", reason: string): Promise<ManagedDevice> {
     this.requireTarget(tenant); requireId(device.device_id);
-    if (device.tenant_id !== tenant || !["disabled", "revoked"].includes(status) || device.status === "revoked" || device.status === status) throw new ManagementError("设备状态已变化，请重新加载核对。", 409);
-    const result = auditResult(await this.authenticated(`/devices/${encodeURIComponent(device.device_id)}/${status === "disabled" ? "disable" : "revoke"}`, "POST", { expected_status: device.status }, tenant));
-    const updated = deviceFrom(result.device, tenant);
-    if (updated.device_id !== device.device_id || updated.client_id !== device.client_id || updated.status !== status) throw invalidResponse();
-    return updated;
+    const trimmed = reason.trim();
+    if (!trimmed || new TextEncoder().encode(trimmed).length > 512 || /[\u0000-\u001f\u007f]/.test(trimmed)) throw new ManagementError("请输入有效操作原因。", 400);
+    if (device.tenant_id !== tenant || device.status === "revoked" || device.status === status || status === "active" && device.status !== "disabled") throw new ManagementError("设备状态已变化，请重新加载核对。", 409);
+    const path = `/devices/${encodeURIComponent(device.device_id)}`;
+    const key = JSON.stringify([tenant, device.device_id, device.version, status, trimmed]);
+    const operationId = this.deviceIntents.get(key) ?? crypto.randomUUID();
+    this.deviceIntents.set(key, operationId);
+    const receipt = await this.deviceMutation(path, status === "active" ? "enable" : status === "disabled" ? "disable" : "revoke", tenant, operationId, device.version, status, trimmed);
+    if (receipt.binding_id !== null) throw invalidResponse();
+    const current = await this.getDevice(tenant, device.device_id);
+    if (current.client_id !== device.client_id || current.version < receipt.result_version) throw invalidResponse();
+    this.deviceIntents.delete(key);
+    return current;
+  }
+
+  async listDeviceBindings(tenant: string, device: string, cursor?: string): Promise<AdminPage<ManagedDeviceBinding>> {
+    this.requireTarget(tenant); requireId(device);
+    const query = new URLSearchParams({ limit: "50", sort_order: "desc", ...(cursor ? { cursor } : {}) });
+    return pageFrom(await this.authenticated(`/devices/${encodeURIComponent(device)}/bindings?${query}`, "GET", undefined, tenant), value => deviceBindingFrom(value, tenant, device));
+  }
+
+  async getDeviceBinding(tenant: string, device: string, binding: string): Promise<ManagedDeviceBinding> {
+    this.requireTarget(tenant); requireId(device); requireId(binding);
+    const result = deviceBindingFrom(await this.authenticated(`/devices/${encodeURIComponent(device)}/bindings/${encodeURIComponent(binding)}`, "GET", undefined, tenant), tenant, device);
+    if (result.binding_id !== binding) throw invalidResponse();
+    return result;
+  }
+
+  async unbindDeviceBinding(tenant: string, binding: ManagedDeviceBinding, reason: string): Promise<ManagedDeviceBinding> {
+    this.requireTarget(tenant); requireId(binding.device_id); requireId(binding.binding_id);
+    const trimmed = reason.trim();
+    if (binding.tenant_id !== tenant || binding.status === "unbound" || !trimmed || new TextEncoder().encode(trimmed).length > 512 || /[\u0000-\u001f\u007f]/.test(trimmed))
+      throw new ManagementError("绑定已变化或原因无效，请重新加载核对。", 400);
+    const path = `/devices/${encodeURIComponent(binding.device_id)}`;
+    const key = JSON.stringify([tenant, binding.device_id, binding.binding_id, binding.version, trimmed]);
+    const operationId = this.deviceIntents.get(key) ?? crypto.randomUUID();
+    this.deviceIntents.set(key, operationId);
+    const receipt = await this.deviceMutation(`${path}/bindings/${encodeURIComponent(binding.binding_id)}`, "unbind", tenant, operationId, binding.version, "unbound", trimmed, path);
+    if (receipt.binding_id !== binding.binding_id) throw invalidResponse();
+    const current = await this.getDeviceBinding(tenant, binding.device_id, binding.binding_id);
+    if (current.account_id !== binding.account_id || current.version < receipt.result_version) throw invalidResponse();
+    this.deviceIntents.delete(key);
+    return current;
+  }
+
+  private async deviceMutation(path: string, action: string, tenant: string, operationId: string, version: number, status: string, reason: string, devicePath = path): Promise<{ binding_id: string | null; result_version: number }> {
+    let value: unknown;
+    try {
+      value = await this.authenticated(`${path}/${action}`, "POST", { expected_version: version, operation_id: operationId, reason }, tenant);
+    } catch (error) {
+      if (error instanceof ManagementError && error.status && ![409, 500, 502, 503, 504].includes(error.status)) throw error;
+      try { value = await this.authenticated(`${devicePath}/operations/${encodeURIComponent(operationId)}`, "GET", undefined, tenant); }
+      catch { throw error; }
+    }
+    const receipt = auditResult(value);
+    if (receipt.operation_id !== operationId || receipt.device_id !== decodeURIComponent(devicePath.split("/")[2]) || typeof receipt.result_version !== "number" || receipt.result_version !== version + 1 || receipt.result_status !== status ||
+        receipt.binding_id !== null && typeof receipt.binding_id !== "string") throw invalidResponse();
+    return receipt as { binding_id: string | null; result_version: number };
   }
 
   async listSessions(tenant: string, filter: SessionFilter, cursor?: string, sortOrder: SortOrder = "desc"): Promise<AdminPage<ManagedSession>> {

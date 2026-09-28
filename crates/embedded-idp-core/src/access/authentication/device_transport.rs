@@ -160,10 +160,16 @@ where
 pub trait TenantDeviceService: TenantDeviceAuthenticationService {
     fn provision(
         &self,
-        tenant: String,
-        name: String,
+        command: ProvisionTenantDevice,
+        trusted: &TrustedDeviceAdmission,
         admission: &dyn TenantDeviceAdmission,
-    ) -> Result<TenantProofDevice, TenantAuthError>;
+    ) -> Result<DeviceRegistrationResult, TenantAuthError>;
+    fn registration_result(
+        &self,
+        lookup: DeviceRegistrationLookup,
+        trusted: &TrustedDeviceAdmission,
+        admission: &dyn TenantDeviceAdmission,
+    ) -> Result<DeviceRegistrationResult, TenantAuthError>;
     fn complete(
         &self,
         command: CompleteTenantDeviceRegistration,
@@ -179,7 +185,25 @@ pub trait TenantDeviceService: TenantDeviceAuthenticationService {
         actor: AccessActor,
         device: String,
     ) -> Result<TenantSubjectDevice, TenantAuthError>;
-    fn unbind(&self, actor: AccessActor, device: String) -> Result<(), TenantAuthError>;
+    fn key_metadata(
+        &self,
+        actor: AccessActor,
+        device: String,
+        key: String,
+    ) -> Result<DeviceKeyMetadata, TenantAuthError>;
+    fn unbind(
+        &self,
+        actor: AccessActor,
+        device: String,
+        binding_id: String,
+        expected_version: u64,
+        operation_id: String,
+    ) -> Result<DeviceOperationReceipt, TenantAuthError>;
+    fn operation_result(
+        &self,
+        actor: AccessActor,
+        operation_id: String,
+    ) -> Result<DeviceOperationReceipt, TenantAuthError>;
     fn heartbeat(
         &self,
         command: VerifyTenantDeviceRequest,
@@ -207,21 +231,39 @@ where
 {
     fn provision(
         &self,
-        tenant: String,
-        name: String,
+        command: ProvisionTenantDevice,
+        trusted: &TrustedDeviceAdmission,
         admission: &dyn TenantDeviceAdmission,
-    ) -> Result<TenantProofDevice, TenantAuthError> {
+    ) -> Result<DeviceRegistrationResult, TenantAuthError> {
         self.auth
             .entry
             .policy
-            .validate_selection(self.auth.mode, &tenant)?;
+            .validate_selection(self.auth.mode, &command.tenant_id)?;
         if !self
             .devices
             .matches_login_entry(self.auth.mode, &self.auth.entry.client_id)
         {
             return Err(AccessError::InvalidInput("device_configuration").into());
         }
-        self.devices.provision_device(&tenant, &name, admission)
+        self.devices.provision_device(command, trusted, admission)
+    }
+    fn registration_result(
+        &self,
+        lookup: DeviceRegistrationLookup,
+        trusted: &TrustedDeviceAdmission,
+        admission: &dyn TenantDeviceAdmission,
+    ) -> Result<DeviceRegistrationResult, TenantAuthError> {
+        self.auth
+            .entry
+            .policy
+            .validate_selection(self.auth.mode, &lookup.tenant_id)?;
+        if !self
+            .devices
+            .matches_login_entry(self.auth.mode, &self.auth.entry.client_id)
+        {
+            return Err(AccessError::InvalidInput("device_configuration").into());
+        }
+        self.devices.registration_result(lookup, trusted, admission)
     }
     fn complete(
         &self,
@@ -268,12 +310,50 @@ where
             .validate_selection(self.auth.mode, &actor.tenant_id)?;
         self.devices.get_subject_device(actor, &device)
     }
-    fn unbind(&self, actor: AccessActor, device: String) -> Result<(), TenantAuthError> {
+    fn key_metadata(
+        &self,
+        actor: AccessActor,
+        device: String,
+        key: String,
+    ) -> Result<DeviceKeyMetadata, TenantAuthError> {
         self.auth
             .entry
             .policy
             .validate_selection(self.auth.mode, &actor.tenant_id)?;
-        self.devices.unbind_subject_device(actor, &device)
+        self.devices
+            .subject_device_key_metadata(actor, &device, &key)
+    }
+    fn unbind(
+        &self,
+        actor: AccessActor,
+        device: String,
+        binding_id: String,
+        expected_version: u64,
+        operation_id: String,
+    ) -> Result<DeviceOperationReceipt, TenantAuthError> {
+        self.auth
+            .entry
+            .policy
+            .validate_selection(self.auth.mode, &actor.tenant_id)?;
+        self.devices.unbind_subject_device(
+            actor,
+            &device,
+            &binding_id,
+            expected_version,
+            &operation_id,
+        )
+    }
+    fn operation_result(
+        &self,
+        actor: AccessActor,
+        operation_id: String,
+    ) -> Result<DeviceOperationReceipt, TenantAuthError> {
+        self.auth
+            .entry
+            .policy
+            .validate_selection(self.auth.mode, &actor.tenant_id)?;
+        self.devices
+            .self_device_operation_result(actor, &operation_id)
     }
     fn heartbeat(
         &self,
