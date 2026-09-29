@@ -3,8 +3,8 @@ use base64ct::{Base64UrlUnpadded, Encoding};
 use embedded_idp_core::{
     build_device_key_rotation_proof_bytes, build_device_registration_proof_bytes,
     build_request_proof_bytes, CanonicalHttpMethod, DeviceProofKeyStatus, DeviceProofPresentation,
-    DeviceProofProfile, DeviceProofPurpose, DeviceRequestBinding, DEVICE_KEY_ROTATION_PURPOSE,
-    DEVICE_REGISTRATION_PURPOSE,
+    DeviceProofProfile, DeviceProofPurpose, DeviceRequestBinding, CLIENT_SYNC_TRANSPORT_PURPOSE,
+    DEVICE_KEY_ROTATION_PURPOSE, DEVICE_REGISTRATION_PURPOSE,
 };
 use embedded_idp_security::{
     Ed25519PublicJwkParser, RingEd25519Verifier, SecureDeviceChallengeGenerator,
@@ -29,6 +29,7 @@ fn proofs(db: &Db) -> Proofs {
             client_id: "web".into(),
             allowed_purposes: [
                 "report_read",
+                CLIENT_SYNC_TRANSPORT_PURPOSE,
                 DEVICE_REGISTRATION_PURPOSE,
                 DEVICE_KEY_ROTATION_PURPOSE,
                 TENANT_DEVICE_LOGIN_PURPOSE,
@@ -124,7 +125,10 @@ fn actor(db: &Db, tenant: &str) -> AccessActor {
     svc.authenticate(out.tokens.access_token).unwrap()
 }
 fn unused(db: &Db, command: &VerifyTenantDeviceRequest) -> bool {
-    let digest = embedded_idp_core::digest_device_challenge(&command.proof.challenge).unwrap();
+    unused_challenge(db, &command.proof.challenge)
+}
+fn unused_challenge(db: &Db, challenge: &str) -> bool {
+    let digest = embedded_idp_core::digest_device_challenge(challenge).unwrap();
     db.adapter
         .connect()
         .unwrap()
@@ -137,6 +141,99 @@ fn unused(db: &Db, command: &VerifyTenantDeviceRequest) -> bool {
         )
         .unwrap()
         .get(0)
+}
+
+#[test]
+#[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
+fn device_transport_verifies_without_person_and_binds_request_bytes() {
+    let db = Db::new(TenancyMode::Enabled);
+    let account = prepare(&db);
+    let (device, kid, key) = device(&db, "t1", &account, Uuid::now_v7());
+    db.adapter
+        .connect()
+        .unwrap()
+        .execute(
+            &format!(
+                "delete from {}.account_device_bindings where tenant_id='t1' and device_id=$1",
+                db.schema()
+            ),
+            &[&Uuid::parse_str(&device).unwrap()],
+        )
+        .unwrap();
+    let challenge = proofs(&db)
+        .issue_challenge(
+            "t1",
+            &device,
+            DeviceProofPurpose::new(CLIENT_SYNC_TRANSPORT_PURPOSE).unwrap(),
+        )
+        .unwrap();
+    let binding = DeviceRequestBinding::new(
+        "t1",
+        DeviceProofProfile::new("EMBEDDED-IDP-DEVICE-REQUEST-V2").unwrap(),
+        "factory-one-api",
+        CanonicalHttpMethod::Post,
+        "/api/client-sync/v1/events:batch",
+        digest(&SHA256, b"original body")
+            .as_ref()
+            .try_into()
+            .unwrap(),
+    )
+    .unwrap();
+    let mut proof = DeviceProofPresentation {
+        device_id: device.clone(),
+        key_id: kid.clone(),
+        challenge: challenge.challenge.into_exposed(),
+        signature: Base64UrlUnpadded::encode_string(&[0; 64]),
+        signed_at: TestClock.now(),
+    };
+    proof.signature = Base64UrlUnpadded::encode_string(
+        key.sign(&build_request_proof_bytes(&binding, &proof).unwrap())
+            .as_ref(),
+    );
+    let service = proofs(&db);
+    for changed in [
+        DeviceRequestBinding {
+            tenant_id: "t2".into(),
+            ..binding.clone()
+        },
+        DeviceRequestBinding {
+            audience: "factory-two-api".into(),
+            ..binding.clone()
+        },
+        DeviceRequestBinding {
+            body_sha256: [0; 32],
+            ..binding.clone()
+        },
+        DeviceRequestBinding {
+            method: CanonicalHttpMethod::Get,
+            ..binding.clone()
+        },
+        DeviceRequestBinding {
+            external_path: "/api/client-sync/v1/heartbeat".into(),
+            ..binding.clone()
+        },
+    ] {
+        assert!(service
+            .verify_device_transport_request(proof.clone(), changed)
+            .is_err());
+        assert!(unused_challenge(&db, &proof.challenge));
+    }
+    let verified = service
+        .verify_device_transport_request(proof.clone(), binding.clone())
+        .unwrap();
+    assert_eq!(
+        (
+            verified.tenant_id.as_str(),
+            verified.client_id.as_str(),
+            verified.device_id.as_str(),
+            verified.key_id.as_str()
+        ),
+        ("t1", "web", device.as_str(), kid.as_str())
+    );
+    assert_eq!((verified.device_version, verified.key_version), (1, 1));
+    assert!(service
+        .verify_device_transport_request(proof, binding)
+        .is_err());
 }
 
 #[test]

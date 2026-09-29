@@ -7,6 +7,7 @@ use crate::{DeviceId, SecretString, TokenError};
 pub const DEVICE_REGISTRATION_PURPOSE: &str = "device_registration";
 pub const DEVICE_KEY_ROTATION_PURPOSE: &str = "device_key_rotation";
 pub const REFRESH_PURPOSE: &str = "refresh";
+pub const CLIENT_SYNC_TRANSPORT_PURPOSE: &str = "client_sync_transport";
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DeviceProofPurpose(String);
@@ -163,6 +164,18 @@ pub struct VerifiedDeviceRequest {
     pub key_id: String,
     pub key_version: u64,
     pub purpose: DeviceProofPurpose,
+    pub challenge_id: String,
+    pub verified_at: SystemTime,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VerifiedDeviceTransportRequest {
+    pub tenant_id: String,
+    pub client_id: String,
+    pub device_id: DeviceId,
+    pub device_version: u64,
+    pub key_id: String,
+    pub key_version: u64,
     pub challenge_id: String,
     pub verified_at: SystemTime,
 }

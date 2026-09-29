@@ -11,7 +11,7 @@ use crate::{
     DeviceProofPresentation, DeviceProofPurpose, DevicePublicJwkValidator, DeviceRequestBinding,
     DeviceRequestVerificationError, DeviceSignatureVerifier, DeviceStatus, IdGenerator,
     IssueDeviceProofChallengeResult, SessionStatus, StoreError, VerifiedDeviceRequest,
-    DEVICE_REGISTRATION_PURPOSE,
+    VerifiedDeviceTransportRequest, CLIENT_SYNC_TRANSPORT_PURPOSE, DEVICE_REGISTRATION_PURPOSE,
 };
 use std::time::{Duration, SystemTime};
 
@@ -286,6 +286,39 @@ where
             Ok(verified)
         })
     }
+
+    /// Verify a device-only upload. The host supplies the tenant and request binding;
+    /// neither a person nor an account-device binding is involved.
+    pub fn verify_device_transport_request(
+        &self,
+        proof: DeviceProofPresentation,
+        binding: DeviceRequestBinding,
+    ) -> Result<VerifiedDeviceTransportRequest, TenantAuthError> {
+        self.mode.validate_business_tenant(&binding.tenant_id)?;
+        let purpose = DeviceProofPurpose::new(CLIENT_SYNC_TRANSPORT_PURPOSE)
+            .expect("fixed device transport purpose");
+        self.require_purpose(&purpose)?;
+        self.store.auth_transaction(self.mode, |tx| {
+            tx.lock_tenants(&[binding.tenant_id.clone()])?;
+            if !tx.tenant(&binding.tenant_id)?.is_some_and(|tenant| {
+                tenant.id == binding.tenant_id && tenant.status == TenantStatus::Active
+            }) || !tx.client_exists(&self.config.client_id)?
+            {
+                return Err(invalid_proof());
+            }
+            let (verified, _) = self.verify_proof_in_transaction(
+                tx,
+                &binding.tenant_id,
+                None,
+                &purpose,
+                &proof,
+                &binding,
+                None,
+                false,
+            )?;
+            Ok(verified)
+        })
+    }
     pub(super) fn verify_in_transaction(
         &self,
         tx: &mut impl TenantDeviceProofTransaction,
@@ -297,6 +330,41 @@ where
         credential_context: Option<&[u8; 32]>,
         allow_first_binding: bool,
     ) -> Result<(VerifiedDeviceRequest, bool), TenantAuthError> {
+        let (verified, needs_binding) = self.verify_proof_in_transaction(
+            tx,
+            tenant,
+            Some(account),
+            purpose,
+            proof,
+            request,
+            credential_context,
+            allow_first_binding,
+        )?;
+        Ok((
+            VerifiedDeviceRequest {
+                tenant_id: verified.tenant_id,
+                account_id: account.into(),
+                device_id: verified.device_id,
+                key_id: verified.key_id,
+                key_version: verified.key_version,
+                purpose: purpose.clone(),
+                challenge_id: verified.challenge_id,
+                verified_at: verified.verified_at,
+            },
+            needs_binding,
+        ))
+    }
+    fn verify_proof_in_transaction(
+        &self,
+        tx: &mut impl TenantDeviceProofTransaction,
+        tenant: &str,
+        account: Option<&str>,
+        purpose: &DeviceProofPurpose,
+        proof: &DeviceProofPresentation,
+        request: &DeviceRequestBinding,
+        credential_context: Option<&[u8; 32]>,
+        allow_first_binding: bool,
+    ) -> Result<(VerifiedDeviceTransportRequest, bool), TenantAuthError> {
         self.mode.validate_business_tenant(tenant)?;
         if request.tenant_id != tenant {
             return Err(invalid_proof());
@@ -315,7 +383,10 @@ where
         let key = tx
             .lock_proof_key(tenant, &device.id, &proof.key_id)?
             .ok_or_else(invalid_proof)?;
-        let binding = tx.lock_proof_binding(tenant, account, &device.id)?;
+        let binding = match account {
+            Some(account) => tx.lock_proof_binding(tenant, account, &device.id)?,
+            None => None,
+        };
         let challenge = tx
             .lock_proof_challenge(tenant, &digest)?
             .ok_or_else(invalid_proof)?;
@@ -355,11 +426,11 @@ where
         {
             return Err(invalid_proof());
         }
-        let needs_binding = binding.is_none();
+        let needs_binding = account.is_some() && binding.is_none();
         if (needs_binding && !allow_first_binding)
             || binding.is_some_and(|b| {
                 b.tenant_id != tenant
-                    || b.account_id != account
+                    || Some(b.account_id.as_str()) != account
                     || b.device_id != device.id
                     || b.status != AccountDeviceBindingStatus::Active
             })
@@ -377,13 +448,13 @@ where
             ));
         }
         Ok((
-            VerifiedDeviceRequest {
+            VerifiedDeviceTransportRequest {
                 tenant_id: tenant.into(),
-                account_id: account.into(),
+                client_id: self.config.client_id.clone(),
                 device_id: device.id,
+                device_version: device.version,
                 key_id: key.key_id,
                 key_version: key.version,
-                purpose: purpose.clone(),
                 challenge_id: challenge.id,
                 verified_at: now,
             },

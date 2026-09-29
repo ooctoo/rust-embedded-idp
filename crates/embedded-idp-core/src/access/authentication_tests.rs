@@ -952,7 +952,10 @@ mod device_proofs {
             TenancyMode::Enabled,
             TenantDeviceProofConfig {
                 client_id: "web".into(),
-                allowed_purposes: vec![purpose.clone()],
+                allowed_purposes: vec![
+                    purpose.clone(),
+                    DeviceProofPurpose::new(CLIENT_SYNC_TRANSPORT_PURPOSE).unwrap(),
+                ],
                 challenge_ttl_secs: 60,
                 clock_skew_secs: 30,
             },
@@ -1030,6 +1033,69 @@ mod device_proofs {
         );
         assert_eq!(
             service.verify_request(command),
+            Err(TenantAuthError::DeviceProof(
+                DeviceRequestVerificationError::ReplayedProof
+            ))
+        );
+    }
+    #[test]
+    fn device_transport_needs_no_person_and_consumes_only_valid_proof() {
+        let (store, service, request) = fixture();
+        {
+            let mut data = store.0.lock().unwrap();
+            data.accounts.clear();
+            data.members.clear();
+            data.sessions.clear();
+            data.proof_bindings.clear();
+        }
+        let purpose = DeviceProofPurpose::new(CLIENT_SYNC_TRANSPORT_PURPOSE).unwrap();
+        let nonce = service.issue_challenge("t1", "d1", purpose).unwrap();
+        let mut proof = request.proof;
+        proof.challenge = nonce.challenge.into_exposed();
+        let binding = request.binding;
+        let original = store.0.lock().unwrap().clone();
+        for case in 0..9 {
+            let mut changed = original.clone();
+            let mut request_binding = binding.clone();
+            match case {
+                0 => changed.tenants.get_mut("t1").unwrap().status = TenantStatus::Suspended,
+                1 => changed.clients.clear(),
+                2 => changed.proof_devices[0].status = DeviceStatus::Disabled,
+                3 => changed.proof_keys[0].status = DeviceProofKeyStatus::Retired,
+                4 => changed.proof_challenges[1].expires_at = C.now(),
+                5 => {
+                    changed.proof_challenges[1].purpose = DeviceProofPurpose::new("other").unwrap()
+                }
+                6 => request_binding.tenant_id = "t2".into(),
+                7 => changed.proof_devices[0].proof_key_id = Some("other".into()),
+                _ => changed.proof_devices[0].client_id = "other".into(),
+            }
+            *store.0.lock().unwrap() = changed;
+            assert!(
+                service
+                    .verify_device_transport_request(proof.clone(), request_binding)
+                    .is_err(),
+                "case {case}"
+            );
+            assert!(store.0.lock().unwrap().proof_challenges[1]
+                .consumed_at
+                .is_none());
+        }
+        *store.0.lock().unwrap() = original;
+        let verified = service
+            .verify_device_transport_request(proof.clone(), binding.clone())
+            .unwrap();
+        assert_eq!(
+            (
+                verified.tenant_id.as_str(),
+                verified.client_id.as_str(),
+                verified.device_id.as_str()
+            ),
+            ("t1", "web", "d1")
+        );
+        assert_eq!((verified.device_version, verified.key_version), (1, 1));
+        assert_eq!(
+            service.verify_device_transport_request(proof, binding),
             Err(TenantAuthError::DeviceProof(
                 DeviceRequestVerificationError::ReplayedProof
             ))

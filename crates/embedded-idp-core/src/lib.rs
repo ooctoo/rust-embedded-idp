@@ -44,7 +44,8 @@ pub use security::{
     DeviceProofProfile, DeviceProofPurpose, DevicePublicJwkParser, DevicePublicJwkValidator,
     DeviceRequestBinding, DeviceSignatureVerifier, RefreshTokenDigester, RefreshTokenGenerator,
     SecurityContractError, ValidatedDevicePublicJwk, VerifiedDeviceRequest,
-    DEVICE_KEY_ROTATION_PURPOSE, DEVICE_REGISTRATION_PURPOSE, REFRESH_PURPOSE,
+    VerifiedDeviceTransportRequest, CLIENT_SYNC_TRANSPORT_PURPOSE, DEVICE_KEY_ROTATION_PURPOSE,
+    DEVICE_REGISTRATION_PURPOSE, REFRESH_PURPOSE,
 };
 pub use service::{
     ActivateAccountCommand, ActivateAccountResult, AdminClientRecord, AdminService, AuthService,
