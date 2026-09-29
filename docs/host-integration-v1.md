@@ -1,6 +1,6 @@
 # Host Integration v1
 
-> Version 2.0 authorization contract: [business-scoped authorization and business administrators](business-domain-authorization-design-v1.md). Management selects a tenant; same-tenant lists use an optional business filter, while creation, detail and mutation requests carry or derive the exact business. Old requests without the exact business header and old affected cursors must be updated. Authentication and device-proof protocols remain unchanged.
+> Version 2.0 authorization contract: [business-scoped authorization and business administrators](business-domain-authorization-design-v1.md). Management selects a tenant; same-tenant lists use an optional business filter, while creation, detail and mutation requests carry or derive the exact business. Old requests without the exact business header and old affected cursors must be updated. Existing person-bound authentication and device-proof wire formats remain unchanged.
 
 > 浏览器 Cookie 接入的新增契约见[浏览器会话设计](browser-session-design.md)。原显式令牌与设备证明接口继续适用；本期不支持跨标签页同时使用不同业务租户。
 
@@ -39,6 +39,26 @@ the reference composition when implementing new hosts; no old-token or schema
 compatibility layer is installed. A minimal, independent [no-tenant host example](../examples/no-tenant-host/README.md)
 now demonstrates an actual business-resource check. Embedded device self-service
 UI and performance acceptance remain separate work.
+
+### Device-only offline sync transport
+
+An embedding host can include `CLIENT_SYNC_TRANSPORT_PURPOSE` in its
+`TenantDeviceProofConfig.allowed_purposes` and call
+`CoreTenantDeviceProofService::issue_challenge(tenant, device, purpose)` without
+a person session. Before each upload, the host constructs a
+`DeviceRequestBinding` from its trusted tenant, configured audience and profile,
+actual method and external path, and SHA-256 of the exact raw request body. It
+then calls `verify_device_transport_request(proof, binding)`. This Core method
+fixes the purpose to `client_sync_transport`; the caller cannot select another
+purpose. It checks the current tenant and client, active device and exact active
+key, signature, freshness and single-use challenge in one transaction. The
+result contains trusted tenant, client, device and key IDs and versions, plus
+verification time, with no account or session identity.
+
+The host must still check its own device-to-factory assignment and business
+rules. It should rate-limit its challenge endpoint. A failed or interrupted
+upload requires a new challenge and proof for the retry. This Core API adds no
+IdP HTTP route or device token; person-bound `verify_request` is unchanged.
 
 ## Historical v1 composition example (not the current integration contract)
 
