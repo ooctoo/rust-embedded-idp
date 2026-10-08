@@ -231,16 +231,16 @@ pub trait TenantAuthenticationService: Send + Sync {
 }
 
 pub struct CoreTenantAuthenticationService<S, T, G, D, C, I> {
-    mode: TenancyMode,
+    pub(super) mode: TenancyMode,
     purpose: AccessTokenPurpose,
     config: AuthConfig,
-    entry: TenantLoginEntry,
-    store: S,
+    pub(super) entry: TenantLoginEntry,
+    pub(super) store: S,
     tokens: T,
-    generator: G,
+    pub(super) generator: G,
     digester: D,
-    clock: C,
-    ids: I,
+    pub(super) clock: C,
+    pub(super) ids: I,
 }
 impl<S, T, G, D, C, I> CoreTenantAuthenticationService<S, T, G, D, C, I> {
     fn validate_login_tenant(&self, tenant: &str) -> Result<(), AccessError> {
@@ -538,6 +538,32 @@ where
         session_id: String,
         issue: impl FnOnce(&TenantSession) -> Result<IssuedTokenBundle, TokenError>,
     ) -> Result<TenantLoginSession, TenantAuthError> {
+        self.issue_session_using_status(
+            tx,
+            tenant,
+            account,
+            now,
+            device_id,
+            scope,
+            authenticated_at,
+            session_id,
+            SessionStatus::Active,
+            issue,
+        )
+    }
+    fn issue_session_using_status(
+        &self,
+        tx: &mut impl TenantAuthTransaction,
+        tenant: &str,
+        account: &str,
+        now: SystemTime,
+        device_id: Option<String>,
+        scope: Option<String>,
+        authenticated_at: SystemTime,
+        session_id: String,
+        status: SessionStatus,
+        issue: impl FnOnce(&TenantSession) -> Result<IssuedTokenBundle, TokenError>,
+    ) -> Result<TenantLoginSession, TenantAuthError> {
         if self.entry.require_device_proof && device_id.is_none() {
             return Err(TenantAuthError::DeviceProofRequired);
         }
@@ -550,7 +576,7 @@ where
             device_id,
             scope,
             authenticated_at,
-            status: SessionStatus::Active,
+            status,
             created_at: now,
             expires_at: now
                 .checked_add(Duration::from_secs(self.config.session_ttl_secs))
@@ -579,6 +605,59 @@ where
             tokens.refresh_expires_at,
         )?;
         Ok(TenantLoginSession { session, tokens })
+    }
+
+    /// Only the scan coordinator can create a recoverable, unusable pending session.
+    pub(super) fn issue_pending_scan_session(
+        &self,
+        tx: &mut impl TenantAuthTransaction,
+        tenant: &str,
+        account: &str,
+        device: &str,
+        scope: Option<String>,
+        authenticated_at: SystemTime,
+        session_id: String,
+    ) -> Result<TenantLoginSession, TenantAuthError> {
+        let now = self.clock.now();
+        if self.purpose != AccessTokenPurpose::Business
+            || !self.require_member(tx, tenant, account)?
+        {
+            return Err(TenantAuthError::InvalidSession);
+        }
+        self.issue_session_using_status(
+            tx,
+            tenant,
+            account,
+            now,
+            Some(device.into()),
+            scope.clone(),
+            authenticated_at,
+            session_id,
+            SessionStatus::Pending,
+            |session| {
+                let mut tokens = self.tokens.issue_session_tokens(
+                    tenant,
+                    &session.id,
+                    account,
+                    &session.client_id,
+                    1,
+                    now,
+                )?;
+                if let Some(scope) = scope {
+                    let access = self.tokens.issue_scoped_access_token(
+                        tenant,
+                        &session.id,
+                        account,
+                        &session.client_id,
+                        now,
+                        &scope,
+                    )?;
+                    tokens.access_token = access.token;
+                    tokens.access_expires_at = access.expires_at;
+                }
+                Ok(tokens)
+            },
+        )
     }
     fn issue_selection(
         &self,

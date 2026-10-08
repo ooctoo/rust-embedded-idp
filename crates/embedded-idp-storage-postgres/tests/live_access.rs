@@ -9,6 +9,8 @@ use std::{
 };
 use uuid::Uuid;
 
+mod scan_login_migration;
+
 fn catalog() -> PermissionCatalog {
     PermissionCatalog::new(
         [

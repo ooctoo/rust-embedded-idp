@@ -98,6 +98,15 @@ impl BrowserSessionHttpConfig {
             .append(header::SET_COOKIE, self.cookie("", 0));
         response
     }
+    pub(crate) fn origin(&self) -> &str {
+        &self.origin
+    }
+    pub(crate) fn cookie_name(&self) -> &str {
+        &self.cookie_name
+    }
+    pub(crate) fn purpose(&self) -> AccessTokenPurpose {
+        self.purpose
+    }
 }
 fn route_root(purpose: AccessTokenPurpose) -> &'static str {
     match purpose {
@@ -163,7 +172,10 @@ fn valid_token(raw: &str) -> bool {
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || b"_-".contains(&b))
 }
-fn credential(headers: &HeaderMap, name: &str) -> Result<Option<SecretString>, Response> {
+pub(crate) fn credential(
+    headers: &HeaderMap,
+    name: &str,
+) -> Result<Option<SecretString>, Response> {
     let mut found = None;
     for header in headers.get_all(header::COOKIE) {
         let value = header.to_str().map_err(|_| bad_cookie())?;

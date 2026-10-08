@@ -158,6 +158,15 @@ where
             crate::DEVICE_REGISTRATION_PURPOSE,
             crate::DEVICE_KEY_ROTATION_PURPOSE,
             TENANT_DEVICE_HEARTBEAT_PURPOSE,
+            "scan_login_create",
+            "scan_login_claim",
+            "scan_login_status",
+            "scan_login_lookup",
+            "scan_login_cancel",
+            "scan_login_exchange",
+            "scan_login_recover",
+            "scan_login_ack",
+            "scan_login_abort",
         ]
         .contains(&purpose.as_str())
         {

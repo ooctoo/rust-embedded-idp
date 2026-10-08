@@ -5,22 +5,31 @@ use std::path::{Path, PathBuf};
 
 fn main() {
     let root = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("manifest directory"));
-    let dist = root.join("../../web/dist/management");
+    let out = PathBuf::from(env::var_os("OUT_DIR").expect("cargo output directory"));
+    embed_assets(
+        &root.join("../../web/dist/management"),
+        &out.join("management_assets.rs"),
+        "MANAGEMENT_ASSETS",
+    );
+    embed_assets(
+        &root.join("../../web/dist/scan-code"),
+        &out.join("scan_code_assets.rs"),
+        "SCAN_CODE_ASSETS",
+    );
+}
+
+fn embed_assets(dist: &Path, output: &Path, symbol: &str) {
     println!("cargo:rerun-if-changed={}", dist.display());
-
     let mut files = Vec::new();
-    collect_files(&dist, &dist, &mut files);
+    collect_files(dist, dist, &mut files);
     files.sort();
-
-    let out = PathBuf::from(env::var_os("OUT_DIR").expect("cargo output directory"))
-        .join("management_assets.rs");
-    let mut generated = String::from("pub static MANAGEMENT_ASSETS: &[(&str, &[u8])] = &[\n");
+    let mut generated = format!("pub static {symbol}: &[(&str, &[u8])] = &[\n");
     for (path, source) in files {
         writeln!(generated, "    ({path:?}, include_bytes!({source:?})),")
             .expect("write generated asset map");
     }
     generated.push_str("];\n");
-    fs::write(out, generated).expect("write generated asset map file");
+    fs::write(output, generated).expect("write generated asset map file");
 }
 
 fn collect_files(root: &Path, directory: &Path, files: &mut Vec<(String, String)>) {

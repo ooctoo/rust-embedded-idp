@@ -1,9 +1,10 @@
 use super::{access_db_error, decode_tenant, epoch, invalid, time, PostgresAccessStore};
 use embedded_idp_core::{
     access::{
-        AccessListScope, AccessPageRequest, MembershipStatus, SelectionSource, SubjectTenant,
-        Tenant, TenantAuthError, TenantAuthStore, TenantAuthTransaction, TenantLoginIdentity,
-        TenantMembership, TenantSelectionRecord, TenantSession,
+        AccessListScope, AccessPageRequest, MembershipStatus, ScanLoginError, SelectionSource,
+        SubjectTenant, TenancyMode, Tenant, TenantAuthError, TenantAuthStore,
+        TenantAuthTransaction, TenantLoginIdentity, TenantMembership, TenantScanLoginStore,
+        TenantSelectionRecord, TenantSession,
     },
     SecretString, SessionStatus, StoreError,
 };
@@ -47,6 +48,46 @@ impl TenantAuthStore for PostgresAccessStore {
         };
         let result = run(&mut transaction)?;
         transaction.tx.commit().map_err(access_db_error)?;
+        Ok(result)
+    }
+}
+
+impl TenantScanLoginStore for PostgresAccessStore {
+    fn scan_transaction<R>(
+        &self,
+        mode: TenancyMode,
+        run: impl FnOnce(&mut Self::Transaction<'_>) -> Result<R, ScanLoginError>,
+    ) -> Result<R, ScanLoginError> {
+        if mode != self.mode {
+            return Err(ScanLoginError::InvalidRequest);
+        }
+        let mut client = self.adapter.connect().map_err(ScanLoginError::Store)?;
+        let mut transaction = client
+            .build_transaction()
+            .isolation_level(IsolationLevel::ReadCommitted)
+            .start()
+            .map_err(access_db_error)
+            .map_err(ScanLoginError::Store)?;
+        let schema = self.adapter.schema_name();
+        transaction
+            .query_one(
+                &format!("select singleton from {schema}.access_state where singleton for share"),
+                &[],
+            )
+            .map_err(access_db_error)
+            .map_err(ScanLoginError::Store)?;
+        self.verify(&mut transaction)
+            .map_err(ScanLoginError::Store)?;
+        let mut transaction = PostgresTenantAuthTransaction {
+            tx: transaction,
+            schema,
+        };
+        let result = run(&mut transaction)?;
+        transaction
+            .tx
+            .commit()
+            .map_err(access_db_error)
+            .map_err(ScanLoginError::Store)?;
         Ok(result)
     }
 }
