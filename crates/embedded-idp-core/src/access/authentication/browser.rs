@@ -11,6 +11,55 @@ pub struct BrowserSessionIdentity {
     pub client_id: String,
 }
 
+/// A currently valid business browser session, constructed only after the
+/// refresh credential and its owning session have both been checked.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuthenticatedBrowserSession {
+    tenant_id: String,
+    account_id: String,
+    session_id: String,
+    client_id: String,
+    authenticated_at: SystemTime,
+    expires_at: SystemTime,
+}
+
+impl AuthenticatedBrowserSession {
+    pub fn tenant_id(&self) -> &str {
+        &self.tenant_id
+    }
+
+    pub fn account_id(&self) -> &str {
+        &self.account_id
+    }
+
+    pub fn session_id(&self) -> &str {
+        &self.session_id
+    }
+
+    pub fn client_id(&self) -> &str {
+        &self.client_id
+    }
+
+    pub fn authenticated_at(&self) -> SystemTime {
+        self.authenticated_at
+    }
+
+    pub fn expires_at(&self) -> SystemTime {
+        self.expires_at
+    }
+}
+
+/// Reads the authenticated identity behind a browser refresh Cookie without
+/// rotating, issuing, or revoking credentials. This is limited to business
+/// browser workflows that need to bind an action to the current person.
+pub trait BrowserSessionIdentityService: Send + Sync {
+    fn authenticate_browser(
+        &self,
+        cookie: SecretString,
+        expected: Option<BrowserSessionIdentity>,
+    ) -> Result<AuthenticatedBrowserSession, TenantAuthError>;
+}
+
 /// Cookie adapters use this dedicated contract instead of exposing refresh
 /// credentials to browser scripts. Implementations remain purpose-specific.
 pub trait BrowserSessionService: Send + Sync {
@@ -143,6 +192,116 @@ where
             tx.revoke_refresh_family(&session, RefreshTokenRevocationReason::Logout, now)?;
             Ok(())
         })
+    }
+
+    fn authenticate_browser_impl(
+        &self,
+        cookie: SecretString,
+        expected: Option<BrowserSessionIdentity>,
+    ) -> Result<AuthenticatedBrowserSession, TenantAuthError> {
+        if self.purpose != AccessTokenPurpose::Business || self.entry.require_device_proof {
+            return Err(TenantAuthError::InvalidSession);
+        }
+        let digest = self
+            .digester
+            .digest_refresh_token(cookie.expose_secret())
+            .map_err(|_| TenantAuthError::InvalidRefresh)?;
+        self.store.auth_transaction(self.mode, |tx| {
+            let hint = tx
+                .find_refresh(&digest)?
+                .ok_or(TenantAuthError::InvalidRefresh)?;
+            self.validate_login_tenant(&hint.tenant_id)
+                .map_err(|_| TenantAuthError::InvalidRefresh)?;
+            // Use the same tenant -> account -> session -> refresh ordering as
+            // rotation. A stale refresh is rejected below without reuse-family
+            // revocation because this operation has no state-changing purpose.
+            tx.lock_tenants(&[hint.tenant_id.clone()])?;
+            let session_hint = tx
+                .session(&hint.tenant_id, &hint.session_id)?
+                .ok_or(TenantAuthError::InvalidRefresh)?;
+            let account = tx
+                .lock_account(&session_hint.account_id)?
+                .ok_or(TenantAuthError::InvalidRefresh)?;
+            let session = tx
+                .lock_refresh_session(&hint.tenant_id, &hint.session_id)?
+                .ok_or(TenantAuthError::InvalidRefresh)?;
+            let refresh = tx
+                .lock_refresh_record(&hint.tenant_id, &digest)?
+                .ok_or(TenantAuthError::InvalidRefresh)?;
+            if !account.active
+                || account.id != session.account_id
+                || session.account_id != session_hint.account_id
+                || session.tenant_id != hint.tenant_id
+                || session.id != hint.session_id
+                || refresh.tenant_id != session.tenant_id
+                || refresh.session_id != session.id
+                || refresh.id != hint.id
+                || refresh.token_digest != digest
+                || session.client_id != self.entry.client_id
+                || !tx.client_exists(&self.entry.client_id)?
+            {
+                return Err(TenantAuthError::InvalidRefresh);
+            }
+            let now = self.clock.now();
+            self.require_session_identity(
+                tx,
+                &session,
+                &session.tenant_id,
+                &session.id,
+                &account.id,
+                now,
+            )?;
+            if session.device_id.is_some() {
+                return Err(TenantAuthError::DeviceProofRequired);
+            }
+            if expected.is_some_and(|expected| {
+                expected.tenant_id != session.tenant_id
+                    || expected.account_id != session.account_id
+                    || expected.session_id != session.id
+                    || expected.client_id != session.client_id
+            }) {
+                return Err(AccessError::InvalidInput("browser_session_changed").into());
+            }
+            if refresh.issued_at < session.created_at
+                || refresh.issued_at > now
+                || refresh.expires_at <= now
+                || refresh.expires_at > session.expires_at
+                || refresh.token_version == 0
+                || refresh.token_version != session.refresh_token_version
+                || refresh.revoked_at.is_some()
+                || refresh.revocation_reason.is_some()
+            {
+                return Err(TenantAuthError::InvalidRefresh);
+            }
+            Ok(AuthenticatedBrowserSession {
+                tenant_id: session.tenant_id,
+                account_id: session.account_id,
+                session_id: session.id,
+                client_id: session.client_id,
+                authenticated_at: session.authenticated_at,
+                expires_at: session.expires_at.min(refresh.expires_at),
+            })
+        })
+    }
+}
+
+impl<S, T, G, D, C, I> BrowserSessionIdentityService
+    for CoreTenantAuthenticationService<S, T, G, D, C, I>
+where
+    S: TenantAuthStore + Send + Sync,
+    for<'a> S::Transaction<'a>: TenantRefreshTransaction,
+    T: TokenIssuer + AccessTokenValidator + ScopedAccessTokenIssuer + Send + Sync,
+    G: RefreshTokenGenerator + Send + Sync,
+    D: RefreshTokenDigester + Send + Sync,
+    C: Clock + Send + Sync,
+    I: IdGenerator + Send + Sync,
+{
+    fn authenticate_browser(
+        &self,
+        cookie: SecretString,
+        expected: Option<BrowserSessionIdentity>,
+    ) -> Result<AuthenticatedBrowserSession, TenantAuthError> {
+        self.authenticate_browser_impl(cookie, expected)
     }
 }
 

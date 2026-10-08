@@ -2,6 +2,7 @@ mod ed25519;
 mod jwk;
 mod jwt;
 mod refresh_token;
+mod scan_result;
 
 pub use ed25519::RingEd25519Verifier;
 pub use jwk::{
@@ -14,3 +15,4 @@ pub use jwt::{
 pub use refresh_token::{
     SecureDeviceChallengeGenerator, SecureRefreshTokenGenerator, Sha256RefreshTokenDigester,
 };
+pub use scan_result::{RingScanResultCipher, ScanResultKey, ScanResultKeyring};

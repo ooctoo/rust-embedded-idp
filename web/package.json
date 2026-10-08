@@ -5,7 +5,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json && vite build --config vite.management.config.ts && vite build --config vite.embedded.config.ts && tsc -p tsconfig.embedded.json && vite build --config vite.embedded-admin.config.ts && tsc -p tsconfig.embedded-admin.json",
+    "build": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json && vite build --config vite.management.config.ts && vite build --config vite.scan-code.config.ts && vite build --config vite.embedded.config.ts && tsc -p tsconfig.embedded.json && vite build --config vite.embedded-admin.config.ts && tsc -p tsconfig.embedded-admin.json",
     "dev": "vite --config vite.management.config.ts",
     "preview": "vite preview --config vite.management.config.ts",
     "test:embedded-bundle": "node --test embedded/bundle.test.mjs",
@@ -14,6 +14,7 @@
   "dependencies": {
     "@ant-design/v5-patch-for-react-19": "^1.0.3",
     "antd": "^5.29.3",
+    "jsbarcode": "3.11.6",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },

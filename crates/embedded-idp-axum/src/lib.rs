@@ -1,5 +1,7 @@
 mod browser_session;
 pub use browser_session::{browser_session_router, BrowserSessionHttpConfig};
+mod device_scan_login;
+pub use device_scan_login::{scan_browser_router, scan_device_router, ScanDeviceHttpConfig};
 mod management_auth;
 pub use management_auth::management_router;
 mod access_diagnostic;

@@ -13,6 +13,7 @@ mod device_proof;
 mod model;
 mod query;
 mod registration;
+mod scan_login;
 mod service;
 mod store;
 
@@ -24,6 +25,7 @@ pub use device_proof::*;
 pub use model::*;
 pub use query::*;
 pub use registration::*;
+pub use scan_login::*;
 pub use service::*;
 pub use store::*;
 

@@ -25,6 +25,8 @@ jobs:
       - run: corepack prepare pnpm@10.30.1 --activate
       - run: node scripts/test_dev_env.mjs
       - run: node scripts/test_device_proof_vectors.mjs
+      - run: node docs/examples/verify-device-scan-login-vectors.mjs
+      - run: bash scripts/test_scan_login_migration_wrapper.sh
       - run: pnpm --dir web install --frozen-lockfile
       - run: pnpm --dir web test
       - run: pnpm --dir web build

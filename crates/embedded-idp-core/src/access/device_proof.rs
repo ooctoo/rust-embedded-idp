@@ -375,6 +375,52 @@ where
             None => build_request_proof_bytes(request, proof),
         }
         .map_err(|_| invalid_proof())?;
+        self.verify_canonical_in_transaction(
+            tx,
+            tenant,
+            account,
+            purpose,
+            proof,
+            allow_first_binding,
+            &canonical,
+            true,
+        )
+    }
+    pub(super) fn verify_scan_in_transaction(
+        &self,
+        tx: &mut impl TenantDeviceProofTransaction,
+        tenant: &str,
+        account: Option<&str>,
+        action: ScanLoginAction,
+        entry: &str,
+        proof: &DeviceProofPresentation,
+        request: &DeviceRequestBinding,
+        consume: bool,
+    ) -> Result<(VerifiedDeviceTransportRequest, bool), TenantAuthError> {
+        self.mode.validate_business_tenant(tenant)?;
+        if request.tenant_id != tenant {
+            return Err(invalid_proof());
+        }
+        let purpose = action.purpose();
+        self.require_purpose(&purpose)?;
+        let canonical =
+            build_scan_login_proof_bytes(request, proof, action, &self.config.client_id, entry)
+                .map_err(|_| invalid_proof())?;
+        self.verify_canonical_in_transaction(
+            tx, tenant, account, &purpose, proof, true, &canonical, consume,
+        )
+    }
+    fn verify_canonical_in_transaction(
+        &self,
+        tx: &mut impl TenantDeviceProofTransaction,
+        tenant: &str,
+        account: Option<&str>,
+        purpose: &DeviceProofPurpose,
+        proof: &DeviceProofPresentation,
+        allow_first_binding: bool,
+        canonical: &[u8],
+        consume: bool,
+    ) -> Result<(VerifiedDeviceTransportRequest, bool), TenantAuthError> {
         let digest = digest_device_challenge(&proof.challenge).map_err(|_| invalid_proof())?;
         let signature = proof.signature_bytes().map_err(|_| invalid_proof())?;
         let device = tx
@@ -417,7 +463,7 @@ where
             return Err(invalid_proof());
         }
         self.verifier
-            .verify_ed25519(&public_key.public_key, &canonical, &signature)
+            .verify_ed25519(&public_key.public_key, canonical, &signature)
             .map_err(|_| invalid_proof())?;
         // Do not disclose device/binding/replay state until the signature passes.
         if device.status != DeviceStatus::Active
@@ -442,7 +488,9 @@ where
                 DeviceRequestVerificationError::ExpiredProof,
             ));
         }
-        if challenge.consumed_at.is_some() || !tx.consume_proof_challenge(tenant, &digest, now)? {
+        if challenge.consumed_at.is_some()
+            || (consume && !tx.consume_proof_challenge(tenant, &digest, now)?)
+        {
             return Err(TenantAuthError::DeviceProof(
                 DeviceRequestVerificationError::ReplayedProof,
             ));

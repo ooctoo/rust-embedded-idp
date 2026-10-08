@@ -27,7 +27,7 @@
 
 ## 当前能力与限制
 
-本分支两种模式均使用 `tenant_v4`；已发布的 2.0.0 使用 `tenant_v3`。已接通注册与邮箱验证、登录与选租户、会话/refresh、OIDC、租户设备、角色与资源授权，以及租户/成员/角色/权限目录/设备/会话/客户端/审计管理。业务权限定义可按租户和业务标识创建、读取、修改、启停和归档，并与同租户同业务角色关联。React 管理后台接入真实 API；本地 `@embedded-idp/react` 主入口提供登录、租户选择和本人角色列表，`/admin` 子入口提供权限目录组件，React 19 由宿主提供。
+本分支两种模式均使用 `tenant_v5`；已发布的 2.0.0 使用 `tenant_v3`。已接通注册与邮箱验证、登录与选租户、会话/refresh、OIDC、租户设备、角色与资源授权，以及租户/成员/角色/权限目录/设备/会话/客户端/审计管理。业务权限定义可按租户和业务标识创建、读取、修改、启停和归档，并与同租户同业务角色关联。React 管理后台接入真实 API；本地 `@embedded-idp/react` 主入口提供登录、租户选择和本人角色列表，`/admin` 子入口提供权限目录组件，React 19 由宿主提供。
 
 仓库提供[无租户嵌入宿主示例](examples/no-tenant-host/README.md)：另起 Axum 业务进程，复用 IdP 业务路由和 React 登录组件，并在宿主报告接口中检查 `report::read::<id>`。该示例的配置模板和启动命令均在 `examples/no-tenant-host` 内，不依赖根目录的开发环境脚本；带租户的嵌入体验留待后续。`web/embedded/demo.html` 仍只使用模拟响应。设备自助界面、部分管理页面浏览器补验和性能验收仍未完成。
 
@@ -59,7 +59,7 @@ pnpm --dir web build
 ./scripts/dev_env.sh enabled db-init
 ```
 
-`key-init` 只在密钥不存在时创建 `.local/idp-signing-key.der`，不会覆盖。`db-init` 在目标 schema 中创建本分支的 `tenant_v4` IdP 对象，允许保留不冲突的宿主对象；重复执行只核对同模式的现有结构和状态，不清除数据，也不创建管理员。对象重名、旧版或不兼容的 IdP 结构会被拒绝；启动不会自动迁移旧 schema。
+`key-init` 只在密钥不存在时创建 `.local/idp-signing-key.der`，不会覆盖。`db-init` 在目标 schema 中创建本分支的 `tenant_v5` IdP 对象，允许保留不冲突的宿主对象；重复执行只核对同模式的现有结构和状态，不清除数据，也不创建管理员。对象重名、旧版或不兼容的 IdP 结构会被拒绝；启动不会自动迁移旧 schema。
 
 每个模式需单独执行一次**离线管理员初始化**，邮箱由你指定，密码只能通过标准输入传入，不能放进命令参数或 `.env`。下面是在 zsh/bash 中输入不回显密码的示例：
 
@@ -118,5 +118,8 @@ cargo test --workspace --locked
 - [React 管理与嵌入组件](docs/react-ui-integration-design.md)
 - [无租户嵌入宿主示例](examples/no-tenant-host/README.md)
 - [生产安全要求](docs/rust-embedded-idp-production-security-delivery-v2.md)
+- [通用扫码授权设备登录设计](docs/device-scan-login-design-v1.md)（双向扫码、宿主准入、Pending 交付恢复与 ACK 已实现）
+- [扫码授权设备登录升级手册](docs/device-scan-login-upgrade.md)
+- [扫码授权设备登录验证记录](docs/device-scan-login-validation.md)
 
 `docs/*-v1.md` 中的早期模型和切片文档保留作历史背景；以当前设计、执行计划、代码和测试为准，不把旧开发适配器示例用于生产接入。

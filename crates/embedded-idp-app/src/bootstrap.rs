@@ -1,6 +1,7 @@
 use crate::admin_ui::admin_console_router;
 use crate::config::{EmbeddedIdpAppConfig, SeedClientConfig, SeedConfidentialClientConfig};
 use crate::email_sender::AppEmailSenderProvider;
+use crate::scan_ui::scan_reference_ui_router;
 use axum::{http::StatusCode, routing::get, Extension, Json, Router};
 use embedded_idp_axum::*;
 use embedded_idp_core::{access::*, *};
@@ -35,6 +36,56 @@ impl TenantDeviceAdmission for DeviceAdmission {
         }
     }
 }
+
+/// Reference-only admission intentionally has no business facts. Production
+/// hosts must inject their own policy through the Core trait.
+struct IdentityOnlyScanAdmission;
+impl ScanLoginAdmission for IdentityOnlyScanAdmission {
+    fn authorize(
+        &self,
+        _: &ScanAdmissionRequest,
+        context: &TrustedScanHostContext,
+    ) -> Result<ScanAdmissionDecision, ScanLoginError> {
+        Ok(ScanAdmissionDecision::Allow {
+            decision_id: "reference-identity-only".into(),
+            policy_revision: "reference-v1".into(),
+            valid_until: std::cmp::min(
+                context.valid_until(),
+                SystemTime::now() + Duration::from_secs(5),
+            ),
+        })
+    }
+}
+
+/// A reference host has no terminal business table. It only exposes a stable
+/// representation derived from the registered device identity.
+struct RegisteredDevicePresentation;
+impl ScanTargetPresentationProvider for RegisteredDevicePresentation {
+    fn describe(
+        &self,
+        request: &ScanAdmissionRequest,
+        _: &TrustedScanHostContext,
+    ) -> Result<ScanTargetPresentation, ScanLoginError> {
+        let target = request
+            .target
+            .as_ref()
+            .ok_or(ScanLoginError::InvalidRequest)?;
+        Ok(ScanTargetPresentation {
+            display_name: format!("Registered device {}", target.device_id),
+            identification: target.device_id.clone(),
+            context_label: Some("Reference host (no business terminal data)".into()),
+            revision: format!(
+                "device-{}-key-{}",
+                target.device_version, target.key_version
+            ),
+        })
+    }
+}
+
+pub struct AppComposition {
+    pub router: Router,
+    pub scan_cleanup: Option<Arc<dyn TenantDeviceScanLoginService>>,
+}
 fn signing_key(path: &str) -> Result<RsaSigningKeyConfig, String> {
     let file = std::fs::File::open(path).map_err(|_| {
         "cannot open signing key; prepare EMBEDDED_IDP_APP_SIGNING_KEY_FILE (RSA PKCS#8 DER)"
@@ -61,7 +112,15 @@ fn signing_key(path: &str) -> Result<RsaSigningKeyConfig, String> {
         .map_err(|_| "invalid RSA signing key; require PKCS#8 DER and at least 3072 bits".into())
 }
 
+#[cfg(test)]
+#[allow(dead_code)] // Shared by integration-test hosts that include this module.
 pub fn build_app(config: &EmbeddedIdpAppConfig) -> Result<Router, String> {
+    Ok(build_app_with_scan_cleanup(config)?.router)
+}
+
+pub fn build_app_with_scan_cleanup(
+    config: &EmbeddedIdpAppConfig,
+) -> Result<AppComposition, String> {
     let key = signing_key(&config.signing_key_file)?;
     let jwt_config = |management: bool| ProductionJwtConfig {
         issuer: config.embedded_idp.issuer.clone(),
@@ -270,6 +329,49 @@ pub fn build_app(config: &EmbeddedIdpAppConfig) -> Result<Router, String> {
             AccessTokenPurpose::Management,
         )?,
     )?;
+    let scan_service: Option<Arc<dyn TenantDeviceScanLoginService>> = match &config.scan_login {
+        None => None,
+        Some(scan) => {
+            let scan_auth = CoreTenantAuthenticationService::new(
+                mode,
+                config.embedded_idp.auth.clone(),
+                TenantLoginEntry {
+                    client_id: config.public_client.client_id.clone(),
+                    login_entry: scan.entry.entry_id.clone(),
+                    policy: scan.entry.tenant_policy.clone(),
+                    require_device_proof: true,
+                },
+                store.clone(),
+                tokens()?,
+                SecureRefreshTokenGenerator,
+                Sha256RefreshTokenDigester,
+                SystemClock,
+                UuidV7IdGenerator,
+            )
+            .map_err(|_| "invalid reference scan-login target authentication")?;
+            let cipher = RingScanResultCipher::new(
+                ScanResultKeyring::new(
+                    scan.result_key_id.clone(),
+                    [ScanResultKey::new(
+                        scan.result_key_id.clone(),
+                        scan.result_key,
+                    )],
+                )
+                .map_err(|_| "invalid reference scan-login result key configuration")?,
+            );
+            Some(Arc::new(
+                CoreTenantDeviceScanLoginService::new(
+                    scan.entry.clone(),
+                    scan_auth,
+                    proofs()?,
+                    Arc::new(IdentityOnlyScanAdmission),
+                    Arc::new(RegisteredDevicePresentation),
+                    Arc::new(cipher),
+                )
+                .map_err(|_| "invalid reference scan-login service configuration")?,
+            ))
+        }
+    };
     let mut device_routes = tenant_device_router(
         devices.clone(),
         Arc::new(DeviceAdmission(config.allow_device_provisioning)),
@@ -307,57 +409,98 @@ pub fn build_app(config: &EmbeddedIdpAppConfig) -> Result<Router, String> {
         Arc::new(auth()?),
         Arc::new(CoreAccessService::new(mode, catalog.clone(), store.clone())),
     ));
+    let public = if let Some(service) = scan_service.clone() {
+        let host = TrustedScanHostContext::new(
+            "reference-host".into(),
+            SystemTime::now() + Duration::from_secs(365 * 24 * 60 * 60),
+        );
+        let browser = scan_browser_router(
+            service.clone(),
+            Arc::new(auth()?),
+            BrowserSessionHttpConfig::new(
+                &config.browser_origin,
+                &format!("{cookie_prefix}_business"),
+                "/auth/browser",
+                AccessTokenPurpose::Business,
+            )?,
+        )
+        .layer(Extension(host.clone()));
+        let device = scan_device_router(
+            service,
+            ScanDeviceHttpConfig::new(
+                BUSINESS_AUDIENCE,
+                "/auth/device-scan",
+                &config
+                    .scan_login
+                    .as_ref()
+                    .expect("scan service requires scan config")
+                    .verification_uri,
+            )
+            .map_err(|_| "invalid reference scan-login device routes")?,
+        )
+        .layer(Extension(host));
+        public
+            .nest("/auth/browser/device-scan", browser)
+            .nest("/auth/browser/device-scan/ui", scan_reference_ui_router())
+            .nest("/auth/device-scan", device)
+    } else {
+        public
+    };
     let issuer = config.embedded_idp.issuer.trim_end_matches('/');
     let discovery = json!({"issuer":config.embedded_idp.issuer,"authorization_endpoint":format!("{issuer}/oidc/authorize"),"token_endpoint":format!("{issuer}/oidc/token"),"jwks_uri":format!("{issuer}/oidc/jwks"),"userinfo_endpoint":format!("{issuer}/oidc/userinfo"),"introspection_endpoint":format!("{issuer}/oidc/introspect"),"revocation_endpoint":format!("{issuer}/oidc/revoke"),"response_types_supported":["code"],"grant_types_supported":["authorization_code"],"subject_types_supported":["public"],"id_token_signing_alg_values_supported":["RS256"],"code_challenge_methods_supported":["S256"],"scopes_supported":["openid","profile","email"],"token_endpoint_auth_methods_supported":["none","client_secret_basic","client_secret_post"]});
-    Ok(Router::new()
-        .route("/healthz", get(|| async { Json(json!({"status":"ok"})) }))
-        .route(
-            "/readyz",
-            get(move || {
-                let store = store.clone();
-                let catalog = catalog.clone();
-                async move {
-                    match tokio::task::spawn_blocking(move || store.check_readiness(&catalog)).await
-                    {
-                        Ok(Ok(())) => (StatusCode::OK, Json(json!({"status":"ready"}))),
-                        _ => (
-                            StatusCode::SERVICE_UNAVAILABLE,
-                            Json(json!({"status":"not_ready"})),
-                        ),
+    Ok(AppComposition {
+        router: Router::new()
+            .route("/healthz", get(|| async { Json(json!({"status":"ok"})) }))
+            .route(
+                "/readyz",
+                get(move || {
+                    let store = store.clone();
+                    let catalog = catalog.clone();
+                    async move {
+                        match tokio::task::spawn_blocking(move || store.check_readiness(&catalog))
+                            .await
+                        {
+                            Ok(Ok(())) => (StatusCode::OK, Json(json!({"status":"ready"}))),
+                            _ => (
+                                StatusCode::SERVICE_UNAVAILABLE,
+                                Json(json!({"status":"not_ready"})),
+                            ),
+                        }
                     }
-                }
-            }),
-        )
-        .route(
-            "/.well-known/openid-configuration",
-            get(move || {
-                let data = discovery.clone();
-                async move { Json(data) }
-            }),
-        )
-        .route(
-            "/oidc/jwks",
-            get(move || {
-                let data = jwks.clone();
-                let etag = etag.clone();
-                async move {
-                    (
-                        [
-                            ("etag", etag),
-                            ("cache-control", "public, max-age=300".into()),
-                        ],
-                        Json(data),
-                    )
-                }
-            }),
-        )
-        .merge(admin_console_router(&config.admin_ui_base_path))
-        .nest(
-            "/api",
-            management_router(management, admin_routes).merge(browser_management),
-        )
-        .merge(public)
-        .merge(browser_business))
+                }),
+            )
+            .route(
+                "/.well-known/openid-configuration",
+                get(move || {
+                    let data = discovery.clone();
+                    async move { Json(data) }
+                }),
+            )
+            .route(
+                "/oidc/jwks",
+                get(move || {
+                    let data = jwks.clone();
+                    let etag = etag.clone();
+                    async move {
+                        (
+                            [
+                                ("etag", etag),
+                                ("cache-control", "public, max-age=300".into()),
+                            ],
+                            Json(data),
+                        )
+                    }
+                }),
+            )
+            .merge(admin_console_router(&config.admin_ui_base_path))
+            .nest(
+                "/api",
+                management_router(management, admin_routes).merge(browser_management),
+            )
+            .merge(public)
+            .merge(browser_business),
+        scan_cleanup: scan_service,
+    })
 }
 fn seed_public_client(
     adapter: &PostgresStorageAdapter,

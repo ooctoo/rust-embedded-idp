@@ -29,6 +29,11 @@ struct D {
     proof_bindings: Vec<TenantProofBinding>,
     proof_challenges: Vec<TenantProofChallenge>,
     fail_consume: bool,
+    scan_grants: Vec<ScanGrantRecord>,
+    scan_operations: Vec<ScanOperationRecord>,
+    scan_deliveries: Vec<ScanDeliveryRecord>,
+    scan_audits: Vec<ScanAuditEvent>,
+    fail_scan_audit: bool,
 }
 #[derive(Clone)]
 struct S(Arc<Mutex<D>>);
@@ -311,8 +316,15 @@ fn seed() -> S {
         proof_bindings: vec![],
         proof_challenges: vec![],
         fail_consume: false,
+        scan_grants: vec![],
+        scan_operations: vec![],
+        scan_deliveries: vec![],
+        scan_audits: vec![],
+        fail_scan_audit: false,
     })))
 }
+
+mod scan_login;
 fn m(t: &str, a: &str) -> TenantMembership {
     TenantMembership {
         tenant_id: t.into(),
@@ -749,7 +761,7 @@ fn switch_ticket_rechecks_source_session_and_cursor_scope() {
     assert_eq!(s.0.lock().unwrap().sessions.len(), 1);
 }
 
-mod device_proofs {
+pub(super) mod device_proofs {
     use super::*;
     use base64ct::{Base64UrlUnpadded, Encoding};
 
@@ -869,7 +881,7 @@ mod device_proofs {
             Ok(())
         }
     }
-    struct Crypto;
+    pub(super) struct Crypto;
     impl DevicePublicJwkValidator for Crypto {
         fn validate_ed25519_public_jwk(
             &self,
@@ -897,7 +909,7 @@ mod device_proofs {
             }
         }
     }
-    struct Challenges;
+    pub(super) struct Challenges;
     impl DeviceChallengeGenerator for Challenges {
         fn generate_device_challenge(&self) -> Result<SecretString, SecurityContractError> {
             static NEXT: AtomicUsize = AtomicUsize::new(1);

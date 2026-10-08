@@ -1,4 +1,7 @@
-use embedded_idp_core::access::{LoginTenantPolicy, TenancyMode};
+use base64ct::{Base64UrlUnpadded, Encoding};
+use embedded_idp_core::access::{
+    LoginTenantPolicy, ScanLoginEntryConfig, ScanLoginLimits, ScanLoginMode, TenancyMode,
+};
 use std::env;
 use std::net::SocketAddr;
 
@@ -22,6 +25,28 @@ pub struct EmbeddedIdpAppConfig {
     pub management_policy: LoginTenantPolicy,
     pub signing_key_file: String,
     pub allow_device_provisioning: bool,
+    /// None keeps scan login absent from the reference host. It is deliberately
+    /// not enabled by a generated startup key or a permissive default.
+    pub scan_login: Option<ReferenceScanLoginConfig>,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct ReferenceScanLoginConfig {
+    pub entry: ScanLoginEntryConfig,
+    pub verification_uri: String,
+    pub result_key_id: String,
+    pub result_key: [u8; 32],
+}
+
+impl std::fmt::Debug for ReferenceScanLoginConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ReferenceScanLoginConfig")
+            .field("entry", &self.entry)
+            .field("verification_uri", &self.verification_uri)
+            .field("result_key_id", &self.result_key_id)
+            .field("result_key", &"[REDACTED]")
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -189,6 +214,8 @@ impl EmbeddedIdpAppConfig {
                 )
             }
         };
+        let scan_login =
+            scan_login_config_from_env(tenancy_mode, &public_client.client_id, &browser_origin)?;
 
         Ok(Self {
             bind_addr,
@@ -210,8 +237,89 @@ impl EmbeddedIdpAppConfig {
                 "EMBEDDED_IDP_APP_ALLOW_DEVICE_PROVISIONING",
                 false,
             )?,
+            scan_login,
         })
     }
+}
+
+fn scan_login_config_from_env(
+    tenancy_mode: TenancyMode,
+    target_client_id: &str,
+    browser_origin: &str,
+) -> Result<Option<ReferenceScanLoginConfig>, String> {
+    if !env_flag("EMBEDDED_IDP_APP_SCAN_LOGIN_ENABLED", false)? {
+        return Ok(None);
+    }
+    let required = |name: &str| {
+        env::var(name).map_err(|_| format!("{name} is required when scan login is enabled"))
+    };
+    let source_clients = required("EMBEDDED_IDP_APP_SCAN_LOGIN_ALLOWED_SOURCE_CLIENT_IDS")?
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    if source_clients
+        .iter()
+        .any(|client| client != target_client_id)
+    {
+        return Err(
+            "reference host accepts only its configured public client as a scan-login source; embed Core for cross-client policy"
+                .into(),
+        );
+    }
+    let modes = match required("EMBEDDED_IDP_APP_SCAN_LOGIN_MODES")?.as_str() {
+        "device_display,phone_display" => {
+            vec![ScanLoginMode::DeviceDisplay, ScanLoginMode::PhoneDisplay]
+        }
+        "device_display" => vec![ScanLoginMode::DeviceDisplay],
+        "phone_display" => vec![ScanLoginMode::PhoneDisplay],
+        _ => return Err("invalid EMBEDDED_IDP_APP_SCAN_LOGIN_MODES: expected device_display,phone_display or one mode".into()),
+    };
+    let result_key = decode_scan_result_key(&required(
+        "EMBEDDED_IDP_APP_SCAN_LOGIN_RESULT_KEY_BASE64URL",
+    )?)?;
+    let entry = ScanLoginEntryConfig {
+        entry_id: required("EMBEDDED_IDP_APP_SCAN_LOGIN_ENTRY_ID")?,
+        target_client_id: target_client_id.to_owned(),
+        allowed_source_client_ids: source_clients,
+        host_scope: "reference-host".into(),
+        tenant_policy: login_policy_from_env(tenancy_mode, false)?,
+        modes,
+        target_scope: None,
+        limits: ScanLoginLimits::default(),
+    };
+    entry
+        .validate(tenancy_mode)
+        .map_err(|_| "invalid reference scan-login entry configuration")?;
+    let verification_uri = required("EMBEDDED_IDP_APP_SCAN_LOGIN_VERIFICATION_URI")?;
+    validate_reference_verification_uri(&verification_uri, browser_origin)?;
+    Ok(Some(ReferenceScanLoginConfig {
+        entry,
+        verification_uri,
+        result_key_id: required("EMBEDDED_IDP_APP_SCAN_LOGIN_RESULT_KEY_ID")?,
+        result_key,
+    }))
+}
+
+fn validate_reference_verification_uri(value: &str, browser_origin: &str) -> Result<(), String> {
+    let Some(rest) = value.strip_prefix(browser_origin) else {
+        return Err("EMBEDDED_IDP_APP_SCAN_LOGIN_VERIFICATION_URI must be same-origin with EMBEDDED_IDP_APP_BROWSER_ORIGIN in the reference host".into());
+    };
+    if !rest.starts_with('/') || rest.contains('?') || rest.contains('#') {
+        return Err("EMBEDDED_IDP_APP_SCAN_LOGIN_VERIFICATION_URI must be a same-origin absolute path without query or fragment".into());
+    }
+    Ok(())
+}
+
+fn decode_scan_result_key(raw_key: &str) -> Result<[u8; 32], String> {
+    let key = Base64UrlUnpadded::decode_vec(raw_key)
+        .map_err(|_| "invalid EMBEDDED_IDP_APP_SCAN_LOGIN_RESULT_KEY_BASE64URL")?;
+    if key.len() != 32 || Base64UrlUnpadded::encode_string(&key) != raw_key {
+        return Err("EMBEDDED_IDP_APP_SCAN_LOGIN_RESULT_KEY_BASE64URL must be canonical unpadded base64url for exactly 32 bytes".into());
+    }
+    key.try_into()
+        .map_err(|_| "invalid EMBEDDED_IDP_APP_SCAN_LOGIN_RESULT_KEY_BASE64URL".into())
 }
 
 fn validate_tenancy_mode(value: &str) -> Result<TenancyMode, String> {
@@ -430,7 +538,9 @@ fn normalize_admin_ui_base_path(value: &str) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
+    use base64ct::Encoding;
     use std::env;
+    use std::sync::Mutex;
 
     use embedded_idp_core::{
         AuthConfig, ConfigValidationError, DeviceConfig, EmbeddedIdpConfig, OidcConfig,
@@ -440,6 +550,8 @@ mod tests {
         format_embedded_idp_config_error, normalize_admin_ui_base_path, validate_tenancy_mode,
         EmbeddedIdpAppConfig,
     };
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn tenancy_mode_cannot_silently_disable_isolation() {
@@ -467,6 +579,7 @@ mod tests {
 
     #[test]
     fn config_uses_defaults() {
+        let _guard = ENV_LOCK.lock().unwrap();
         env::remove_var("EMBEDDED_IDP_APP_BIND_ADDR");
         env::remove_var("EMBEDDED_IDP_APP_ADMIN_UI_BASE_PATH");
         env::remove_var("EMBEDDED_IDP_APP_PUBLIC_CLIENT_ID");
@@ -478,6 +591,84 @@ mod tests {
         assert_eq!(config.admin_ui_base_path, "/");
         assert_eq!(config.public_client.client_id, "desktop-app");
         assert_eq!(config.embedded_idp.auth.password_min_length, 8);
+        assert!(config.scan_login.is_none());
+    }
+
+    #[test]
+    fn enabled_reference_scan_login_requires_result_key_instead_of_generating_one() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        for (key, value) in [
+            ("EMBEDDED_IDP_APP_SCAN_LOGIN_ENABLED", "true"),
+            (
+                "EMBEDDED_IDP_APP_SCAN_LOGIN_ENTRY_ID",
+                "reference-device-scan",
+            ),
+            (
+                "EMBEDDED_IDP_APP_SCAN_LOGIN_ALLOWED_SOURCE_CLIENT_IDS",
+                "desktop-app",
+            ),
+            ("EMBEDDED_IDP_APP_SCAN_LOGIN_MODES", "device_display"),
+            (
+                "EMBEDDED_IDP_APP_SCAN_LOGIN_VERIFICATION_URI",
+                "http://127.0.0.1:9100/auth/browser/device-scan/ui",
+            ),
+            ("EMBEDDED_IDP_APP_SCAN_LOGIN_RESULT_KEY_ID", "current"),
+        ] {
+            env::set_var(key, value);
+        }
+        env::remove_var("EMBEDDED_IDP_APP_SCAN_LOGIN_RESULT_KEY_BASE64URL");
+        let error = super::scan_login_config_from_env(
+            embedded_idp_core::access::TenancyMode::Disabled,
+            "desktop-app",
+            "http://127.0.0.1:9100",
+        )
+        .unwrap_err();
+        assert!(error.contains("RESULT_KEY_BASE64URL"));
+        for key in [
+            "EMBEDDED_IDP_APP_SCAN_LOGIN_ENABLED",
+            "EMBEDDED_IDP_APP_SCAN_LOGIN_ENTRY_ID",
+            "EMBEDDED_IDP_APP_SCAN_LOGIN_ALLOWED_SOURCE_CLIENT_IDS",
+            "EMBEDDED_IDP_APP_SCAN_LOGIN_MODES",
+            "EMBEDDED_IDP_APP_SCAN_LOGIN_VERIFICATION_URI",
+            "EMBEDDED_IDP_APP_SCAN_LOGIN_RESULT_KEY_ID",
+        ] {
+            env::remove_var(key);
+        }
+    }
+
+    #[test]
+    fn scan_login_result_key_requires_exact_canonical_aes_256_material() {
+        let valid = base64ct::Base64UrlUnpadded::encode_string(&[7_u8; 32]);
+        assert_eq!(super::decode_scan_result_key(&valid), Ok([7_u8; 32]));
+        for invalid in [
+            "",
+            "not-base64url*",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+            "AAAA",
+        ] {
+            assert!(super::decode_scan_result_key(invalid).is_err(), "{invalid}");
+        }
+    }
+
+    #[test]
+    fn reference_scan_verification_uri_rejects_cross_origin_and_credentials() {
+        let origin = "https://idp.example.test";
+        assert!(super::validate_reference_verification_uri(
+            "https://idp.example.test/auth/browser/device-scan/ui",
+            origin
+        )
+        .is_ok());
+        for uri in [
+            "https://other.example.test/auth/browser/device-scan/ui",
+            "https://idp.example.test.evil/auth/browser/device-scan/ui",
+            "https://idp.example.test/auth/browser/device-scan/ui?code=x",
+            "https://idp.example.test/auth/browser/device-scan/ui#code=x",
+        ] {
+            assert!(
+                super::validate_reference_verification_uri(uri, origin).is_err(),
+                "{uri}"
+            );
+        }
     }
 
     #[test]

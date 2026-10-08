@@ -5,12 +5,16 @@ mod administrator_init;
 mod bootstrap;
 mod config;
 mod email_sender;
+mod scan_ui;
 
 use tokio::net::TcpListener;
 use tokio::runtime::Builder;
 
-use crate::bootstrap::build_app;
+use crate::bootstrap::build_app_with_scan_cleanup;
 use crate::config::EmbeddedIdpAppConfig;
+
+const SCAN_CLEANUP_INTERVAL_SECS: u64 = 30;
+const SCAN_CLEANUP_BATCH_SIZE: u32 = 100;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let mut args = std::env::args().skip(1);
@@ -28,10 +32,36 @@ fn main() -> Result<(), Box<dyn Error>> {
         };
     }
     let config = EmbeddedIdpAppConfig::from_env()?;
-    let app = build_app(&config)?;
+    let composition = build_app_with_scan_cleanup(&config)?;
+    let app = composition.router;
+    let scan_cleanup = composition.scan_cleanup;
     let runtime = Builder::new_multi_thread().enable_all().build()?;
 
     runtime.block_on(async move {
+        if let Some(service) = scan_cleanup {
+            tokio::spawn(async move {
+                let mut interval = tokio::time::interval(std::time::Duration::from_secs(
+                    SCAN_CLEANUP_INTERVAL_SECS,
+                ));
+                loop {
+                    interval.tick().await;
+                    let service = service.clone();
+                    let host = embedded_idp_core::access::TrustedScanHostContext::new(
+                        "reference-host".into(),
+                        std::time::SystemTime::now() + std::time::Duration::from_secs(60),
+                    );
+                    if !matches!(
+                        tokio::task::spawn_blocking(move || {
+                            service.cleanup(host, SCAN_CLEANUP_BATCH_SIZE)
+                        })
+                        .await,
+                        Ok(Ok(_))
+                    ) {
+                        eprintln!("scan-login cleanup failed; retrying at the next interval");
+                    }
+                }
+            });
+        }
         let listener = TcpListener::bind(config.bind_addr).await?;
 
         println!(
@@ -56,4 +86,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         axum::serve(listener, app).await?;
         Ok(())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SCAN_CLEANUP_BATCH_SIZE, SCAN_CLEANUP_INTERVAL_SECS};
+
+    #[test]
+    fn reference_scan_cleanup_is_bounded_and_not_request_driven() {
+        assert_eq!(SCAN_CLEANUP_INTERVAL_SECS, 30);
+        assert_eq!(SCAN_CLEANUP_BATCH_SIZE, 100);
+    }
 }

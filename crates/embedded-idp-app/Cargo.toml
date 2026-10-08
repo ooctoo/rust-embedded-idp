@@ -9,6 +9,7 @@ description = "Standalone reference host for rust-embedded-idp"
 
 [dependencies]
 axum = { version = "0.7", default-features = false, features = ["form", "http1", "json", "query", "tokio"] }
+base64ct = { version = "1", features = ["alloc"] }
 embedded-idp-axum = { version = "2.0.0", path = "../embedded-idp-axum" }
 embedded-idp-core = { version = "2.0.0", path = "../embedded-idp-core" }
 embedded-idp-security = { version = "2.0.0", path = "../embedded-idp-security" }
@@ -17,8 +18,7 @@ embedded-idp-storage-postgres = { version = "2.0.0", path = "../embedded-idp-sto
 lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "rustls", "ring", "webpki-roots"] }
 postgres = "0.19"
 serde_json = "1"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "time"] }
 
 [dev-dependencies]
-base64ct = { version = "1", features = ["alloc"] }
 tower = { version = "0.5", features = ["util"] }
