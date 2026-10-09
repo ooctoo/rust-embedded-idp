@@ -41,6 +41,7 @@ fn proofs(db: &Db) -> Proofs {
                 "scan_login_claim",
                 "scan_login_status",
                 "scan_login_lookup",
+                "scan_login_close_origin",
                 "scan_login_cancel",
                 "scan_login_exchange",
                 "scan_login_recover",

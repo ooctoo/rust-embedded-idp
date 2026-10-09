@@ -1,6 +1,6 @@
 # 通用扫码授权设备登录技术设计
 
-日期：2026-10-08。状态：设计与分期实施中，安全基础切片已实现，扫码登录流程尚未接通。设计代码核对基线：`1ca4d17`。除第 22 节列出的已实现内容外，新增服务、路由和表均为待实现契约；现有能力见第 3 节。
+日期：2026-10-09。双向扫码登录基线已随 PR #16 合入主干（`33c4aa8`）；本次补齐原操作终止与 Pending 撤销修正，当前存储版本为 `tenant_v6`。第 23 节固定断网未知结果的收敛契约，分层验证见验证记录。
 
 本设计为已登记设备提供两种人员登录方式：手机扫描设备显示码，以及设备扫描手机出示码。两种方式均由手机上的已认证人员确认具体目标设备，再为目标设备签发独立的人员设备会话。设备后续使用现有 refresh、注销、设备会话认证及业务授权体系。
 
@@ -350,6 +350,8 @@ pub trait TenantDeviceScanLoginService: Send + Sync {
         -> Result<ScanProgress, ScanLoginError>;
     fn lookup_device(&self, c: LookupDeviceScan, actor: ScanDeviceCall)
         -> Result<DeviceScanLookup, ScanLoginError>;
+    fn close_origin(&self, c: CloseScanOrigin, actor: ScanDeviceCall)
+        -> Result<ScanOriginCloseResult, ScanLoginError>;
     fn exchange(&self, c: ExchangeScan, actor: ScanDeviceCall)
         -> Result<ScanDeliveryResult, ScanLoginError>;
     fn recover(&self, c: RecoverScan, actor: ScanDeviceCall)
@@ -376,7 +378,7 @@ pub trait TenantDeviceScanLoginService: Send + Sync {
 
 模块保留 `/auth` 与 `/devices` 路由根，宿主选择外层前缀。下表为模块路径，设备签名中的 path 必须包含实际外层前缀。请求均为 JSON POST，最大 16 KiB，拒绝未知字段和重复字段，响应 `Cache-Control: no-store`。所有时间是服务端 Unix 秒，grant 返回绝对到期时间和剩余秒数，手机码、批准和恢复窗口返回各自绝对到期时间。
 
-源端请求通过 Cookie 与浏览器保护校验；目标端请求通过第 12 节设备证明。设备端每个请求体包含 `tenant_id`；create、claim、lookup 额外包含 `entry_id`，其他动作的 entry 由可信路由配置确定。tenant_id 是签名中的租户断言，Core 必须在该租户内验证设备、密钥、绑定和挑战归属，不能凭 JSON 断言建立身份。表中的 `access` 表示展开在 JSON 顶层的 `grant_id` 和 `delivery_secret`，不是嵌套字段。
+源端请求通过 Cookie 与浏览器保护校验；目标端请求通过第 12 节设备证明。设备端每个请求体包含 `tenant_id`；create、claim、lookup、close-origin 额外包含 `entry_id`，其他动作的 entry 由可信路由配置确定。tenant_id 是签名中的租户断言，Core 必须在该租户内验证设备、密钥、绑定和挑战归属，不能凭 JSON 断言建立身份。表中的 `access` 表示展开在 JSON 顶层的 `grant_id` 和 `delivery_secret`，不是嵌套字段。
 
 | 路由 | 请求体的其他字段 | 成功响应 |
 | --- | --- | --- |
@@ -391,7 +393,8 @@ pub trait TenantDeviceScanLoginService: Send + Sync {
 | `/auth/device-scan/create` | operation_id、delivery_secret_hash | 201（含相同操作的幂等重试），grant、display_code、verification_uri、期限 |
 | `/auth/device-scan/claim` | operation_id、scan_code、delivery_secret_hash | 200 progress |
 | `/auth/device-scan/status` | access | 200 progress |
-| `/auth/device-scan/lookup` | origin_operation_id、delivery_secret | 200 创建／关联结果；只有创建者可恢复尚未消费的 display_code |
+| `/auth/device-scan/lookup` | 可选 origin_action、origin_operation_id、delivery_secret | 200 创建／关联结果；只有创建者可恢复尚未消费的 display_code；省略 origin_action 保持旧客户端兼容 |
+| `/auth/device-scan/close-origin` | entry_id、origin_action(create/claim)、origin_operation_id、delivery_secret | 200 `closed` 或 `already_activated`；原始请求结果未知时关闭该 create/claim 操作，不需要手机码、显示码或来源会话 |
 | `/auth/device-scan/cancel` | operation_id、access | 200 progress |
 | `/auth/device-scan/exchange` | operation_id、access | 200 delivery result；未批准为 409 |
 | `/auth/device-scan/recover` | issuance_operation_id、access | 200 同一 delivery result；已确认仅返回 progress |
@@ -412,6 +415,7 @@ pub trait TenantDeviceScanLoginService: Send + Sync {
 | `CreatedDeviceScan` | progress 对象、display_code、verification_uri |
 | `IssuedPhoneScan` | progress 对象、scan_code、code_expires_at_unix_secs |
 | `DeviceScanLookup` | progress、origin_operation_id、display_code(null或仍可显示的原码)；不包含令牌 |
+| `ScanOriginCloseResult` | origin_action(create/claim)、origin_operation_id、outcome(closed/already_activated)、closed_at_unix_secs(null或秒)、progress(null或对象) |
 | `ScanDeliveryResult` | progress 对象；可交付时额外含 session、tokens、receipt_nonce；已确认恢复只含 progress |
 
 `next_action` 取 `wait_for_phone_scan`、`wait_for_device_scan`、`confirm_on_phone`、`exchange`、`persist_then_acknowledge`、`use_local_session`、`restart` 中之一；只表示协议下一步，由客户端结合自身角色显示操作。不可继续轮询时 poll_after_ms 为 0。`expires_in` 固定表示 grant 授权期限剩余秒数，最小 0；issued 后恢复期限以 recover_until 为准。
@@ -522,12 +526,13 @@ phone-code 返回的 progress.target 不存在：公共 progress 本身不携带
 | 409 | `browser_session_changed` | 清除旧确认界面，重新读取当前身份 |
 | 409 | `scan_already_claimed` / `confirmation_changed` | 不改目标；刷新确认或新建流程 |
 | 409 | `scan_not_approved` | 按 poll_after_ms 等待或读取终态 |
-| 409 | `operation_conflict` | 同 operation ID 的语义内容不同；禁止自动换 ID 重试 |
+| 409 | `operation_conflict` | 同 operation ID 的语义内容不同，或关闭查询未指定原动作；禁止自动换 ID 重试 |
 | 409 | `exchange_already_started` | 原设备使用返回的原 issuance_operation_id 核对／恢复 |
 | 409 | `scan_already_issued` | 取消不能回退签发；用明确的未交付撤销接口 |
 | 409 | `already_acknowledged` | 仅撤销未交付结果等不再适用的动作返回；重复 ack 返回 200 acknowledged，recover 返回 200 无秘密元数据 |
 | 410 | `scan_expired` / `scan_cancelled` / `scan_denied` / `scan_invalidated` | 终结本次流程 |
 | 410 | `delivery_expired` / `delivery_revoked` | 清除本地待交付凭据并重新开始 |
+| 410 | `origin_operation_closed`，`terminal: true` | 原 create/claim 操作已被关闭，禁止重用该 action 与 operation ID；`scan_not_found` 明确返回 `terminal: false`，不能据 `retryable: false` 推断原请求已经终结 |
 | 429 | `scan_rate_limited` | 等待已有请求终结，并遵守宿主限流退避；不申请大量新挑战绕过限制 |
 | 503 | `scan_admission_unavailable` / `scan_storage_unavailable` / `scan_result_unavailable` | 保留 operation ID，核对后重试；结果未知不等于失败 |
 
@@ -548,6 +553,7 @@ phone-code 返回的 progress.target 不存在：公共 progress 本身不携带
 | recover | `scan_login_recover` |
 | acknowledge | `scan_login_ack` |
 | abort | `scan_login_abort` |
+| close-origin | `scan_login_close_origin` |
 
 客户端先向现有 `/devices/proof/challenges` 申请相应用途的挑战；扩展设备认证服务的允许用途列表。签名验证必须在本次动作的身份事务内完成并原子消费 challenge。签名有效但原子动作失败时，根据事务结果回滚消费；调用者仍应获取新挑战重试。对取消、过期清理等需要提交状态的业务拒绝，用成功的事务结果枚举表示，再映射 HTTP 错误，不能通过 `Err` 意外回滚应提交的撤销。
 
@@ -573,7 +579,7 @@ scan-context-sha256:{context_digest}\n
 
 扫码动作不使用密码登录的 credential digest，也不修改已有证明签名字节。`client_sync_transport` 仍专用于无人员离线补传。手机批准不要求目标设备私钥；它通过业务来源会话、CSRF 防护和确认 revision 授权。
 
-本设计附带[合成向量](fixtures/device-scan-login-v1.json)和 [Node 校验器](examples/verify-device-scan-login-vectors.mjs)，包含全部九种设备动作、实际 body 字节、JWK thumbprint、上下文摘要、canonical 文本、摘要和签名；seed 是公开测试数据，禁止生产使用。校验器独立重建字节、签名和篡改失败案例。实现阶段 Rust 与 SDK 必须读取同一 fixture 校验，不能各自生成一套自洽数据替代跨语言一致性测试。
+本设计附带[合成向量](fixtures/device-scan-login-v1.json)和 [Node 校验器](examples/verify-device-scan-login-vectors.mjs)，包含全部十种设备动作、实际 body 字节、JWK thumbprint、上下文摘要、canonical 文本、摘要和签名；seed 是公开测试数据，禁止生产使用。校验器独立重建字节、签名和篡改失败案例。实现阶段 Rust 与 SDK 必须读取同一 fixture 校验，不能各自生成一套自洽数据替代跨语言一致性测试。
 
 ## 13 兑换 交付 恢复与撤销
 
@@ -676,12 +682,13 @@ IDP 提供有界 cleanup 调用，由宿主调度，不引入新的调度平台�
 
 ### 15.1 新表
 
-完整 DDL 见 [tenant_v5.sql](../crates/embedded-idp-storage-postgres/src/sql/tenant_v5.sql)，显式升级见 [迁移 SQL](../scripts/migrate_scan_login.sql)。以下为字段说明。表名限定扫码登录，不创建通用工作流或命令平台。
+完整 DDL 见 [tenant_v6.sql](../crates/embedded-idp-storage-postgres/src/sql/tenant_v6.sql)，已有 v4 先执行[历史迁移](../scripts/migrate_scan_login.sql)，已有 v5 执行[原操作终止迁移](../scripts/migrate_scan_login_origin_closures.sql)。以下为字段说明。表名限定扫码登录，不创建通用工作流或命令平台。
 
 | 表 | 主要内容与约束 |
 | --- | --- |
 | `scan_login_grants` | 全局 UUID id 主键，所有读取／更新均校验 tenant/host_scope/entry；host_scope、entry、mode、target_client；可空但只写一次的 source account/session/client 和 target device/key/version；state、version、期限；展示码摘要与短期密文；delivery secret hash；confirmation revision；批准时间 |
 | `scan_login_operations` | tenant/host_scope/entry、actor_id（来源 session 或目标 device，配合 action 区分 actor 语义）、action、operation ID、语义摘要、grant 引用；唯一键防止同 actor/action/operation 重复提交 |
+| `scan_login_origin_closures` | `(tenant_id,host_scope,entry_id,device_id,origin_action,origin_operation_id)` 主键；delivery secret 摘要、可空 grant_id、closed_by_key_id、closed_at；即使原请求未提交也可写入，永久阻止原操作重新执行 |
 | `scan_login_deliveries` | `(tenant_id,grant_id)` 唯一；issuance operation 唯一；目标 session 唯一；绑定 ID/version、设备/key版本；state、receipt nonce 摘要、加密 bundle、cipher key ID/nonce、恢复期限、release/ack/revoke 时间和原因 |
 | `scan_login_audit_events` | 限定本协议的事件；actor_kind 为 person/device/host/system，记录真实来源引用、grant/operation/会话/设备和准入 decision ID，无秘密 |
 
@@ -699,7 +706,7 @@ operation 唯一作用域包含 tenant、host scope、entry、actor kind、来�
 
 grant 上的唯一交付约束是第二道防线：不同 exchange operation ID 并发时也只能产生一个 session。落败者返回 exchange_already_started，原设备可核对原操作。数据库唯一冲突需在事务外重新读取安全投影，不把约束错误当作第二次签发机会。
 
-模块 cleanup 仅清除到期秘密和撤销 Pending，不删除幂等记录或审计。宿主维护历史归档时，操作关联结果保留至少 7 天；issued grant 的不可重发标记至少覆盖关联会话生命周期加 90 天，且会话未过期／撤销前不得删除。清理旧的未签发操作后，重复 create 最多形成需重新人工确认的新 grant，不会自动恢复授权。公开支持的幂等恢复窗口在 API 能力说明中声明，不能声称无限期。
+模块 cleanup 仅清除到期秘密和撤销 Pending，不删除幂等记录或审计。宿主维护历史归档时，操作关联结果保留至少 7 天；issued grant 的不可重发标记至少覆盖关联会话生命周期加 90 天，且会话未过期／撤销前不得删除。原操作关闭记录不能按上述短期幂等窗口清除；归档须保留等价的拒绝索引，否则迟到 create/claim 可能重新执行。公开支持的结果恢复窗口在 API 能力说明中声明，关闭操作的拒绝保证不随结果恢复窗口到期而结束。
 
 ### 15.3 锁顺序与复查
 
@@ -777,11 +784,11 @@ H5 维护 expected_session、自己的 operation ID、grant ID、确认 revision
 
 ## 18 升级 配置与发布约束
 
-当前实现从 `tenant_v4` 显式升级到 `tenant_v5`，不允许两个不同结构共用同一 module_version。新增扫码表、约束和索引，复用 refresh 的 client 撤销分类；复用已有 session Pending 状态，不迁移既有会话到 Pending，也不改变现有设备或绑定归属。
+当前实现从 `tenant_v4` 显式升级到 `tenant_v5` 再到 `tenant_v6`，不允许两个不同结构共用同一 module_version。新增扫码表、约束和索引，复用 refresh 的 `ClientRevocation` 撤销分类（数据库值 `client_revocation`）；复用已有 session Pending 状态，不迁移既有会话到 Pending，也不改变现有设备或绑定归属。
 
 迁移工具沿用当前风格：默认预演，检查目标数据库／schema／模式／版本，停写与备份后显式执行，记录离线审计，核对完成结构后更新模块版本。启动仅验证，不自动改表。已有生产凭据不作为样例或测试输入。
 
-新增撤销原因建议采用 `scan_delivery_aborted`、`scan_delivery_expired`、`scan_delivery_denied`，存储、Core、错误投影和审计统一定义。首次启用需要配置入口、来源允许关系、准入适配器、可信显示资料来源、结果 keyring、清理调度和期限。缺失任一必需项时扫码路由不启用并返回明确能力状态，不退化为无准入或不可恢复的登录。
+交付记录保存 `aborted`、`expired`、`host_denied` 或 `origin_closed` 等具体原因；refresh 使用现有类型化 `ClientRevocation`，不得直接写入数据库枚举不接受的字符串。首次启用需要配置入口、来源允许关系、准入适配器、可信显示资料来源、结果 keyring、清理调度和期限。缺失任一必需项时扫码路由不启用并返回明确能力状态，不退化为无准入或不可恢复的登录。
 
 发布先升级数据库与兼容服务，再启用扫码配置。服务需能识别 Pending 会话及新表结构，禁止新旧不兼容版本同时写入。关闭扫码入口不影响普通登录和已确认会话；清理、状态核对与撤销能力仍应保持可用。
 
@@ -831,8 +838,8 @@ H5 维护 expected_session、自己的 operation ID、grant ID、确认 revision
 
 | 切片 | 工作与完成标准 |
 | --- | --- |
-| A 契约与存储 | 固定错误码、状态、配置和 DTO；完成 v5 迁移、grant/operation/delivery/audit store；唯一性及锁顺序测试通过 |
-| B 身份与证明 | Cookie 只读身份、客户端允许关系、九个扫码用途及 canonical builder；Rust/Node 固定向量通过 |
+| A 契约与存储 | 固定错误码、状态、配置和 DTO；完成 v6 迁移、grant/operation/closure/delivery/audit store；唯一性及锁顺序测试通过 |
+| B 身份与证明 | Cookie 只读身份、客户端允许关系、十个扫码用途及 canonical builder；Rust/Node 固定向量通过 |
 | C 双向授权 | 创建、码签发、关联、确认资料、批准／拒绝／取消／查询；宿主阶段准入、过期和并发测试通过 |
 | D 签发与交付 | Pending 签发、加密结果、同操作恢复、ack 激活、幂等撤销、cleanup 与故障注入全部通过 |
 | E HTTP 与参考接入 | Cookie/设备路由、原生调用示例、宿主策略示例、补偿及运维说明；两方向端到端验证 |
@@ -840,7 +847,7 @@ H5 维护 expected_session、自己的 operation ID、grant ID、确认 revision
 
 首期上线必须覆盖 A 至 F，不能把 D 中的恢复、ack 或补偿作为后续增强。每个切片先按 crate 边界实施，Core 定义规则，security 实现密码学，Postgres 实现事务，Axum 保持薄适配，app 负责参考组合。
 
-最终交付包至少包括：可调用 Rust 接口、HTTP 契约和错误码、九种 proof 测试向量、迁移及回退限制说明、可运行参考宿主、H5 Cookie 与原生客户端接入示例、断网恢复／补偿运行手册、分层验证记录。API 形状如在实施中调整，应同步更新此文档及客户端例子，不能让宿主依据未实现的签名接入。
+最终交付包至少包括：可调用 Rust 接口、HTTP 契约和错误码、十种 proof 测试向量、迁移及回退限制说明、可运行参考宿主、H5 Cookie 与原生客户端接入示例、断网恢复／补偿运行手册、分层验证记录。API 形状如在实施中调整，应同步更新此文档及客户端例子，不能让宿主依据未实现的签名接入。
 
 验证遵循仓库基线：先构建 Web，再执行 Rust fmt/check/test；新增测试先运行窄范围，再按跨 crate 影响扩大。真实数据库测试保持显式 opt-in。本文附带向量校验只证明文档签名字节和合成 Ed25519 数据一致，不证明扫码服务、迁移、HTTP 或现场链路已实现。
 
@@ -854,10 +861,30 @@ H5 维护 expected_session、自己的 operation ID、grant ID、确认 revision
 
 ## 22 当前实现与验证边界
 
-实现分支 `codex/device-scan-login` 已包含双向状态机、宿主阶段准入及真实目标资料接口、普通业务 Cookie 身份读取、九种设备证明、Postgres grant/operation/delivery/audit 事务、Pending 签发、结果恢复、ACK 激活、精确撤销和有界 cleanup。
+实现分支 `codex/device-scan-login` 已包含双向状态机、宿主阶段准入及真实目标资料接口、普通业务 Cookie 身份读取、十种设备证明、Postgres grant/operation/delivery/audit 事务、Pending 签发、结果恢复、ACK 激活、精确撤销和有界 cleanup。
 
 HTTP 组合方式为 `scan_device_router(...).nest` 到 `/auth/device-scan`、`scan_browser_router(...).nest` 到 `/auth/browser/device-scan`。设备路由的 `ScanDeviceHttpConfig` 必须填写真实外部前缀；`TrustedScanHostContext` 通过宿主服务端 Extension 注入。Core 无 HTTP、环境或宿主业务表依赖。
 
 参考宿主显式开启配置后提供 H5 普通人员登录／租户选择／具体设备确认，以及本地打包的 QR 和 Code 128；原生示例提供稳定操作持久化、lookup、同会话恢复和先保存再 ACK。生产宿主负责真实业务准入、终端资料、原生安全存储和扫码硬件。
 
 具体验证记录见 [扫码登录验收记录](device-scan-login-validation.md)。该记录区分离线测试、真实隔离 PostgreSQL 和宿主现场验收，不把参考宿主测试视为 SMT 的平台或扫码枪验收。迁移不会自动修改任何现存应用 schema。
+
+## 23 未知原操作的可靠终止
+
+设备在发送 create/claim 前持久化原动作、entry、tenant、operation ID、delivery secret 和原始请求体。更换 challenge 或签名时间不改变原操作身份。lookup 的 `scan_not_found` 只说明当前没有可读取的提交结果；它不能证明排队、执行或提交中的原请求以后不会成功。客户端保留原上下文，不依据该响应创建另一个操作。
+
+设备需要放弃原请求时调用 `close_origin`，携带原动作（仅 create／claim）、原操作 ID、同一 delivery secret 与新鲜的 `scan_login_close_origin` 设备证明。该接口不依赖手机码、来源 Cookie、来源会话或账号继续有效，也不执行新登录的宿主准入回调；它仍要求有效的 IDP 设备／当前密钥、可信 host scope、目标客户端、入口和租户。SMT 的终端业务暂停不应被宿主实现为禁止撤销的准入策略。IDP 设备安全身份本身已失效时不能接受设备请求，已知 grant 的撤销由可信宿主 compensate 执行。
+
+| 关闭时原操作的状态 | 事务结果 |
+| --- | --- |
+| 原操作尚未提交／当前不存在 | 持久化终止记录，返回 `closed`；迟到提交必须拒绝 |
+| 已创建／关联 grant，尚未签发 | 原子取消未完成 grant、清除展示密文并写入终止记录；已存在的拒绝／过期终态保持原状态 |
+| 已签发 Pending，尚未 ACK | 原子撤销该 grant 的 session、refresh、交付密文与 receipt 摘要，写入终止记录；不删除共享绑定或其他会话 |
+| 已 ACK 激活 | 返回 `already_activated` 和 progress，不建立关闭记录、不撤销 Active；正常注销另行执行 |
+| 事务／存储失败或并发重新准备超限 | 返回明确错误；不宣称 `closed`，原上下文仍需保留 |
+
+`closed` 返回原动作／操作 ID、稳定 `closed_at_unix_secs` 和可空 progress；原请求从未提交时没有 grant。重复关闭同一 scoped 操作与相同秘密返回同一关闭时间，可不再提供 progress；不同秘密拒绝。关闭响应丢失或再次丢失时重复同一 close-origin，或带明确原动作 lookup。已关闭的 lookup 返回 HTTP 410 `origin_operation_closed`、`terminal:true`；HTTP 404 `scan_not_found` 返回 `terminal:false`。legacy lookup 可省略原动作查询已提交的结果；确认关闭必须明确原动作。省略动作遇到终止记录返回 operation_conflict，不能因 create 已关闭就断言尚未提交的同 ID claim 也不会执行（反向同理）。
+
+最终原请求提交与终止均在同一设备行锁下复查原操作关闭记录。因此关闭先提交则原请求不能建立 grant／关联；原请求先提交则关闭撤销它已经产生的结果。与 exchange／ACK 同时发生时，关闭要么在签发前取消，要么精确撤销 Pending，要么报告已激活，不能报告成功后留下可用的新会话。定位 hint 若新增来源或交付会话，关闭先回滚并重新准备，不能逆序追加账号／会话锁；最多三次内部尝试后返回 operation_conflict，客户端保留请求并以新挑战重试。
+
+终止记录不保存原始秘密，不使用手机号，也不绑定 challenge。同一设备更换有效密钥后仍可凭同一 delivery secret 关闭旧操作；已失效密钥不能通过证明。cleanup 不删除终止记录，恢复窗口结束也不能使旧 ID 重新开放；备份、迁移和宿主历史归档必须保留此拒绝保证。用户明确开始下一次登录时使用新的操作 ID 和秘密；旧关闭操作不可复用。

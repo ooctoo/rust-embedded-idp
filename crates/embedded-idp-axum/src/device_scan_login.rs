@@ -28,7 +28,7 @@ use crate::{
 
 #[derive(Clone)]
 pub struct ScanDeviceHttpConfig {
-    routes: [ProtectedRouteConfig; 9],
+    routes: [ProtectedRouteConfig; 10],
     verification_uri: String,
 }
 impl ScanDeviceHttpConfig {
@@ -75,6 +75,7 @@ impl ScanDeviceHttpConfig {
                 route("recover")?,
                 route("acknowledge")?,
                 route("abort")?,
+                route("close-origin")?,
             ],
             verification_uri: verification_uri.into(),
         })
@@ -90,6 +91,7 @@ impl ScanDeviceHttpConfig {
             ScanLoginAction::Recover => 6,
             ScanLoginAction::Acknowledge => 7,
             ScanLoginAction::Abort => 8,
+            ScanLoginAction::CloseOrigin => 9,
         }]
     }
     pub fn verification_uri(&self) -> &str {
@@ -148,6 +150,7 @@ pub fn scan_device_router(
         .route("/recover", post(recover))
         .route("/acknowledge", post(acknowledge))
         .route("/abort", post(abort))
+        .route("/close-origin", post(close_origin))
         .with_state(state)
         .layer(DefaultBodyLimit::max(AUTH_DEVICE_BODY_LIMIT_BYTES))
         .layer(middleware::from_fn(no_store))
@@ -172,7 +175,7 @@ async fn browser_guard(State(s): State<BrowserState>, request: Request, next: Ne
 fn err(status: StatusCode, code: &'static str) -> Response {
     (
         status,
-        Json(json!({"error":code,"message":"device scan request rejected","request_id":null,"retryable": status == StatusCode::SERVICE_UNAVAILABLE})),
+        Json(json!({"error":code,"message":"device scan request rejected","request_id":null,"retryable": status == StatusCode::SERVICE_UNAVAILABLE,"terminal": code == "origin_operation_closed"})),
     )
         .into_response()
 }
@@ -189,6 +192,7 @@ fn scan_err(e: ScanLoginError) -> Response {
         ScanLoginError::ConfirmationChanged => (StatusCode::CONFLICT, "confirmation_changed"),
         ScanLoginError::NotApproved => (StatusCode::CONFLICT, "scan_not_approved"),
         ScanLoginError::OperationConflict => (StatusCode::CONFLICT, "operation_conflict"),
+        ScanLoginError::OriginOperationClosed => (StatusCode::GONE, "origin_operation_closed"),
         ScanLoginError::ExchangeAlreadyStarted(operation_id) => return (StatusCode::CONFLICT, Json(json!({"error":"exchange_already_started","message":"device scan request rejected","request_id":null,"retryable":false,"issuance_operation_id":operation_id}))).into_response(),
         ScanLoginError::AlreadyIssued => (StatusCode::CONFLICT, "scan_already_issued"),
         ScanLoginError::AlreadyAcknowledged => (StatusCode::CONFLICT, "already_acknowledged"),
@@ -539,9 +543,33 @@ struct ReadAccess {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Lookup {
+    origin_action: Option<OriginAction>,
     origin_operation_id: String,
     entry_id: String,
     tenant_id: String,
+    delivery_secret: String,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum OriginAction {
+    Create,
+    Claim,
+}
+impl From<OriginAction> for ScanOriginAction {
+    fn from(value: OriginAction) -> Self {
+        match value {
+            OriginAction::Create => Self::Create,
+            OriginAction::Claim => Self::Claim,
+        }
+    }
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CloseOrigin {
+    entry_id: String,
+    tenant_id: String,
+    origin_action: OriginAction,
+    origin_operation_id: String,
     delivery_secret: String,
 }
 #[derive(Deserialize)]
@@ -575,7 +603,17 @@ trait DeviceTenant {
     fn tenant_id(&self) -> &str;
 }
 macro_rules! device_tenant { ($($kind:ty),+ $(,)?) => { $(impl DeviceTenant for $kind { fn tenant_id(&self) -> &str { &self.tenant_id } })+ }; }
-device_tenant!(Create, Claim, OpAccess, ReadAccess, Lookup, Recover, Ack, Abort);
+device_tenant!(
+    Create,
+    Claim,
+    OpAccess,
+    ReadAccess,
+    Lookup,
+    CloseOrigin,
+    Recover,
+    Ack,
+    Abort
+);
 fn digest(x: String) -> Result<[u8; 32], Response> {
     let bytes = base64ct::Base64UrlUnpadded::decode_vec(&x)
         .map_err(|_| err(StatusCode::BAD_REQUEST, "invalid_request"))?;
@@ -804,7 +842,35 @@ async fn lookup(
         Ok(v) => v,
         Err(r) => return r,
     };
-    match call(move||s.service.lookup_device(LookupDeviceScan{origin_operation_id:b.origin_operation_id,entry_id:b.entry_id,tenant_id:b.tenant_id,delivery_secret:SecretString::new(b.delivery_secret)},x)).await{Ok(v)=>Json(json!({"progress":progress(&v.progress),"origin_operation_id":v.origin_operation_id,"display_code":v.display_code.map(SecretString::into_exposed)})).into_response(),Err(e)=>scan_err(e)}
+    match call(move||s.service.lookup_device(LookupDeviceScan{origin_action:b.origin_action.map(Into::into),origin_operation_id:b.origin_operation_id,entry_id:b.entry_id,tenant_id:b.tenant_id,delivery_secret:SecretString::new(b.delivery_secret)},x)).await{Ok(v)=>Json(json!({"progress":progress(&v.progress),"origin_operation_id":v.origin_operation_id,"display_code":v.display_code.map(SecretString::into_exposed)})).into_response(),Err(e)=>scan_err(e)}
+}
+async fn close_origin(
+    State(s): State<DeviceState>,
+    OriginalUri(uri): OriginalUri,
+    request: Request,
+) -> Response {
+    let (b, x) =
+        match device_call::<CloseOrigin>(&s, ScanLoginAction::CloseOrigin, uri, request).await {
+            Ok(v) => v,
+            Err(r) => return r,
+        };
+    match call(move || {
+        s.service.close_origin(
+            embedded_idp_core::access::CloseScanOrigin {
+                entry_id: b.entry_id,
+                tenant_id: b.tenant_id,
+                origin_action: b.origin_action.into(),
+                origin_operation_id: b.origin_operation_id,
+                delivery_secret: SecretString::new(b.delivery_secret),
+            },
+            x,
+        )
+    })
+    .await
+    {
+        Ok(v) => Json(close_origin_result(v)).into_response(),
+        Err(e) => scan_err(e),
+    }
 }
 async fn exchange(
     State(s): State<DeviceState>,
@@ -908,6 +974,15 @@ async fn abort(
 fn entry(x: &ScanLoginEntryConfig) -> serde_json::Value {
     json!({"entry_id":x.entry_id,"target_client_id":x.target_client_id,"modes":x.modes.iter().map(|m|match m{ScanLoginMode::DeviceDisplay=>"device_display",ScanLoginMode::PhoneDisplay=>"phone_display"}).collect::<Vec<_>>()})
 }
+fn close_origin_result(x: ScanOriginCloseResult) -> serde_json::Value {
+    json!({
+        "origin_action": x.origin_action.as_str(),
+        "origin_operation_id": x.origin_operation_id,
+        "outcome": match x.outcome { ScanOriginCloseOutcome::Closed => "closed", ScanOriginCloseOutcome::AlreadyActivated => "already_activated" },
+        "closed_at_unix_secs": x.closed_at.map(unix_time_secs),
+        "progress": x.progress.as_ref().map(progress),
+    })
+}
 fn progress(x: &ScanProgress) -> serde_json::Value {
     let expires_in = x
         .expires_at
@@ -937,6 +1012,7 @@ mod tests {
     #[derive(Default)]
     struct ScanStub {
         device: Mutex<Option<(DeviceRequestBinding, DeviceProofPresentation)>>,
+        closed_origin: Mutex<Option<embedded_idp_core::access::CloseScanOrigin>>,
     }
     macro_rules! stub { ($($name:ident($($arg:ident:$ty:ty),*) -> $ret:ty;)*) => { $(fn $name(&self,$($arg:$ty),*) -> $ret { let _ = ($($arg,)*); unreachable!("route guard must stop before service") })* }; }
     impl TenantDeviceScanLoginService for ScanStub {
@@ -958,6 +1034,21 @@ mod tests {
             abort_delivery(c:AbortScanDelivery, actor:ScanDeviceCall) -> Result<ScanProgress,ScanLoginError>;
             compensate(host:TrustedScanHostContext, grant_id:String, issuance_operation_id:String, operation_id:String) -> Result<ScanProgress,ScanLoginError>;
             cleanup(host:TrustedScanHostContext, limit:u32) -> Result<u32,ScanLoginError>;
+        }
+        fn close_origin(
+            &self,
+            c: embedded_idp_core::access::CloseScanOrigin,
+            actor: ScanDeviceCall,
+        ) -> Result<ScanOriginCloseResult, ScanLoginError> {
+            *self.device.lock().unwrap() = Some((actor.binding, actor.proof));
+            *self.closed_origin.lock().unwrap() = Some(c.clone());
+            Ok(ScanOriginCloseResult {
+                origin_action: c.origin_action,
+                origin_operation_id: c.origin_operation_id,
+                outcome: ScanOriginCloseOutcome::Closed,
+                closed_at: Some(SystemTime::UNIX_EPOCH),
+                progress: None,
+            })
         }
         fn entry_config(&self) -> ScanLoginEntryConfig {
             ScanLoginEntryConfig {
@@ -1201,6 +1292,65 @@ mod tests {
         assert_eq!(binding.body_sha256, expected_digest);
         assert_eq!(binding.tenant_id, "tenant-a");
         assert_eq!(proof.device_id, "88888888-8888-4888-8888-888888888888");
+    }
+    #[tokio::test]
+    async fn close_origin_uses_device_proof_and_returns_terminal_outcome() {
+        let stub = Arc::new(ScanStub::default());
+        let body = r#"{"entry_id":"terminal-login","tenant_id":"tenant-a","origin_action":"create","origin_operation_id":"33333333-3333-4333-8333-333333333333","delivery_secret":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#;
+        let response = device_router(stub.clone())
+            .oneshot(
+                device_headers(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/outer/auth/device-scan/close-origin"),
+                )
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = to_bytes(response.into_body(), 4096).await.unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(value["outcome"], "closed");
+        assert_eq!(value["origin_action"], "create");
+        let closed = stub.closed_origin.lock().unwrap().take().unwrap();
+        assert_eq!(closed.origin_action, ScanOriginAction::Create);
+        assert_eq!(
+            closed.origin_operation_id,
+            "33333333-3333-4333-8333-333333333333"
+        );
+        let (binding, _) = stub.device.lock().unwrap().take().unwrap();
+        assert_eq!(
+            binding.external_path,
+            "/outer/auth/device-scan/close-origin"
+        );
+        let expected_digest: [u8; 32] = Sha256::digest(body.as_bytes()).into();
+        assert_eq!(binding.body_sha256, expected_digest);
+    }
+    #[test]
+    fn closed_origin_is_a_gone_terminal_error() {
+        let response = scan_err(ScanLoginError::OriginOperationClosed);
+        assert_eq!(response.status(), StatusCode::GONE);
+    }
+    #[tokio::test]
+    async fn origin_close_error_marks_only_the_closed_origin_terminal() {
+        for (error, code, terminal) in [
+            (ScanLoginError::NotFound, "scan_not_found", false),
+            (
+                ScanLoginError::OriginOperationClosed,
+                "origin_operation_closed",
+                true,
+            ),
+        ] {
+            let response = scan_err(error);
+            let bytes = to_bytes(response.into_body(), 4096).await.unwrap();
+            let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(body["error"], code);
+            assert_eq!(body["terminal"], terminal);
+            assert_eq!(body["retryable"], false);
+        }
     }
     #[tokio::test]
     async fn device_rejects_content_unknown_duplicate_and_oversize_before_service() {

@@ -487,3 +487,94 @@ fn audit_write_failure_rolls_back_exchange_and_same_operation_can_retry() {
         .unwrap();
     assert!(matches!(retry, ScanDeliveryResult::Bundle { .. }));
 }
+
+#[test]
+#[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
+fn close_before_create_persists_a_tombstone_and_rejects_late_create() {
+    let db = Db::new(TenancyMode::Enabled);
+    let account = prepare(&db);
+    let (device, kid, key) = device(&db, "t1", &account, Uuid::now_v7());
+    let svc = service(&db);
+    let secret_bytes = [17_u8; 32];
+    let secret = SecretString::new(Base64UrlUnpadded::encode_string(&secret_bytes));
+    let secret_hash: [u8; 32] = digest(&SHA256, &secret_bytes).as_ref().try_into().unwrap();
+    let operation = "12121212-1212-4121-8121-121212121212";
+    let closed = svc
+        .close_origin(
+            CloseScanOrigin {
+                entry_id: "terminal".into(),
+                tenant_id: "t1".into(),
+                origin_action: ScanOriginAction::Create,
+                origin_operation_id: operation.into(),
+                delivery_secret: secret.clone(),
+            },
+            device_call(&db, ScanLoginAction::CloseOrigin, "", &device, &kid, &key),
+        )
+        .unwrap();
+    assert_eq!(closed.outcome, ScanOriginCloseOutcome::Closed);
+    assert!(matches!(
+        svc.create_device(
+            CreateDeviceScan {
+                operation_id: operation.into(),
+                entry_id: "terminal".into(),
+                tenant_id: "t1".into(),
+                delivery_secret_hash: secret_hash,
+            },
+            device_call(&db, ScanLoginAction::Create, "", &device, &kid, &key),
+        ),
+        Err(ScanLoginError::OriginOperationClosed)
+    ));
+    let row = db.adapter.connect().unwrap().query_one(
+        &format!("select count(*), bool_and(grant_id is null), bool_and(octet_length(delivery_secret_hash)=32) from {}.scan_login_origin_closures", db.schema()),
+        &[],
+    ).unwrap();
+    assert_eq!(row.get::<_, i64>(0), 1);
+    assert!(row.get::<_, bool>(1));
+    assert!(row.get::<_, bool>(2));
+}
+
+#[test]
+#[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
+fn abort_revokes_pending_scan_session_with_client_reason_and_erases_delivery_ciphertext() {
+    let db = Db::new(TenancyMode::Enabled);
+    let account = prepare(&db);
+    let (device, kid, key) = device(&db, "t1", &account, Uuid::now_v7());
+    let svc = service(&db);
+    let access = approved_device_display(&db, &svc, &device, &kid, &key);
+    let ScanDeliveryResult::Bundle {
+        progress, session, ..
+    } = svc
+        .exchange(
+            ExchangeScan {
+                operation_id: "13131313-1313-4131-8131-131313131313".into(),
+                access: access.clone(),
+            },
+            device_call(&db, ScanLoginAction::Exchange, "", &device, &kid, &key),
+        )
+        .unwrap()
+    else {
+        panic!()
+    };
+    let aborted = svc
+        .abort_delivery(
+            AbortScanDelivery {
+                operation_id: "14141414-1414-4141-8141-141414141414".into(),
+                issuance_operation_id: progress.issuance_operation_id.unwrap(),
+                access,
+            },
+            device_call(&db, ScanLoginAction::Abort, "", &device, &kid, &key),
+        )
+        .unwrap();
+    assert_eq!(aborted.delivery_state, Some(ScanDeliveryState::Revoked));
+    let row = db.adapter.connect().unwrap().query_one(
+        &format!("select x.status, f.revocation_reason, d.result_ciphertext is null, d.receipt_nonce_hash is null from {}.auth_sessions x join {}.refresh_tokens f on f.tenant_id=x.tenant_id and f.session_id=x.id join {}.scan_login_deliveries d on d.tenant_id=x.tenant_id and d.session_id=x.id where x.id=$1", db.schema(), db.schema(), db.schema()),
+        &[&Uuid::parse_str(&session.session.id).unwrap()],
+    ).unwrap();
+    assert_eq!(row.get::<_, String>(0), "revoked");
+    assert_eq!(row.get::<_, String>(1), "client_revocation");
+    assert!(row.get::<_, bool>(2));
+    assert!(row.get::<_, bool>(3));
+}
+
+#[path = "scan_login_origin_recovery.rs"]
+mod origin_recovery;

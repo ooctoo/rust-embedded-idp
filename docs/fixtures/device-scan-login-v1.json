@@ -206,6 +206,28 @@
       "canonical_utf8": "EMBEDDED-IDP-DEVICE-SCAN-V2\ntenant-id:tenant-a\naudience:example-api\nmethod:POST\npath:/api/auth/device-scan/abort\nbody-sha256:Jn8W1A-3V7oRHcGVy2oN_nxOpKS1MVt33rjCA6TLFJM\nchallenge:AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM\ndevice-id:88888888-8888-4888-8888-888888888888\nkey-id:1IG2tMH7J2wbJZnOf8LJzQitKf7LMvoAElsuDMVM54Y\nsigned-at:1700000000\nscan-context-sha256:JA6AfsUHnWTJR_AIAgdB1y2-EQc1GmjMVyT5lLQlPF0\n",
       "canonical_sha256": "wzkORT1Iqondrv0ib9wgmD6UnlWC0z-oKxSuQQvBWFQ",
       "signature": "VqLFWwK1sYG2Yrn6B2uCB4qnQ7Ex5_IdkW2DAC7mcu-rwawARAORkzDpkJ4L6WSX8A3CchHnHDL1sVMrjPr8Cg"
+    },
+    {
+      "name": "scan-close-origin",
+      "action": "close-origin",
+      "purpose": "scan_login_close_origin",
+      "tenant_id": "tenant-a",
+      "target_client_id": "workstation-native",
+      "entry_id": "terminal-login",
+      "device_id": "88888888-8888-4888-8888-888888888888",
+      "key_id": "1IG2tMH7J2wbJZnOf8LJzQitKf7LMvoAElsuDMVM54Y",
+      "challenge": "AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM",
+      "profile": "EMBEDDED-IDP-DEVICE-SCAN-V2",
+      "audience": "example-api",
+      "method": "POST",
+      "path": "/api/auth/device-scan/close-origin",
+      "signed_at": 1700000000,
+      "body_utf8": "{\"entry_id\":\"terminal-login\",\"tenant_id\":\"tenant-a\",\"origin_action\":\"create\",\"origin_operation_id\":\"33333333-3333-4333-8333-333333333333\",\"delivery_secret\":\"BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc\"}",
+      "body_sha256": "4faickGtiaQY37fYtYoDg4-p0YnBmcqo6EcetkFNSXw",
+      "context_sha256": "vQtroB_1E7zonuaOHOdZAf5P--Qh-CLrDWlfOaZz7fs",
+      "canonical_utf8": "EMBEDDED-IDP-DEVICE-SCAN-V2\ntenant-id:tenant-a\naudience:example-api\nmethod:POST\npath:/api/auth/device-scan/close-origin\nbody-sha256:4faickGtiaQY37fYtYoDg4-p0YnBmcqo6EcetkFNSXw\nchallenge:AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM\ndevice-id:88888888-8888-4888-8888-888888888888\nkey-id:1IG2tMH7J2wbJZnOf8LJzQitKf7LMvoAElsuDMVM54Y\nsigned-at:1700000000\nscan-context-sha256:vQtroB_1E7zonuaOHOdZAf5P--Qh-CLrDWlfOaZz7fs\n",
+      "canonical_sha256": "lEdWmGEGqINo0S6KkTwSSFp-pueeQz9qZZLoTCEd-xg",
+      "signature": "k1jTqIDEY5gI96fJbwepyBFG74QToxOSwZn6ucHnq3xLy9zc6RLLW-DR1oNto1mNgLUFfR3i8jemDPHcSuL5Dw"
     }
   ]
 }

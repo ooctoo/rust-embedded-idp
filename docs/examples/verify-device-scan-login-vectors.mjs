@@ -35,7 +35,7 @@ const actions = new Map([
   ['status', 'scan_login_status'], ['lookup', 'scan_login_lookup'],
   ['cancel', 'scan_login_cancel'], ['exchange', 'scan_login_exchange'],
   ['recover', 'scan_login_recover'], ['acknowledge', 'scan_login_ack'],
-  ['abort', 'scan_login_abort'],
+  ['abort', 'scan_login_abort'], ['close-origin', 'scan_login_close_origin'],
 ]);
 assert.equal(fixture.vectors.length, actions.size);
 assert.equal(new Set(fixture.vectors.map(v => v.action)).size, actions.size);

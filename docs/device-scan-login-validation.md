@@ -2,7 +2,9 @@
 
 日期：2026-10-09。分支：`codex/device-scan-login`。
 
-## 交付内容
+以下两节保留 PR #16（主干 `33c4aa8`）的交付基线；本次 v6 增量与验证列在后面。
+
+## 主干交付基线
 
 - 双向扫码都固定具体目标设备，并由来源手机业务会话确认；传统登录继续走既有接口。
 - Core 提供入口配置、显式来源客户端关系、可信身份与宿主上下文、分阶段准入、真实目标资料、授权状态机和事务契约。
@@ -11,7 +13,7 @@
 - ReleaseResult／ActivateSession 拒绝时精确补偿；abort、compensate、恢复期到期和 cleanup 不删除共享绑定，不撤销其他会话。
 - Postgres `tenant_v5` 新表与显式 v4→v5 迁移；参考宿主 H5、QR／Code 128、原生持久化示例与升级运行手册。
 
-## 已通过的验证
+## 主干基线验证
 
 | 层级 | 命令／方法 | 证据 |
 | --- | --- | --- |
@@ -28,6 +30,27 @@
 | 原生示例 | Node 语法检查、协议向量及代码审查 | 请求前保存固定操作；创建／关联响应丢失用 lookup；兑换／恢复前后原子文件写、fsync、rename，先保存 bundle 再 ACK；已确认后丢弃迟到 bundle |
 
 所有 live 测试使用显式配置的测试连接，并且每例创建、使用和删除自己命名的随机 schema；没有升级、重置或清理任何现存应用 schema。连接参数和秘密不写入版本文件。
+
+## 本次 v6 增量与验证
+
+- Pending refresh 撤销使用类型化 `ClientRevocation`（SQL 值 `client_revocation`），修正非法原因值导致撤销回滚的问题。
+- 新增 `close_origin`／`/auth/device-scan/close-origin` 和持久化 closure；原 create／claim 的最终事务与关闭共享设备锁。未知原请求、过期手机码和响应再次丢失均可收敛；关闭成功不再执行原操作。
+- 已签发未 ACK 的结果原子撤销；已 ACK 返回 `already_activated`，不隐式注销 Active。关闭不依赖来源会话、账号或宿主新登录资格继续有效。
+- lookup NotFound 明确非终态；关闭确认需要明确 origin_action，不能将另一种未提交动作误判为终结。新 purpose 与全部十个跨语言向量固定。
+- 参考宿主启用扫码时正确配置全部十种 proof purpose。原生例子保持原操作上下文、关闭响应丢失重试、关闭后清除 Pending 凭据及新流程使用新 ID；同流程重试保留 bundle。
+- 显式 v5→v6 迁移与 v4→v5→v6 链路、损坏 closure PK 的 readiness 拒绝已验证；启动不迁移已有应用 schema。
+
+| 层级 | 已通过结果 |
+| --- | --- |
+| Web | 冻结依赖安装、构建、83 项客户端测试和 3 项嵌入包测试 |
+| Rust | fmt、workspace all-targets check；workspace 416 项通过、141 项 opt-in live 测试 ignored；最新 Core 扫码 20 项通过 |
+| HTTP／协议 | Axum 扫码 11 项通过；Security 6 项；Node 10 向量与 150 篡改案例；新原生 helper 与实际 Node 子进程的合成 HTTP 执行测试通过 |
+| 完整 PostgreSQL | `scripts/run_live_postgres_checks.sh disabled`：139 项通过，覆盖本次的两个方向 close-first 与 ACK／close 竞争 |
+| Pending 撤销与回滚 | ReleaseResult／ActivateSession 拒绝、abort、cleanup、host compensate；SQL 核对 session／refresh／密文／receipt，来源会话及共享 binding 保持；关闭审计末端失败不写终止记录且 Pending 数据整体恢复 |
+| 迁移工具 | 实际 psql 包装器隔离 schema 的 v4→v5→v6 dry-run／apply／repeat apply／target dry-run 全部通过，测试 schema 删除 |
+| 参考宿主 | 实际参考二进制 + 隔离 PostgreSQL：十种扫码动作均可取得相应用途的设备挑战；不将挑战测试视为完整手机／设备现场链路 |
+
+新迁移包装器及原生恢复测试已加入 CI。测试凭据为公开合成或临时生成材料；真实连接配置未写入仓库、输出或命令参数。
 
 ## 宿主接入条件与验收边界
 

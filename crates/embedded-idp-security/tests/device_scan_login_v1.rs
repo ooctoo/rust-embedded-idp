@@ -372,6 +372,7 @@ fn scan_action(action: &str) -> ScanLoginAction {
         "recover" => ScanLoginAction::Recover,
         "acknowledge" => ScanLoginAction::Acknowledge,
         "abort" => ScanLoginAction::Abort,
+        "close-origin" => ScanLoginAction::CloseOrigin,
         _ => panic!("unsupported fixture action"),
     }
 }

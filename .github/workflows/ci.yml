@@ -27,6 +27,9 @@ jobs:
       - run: node scripts/test_device_proof_vectors.mjs
       - run: node docs/examples/verify-device-scan-login-vectors.mjs
       - run: bash scripts/test_scan_login_migration_wrapper.sh
+      - run: bash scripts/test_scan_login_origin_closure_migration_wrapper.sh
+      - run: node docs/examples/device-scan-login/native-client-state.test.mjs
+      - run: node docs/examples/device-scan-login/native-client-execution.test.mjs
       - run: pnpm --dir web install --frozen-lockfile
       - run: pnpm --dir web test
       - run: pnpm --dir web build

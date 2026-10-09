@@ -24,8 +24,8 @@ use uuid::Uuid;
 
 use crate::PostgresStorageAdapter;
 
-pub const ACCESS_SCHEMA_VERSION: &str = "tenant_v5";
-const DDL: &str = include_str!("sql/tenant_v5.sql");
+pub const ACCESS_SCHEMA_VERSION: &str = "tenant_v6";
+const DDL: &str = include_str!("sql/tenant_v6.sql");
 const ACCESS_TABLES: &[&str] = &[
     "access_state",
     "access_tenants",
@@ -49,6 +49,7 @@ const ACCESS_TABLES: &[&str] = &[
     "device_nonces",
     "scan_login_grants",
     "scan_login_operations",
+    "scan_login_origin_closures",
     "scan_login_deliveries",
     "scan_login_audit_events",
 ];
@@ -124,6 +125,11 @@ fn validate_layout(client: &mut impl GenericClient, schema: &str) -> Result<(), 
     let scan_layout: bool = client.query_one(
         "select (select count(*) from information_schema.columns where table_schema=$1 and table_name='scan_login_grants' and column_name in ('tenant_id','host_scope','entry_id','id','state','version','source_session_id','target_device_id','delivery_secret_hash'))=9
           and (select count(*) from information_schema.columns where table_schema=$1 and table_name='scan_login_deliveries' and column_name in ('grant_id','session_id','state','binding_id','binding_version','recover_until_epoch'))=6
+          and (select count(*) from information_schema.columns where table_schema=$1 and table_name='scan_login_origin_closures' and column_name in ('tenant_id','host_scope','entry_id','device_id','origin_action','origin_operation_id','delivery_secret_hash','grant_id','closed_by_key_id','closed_at_epoch'))=10
+          and (select count(*) from information_schema.columns where table_schema=$1 and table_name='scan_login_origin_closures' and column_name in ('tenant_id','host_scope','entry_id','device_id','origin_action','origin_operation_id','delivery_secret_hash','closed_by_key_id','closed_at_epoch') and is_nullable='NO')=9
+          and exists(select 1 from pg_constraint c join pg_class r on r.oid=c.conrelid join pg_namespace n on n.oid=r.relnamespace where n.nspname=$1 and r.relname='scan_login_origin_closures' and c.convalidated and c.contype='p' and pg_get_constraintdef(c.oid)='PRIMARY KEY (tenant_id, host_scope, entry_id, device_id, origin_action, origin_operation_id)')
+          and exists(select 1 from pg_constraint c join pg_class r on r.oid=c.conrelid join pg_namespace n on n.oid=r.relnamespace where n.nspname=$1 and r.relname='scan_login_origin_closures' and c.convalidated and c.contype='c' and pg_get_constraintdef(c.oid) like '%octet_length%delivery_secret_hash%32%')
+          and exists(select 1 from pg_constraint c join pg_class r on r.oid=c.conrelid join pg_namespace n on n.oid=r.relnamespace where n.nspname=$1 and r.relname='scan_login_origin_closures' and c.convalidated and c.contype='c' and pg_get_constraintdef(c.oid) like '%origin_action%create%claim%')
           and exists(select 1 from pg_index i join pg_class c on c.oid=i.indrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname=$1 and c.relname='scan_login_deliveries' and i.indisunique)",
         &[&schema],
     ).map_err(access_db_error)?.get(0);
@@ -496,7 +502,7 @@ fn check_grants(
     // One parameterized SQL statement, one snapshot, stable duplicate/input order.
     let sql = format!(
         r#"
-with state as (select tenancy_mode=$7 and module_version='tenant_v5' and bootstrap_completed_at_epoch is not null as valid from {schema}.access_state where singleton)
+with state as (select tenancy_mode=$7 and module_version='tenant_v6' and bootstrap_completed_at_epoch is not null as valid from {schema}.access_state where singleton)
 select coalesce((select valid from state),false) as valid, exists (
  select 1 from {schema}.accounts a
  join {schema}.access_memberships m on m.account_id=a.id and m.tenant_id=$1
@@ -551,15 +557,17 @@ mod scan_login_schema_tests {
     use super::{ACCESS_SCHEMA_VERSION, DDL};
 
     #[test]
-    fn tenant_v5_initial_schema_has_relational_scan_login_invariants() {
-        assert_eq!(ACCESS_SCHEMA_VERSION, "tenant_v5");
+    fn tenant_v6_initial_schema_has_relational_scan_login_invariants() {
+        assert_eq!(ACCESS_SCHEMA_VERSION, "tenant_v6");
         for required in [
             "scan_login_grants",
             "scan_login_operations",
+            "scan_login_origin_closures",
             "scan_login_deliveries",
             "scan_login_audit_events",
             "foreign key(tenant_id,target_device_id,target_client_id)",
             "primary key(tenant_id,host_scope,entry_id,actor_id,action,operation_id)",
+            "primary key(tenant_id,host_scope,entry_id,device_id,origin_action,origin_operation_id)",
             "unique(tenant_id,session_id)",
         ] {
             assert!(DDL.contains(required), "missing {required}");

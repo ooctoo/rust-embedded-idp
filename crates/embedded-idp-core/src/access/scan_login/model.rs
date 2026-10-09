@@ -92,6 +92,35 @@ pub struct ScanOperationRecord {
     pub grant_id: String,
     pub created_at: SystemTime,
 }
+/// Original native operations that can be stopped before their result is known.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScanOriginAction {
+    Create,
+    Claim,
+}
+impl ScanOriginAction {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Create => "create",
+            Self::Claim => "claim",
+        }
+    }
+}
+/// Durable denial of the scoped original operation. Cleanup must retain this
+/// record (or an equivalent denial index), even after its grant is archived.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScanOriginClosure {
+    pub tenant_id: String,
+    pub host_scope: String,
+    pub entry_id: String,
+    pub device_id: String,
+    pub origin_action: ScanOriginAction,
+    pub origin_operation_id: String,
+    pub delivery_secret_hash: [u8; 32],
+    pub grant_id: Option<String>,
+    pub closed_by_key_id: String,
+    pub closed_at: SystemTime,
+}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScanDeliveryRecord {
     pub tenant_id: String,
@@ -170,6 +199,18 @@ pub trait TenantScanLoginTransaction:
         id: &str,
     ) -> Result<Option<ScanOperationRecord>, StoreError>;
     fn insert_scan_operation(&mut self, record: &ScanOperationRecord) -> Result<(), StoreError>;
+    fn find_scan_origin_closure(
+        &mut self,
+        tenant: &str,
+        scope: &str,
+        entry: &str,
+        device: &str,
+        action: ScanOriginAction,
+        operation_id: &str,
+    ) -> Result<Option<ScanOriginClosure>, StoreError>;
+    fn insert_scan_origin_closure(&mut self, closure: &ScanOriginClosure)
+        -> Result<(), StoreError>;
+
     fn lock_scan_delivery(
         &mut self,
         tenant: &str,
@@ -387,8 +428,34 @@ pub struct AbortScanDelivery {
     pub issuance_operation_id: String,
     pub access: DeviceGrantAccess,
 }
+/// Close the original operation with a fresh device proof and its persisted
+/// delivery secret. No phone code or live source session is required.
+#[derive(Debug, Clone)]
+pub struct CloseScanOrigin {
+    pub entry_id: String,
+    pub tenant_id: String,
+    pub origin_action: ScanOriginAction,
+    pub origin_operation_id: String,
+    pub delivery_secret: SecretString,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScanOriginCloseOutcome {
+    Closed,
+    AlreadyActivated,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScanOriginCloseResult {
+    pub origin_action: ScanOriginAction,
+    pub origin_operation_id: String,
+    pub outcome: ScanOriginCloseOutcome,
+    pub closed_at: Option<SystemTime>,
+    pub progress: Option<ScanProgress>,
+}
 #[derive(Debug, Clone)]
 pub struct LookupDeviceScan {
+    /// Specify the original action to confirm closure. None supports legacy
+    /// committed-result lookup but cannot conclusively identify a closed action.
+    pub origin_action: Option<ScanOriginAction>,
     pub origin_operation_id: String,
     pub entry_id: String,
     pub tenant_id: String,
@@ -407,6 +474,7 @@ pub enum ScanLoginError {
     ConfirmationChanged,
     NotApproved,
     OperationConflict,
+    OriginOperationClosed,
     ExchangeAlreadyStarted(String),
     AlreadyIssued,
     Expired,
@@ -484,6 +552,11 @@ pub enum ScanDeliveryResult {
 }
 
 pub trait TenantDeviceScanLoginService: Send + Sync {
+    fn close_origin(
+        &self,
+        c: CloseScanOrigin,
+        actor: ScanDeviceCall,
+    ) -> Result<ScanOriginCloseResult, ScanLoginError>;
     fn entry_config(&self) -> super::ScanLoginEntryConfig;
     fn create_device(
         &self,

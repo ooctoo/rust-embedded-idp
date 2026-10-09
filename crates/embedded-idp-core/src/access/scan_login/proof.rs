@@ -21,6 +21,7 @@ pub enum ScanLoginAction {
     Recover,
     Acknowledge,
     Abort,
+    CloseOrigin,
 }
 
 impl ScanLoginAction {
@@ -35,6 +36,7 @@ impl ScanLoginAction {
             Self::Recover => "scan_login_recover",
             Self::Acknowledge => "scan_login_ack",
             Self::Abort => "scan_login_abort",
+            Self::CloseOrigin => "scan_login_close_origin",
         }
     }
 
