@@ -161,6 +161,66 @@ impl Db {
         }
         host
     }
+    fn start_with_scan_login(&self) -> Host {
+        let port = TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let origin = format!("http://127.0.0.1:{port}");
+        let mut host = Host {
+            child: self
+                .command(port)
+                .env("EMBEDDED_IDP_APP_BROWSER_ORIGIN", &origin)
+                .env("EMBEDDED_IDP_APP_SCAN_LOGIN_ENABLED", "true")
+                .env(
+                    "EMBEDDED_IDP_APP_SCAN_LOGIN_ENTRY_ID",
+                    "reference-device-scan",
+                )
+                .env(
+                    "EMBEDDED_IDP_APP_SCAN_LOGIN_ALLOWED_SOURCE_CLIENT_IDS",
+                    "desktop-app",
+                )
+                .env("EMBEDDED_IDP_APP_SCAN_LOGIN_MODES", "device_display")
+                .env(
+                    "EMBEDDED_IDP_APP_SCAN_LOGIN_VERIFICATION_URI",
+                    format!("{origin}/auth/browser/device-scan/ui"),
+                )
+                .env("EMBEDDED_IDP_APP_SCAN_LOGIN_RESULT_KEY_ID", "test-key")
+                .env(
+                    "EMBEDDED_IDP_APP_SCAN_LOGIN_RESULT_KEY_BASE64URL",
+                    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                )
+                .spawn()
+                .unwrap(),
+            port,
+        };
+        let deadline = Instant::now() + Duration::from_secs(20);
+        loop {
+            assert!(
+                host.child.try_wait().unwrap().is_none(),
+                "scan reference host exited before readiness"
+            );
+            if let Ok(mut stream) = TcpStream::connect(("127.0.0.1", port)) {
+                stream
+                    .write_all(
+                        b"GET /readyz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+                    )
+                    .unwrap();
+                let mut reply = String::new();
+                stream.read_to_string(&mut reply).unwrap();
+                if reply.starts_with("HTTP/1.1 200") {
+                    break;
+                }
+            }
+            assert!(
+                Instant::now() < deadline,
+                "scan reference host readiness timed out"
+            );
+            thread::sleep(Duration::from_millis(50));
+        }
+        host
+    }
 }
 impl Drop for Db {
     fn drop(&mut self) {
@@ -676,6 +736,57 @@ fn reference_host_refuses_uninitialized_or_wrong_mode_without_mutating_schema() 
             .get::<_, i64>(0),
         0
     );
+}
+
+fn seed_active_device_for_scan_challenges(db: &Db) -> String {
+    let device_id = "88888888-8888-4888-8888-888888888888";
+    let key_id = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+    let schema = db.adapter.schema_name();
+    let mut client = db.adapter.connect().unwrap();
+    client
+        .batch_execute(&format!(
+            "begin;
+             insert into {schema}.devices(tenant_id,id,client_id,device_name,proof_key_id,status,version,registered_at_epoch)
+             values('0','{device_id}','desktop-app','scan proof test','{key_id}','active',1,1);
+             insert into {schema}.device_proof_keys(tenant_id,key_id,device_id,algorithm,public_jwk,version,status,registered_at_epoch)
+             values('0','{key_id}','{device_id}','ed25519','{{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"}}',1,'active',1);
+             commit;"
+        ))
+        .unwrap();
+    device_id.into()
+}
+
+#[test]
+#[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
+fn reference_scan_login_enables_all_device_proof_challenge_purposes() {
+    let db = Db::new(TenancyMode::Disabled);
+    db.bootstrap();
+    let host = db.start_with_scan_login();
+    let device_id = seed_active_device_for_scan_challenges(&db);
+    for action in [
+        ScanLoginAction::Create,
+        ScanLoginAction::Claim,
+        ScanLoginAction::Status,
+        ScanLoginAction::Lookup,
+        ScanLoginAction::Cancel,
+        ScanLoginAction::Exchange,
+        ScanLoginAction::Recover,
+        ScanLoginAction::Acknowledge,
+        ScanLoginAction::Abort,
+        ScanLoginAction::CloseOrigin,
+    ] {
+        let body = host.json(
+            "POST",
+            "/devices/proof/challenges",
+            None,
+            Some("0"),
+            Some(
+                json!({"tenant_id":"0","device_id":device_id,"purpose":action.purpose().as_str()}),
+            ),
+            200,
+        );
+        assert!(body["challenge"].as_str().is_some());
+    }
 }
 
 /// Uses the real HTTP server and database; Cookie handling is explicit so the

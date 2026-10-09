@@ -250,22 +250,41 @@ pub fn build_app_with_scan_cleanup(
         .map_err(|_| "invalid business login configuration".to_string())
     };
     let proofs = || {
+        let mut allowed_purposes = [
+            DEVICE_REGISTRATION_PURPOSE,
+            DEVICE_KEY_ROTATION_PURPOSE,
+            TENANT_DEVICE_LOGIN_PURPOSE,
+            TENANT_DEVICE_SELECTION_PURPOSE,
+            REFRESH_PURPOSE,
+            TENANT_OIDC_EXCHANGE_PURPOSE,
+            TENANT_DEVICE_HEARTBEAT_PURPOSE,
+        ]
+        .into_iter()
+        .map(|purpose| DeviceProofPurpose::new(purpose).expect("known purpose"))
+        .collect::<Vec<_>>();
+        if config.scan_login.is_some() {
+            allowed_purposes.extend(
+                [
+                    ScanLoginAction::Create,
+                    ScanLoginAction::Claim,
+                    ScanLoginAction::Status,
+                    ScanLoginAction::Lookup,
+                    ScanLoginAction::Cancel,
+                    ScanLoginAction::Exchange,
+                    ScanLoginAction::Recover,
+                    ScanLoginAction::Acknowledge,
+                    ScanLoginAction::Abort,
+                    ScanLoginAction::CloseOrigin,
+                ]
+                .into_iter()
+                .map(ScanLoginAction::purpose),
+            );
+        }
         CoreTenantDeviceProofService::new(
             mode,
             TenantDeviceProofConfig {
                 client_id: config.public_client.client_id.clone(),
-                allowed_purposes: [
-                    DEVICE_REGISTRATION_PURPOSE,
-                    DEVICE_KEY_ROTATION_PURPOSE,
-                    TENANT_DEVICE_LOGIN_PURPOSE,
-                    TENANT_DEVICE_SELECTION_PURPOSE,
-                    REFRESH_PURPOSE,
-                    TENANT_OIDC_EXCHANGE_PURPOSE,
-                    TENANT_DEVICE_HEARTBEAT_PURPOSE,
-                ]
-                .into_iter()
-                .map(|s| DeviceProofPurpose::new(s).expect("known purpose"))
-                .collect(),
+                allowed_purposes,
                 challenge_ttl_secs: config.embedded_idp.device.nonce_ttl_secs,
                 clock_skew_secs: config.embedded_idp.device.proof_clock_skew_secs,
             },

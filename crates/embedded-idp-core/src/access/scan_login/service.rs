@@ -284,6 +284,251 @@ where
             needs,
         ))
     }
+    // Called only after a verified device proof has locked the device. Final
+    // original submissions and close_origin therefore share a serialization point.
+    fn origin_open(
+        &self,
+        tx: &mut impl TenantScanLoginTransaction,
+        tenant: &str,
+        entry: &str,
+        device: &str,
+        action: ScanOriginAction,
+        operation: &str,
+        secret_hash: &[u8; 32],
+    ) -> Result<(), ScanLoginError> {
+        if let Some(closed) = tx.find_scan_origin_closure(
+            tenant,
+            &self.config.host_scope,
+            entry,
+            device,
+            action,
+            operation,
+        )? {
+            return Err(if &closed.delivery_secret_hash == secret_hash {
+                ScanLoginError::OriginOperationClosed
+            } else {
+                ScanLoginError::OperationConflict
+            });
+        }
+        Ok(())
+    }
+    fn close_original(
+        &self,
+        c: CloseScanOrigin,
+        actor: ScanDeviceCall,
+    ) -> Result<ScanOriginCloseResult, ScanLoginError> {
+        valid_uuid(&c.origin_operation_id)?;
+        if c.entry_id != self.config.entry_id || c.tenant_id != actor.binding.tenant_id {
+            return Err(ScanLoginError::InvalidRequest);
+        }
+        let secret_hash: [u8; 32] = Sha256::digest(decode_secret(&c.delivery_secret)?).into();
+        // A grant may gain a source account or delivery between preparation and
+        // locking. Roll back and prepare again instead of acquiring identity locks
+        // after the device/grant locks (the shared login lock order).
+        for _ in 0..3 {
+            let hint = self.auth.store.scan_transaction(self.auth.mode, |tx| {
+                let (target, _) =
+                    self.prove_at(tx, &actor, None, ScanLoginAction::CloseOrigin, false)?;
+                if let Some(closed) = tx.find_scan_origin_closure(
+                    &c.tenant_id,
+                    &self.config.host_scope,
+                    &c.entry_id,
+                    &target.device_id,
+                    c.origin_action,
+                    &c.origin_operation_id,
+                )? {
+                    if closed.delivery_secret_hash != secret_hash {
+                        return Err(ScanLoginError::NotFound);
+                    }
+                    return Ok(None);
+                }
+                let op = tx.find_scan_operation(
+                    &c.tenant_id,
+                    &self.config.host_scope,
+                    &c.entry_id,
+                    &target.device_id,
+                    c.origin_action.as_str(),
+                    &c.origin_operation_id,
+                )?;
+                match op {
+                    Some(op) => {
+                        let g = tx
+                            .find_scan_grant(
+                                &c.tenant_id,
+                                &self.config.host_scope,
+                                &c.entry_id,
+                                &op.grant_id,
+                            )?
+                            .ok_or(ScanLoginError::NotFound)?;
+                        if g.target.as_ref().map(|t| &t.device_id) != Some(&target.device_id)
+                            || g.delivery_secret_hash != Some(secret_hash)
+                        {
+                            return Err(ScanLoginError::NotFound);
+                        }
+                        let d = tx.find_scan_delivery(&c.tenant_id, &g.id)?;
+                        Ok(Some((g, d)))
+                    }
+                    None => Ok(None),
+                }
+            })?;
+            let result = self.auth.store.scan_transaction(self.auth.mode, |tx| {
+                tx.lock_tenants(&[c.tenant_id.clone()])?;
+                let session = if let Some((g, d)) = &hint {
+                    if let Some(source) = &g.source {
+                        // Cancellation is allowed after logout or business suspension.
+                        // These are ordering locks, not new-login admission checks.
+                        tx.lock_account(&source.account_id)?;
+                    }
+                    match d {
+                        Some(d) => Some(
+                            tx.lock_refresh_session(&c.tenant_id, &d.session_id)?
+                                .ok_or(ScanLoginError::NotFound)?,
+                        ),
+                        None => None,
+                    }
+                } else {
+                    None
+                };
+                let (target, _) = self.prove(tx, &actor, None, ScanLoginAction::CloseOrigin)?;
+                if let Some(closed) = tx.find_scan_origin_closure(
+                    &c.tenant_id,
+                    &self.config.host_scope,
+                    &c.entry_id,
+                    &target.device_id,
+                    c.origin_action,
+                    &c.origin_operation_id,
+                )? {
+                    if closed.delivery_secret_hash != secret_hash {
+                        return Err(ScanLoginError::NotFound);
+                    }
+                    return Ok(ScanOriginCloseResult {
+                        origin_action: c.origin_action,
+                        origin_operation_id: c.origin_operation_id.clone(),
+                        outcome: ScanOriginCloseOutcome::Closed,
+                        closed_at: Some(closed.closed_at),
+                        progress: None,
+                    });
+                }
+                let op = tx.find_scan_operation(
+                    &c.tenant_id,
+                    &self.config.host_scope,
+                    &c.entry_id,
+                    &target.device_id,
+                    c.origin_action.as_str(),
+                    &c.origin_operation_id,
+                )?;
+                let (grant_id, progress) = match op {
+                    Some(op) => {
+                        let (prepared, _) =
+                            hint.as_ref().ok_or(ScanLoginError::OperationConflict)?;
+                        if op.grant_id != prepared.id {
+                            return Err(ScanLoginError::OperationConflict);
+                        }
+                        let mut g = tx
+                            .lock_scan_grant(&c.tenant_id, &op.grant_id)?
+                            .ok_or(ScanLoginError::NotFound)?;
+                        if g.source != prepared.source {
+                            return Err(ScanLoginError::OperationConflict);
+                        }
+                        if g.host_scope != self.config.host_scope
+                            || g.entry_id != c.entry_id
+                            || g.target_client_id != self.config.target_client_id
+                            || g.target.as_ref().map(|t| &t.device_id) != Some(&target.device_id)
+                            || g.delivery_secret_hash != Some(secret_hash)
+                        {
+                            return Err(ScanLoginError::NotFound);
+                        }
+                        let mut d = tx.lock_scan_delivery(&c.tenant_id, &g.id)?;
+                        if let Some(d) = &mut d {
+                            let session =
+                                session.as_ref().ok_or(ScanLoginError::OperationConflict)?;
+                            if d.session_id != session.id {
+                                return Err(ScanLoginError::OperationConflict);
+                            }
+                            if session.tenant_id != g.tenant_id
+                                || g.source.as_ref().map(|s| &s.account_id)
+                                    != Some(&session.account_id)
+                                || session.device_id.as_deref() != Some(target.device_id.as_str())
+                                || session.client_id != g.target_client_id
+                                || session.purpose != AccessTokenPurpose::Business
+                            {
+                                return Err(ScanLoginError::NotFound);
+                            }
+                            if d.state == ScanDeliveryState::Acknowledged {
+                                return Ok(ScanOriginCloseResult {
+                                    origin_action: c.origin_action,
+                                    origin_operation_id: c.origin_operation_id.clone(),
+                                    outcome: ScanOriginCloseOutcome::AlreadyActivated,
+                                    closed_at: None,
+                                    progress: Some(self.progress(&g, Some(d))),
+                                });
+                            }
+                            self.revoke_delivery(tx, &g, d, "origin_closed")?;
+                        } else if g.state == ScanGrantState::Issued {
+                            return Err(ScanLoginError::ResultUnavailable);
+                        } else if matches!(
+                            g.state,
+                            ScanGrantState::WaitingUser
+                                | ScanGrantState::WaitingDevice
+                                | ScanGrantState::AwaitingApproval
+                                | ScanGrantState::Approved
+                        ) {
+                            g.state = ScanGrantState::Cancelled;
+                            g.presentation = None;
+                            self.update(tx, &mut g)?;
+                        }
+                        tx.append_scan_audit(&ScanAuditEvent {
+                            id: self.id("scan-audit")?,
+                            tenant_id: g.tenant_id.clone(),
+                            host_scope: g.host_scope.clone(),
+                            grant_id: g.id.clone(),
+                            actor_kind: "device".into(),
+                            actor_id: Some(target.device_id.clone()),
+                            operation: "close_origin".into(),
+                            operation_id: c.origin_operation_id.clone(),
+                            session_id: d.as_ref().map(|d| d.session_id.clone()),
+                            decision_id: None,
+                            occurred_at: self.now(),
+                        })?;
+                        (Some(g.id.clone()), Some(self.progress(&g, d.as_ref())))
+                    }
+                    None => {
+                        if hint.is_some() {
+                            return Err(ScanLoginError::OperationConflict);
+                        }
+                        (None, None)
+                    }
+                };
+                // Match the durable Unix-second precision so Rust and HTTP
+                // retries return exactly the original closing timestamp.
+                let closed_at = UNIX_EPOCH + Duration::from_secs(epoch(self.now())?);
+                tx.insert_scan_origin_closure(&ScanOriginClosure {
+                    tenant_id: c.tenant_id.clone(),
+                    host_scope: self.config.host_scope.clone(),
+                    entry_id: c.entry_id.clone(),
+                    device_id: target.device_id,
+                    origin_action: c.origin_action,
+                    origin_operation_id: c.origin_operation_id.clone(),
+                    delivery_secret_hash: secret_hash,
+                    grant_id,
+                    closed_by_key_id: target.key_id,
+                    closed_at,
+                })?;
+                Ok(ScanOriginCloseResult {
+                    origin_action: c.origin_action,
+                    origin_operation_id: c.origin_operation_id.clone(),
+                    outcome: ScanOriginCloseOutcome::Closed,
+                    closed_at: Some(closed_at),
+                    progress,
+                })
+            });
+            match result {
+                Err(ScanLoginError::OperationConflict) => continue,
+                other => return other,
+            }
+        }
+        Err(ScanLoginError::OperationConflict)
+    }
     fn hint(&self, tenant: &str, id: &str) -> Result<ScanGrantRecord, ScanLoginError> {
         valid_uuid(id)?;
         self.auth.store.scan_transaction(self.auth.mode, |tx| {
@@ -1515,6 +1760,15 @@ where
         ]);
         let g = self.auth.store.scan_transaction(self.auth.mode, |tx| {
             let (target, _) = self.prove_at(tx, &actor, None, ScanLoginAction::Create, false)?;
+            self.origin_open(
+                tx,
+                &c.tenant_id,
+                &c.entry_id,
+                &target.device_id,
+                ScanOriginAction::Create,
+                &c.operation_id,
+                &c.delivery_secret_hash,
+            )?;
             if let Some(op) = tx.find_scan_operation(
                 &c.tenant_id,
                 &self.config.host_scope,
@@ -1567,6 +1821,15 @@ where
         )?;
         self.auth.store.scan_transaction(self.auth.mode, |tx| {
             let (target, _) = self.prove(tx, &actor, None, ScanLoginAction::Create)?;
+            self.origin_open(
+                tx,
+                &c.tenant_id,
+                &c.entry_id,
+                &target.device_id,
+                ScanOriginAction::Create,
+                &c.operation_id,
+                &c.delivery_secret_hash,
+            )?;
             self.permit(&permit)?;
             if let Some(op) = tx.find_scan_operation(
                 &c.tenant_id,
@@ -1857,6 +2120,18 @@ where
         if c.entry_id != self.config.entry_id || c.tenant_id != actor.binding.tenant_id {
             return Err(ScanLoginError::InvalidRequest);
         }
+        self.auth.store.scan_transaction(self.auth.mode, |tx| {
+            let (target, _) = self.prove_at(tx, &actor, None, ScanLoginAction::Claim, false)?;
+            self.origin_open(
+                tx,
+                &c.tenant_id,
+                &c.entry_id,
+                &target.device_id,
+                ScanOriginAction::Claim,
+                &c.operation_id,
+                &c.delivery_secret_hash,
+            )
+        })?;
         let digest = Sha256::digest(c.scan_code.expose_secret().as_bytes()).into();
         let (hint, target) = self.auth.store.scan_transaction(self.auth.mode, |tx| {
             let g = tx
@@ -1906,6 +2181,15 @@ where
                 &actor,
                 hint.source.as_ref().map(|s| s.account_id.as_str()),
                 ScanLoginAction::Claim,
+            )?;
+            self.origin_open(
+                tx,
+                &c.tenant_id,
+                &c.entry_id,
+                &t.device_id,
+                ScanOriginAction::Claim,
+                &c.operation_id,
+                &c.delivery_secret_hash,
             )?;
             let mut g = self.locked(tx, &hint)?;
             self.permit(&permit)?;
@@ -2129,6 +2413,13 @@ where
     ) -> Result<ScanProgress, ScanLoginError> {
         self.read_device(c, actor, ScanLoginAction::Status)
     }
+    fn close_origin(
+        &self,
+        c: CloseScanOrigin,
+        actor: ScanDeviceCall,
+    ) -> Result<ScanOriginCloseResult, ScanLoginError> {
+        self.close_original(c, actor)
+    }
     fn lookup_device(
         &self,
         c: LookupDeviceScan,
@@ -2140,26 +2431,57 @@ where
         }
         self.auth.store.scan_transaction(self.auth.mode, |tx| {
             let (target, _) = self.prove(tx, &actor, None, ScanLoginAction::Lookup)?;
-            let op = match tx.find_scan_operation(
-                &c.tenant_id,
-                &self.config.host_scope,
-                &c.entry_id,
-                &target.device_id,
-                "create",
-                &c.origin_operation_id,
-            )? {
-                Some(op) => op,
-                None => tx
-                    .find_scan_operation(
-                        &c.tenant_id,
-                        &self.config.host_scope,
-                        &c.entry_id,
-                        &target.device_id,
-                        "claim",
-                        &c.origin_operation_id,
-                    )?
-                    .ok_or(ScanLoginError::NotFound)?,
+            let secret_hash: [u8; 32] = Sha256::digest(decode_secret(&c.delivery_secret)?).into();
+            let actions: &[ScanOriginAction] = match c.origin_action {
+                Some(ScanOriginAction::Create) => &[ScanOriginAction::Create],
+                Some(ScanOriginAction::Claim) => &[ScanOriginAction::Claim],
+                None => &[ScanOriginAction::Create, ScanOriginAction::Claim],
             };
+            let mut found = None;
+            let mut closed = false;
+            for action in actions {
+                if let Some(record) = tx.find_scan_origin_closure(
+                    &c.tenant_id,
+                    &self.config.host_scope,
+                    &c.entry_id,
+                    &target.device_id,
+                    *action,
+                    &c.origin_operation_id,
+                )? {
+                    if record.delivery_secret_hash != secret_hash {
+                        return Err(ScanLoginError::NotFound);
+                    }
+                    if closed || found.is_some() {
+                        return Err(ScanLoginError::OperationConflict);
+                    }
+                    closed = true;
+                    // A known closed operation also retains its historical operation row.
+                    continue;
+                }
+                if let Some(op) = tx.find_scan_operation(
+                    &c.tenant_id,
+                    &self.config.host_scope,
+                    &c.entry_id,
+                    &target.device_id,
+                    action.as_str(),
+                    &c.origin_operation_id,
+                )? {
+                    if closed || found.is_some() {
+                        return Err(ScanLoginError::OperationConflict);
+                    }
+                    found = Some(op);
+                }
+            }
+            if closed {
+                // Without the action, a closed create cannot rule out a claim
+                // with the same ID that has not yet committed (and vice versa).
+                return Err(if c.origin_action.is_some() {
+                    ScanLoginError::OriginOperationClosed
+                } else {
+                    ScanLoginError::OperationConflict
+                });
+            }
+            let op = found.ok_or(ScanLoginError::NotFound)?;
             let g = tx
                 .lock_scan_grant(&c.tenant_id, &op.grant_id)?
                 .ok_or(ScanLoginError::NotFound)?;

@@ -8,6 +8,7 @@
 import { createHash, createPrivateKey, createPublicKey, randomBytes, sign } from 'node:crypto';
 import { chmod, mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import { originForVerification, prepareFlow, recordClosedOrigin } from './native-client-state.mjs';
 
 const origin = required('IDP_ORIGIN').replace(/\/$/, '');
 const entryId = required('SCAN_ENTRY_ID');
@@ -109,10 +110,11 @@ async function persistDelivery(result) {
 
 let state = await loadState();
 async function remember(patch) { state = { ...state, ...patch }; await saveState(state); }
+async function replaceState(next) { state = next; await saveState(state); }
 if (action === 'create') {
   const deliverySecret = state.flow === 'create' ? state.delivery_secret : b64url(randomBytes(32));
   const operationId = state.flow === 'create' ? state.create_operation_id : uuid();
-  await remember({ flow: 'create', delivery_secret: deliverySecret, create_operation_id: operationId });
+  await replaceState(prepareFlow(state, 'create', deliverySecret, operationId));
   const result = await deviceRequest('/auth/device-scan/create', { operation_id: operationId, delivery_secret_hash: sha256(Buffer.from(deliverySecret, 'base64url')) }, 'scan_login_create', true);
   await remember({ grant_id: result.progress?.grant_id });
   if (result.display_code && result.verification_uri) {
@@ -123,18 +125,20 @@ if (action === 'create') {
   const scanCode = required('SCAN_CODE');
   const deliverySecret = state.flow === 'claim' ? state.delivery_secret : b64url(randomBytes(32));
   const operationId = state.flow === 'claim' ? state.claim_operation_id : uuid();
-  await remember({ flow: 'claim', delivery_secret: deliverySecret, claim_operation_id: operationId });
+  await replaceState(prepareFlow(state, 'claim', deliverySecret, operationId));
   const result = await deviceRequest('/auth/device-scan/claim', { operation_id: operationId, scan_code: scanCode, delivery_secret_hash: sha256(Buffer.from(deliverySecret, 'base64url')) }, 'scan_login_claim', true);
   await remember({ grant_id: result.grant_id ?? result.progress?.grant_id });
   safeOutput(result);
 } else if (action === 'lookup') {
-  if (!state.delivery_secret) throw new Error('no protected flow state to recover');
-  const originOperationId = state.flow === 'claim'
-    ? state.claim_operation_id
-    : state.create_operation_id ?? state.claim_operation_id;
-  if (!originOperationId) throw new Error('no original create or claim operation id');
-  const result = await deviceRequest('/auth/device-scan/lookup', { origin_operation_id: originOperationId, delivery_secret: state.delivery_secret }, 'scan_login_lookup', true);
+  const origin = originForVerification(state);
+  const result = await deviceRequest('/auth/device-scan/lookup', { origin_action: origin.action, origin_operation_id: origin.operation_id, delivery_secret: origin.delivery_secret }, 'scan_login_lookup', true);
   await remember({ grant_id: result.progress?.grant_id ?? state.grant_id });
+  safeOutput(result);
+} else if (action === 'close-origin') {
+  const origin = originForVerification(state);
+  const result = await deviceRequest('/auth/device-scan/close-origin', { origin_action: origin.action, origin_operation_id: origin.operation_id, delivery_secret: origin.delivery_secret }, 'scan_login_close_origin', true);
+  // This mutation happens only after a response. Lost responses retain retry state.
+  if (result.outcome === 'closed') await replaceState(recordClosedOrigin(state, origin, sha256(Buffer.from(origin.delivery_secret, 'base64url'))));
   safeOutput(result);
 } else if (action === 'status' || action === 'exchange' || action === 'recover' || action === 'abort' || action === 'cancel') {
   if (!state.grant_id || !state.delivery_secret) throw new Error('no protected active flow state');
@@ -171,5 +175,5 @@ if (action === 'create') {
 } else if (action === 'logout') {
   throw new Error('After acknowledgement, use the host’s normal exact-session logout adapter with the protected refresh token. Do not use scan cancel/abort to log out an active session.');
 } else {
-  console.log('actions: create | claim (SCAN_CODE=...) | lookup | status | exchange | recover [SCAN_ISSUANCE_OPERATION_ID=...] | ack | cancel | abort [SCAN_ISSUANCE_OPERATION_ID=...] | logout');
+  console.log('actions: create | claim (SCAN_CODE=...) | lookup | close-origin | status | exchange | recover [SCAN_ISSUANCE_OPERATION_ID=...] | ack | cancel | abort [SCAN_ISSUANCE_OPERATION_ID=...] | logout');
 }

@@ -167,6 +167,7 @@ where
             "scan_login_recover",
             "scan_login_ack",
             "scan_login_abort",
+            "scan_login_close_origin",
         ]
         .contains(&purpose.as_str())
         {

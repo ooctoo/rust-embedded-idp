@@ -10,6 +10,7 @@ use std::{
 use uuid::Uuid;
 
 mod scan_login_migration;
+mod scan_login_origin_closure_migration;
 
 fn catalog() -> PermissionCatalog {
     PermissionCatalog::new(
@@ -631,6 +632,28 @@ fn device_credentials_stay_in_their_tenant_and_layout_damage_is_rejected() {
         "alter table {s}.access_memberships disable trigger membership_requires_membership"
     ))
     .unwrap();
+    assert!(db
+        .adapter
+        .inspect_access_schema(TenancyMode::Enabled)
+        .is_err());
+    assert!(db
+        .adapter
+        .initialize_access_schema(TenancyMode::Enabled, &catalog())
+        .is_err());
+}
+
+#[test]
+#[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
+fn scan_origin_closure_primary_key_damage_rejects_v6_readiness() {
+    let db = Db::new(TenancyMode::Enabled);
+    let schema = db.schema();
+    db.adapter
+        .connect()
+        .unwrap()
+        .batch_execute(&format!(
+            "alter table {schema}.scan_login_origin_closures drop constraint scan_login_origin_closures_pkey"
+        ))
+        .unwrap();
     assert!(db
         .adapter
         .inspect_access_schema(TenancyMode::Enabled)

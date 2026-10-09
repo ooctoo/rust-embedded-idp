@@ -136,6 +136,46 @@ impl TenantScanLoginTransaction for T<'_> {
         self.d.scan_operations.push(record.clone());
         Ok(())
     }
+    fn find_scan_origin_closure(
+        &mut self,
+        tenant: &str,
+        scope: &str,
+        entry: &str,
+        device: &str,
+        action: ScanOriginAction,
+        operation_id: &str,
+    ) -> Result<Option<ScanOriginClosure>, StoreError> {
+        Ok(self
+            .d
+            .scan_origin_closures
+            .iter()
+            .find(|closure| {
+                closure.tenant_id == tenant
+                    && closure.host_scope == scope
+                    && closure.entry_id == entry
+                    && closure.device_id == device
+                    && closure.origin_action == action
+                    && closure.origin_operation_id == operation_id
+            })
+            .cloned())
+    }
+    fn insert_scan_origin_closure(
+        &mut self,
+        closure: &ScanOriginClosure,
+    ) -> Result<(), StoreError> {
+        if self.d.scan_origin_closures.iter().any(|existing| {
+            existing.tenant_id == closure.tenant_id
+                && existing.host_scope == closure.host_scope
+                && existing.entry_id == closure.entry_id
+                && existing.device_id == closure.device_id
+                && existing.origin_action == closure.origin_action
+                && existing.origin_operation_id == closure.origin_operation_id
+        }) {
+            return Err(StoreError::Conflict("scan.origin_closure.unique"));
+        }
+        self.d.scan_origin_closures.push(closure.clone());
+        Ok(())
+    }
     fn lock_scan_delivery(
         &mut self,
         tenant: &str,
@@ -670,6 +710,7 @@ fn scan_proof(store: S) -> ScanProof {
                 ScanLoginAction::Recover,
                 ScanLoginAction::Acknowledge,
                 ScanLoginAction::Abort,
+                ScanLoginAction::CloseOrigin,
             ]
             .into_iter()
             .map(ScanLoginAction::purpose)
@@ -692,14 +733,22 @@ fn host() -> TrustedScanHostContext {
 }
 
 fn device_call(proof_service: &ScanProof, action: ScanLoginAction) -> ScanDeviceCall {
+    device_call_for(proof_service, DEVICE_ID, action)
+}
+
+fn device_call_for(
+    proof_service: &ScanProof,
+    device_id: &str,
+    action: ScanLoginAction,
+) -> ScanDeviceCall {
     let challenge = proof_service
-        .issue_challenge("t1", DEVICE_ID, action.purpose())
+        .issue_challenge("t1", device_id, action.purpose())
         .unwrap();
     let key_id = Base64UrlUnpadded::encode_string(&[1; 32]);
     ScanDeviceCall {
         entry_id: "login".into(),
         proof: DeviceProofPresentation {
-            device_id: DEVICE_ID.into(),
+            device_id: device_id.into(),
             key_id,
             challenge: challenge.challenge.into_exposed(),
             signature: Base64UrlUnpadded::encode_string(&[3; 64]),
@@ -786,6 +835,387 @@ fn delivery_secret_hash(secret: &SecretString) -> [u8; 32] {
             .expect("test secret is a canonical base64url value"),
     )
     .into()
+}
+
+fn close_origin(
+    service: &ScanService,
+    proofs: &ScanProof,
+    action: ScanOriginAction,
+    operation_id: u32,
+    delivery_secret: SecretString,
+) -> Result<ScanOriginCloseResult, ScanLoginError> {
+    service.close_origin(
+        CloseScanOrigin {
+            entry_id: "login".into(),
+            tenant_id: "t1".into(),
+            origin_action: action,
+            origin_operation_id: op(operation_id),
+            delivery_secret,
+        },
+        device_call(proofs, ScanLoginAction::CloseOrigin),
+    )
+}
+
+#[test]
+fn scan_close_origin_before_create_persists_barrier_across_expiry_and_rejects_late_create() {
+    let (store, service, proofs, _, _, _) = setup();
+    let secret = scan_secret(81);
+    let closed = close_origin(
+        &service,
+        &proofs,
+        ScanOriginAction::Create,
+        81,
+        secret.clone(),
+    )
+    .unwrap();
+    assert_eq!(closed.outcome, ScanOriginCloseOutcome::Closed);
+    assert!(closed.progress.is_none());
+    assert_eq!(store.0.lock().unwrap().scan_origin_closures.len(), 1);
+
+    assert_eq!(
+        service.create_device(
+            CreateDeviceScan {
+                operation_id: op(81),
+                entry_id: "login".into(),
+                tenant_id: "t1".into(),
+                delivery_secret_hash: delivery_secret_hash(&secret),
+            },
+            device_call(&proofs, ScanLoginAction::Create),
+        ),
+        Err(ScanLoginError::OriginOperationClosed)
+    );
+
+    assert_eq!(
+        service.lookup_device(
+            LookupDeviceScan {
+                origin_action: Some(ScanOriginAction::Create),
+                origin_operation_id: op(81),
+                entry_id: "login".into(),
+                tenant_id: "t1".into(),
+                delivery_secret: secret,
+            },
+            device_call(&proofs, ScanLoginAction::Lookup),
+        ),
+        Err(ScanLoginError::OriginOperationClosed)
+    );
+}
+
+#[test]
+fn scan_close_origin_is_idempotent_and_keeps_same_uuid_scoped_to_the_device() {
+    let (store, service, proofs, _, _, _) = setup();
+    let secret = scan_secret(82);
+    let first = close_origin(
+        &service,
+        &proofs,
+        ScanOriginAction::Claim,
+        82,
+        secret.clone(),
+    )
+    .unwrap();
+    let retry = close_origin(
+        &service,
+        &proofs,
+        ScanOriginAction::Claim,
+        82,
+        secret.clone(),
+    )
+    .unwrap();
+    assert_eq!(first, retry);
+    assert_eq!(store.0.lock().unwrap().scan_origin_closures.len(), 1);
+    assert_eq!(
+        close_origin(
+            &service,
+            &proofs,
+            ScanOriginAction::Claim,
+            82,
+            scan_secret(83),
+        ),
+        Err(ScanLoginError::NotFound)
+    );
+
+    const OTHER_DEVICE_ID: &str = "22222222-2222-4222-8222-222222222222";
+    let key_id = Base64UrlUnpadded::encode_string(&[1; 32]);
+    {
+        let mut data = store.0.lock().unwrap();
+        data.proof_devices.push(TenantProofDevice {
+            tenant_id: "t1".into(),
+            id: OTHER_DEVICE_ID.into(),
+            client_id: "web".into(),
+            proof_key_id: Some(key_id.clone()),
+            status: DeviceStatus::Active,
+            version: 1,
+            key_version: None,
+        });
+        data.proof_keys.push(TenantProofKey {
+            tenant_id: "t1".into(),
+            device_id: OTHER_DEVICE_ID.into(),
+            key_id,
+            public_jwk: "test".into(),
+            version: 1,
+            status: DeviceProofKeyStatus::Active,
+        });
+    }
+    let other_device = service
+        .close_origin(
+            CloseScanOrigin {
+                entry_id: "login".into(),
+                tenant_id: "t1".into(),
+                origin_action: ScanOriginAction::Claim,
+                origin_operation_id: op(82),
+                delivery_secret: secret,
+            },
+            device_call_for(&proofs, OTHER_DEVICE_ID, ScanLoginAction::CloseOrigin),
+        )
+        .unwrap();
+    assert_eq!(other_device.outcome, ScanOriginCloseOutcome::Closed);
+    assert!(other_device.progress.is_none());
+    assert_eq!(store.0.lock().unwrap().scan_origin_closures.len(), 2);
+}
+
+#[test]
+fn scan_close_origin_before_claim_survives_expired_phone_code_and_rejects_late_claim() {
+    let (store, service, proofs, source_auth, _, source_cookie) = setup();
+    let phone = service
+        .issue_phone(
+            IssuePhoneScan {
+                operation_id: op(88),
+                entry_id: "login".into(),
+            },
+            source_call(&source_auth, source_cookie),
+        )
+        .unwrap();
+    store.0.lock().unwrap().scan_grants[0].code_expires_at = C.now();
+    let secret = scan_secret(88);
+    assert_eq!(
+        close_origin(
+            &service,
+            &proofs,
+            ScanOriginAction::Claim,
+            89,
+            secret.clone(),
+        )
+        .unwrap()
+        .outcome,
+        ScanOriginCloseOutcome::Closed
+    );
+    assert_eq!(
+        service.claim_target(
+            ClaimScanTarget {
+                operation_id: op(89),
+                entry_id: "login".into(),
+                tenant_id: "t1".into(),
+                scan_code: phone.scan_code,
+                delivery_secret_hash: delivery_secret_hash(&secret),
+            },
+            device_call(&proofs, ScanLoginAction::Claim),
+        ),
+        Err(ScanLoginError::OriginOperationClosed)
+    );
+}
+
+#[test]
+fn scan_legacy_lookup_rejects_ambiguous_origin_action() {
+    let (_, service, proofs, _, _, _) = setup();
+    let secret = scan_secret(90);
+    close_origin(
+        &service,
+        &proofs,
+        ScanOriginAction::Create,
+        90,
+        secret.clone(),
+    )
+    .unwrap();
+    // Only create is closed: an uncommitted claim with this ID is still possible.
+    assert_eq!(
+        service.lookup_device(
+            LookupDeviceScan {
+                origin_action: None,
+                origin_operation_id: op(90),
+                entry_id: "login".into(),
+                tenant_id: "t1".into(),
+                delivery_secret: secret.clone()
+            },
+            device_call(&proofs, ScanLoginAction::Lookup),
+        ),
+        Err(ScanLoginError::OperationConflict)
+    );
+    close_origin(
+        &service,
+        &proofs,
+        ScanOriginAction::Claim,
+        90,
+        secret.clone(),
+    )
+    .unwrap();
+    assert_eq!(
+        service.lookup_device(
+            LookupDeviceScan {
+                origin_action: None,
+                origin_operation_id: op(90),
+                entry_id: "login".into(),
+                tenant_id: "t1".into(),
+                delivery_secret: secret,
+            },
+            device_call(&proofs, ScanLoginAction::Lookup),
+        ),
+        Err(ScanLoginError::OperationConflict)
+    );
+}
+
+#[test]
+fn scan_close_origin_revokes_pending_delivery_but_preserves_activated_session() {
+    let (store, service, proofs, _, access, _) = issued_device_bundle();
+    let closed = close_origin(
+        &service,
+        &proofs,
+        ScanOriginAction::Create,
+        51,
+        access.delivery_secret.clone(),
+    )
+    .unwrap();
+    assert_eq!(closed.outcome, ScanOriginCloseOutcome::Closed);
+    let data = store.0.lock().unwrap();
+    assert_eq!(data.sessions[1].status, SessionStatus::Revoked);
+    assert_eq!(data.scan_deliveries[0].state, ScanDeliveryState::Revoked);
+    drop(data);
+
+    let (store, service, proofs, _, access, receipt_nonce) = issued_device_bundle();
+    service
+        .acknowledge(
+            AcknowledgeScan {
+                operation_id: op(55),
+                issuance_operation_id: op(54),
+                access: access.clone(),
+                receipt_nonce,
+            },
+            device_call(&proofs, ScanLoginAction::Acknowledge),
+        )
+        .unwrap();
+    let closed = close_origin(
+        &service,
+        &proofs,
+        ScanOriginAction::Create,
+        51,
+        access.delivery_secret,
+    )
+    .unwrap();
+    assert_eq!(closed.outcome, ScanOriginCloseOutcome::AlreadyActivated);
+    assert_eq!(
+        store.0.lock().unwrap().sessions[1].status,
+        SessionStatus::Active
+    );
+}
+
+#[test]
+fn scan_close_origin_does_not_require_live_source_and_rolls_back_when_audit_fails() {
+    let (store, service, proofs, source_auth, _, source_cookie) = setup();
+    let secret = scan_secret(84);
+    let created = service
+        .create_device(
+            CreateDeviceScan {
+                operation_id: op(84),
+                entry_id: "login".into(),
+                tenant_id: "t1".into(),
+                delivery_secret_hash: delivery_secret_hash(&secret),
+            },
+            device_call(&proofs, ScanLoginAction::Create),
+        )
+        .unwrap();
+    service
+        .attach_source(
+            AttachScanSource {
+                operation_id: op(85),
+                display_code: created.display_code,
+            },
+            source_call(&source_auth, source_cookie.clone()),
+        )
+        .unwrap();
+    source_auth.browser_logout(source_cookie, None).unwrap();
+    {
+        let mut data = store.0.lock().unwrap();
+        for account in data.accounts.values_mut() {
+            account.active = false;
+        }
+        for membership in &mut data.members {
+            membership.status = MembershipStatus::Suspended;
+        }
+        for binding in &mut data.proof_bindings {
+            binding.status = AccountDeviceBindingStatus::Suspended;
+        }
+    }
+    assert_eq!(
+        close_origin(
+            &service,
+            &proofs,
+            ScanOriginAction::Create,
+            84,
+            secret.clone(),
+        )
+        .unwrap()
+        .outcome,
+        ScanOriginCloseOutcome::Closed
+    );
+
+    let (store, service, proofs, _, _, _) = setup();
+    let secret = scan_secret(86);
+    service
+        .create_device(
+            CreateDeviceScan {
+                operation_id: op(86),
+                entry_id: "login".into(),
+                tenant_id: "t1".into(),
+                delivery_secret_hash: delivery_secret_hash(&secret),
+            },
+            device_call(&proofs, ScanLoginAction::Create),
+        )
+        .unwrap();
+    store.0.lock().unwrap().fail_scan_audit = true;
+    assert!(matches!(
+        close_origin(&service, &proofs, ScanOriginAction::Create, 86, secret,),
+        Err(ScanLoginError::Store(_))
+    ));
+    assert!(store.0.lock().unwrap().scan_origin_closures.is_empty());
+}
+
+#[test]
+fn scan_close_origin_can_close_a_record_after_its_mode_is_disabled() {
+    let (store, service, proofs, _, _, _) = setup();
+    let secret = scan_secret(87);
+    service
+        .create_device(
+            CreateDeviceScan {
+                operation_id: op(87),
+                entry_id: "login".into(),
+                tenant_id: "t1".into(),
+                delivery_secret_hash: delivery_secret_hash(&secret),
+            },
+            device_call(&proofs, ScanLoginAction::Create),
+        )
+        .unwrap();
+    let mut config = scan_config();
+    config.modes = vec![ScanLoginMode::PhoneDisplay];
+    let disabled_mode_service = ScanService::new(
+        config,
+        scan_auth(store.clone(), true),
+        scan_proof(store.clone()),
+        Arc::new(TestAdmission::default()),
+        Arc::new(TestPresentation),
+        Arc::new(PlaintextScanCipher),
+    )
+    .unwrap();
+    let disabled_mode_proofs = scan_proof(store);
+    assert_eq!(
+        close_origin(
+            &disabled_mode_service,
+            &disabled_mode_proofs,
+            ScanOriginAction::Create,
+            87,
+            secret,
+        )
+        .unwrap()
+        .outcome,
+        ScanOriginCloseOutcome::Closed
+    );
 }
 
 #[test]

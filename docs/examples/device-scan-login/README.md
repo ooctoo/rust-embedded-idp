@@ -2,7 +2,7 @@
 
 本目录展示通用参考宿主的接入材料。它不包含业务表、工位模型或扫码枪驱动；生产宿主应实现自身的业务准入和真实终端资料展示。
 
-`native-client.mjs` 是原生层流程的可运行结构示例：它生成 Ed25519 设备证明、在权限受限文件中保存操作与 `delivery_secret`，并在兑换或恢复后先保存 bundle 和 receipt nonce，再 ack。它演示 create/claim/exchange/recover/ack/status/cancel/abort。运行前需要一个已登记测试设备的私钥 JWK、设备 ID、租户和已启用的参考服务。示例只使用 Node 内建 API，不输出 `delivery_secret`、令牌、receipt nonce 或私钥；生产原生应用应改用平台安全存储。
+`native-client.mjs` 是原生层流程的可运行结构示例：它生成 Ed25519 设备证明、在权限受限文件中保存操作与 `delivery_secret`，并在兑换或恢复后先保存 bundle 和 receipt nonce，再 ack。它演示 create/claim/lookup/close-origin/exchange/recover/ack/status/cancel/abort。原始 create 或 claim 请求结果未知时，`close-origin` 使用已保存的原动作和 operation ID 关闭它，不需要手机码、显示码或来源会话。关闭请求响应丢失时保留原状态并以相同数据重试；收到 `closed` 后原子替换状态，清除待交付 bundle、receipt nonce 与 ack 操作，只保留该原动作、operation ID、secret 与摘要供 lookup 或重复 close 核对，不能再作为 create/claim 重用。新建 create/claim 会重置旧生命周期并生成新的 operation ID 和 secret。`already_activated` 保留已激活 bundle，应由宿主正常精确会话注销路径处理。`native-client-state.test.mjs` 检查状态规则，`native-client-execution.test.mjs` 以 mocked HTTP 和临时状态文件执行实际客户端流程。运行前需要一个已登记测试设备的私钥 JWK、设备 ID、租户和已启用的参考服务。示例只使用 Node 内建 API，不输出 `delivery_secret`、令牌、receipt nonce 或私钥；生产原生应用应改用平台安全存储。
 
 ```sh
 IDP_ORIGIN=http://127.0.0.1:9100 \

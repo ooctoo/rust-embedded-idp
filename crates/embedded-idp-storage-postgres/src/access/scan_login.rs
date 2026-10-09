@@ -42,6 +42,32 @@ fn mode_value(value: ScanLoginMode) -> &'static str {
         ScanLoginMode::PhoneDisplay => "phone_display",
     }
 }
+fn origin_action(value: &str) -> Result<ScanOriginAction, StoreError> {
+    match value {
+        "create" => Ok(ScanOriginAction::Create),
+        "claim" => Ok(ScanOriginAction::Claim),
+        _ => Err(invalid()),
+    }
+}
+fn decode_origin_closure(row: &Row) -> Result<ScanOriginClosure, StoreError> {
+    Ok(ScanOriginClosure {
+        tenant_id: row.get("tenant_id"),
+        host_scope: row.get("host_scope"),
+        entry_id: row.get("entry_id"),
+        device_id: row.get::<_, Uuid>("device_id").to_string(),
+        origin_action: origin_action(row.get("origin_action"))?,
+        origin_operation_id: row.get("origin_operation_id"),
+        delivery_secret_hash: row
+            .get::<_, Vec<u8>>("delivery_secret_hash")
+            .try_into()
+            .map_err(|_| invalid())?,
+        grant_id: row
+            .get::<_, Option<Uuid>>("grant_id")
+            .map(|id| id.to_string()),
+        closed_by_key_id: row.get("closed_by_key_id"),
+        closed_at: time(row.get("closed_at_epoch"))?,
+    })
+}
 fn encrypted(row: &Row, prefix: &str) -> Result<Option<EncryptedScanResult>, StoreError> {
     let key: Option<String> = row.get(format!("{prefix}_key_id").as_str());
     let nonce: Option<Vec<u8>> = row.get(format!("{prefix}_nonce").as_str());
@@ -218,6 +244,27 @@ impl TenantScanLoginTransaction for PostgresTenantAuthTransaction<'_> {
         self.tx.execute(&format!("insert into {}.scan_login_operations(tenant_id,host_scope,entry_id,actor_id,action,operation_id,fingerprint,grant_id,created_at_epoch) values($1,$2,$3,$4,$5,$6,$7,$8,$9)",self.schema),&[&r.tenant_id,&r.host_scope,&r.entry_id,&r.actor_id,&r.action,&r.operation_id,&&r.fingerprint[..],&uuid(&r.grant_id)?,&epoch(r.created_at)?]).map_err(access_db_error)?;
         Ok(())
     }
+    fn find_scan_origin_closure(
+        &mut self,
+        tenant: &str,
+        scope: &str,
+        entry: &str,
+        device: &str,
+        action: ScanOriginAction,
+        operation_id: &str,
+    ) -> Result<Option<ScanOriginClosure>, StoreError> {
+        let Ok(device) = uuid(device) else {
+            return Ok(None);
+        };
+        self.tx.query_opt(&format!("select * from {}.scan_login_origin_closures where tenant_id=$1 and host_scope=$2 and entry_id=$3 and device_id=$4 and origin_action=$5 and origin_operation_id=$6", self.schema), &[&tenant, &scope, &entry, &device, &action.as_str(), &operation_id]).map_err(access_db_error)?.as_ref().map(decode_origin_closure).transpose()
+    }
+    fn insert_scan_origin_closure(
+        &mut self,
+        closure: &ScanOriginClosure,
+    ) -> Result<(), StoreError> {
+        self.tx.execute(&format!("insert into {}.scan_login_origin_closures(tenant_id,host_scope,entry_id,device_id,origin_action,origin_operation_id,delivery_secret_hash,grant_id,closed_by_key_id,closed_at_epoch) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)", self.schema), &[&closure.tenant_id, &closure.host_scope, &closure.entry_id, &uuid(&closure.device_id)?, &closure.origin_action.as_str(), &closure.origin_operation_id, &&closure.delivery_secret_hash[..], &closure.grant_id.as_ref().map(|id| uuid(id)).transpose()?, &closure.closed_by_key_id, &epoch(closure.closed_at)?]).map_err(access_db_error)?;
+        Ok(())
+    }
     fn lock_scan_delivery(
         &mut self,
         t: &str,
@@ -320,7 +367,10 @@ impl TenantScanLoginTransaction for PostgresTenantAuthTransaction<'_> {
             return Err(StoreError::Conflict("scan.already_active"));
         }
         self.tx.execute(&format!("update {}.auth_sessions set status='revoked' where tenant_id=$1 and id=$2 and status='pending'",self.schema),&[&t,&s]).map_err(access_db_error)?;
-        self.tx.execute(&format!("update {}.refresh_tokens set revoked_at_epoch=$3,revocation_reason='client' where tenant_id=$1 and session_id=$2 and revoked_at_epoch is null",self.schema),&[&t,&s,&n]).map_err(access_db_error)?;
+        let reason = crate::transaction::encode_refresh_revocation_reason(
+            embedded_idp_core::RefreshTokenRevocationReason::ClientRevocation,
+        );
+        self.tx.execute(&format!("update {}.refresh_tokens set revoked_at_epoch=$3,revocation_reason=$4 where tenant_id=$1 and session_id=$2 and revoked_at_epoch is null",self.schema),&[&t,&s,&n,&reason]).map_err(access_db_error)?;
         Ok(())
     }
     fn expired_scan_deliveries(
