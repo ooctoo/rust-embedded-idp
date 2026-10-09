@@ -2,11 +2,13 @@
 
 可嵌入 Rust 宿主的身份与访问控制模块，提供账号、租户、角色、资源权限、设备证明和 OAuth/OIDC。仓库另有 React 管理后台、宿主可嵌入的 React 登录组件，以及用于开发的独立参考服务。参考服务不是生产宿主。
 
+当前里程碑为 **3.0.0**：统一设备生命周期、双向扫码授权、Pending 交付恢复、原操作终止与显式私网 HTTP 开发接入。数据库基线为 `tenant_v6`；从已发布 2.0.0 升级需按[统一升级手册](docs/device-scan-login-upgrade.md)执行 v3→v4→v5→v6，详见[CHANGELOG](CHANGELOG.md)。
+
 ## 设计目标与边界
 
 授权设计：[租户内业务标识与业务管理员](docs/business-domain-authorization-design-v1.md)，包含业务权限隔离、`business_admin`、IDP 管理角色重命名及 `tenant_v2 → tenant_v3` 显式迁移。这是 2.0.0 的破坏性授权契约升级。
 
-设备升级设计：[设备身份与安全生命周期](docs/device-identity-lifecycle-design-v1.md)及[实施计划](docs/device-identity-lifecycle-implementation-plan.md)。本分支已接通宿主提交设备 ID、固定预期公钥、设备版本与启停/撤销、精确解绑、操作回执、当前/历史密钥元数据和身份操作审计；v3→v4 迁移已在隔离 PostgreSQL schema 回归，并在停机和备份后升级了本机两套参考服务 schema。管理浏览器的停用/恢复已实测，更多浏览器与生产规模性能等完整 P0 发布验收仍未完成，**不能据此作为生产部署**。设备不增加业务归属。
+设备生命周期与扫码登录采用通用宿主边界：IDP 管理身份、设备证明、会话与审计，宿主提供业务准入、真实设备资料和交互。参考应用及分层验收记录用于接入验证；实体扫码设备、目标平台和生产容量由宿主验收。
 
 - **按模块接入**：Core 定义身份和授权规则，Axum 提供可组合路由，PostgreSQL 适配器由宿主注入数据库配置。宿主决定外层路由前缀、业务资源归属及运行环境。
 - **两种租户模式**：`disabled` 使用单一业务域 `0`；`enabled` 使用真实租户，保留 `0` 作为平台管理域。模式由启动配置固定，不由请求选择。用户创建时必须属于一个域，同一 user ID 和凭证可以加入多个租户。
@@ -27,7 +29,7 @@
 
 ## 当前能力与限制
 
-本分支两种模式均使用 `tenant_v6`；已发布的 2.0.0 使用 `tenant_v3`。已接通注册与邮箱验证、登录与选租户、会话/refresh、OIDC、租户设备、角色与资源授权，以及租户/成员/角色/权限目录/设备/会话/客户端/审计管理。业务权限定义可按租户和业务标识创建、读取、修改、启停和归档，并与同租户同业务角色关联。React 管理后台接入真实 API；本地 `@embedded-idp/react` 主入口提供登录、租户选择和本人角色列表，`/admin` 子入口提供权限目录组件，React 19 由宿主提供。
+3.0.0 两种模式均使用 `tenant_v6`；2.0.0 的历史基线为 `tenant_v3`。已接通注册与邮箱验证、登录与选租户、会话/refresh、OIDC、租户设备、角色与资源授权，以及租户/成员/角色/权限目录/设备/会话/客户端/审计管理。业务权限定义可按租户和业务标识创建、读取、修改、启停和归档，并与同租户同业务角色关联。React 管理后台接入真实 API；本地 `@embedded-idp/react` 主入口提供登录、租户选择和本人角色列表，`/admin` 子入口提供权限目录组件，React 19 由宿主提供。
 
 仓库提供[无租户嵌入宿主示例](examples/no-tenant-host/README.md)：另起 Axum 业务进程，复用 IdP 业务路由和 React 登录组件，并在宿主报告接口中检查 `report::read::<id>`。该示例的配置模板和启动命令均在 `examples/no-tenant-host` 内，不依赖根目录的开发环境脚本；带租户的嵌入体验留待后续。`web/embedded/demo.html` 仍只使用模拟响应。设备自助界面、部分管理页面浏览器补验和性能验收仍未完成。
 
@@ -104,7 +106,7 @@ cargo test --workspace --locked
 
 已有 `tenant_v2` 数据必须停机并按[业务隔离迁移说明](docs/business-domain-authorization-design-v1.md#10-tenant_v2--tenant_v3-显式迁移)提供显式业务映射，通过 `scripts/migrate_business_scope.sh` 执行迁移；不能直接启动新版本或用旧列表排序脚本代替本次迁移。运行时不自动升级。业务标识没有默认值，旧调用方必须更新；现有 schema 名称可保留，数据库内的 `access_state.module_version` 才是结构版本。
 
-本分支的 `tenant_v3 → tenant_v4` 显式升级见[设备生命周期升级手册](docs/device-identity-lifecycle-upgrade.md)。迁移脚本默认预演；正式应用须停写、验证备份并审阅撤销清单。数据库连接通过 libpq 环境变量传递，不放在命令参数中。
+完整升级链见[统一升级手册](docs/device-scan-login-upgrade.md)，其中 v3→v4 的撤销规则见[设备生命周期迁移步骤](docs/device-identity-lifecycle-upgrade.md)。迁移脚本默认预演；正式应用须停写、验证备份并审阅撤销清单。数据库连接通过 libpq 环境变量传递，不放在命令参数中。
 
 内置角色键为 `idp_system_admin`（IDP管理员）、`idp_tenant_security_admin`（IDP租户管理员），其 kind 和职责不变；`business_admin` 只授予所属租户、业务下的业务权限，不授予 IDP 管理能力。
 
@@ -121,7 +123,6 @@ cargo test --workspace --locked
 - [通用扫码授权设备登录设计](docs/device-scan-login-design-v1.md)（双向扫码、宿主准入、Pending 交付恢复、ACK 与原操作终止）
 - [扫码授权设备登录升级手册](docs/device-scan-login-upgrade.md)
 - [扫码授权设备登录验证记录](docs/device-scan-login-validation.md)
+- [私网 HTTP 开发接入](docs/development-private-http.md)及[验收记录](docs/development-private-http-validation.md)
 
 `docs/*-v1.md` 中的早期模型和切片文档保留作历史背景；以当前设计、执行计划、代码和测试为准，不把旧开发适配器示例用于生产接入。
-
-局域网 HTTP 联调的显式开发模式、900 秒浏览器会话上限和服务端/Web 契约见[开发接入说明](docs/development-private-http.md)。默认 HTTPS/回环行为保持，设备会话与恢复窗口不受影响。

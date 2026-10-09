@@ -1,15 +1,35 @@
-# 扫码授权设备登录升级手册（当前 `tenant_v6`）
+# 3.0.0 设备与扫码登录升级手册
 
-本手册适用于已有 `tenant_v4` 或 `tenant_v5` Access schema 的宿主。当前二进制要求 `tenant_v6`；v6 在已交付的双向扫码登录上增加持久化原操作终止记录，并修正 Pending 会话撤销的 refresh 分类。新建空库应直接执行当前 schema 初始化，运行时不会自动迁移。
+本手册是设备生命周期、双向扫码、断网恢复和私网 HTTP 开发模式的统一升级入口。3.0.0 在两种 tenancy mode 下均要求 `tenant_v6`；软件版本、schema 名称、数据库结构版本和证明协议版本是不同概念，不能相互替代。
 
-## 准备
+## 选择升级路径
 
-1. 准备包含扫码登录迁移的二进制，并核对宿主已实现 `ScanLoginAdmission`、目标展示资料提供者、显式入口配置和结果 keyring。参考服务只在明确配置后启用；默认关闭。
-2. 停止所有写目标 schema 的 IDP 实例、嵌入宿主及 cleanup 任务。扫码交付的状态转换需要一致事务，迁移期间不得与旧版本并发写入。
-3. 备份目标 schema，并验证备份可读取。连接信息通过受保护的 libpq 环境变量或 `PGPASSFILE` 提供，不能把密码写入命令参数或提交到仓库。
+先读取真实目标 schema 的 `access_state.tenancy_mode` 和 `module_version`，核对宿主配置及备份。保留既有 schema 名称，不因版本号变化重命名或初始化已有库。
+
+| 当前状态 | 升级路径 |
+| --- | --- |
+| 全新 schema，没有 IDP 对象 | 使用 3.0.0 初始化 `tenant_v6`，单独离线初始化管理员；不运行旧迁移 |
+| 已发布 2.0.0 / `tenant_v3` | `migrate_device_lifecycle`：v3→v4；`migrate_scan_login`：v4→v5；`migrate_scan_login_origin_closures`：v5→v6 |
+| `tenant_v4` | 仅 v4→v5→v6 |
+| `tenant_v5` | 仅 v5→v6 |
+| `tenant_v6` | 无结构迁移；核对 readiness、宿主接口、证明用途和配套 Web 版本 |
+| `tenant_v2` | 先按[业务隔离迁移](business-domain-authorization-design-v1.md#10-tenant_v2--tenant_v3-显式迁移)核对历史时间元数据、提供显式业务映射并升级到 v3，再执行本手册 |
+| 其他版本、缺少版本行或不兼容布局 | 停止升级，调查结构和历史；不修改版本标记或用初始化覆盖 |
+
+从 v3 到 v6 是三个分别提交的事务，整条链没有一个跨步骤事务。中途失败时保持停写，核对实际已提交版本，修复后从对应步骤继续；不要从第一步盲目重放。
+
+## 准备与停写
+
+1. 固定 3.0.0 源码提交、匹配 Web 归档及 SHA-256，准备新的二进制和宿主适配。扫码功能默认关闭；升级 schema 不要求立即启用扫码。
+2. 停止所有写目标 schema 的 IDP 实例、嵌入宿主及 cleanup 任务，在整个迁移链和启动验证完成前保持停写。
+3. 核对已登记设备、当前密钥、人员绑定及 Pending 交付。若从 v3 升级，准备该 schema 的有效平台管理员 UUID，审阅[生命周期迁移撤销规则](device-identity-lifecycle-upgrade.md)。
+4. 备份并验证可读取；生产恢复演练由宿主完成。连接信息通过受保护的 libpq 变量或 `PGPASSFILE` 提供，不写入参数或仓库。
+
+以下 schema 和 UUID 为示例。每个 schema 分别核对连接并执行；必须设置 `PGDATABASE`，按部署需要设置 `PGHOST`、`PGPORT`、`PGUSER` 和受限 `PGPASSFILE`（或短期 `PGPASSWORD`）。迁移包装器不使用 `EMBEDDED_IDP_APP_PG_URI`。schema 名来自可信配置，不拼接用户输入。
 
 ```sh
 schema=embedded_idp_disabled_v2
+actor_id='<effective-platform-admin-uuid>' # 仅 v3→v4 使用
 backup_dir='<private-backup-directory>'
 
 psql -X -v ON_ERROR_STOP=1 -c "select tenancy_mode,module_version from ${schema}.access_state"
@@ -19,7 +39,7 @@ pg_restore -f /dev/null "$backup_dir/$schema.dump"
 shasum -a 256 "$backup_dir/$schema.dump" > "$backup_dir/$schema.dump.sha256"
 ```
 
-确认 `module_version` 为 `tenant_v4` 或 `tenant_v5`，并记录原值。迁移包装器使用现有 libpq 变量：必须设置 `PGDATABASE`，并按部署需要设置 `PGHOST`、`PGPORT`、`PGUSER` 及受保护的 `PGPASSFILE`（或短期 `PGPASSWORD`）。不要使用参考服务的 `EMBEDDED_IDP_APP_PG_URI`，也不要把连接 URI 或密码记录在 shell history、CI 输出或工单中。不得手工复制 SQL 或直接修改 `access_state`。
+不要复制 SQL 手工执行、直接修改 `access_state`，也不要把含密码的 URI 记录在 shell history、CI 输出或工单中。
 
 ## Rust 与客户端接入变更
 
@@ -30,23 +50,41 @@ shasum -a 256 "$backup_dir/$schema.dump" > "$backup_dir/$schema.dump.sha256"
 
 ## 应用和切换
 
-迁移工具必须先预演，再在停写窗口显式应用。已有 v4 先执行历史 v4→v5 迁移，再执行 v5→v6；已有 v5 只执行后一步。每一步都在单事务中创建表、约束和索引并更新版本标记，失败整体回滚。启动服务只核对 schema，不修复或升级数据。
+只执行当前版本需要的步骤，每步先预演、审阅后再应用。v3→v4 会清理列出的旧 pending／无密钥 disabled 身份及关联凭据、写入迁移审计；另外两步增加扫码表及持久原操作终止记录。每一步的结构、数据、审计和版本标记在自己的事务内整体提交或回滚。
 
 ```sh
-# 仅已有 tenant_v4 执行这两行
-scripts/migrate_scan_login.sh "$schema"
-scripts/migrate_scan_login.sh "$schema" --apply
+# 仅当前 tenant_v3：先审阅预演的撤销清单
+./scripts/migrate_device_lifecycle.sh "$schema" "$actor_id" "device-v4-dry-$schema"
+./scripts/migrate_device_lifecycle.sh "$schema" "$actor_id" "device-v4-apply-$schema" --apply
+psql -X -v ON_ERROR_STOP=1 -c "select module_version from ${schema}.access_state"
+# 必须为 tenant_v4
 
-# tenant_v5 升级到当前版本
-scripts/migrate_scan_login_origin_closures.sh "$schema"
-scripts/migrate_scan_login_origin_closures.sh "$schema" --apply
+# 仅当前 tenant_v4
+./scripts/migrate_scan_login.sh "$schema"
+./scripts/migrate_scan_login.sh "$schema" --apply
+psql -X -v ON_ERROR_STOP=1 -c "select module_version from ${schema}.access_state"
+# 必须为 tenant_v5
+
+# 仅当前 tenant_v5
+./scripts/migrate_scan_login_origin_closures.sh "$schema"
+./scripts/migrate_scan_login_origin_closures.sh "$schema" --apply
+psql -X -v ON_ERROR_STOP=1 -c "select module_version from ${schema}.access_state"
+# 必须为 tenant_v6
 ```
 
-省略 `--apply` 时只执行预演，不写数据库。历史脚本接受 v4／v5，新脚本接受 v5／v6；重复 apply 核对目标布局，拒绝不合法 schema 或不兼容版本。迁移完成须核对 `module_version=tenant_v6`，再启动当前二进制。
+省略 `--apply` 只预演并回滚，不写数据库。历史脚本只识别自己的源／目标版本，不接受后续 v6；不要对 v6 重新运行 v3→v4 或 v4→v5。最后一步重复 apply 验证已有 v6 关键布局；dry-run 只确认版本适用，不能替代当前二进制 readiness 的完整结构校验。
 
-完成后检查版本、服务 `/readyz`、普通账号密码登录、既有 refresh 和设备认证。先配置但保持扫码入口关闭，再加载结果 keyring 和宿主准入适配器，最后显式启用入口。首次上线应使用测试人员和已登记测试设备分别走 `device_display` 与 `phone_display`，覆盖批准、取消、重复兑换和恢复响应丢失。
+切换检查顺序：
 
-结果加密 keyring 属于运行所需秘密。迁移不生成 key；缺失、格式错误或当前 key ID 不存在时，参考宿主必须拒绝启用扫码能力。保留旧 key 直到所有仍可恢复的交付记录已过期并完成清理。
+1. 核对最终 `module_version=tenant_v6`、迁移审计、未列入撤销清单的账号/权限/有效设备/绑定/会话，以及保留的 closure 记录。
+2. 安装匹配的 Rust 依赖、原生状态机和 Web 制品。启动 3.0.0，检查 `/readyz`、普通密码登录、既有 refresh、严格设备会话认证和业务授权允许/拒绝。
+3. 配置扫码 entry、显式 source-client allowlist、可信 host context、`ScanLoginAdmission`、真实目标资料、全部十种扫码证明用途、结果加密适配器和有界 cleanup，保持新登录入口关闭。
+4. 加载结果密钥并检查可用性，再显式启用扫码准入；使用已登记测试设备和普通业务测试人员分别走两种方向，覆盖批准、拒绝、取消、兑换响应丢失、恢复、ACK 和 close-origin 迟到请求拒绝。
+5. 检查宿主最终准入失败的精确补偿、Active 状态校验及设备本地原子保存。完成部署环境验收后恢复正常业务写入。
+
+Core 的结果加密接口由宿主管理密钥轮换。旧密钥需覆盖仍可解密的展示码和交付结果，直到两者均到期并清理。参考应用目前只配置一个结果密钥，不是多 key 的生产轮换系统；更换它之前应关闭新登录、处置／排空旧展示和 Pending 交付，不能直接替换后尝试重建原会话。
+
+启用私网 HTTP 还需遵循[开发模式接入](development-private-http.md)：feature、开发构建及显式策略同时满足，并单独构造受限浏览器服务与匹配签发器。传给 H5 的模式描述来自服务端 `client_config()`，不能让 H5 自行降级。开发浏览器期限不影响设备会话和恢复窗口，数据库无需再迁移。
 
 ## 回退边界
 
@@ -69,4 +107,4 @@ scripts/migrate_scan_login_origin_closures.sh "$schema" --apply
 
 原操作终止记录 `scan_login_origin_closures` 不含原始 delivery secret，只有摘要；cleanup 不删除它。其保存期限与短期恢复密文不同：同一 scoped operation ID 的迟到提交必须永久被拒绝。宿主归档必须保留等价的拒绝索引，禁止删除 tombstone 后重新开放旧 ID；备份和灾备恢复须同时包含该表。关闭入口后应继续保留 lookup、close-origin、abort 和可信服务端补偿能力。
 
-局域网 HTTP 联调的显式开发模式、900 秒浏览器会话上限和服务端/Web 契约见[开发接入说明](development-private-http.md)。默认 HTTPS/回环行为保持，设备会话与恢复窗口不受影响。
+交付范围与验收结果见[CHANGELOG](../CHANGELOG.md)、[扫码验收记录](device-scan-login-validation.md)和[HTTP 开发模式验收记录](development-private-http-validation.md)。

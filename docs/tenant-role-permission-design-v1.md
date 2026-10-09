@@ -4,7 +4,7 @@
 
 设计基线：2026-09-18（提交 `87c386d`）；历史实施状态核对：2026-09-25。2.0 的当前契约以本文顶部链接为准。
 
-状态：Core Access、PostgreSQL `tenant_v3`、认证/OIDC、租户设备、管理 HTTP、React 管理后台及参考服务两模式装配已接通；租户内业务权限定义可手动创建、查询、更新、启停、归档。宿主嵌入登录、本人角色和权限目录组件已提供，[无租户嵌入宿主示例](../examples/no-tenant-host/README.md)可验证业务资源读取；带租户嵌入体验尚未提供。设备自助界面、报告列表过滤与性能验收仍待完成。本文部分旧实施记录仅供历史对照；当前边界见[当前交付与验收](tenant-access-execution-plan.md)和[README](../README.md)。
+历史 2.0.0 状态：Core Access、PostgreSQL `tenant_v3`、认证/OIDC、租户设备、管理 HTTP、React 管理后台及参考服务两模式装配已接通；租户内业务权限定义可手动创建、查询、更新、启停、归档。宿主嵌入登录、本人角色和权限目录组件已提供，[无租户嵌入宿主示例](../examples/no-tenant-host/README.md)可验证业务资源读取；带租户嵌入体验尚未提供。设备自助界面、报告列表过滤与性能验收仍待完成。本文部分旧实施记录仅供历史对照；当前 3.0.0 使用 tenant_v6，部署见[统一升级手册](device-scan-login-upgrade.md)，当前边界见[README](../README.md)。
 
 **2.0 权限模型**：业务权限定义由 IdP Core 按租户提供动态管理，以数据库中的 `(tenant_id, business_id, resource_type, action)` 目录作为授权判断依据。IdP 保存标识和管理信息，不规定宿主操作的业务含义；相同 key 在不同租户是独立实体。宿主静态 `PermissionCatalog` 只可作为可选初始化模板，不能替代手工管理，也不是业务授权检查的运行时白名单。内置平台/租户管理权限仍受保护，宿主仍负责在业务操作中调用权限检查。
 
@@ -536,7 +536,7 @@ pub trait AuthorizationService: Send + Sync {
 
 2.0 的角色、权限目录、绑定管理游标为 v3，绑定可选业务筛选；本人角色与角色权限游标为 v2，绑定必填的精确业务标识；其他管理游标保持 v2，其他本人查询保持 v1。管理排序键仍为 `(19 位补零 epoch 秒, 唯一标识)`，权限目录增加 `business_id` 作为跨业务相同 resource/action 时的稳定 tie-breaker。后续页必须传相同 `sort_order` 和业务筛选；改变方向、业务筛选或其他过滤条件时从第一页读取。游标只是分页信息，不能改变授权域。
 
-历史 tenant_v2 的列表时间升级使用[旧排序脚本](../scripts/migrate_list_time_desc.sql)。升级到 2.0 必须另执行[业务映射迁移](business-domain-authorization-design-v1.md#10-tenant_v2--tenant_v3-显式迁移)；旧排序脚本不能代替它。新库直接创建 tenant_v3，初始化和在线启动均不自动升级已有 schema。
+历史 tenant_v2 的列表时间升级使用[旧排序脚本](../scripts/migrate_list_time_desc.sql)。升级到 2.0 必须另执行[业务映射迁移](business-domain-authorization-design-v1.md#10-tenant_v2--tenant_v3-显式迁移)；旧排序脚本不能代替它。2.0 的新库直接创建 tenant_v3；当前 3.0.0 新库初始化 tenant_v6，已有库按统一手册升级，初始化和在线启动均不自动迁移。
 
 例如（外层 `/api` 前缀由宿主决定）：
 

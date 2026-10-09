@@ -206,7 +206,9 @@ fn scan_err(e: ScanLoginError) -> Response {
     let (s, c) = match e {
         ScanLoginError::InvalidRequest => (StatusCode::BAD_REQUEST, "invalid_request"),
         ScanLoginError::NotFound => (StatusCode::NOT_FOUND, "scan_not_found"),
-        ScanLoginError::SourceClientNotAllowed => (StatusCode::FORBIDDEN, "source_client_not_allowed"),
+        ScanLoginError::SourceClientNotAllowed => {
+            (StatusCode::FORBIDDEN, "source_client_not_allowed")
+        }
         ScanLoginError::AdmissionDenied => (StatusCode::FORBIDDEN, "scan_admission_denied"),
         ScanLoginError::ModeDisabled => (StatusCode::FORBIDDEN, "scan_mode_disabled"),
         ScanLoginError::Expired => (StatusCode::GONE, "scan_expired"),
@@ -216,7 +218,19 @@ fn scan_err(e: ScanLoginError) -> Response {
         ScanLoginError::NotApproved => (StatusCode::CONFLICT, "scan_not_approved"),
         ScanLoginError::OperationConflict => (StatusCode::CONFLICT, "operation_conflict"),
         ScanLoginError::OriginOperationClosed => (StatusCode::GONE, "origin_operation_closed"),
-        ScanLoginError::ExchangeAlreadyStarted(operation_id) => return (StatusCode::CONFLICT, Json(json!({"error":"exchange_already_started","message":"device scan request rejected","request_id":null,"retryable":false,"issuance_operation_id":operation_id}))).into_response(),
+        ScanLoginError::ExchangeAlreadyStarted(operation_id) => {
+            return (
+                StatusCode::CONFLICT,
+                Json(json!({
+                    "error": "exchange_already_started",
+                    "message": "device scan request rejected",
+                    "request_id": null,
+                    "retryable": false,
+                    "issuance_operation_id": operation_id
+                })),
+            )
+                .into_response()
+        }
         ScanLoginError::AlreadyIssued => (StatusCode::CONFLICT, "scan_already_issued"),
         ScanLoginError::AlreadyAcknowledged => (StatusCode::CONFLICT, "already_acknowledged"),
         ScanLoginError::Cancelled => (StatusCode::GONE, "scan_cancelled"),
@@ -224,13 +238,26 @@ fn scan_err(e: ScanLoginError) -> Response {
         ScanLoginError::Invalidated => (StatusCode::GONE, "scan_invalidated"),
         ScanLoginError::DeliveryRevoked => (StatusCode::GONE, "delivery_revoked"),
         ScanLoginError::RateLimited => (StatusCode::TOO_MANY_REQUESTS, "scan_rate_limited"),
-        ScanLoginError::ResultUnavailable => (StatusCode::SERVICE_UNAVAILABLE, "scan_result_unavailable"),
-        ScanLoginError::Auth(TenantAuthError::Access(AccessError::InvalidInput("browser_session_changed"))) => (StatusCode::CONFLICT, "browser_session_changed"),
-        ScanLoginError::Auth(TenantAuthError::DeviceProofRequired | TenantAuthError::DeviceProof(_)) => (StatusCode::FORBIDDEN, "device_proof_invalid"),
-        ScanLoginError::Auth(TenantAuthError::Store(_) | TenantAuthError::Access(AccessError::Store(_))) => (StatusCode::SERVICE_UNAVAILABLE, "scan_storage_unavailable"),
-        ScanLoginError::Auth(TenantAuthError::Token(_) | TenantAuthError::Security(_)) => (StatusCode::SERVICE_UNAVAILABLE, "scan_result_unavailable"),
+        ScanLoginError::ResultUnavailable => {
+            (StatusCode::SERVICE_UNAVAILABLE, "scan_result_unavailable")
+        }
+        ScanLoginError::Auth(TenantAuthError::Access(AccessError::InvalidInput(
+            "browser_session_changed",
+        ))) => (StatusCode::CONFLICT, "browser_session_changed"),
+        ScanLoginError::Auth(
+            TenantAuthError::DeviceProofRequired | TenantAuthError::DeviceProof(_),
+        ) => (StatusCode::FORBIDDEN, "device_proof_invalid"),
+        ScanLoginError::Auth(
+            TenantAuthError::Store(_) | TenantAuthError::Access(AccessError::Store(_)),
+        ) => (StatusCode::SERVICE_UNAVAILABLE, "scan_storage_unavailable"),
+        ScanLoginError::Auth(TenantAuthError::Token(_) | TenantAuthError::Security(_)) => {
+            (StatusCode::SERVICE_UNAVAILABLE, "scan_result_unavailable")
+        }
         ScanLoginError::Auth(_) => (StatusCode::UNAUTHORIZED, "invalid_source_session"),
-        ScanLoginError::AdmissionUnavailable => (StatusCode::SERVICE_UNAVAILABLE, "scan_admission_unavailable"),
+        ScanLoginError::AdmissionUnavailable => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "scan_admission_unavailable",
+        ),
         ScanLoginError::Store(_) => (StatusCode::SERVICE_UNAVAILABLE, "scan_storage_unavailable"),
     };
     err(s, c)
@@ -360,7 +387,17 @@ async fn context(
         Ok(value) => value,
         Err(response) => return response,
     };
-    match source(&s,&headers,b.expected_session,h).await { Ok(x)=>Json(json!({"tenant_id":x.source.tenant_id(),"account_id":x.source.account_id(),"session_id":x.source.session_id(),"client_id":x.source.client_id(),"entry":entry(&s.service.entry_config())})).into_response(),Err(r)=>r }
+    match source(&s, &headers, b.expected_session, h).await {
+        Ok(x) => Json(json!({
+            "tenant_id": x.source.tenant_id(),
+            "account_id": x.source.account_id(),
+            "session_id": x.source.session_id(),
+            "client_id": x.source.client_id(),
+            "entry": entry(&s.service.entry_config())
+        }))
+        .into_response(),
+        Err(r) => r,
+    }
 }
 async fn issue_phone(
     State(s): State<BrowserState>,
@@ -380,7 +417,28 @@ async fn issue_phone(
         Ok(x) => x,
         Err(r) => return r,
     };
-    match call(move||s.service.issue_phone(IssuePhoneScan{operation_id:b.operation_id,entry_id:b.entry_id},x)).await {Ok(v)=>(StatusCode::CREATED,Json(json!({"progress":progress(&v.progress),"scan_code":v.scan_code.into_exposed(),"code_expires_at_unix_secs":unix_time_secs(v.code_expires_at)}))).into_response(),Err(e)=>scan_err(e)}
+    match call(move || {
+        s.service.issue_phone(
+            IssuePhoneScan {
+                operation_id: b.operation_id,
+                entry_id: b.entry_id,
+            },
+            x,
+        )
+    })
+    .await
+    {
+        Ok(v) => (
+            StatusCode::CREATED,
+            Json(json!({
+                "progress": progress(&v.progress),
+                "scan_code": v.scan_code.into_exposed(),
+                "code_expires_at_unix_secs": unix_time_secs(v.code_expires_at)
+            })),
+        )
+            .into_response(),
+        Err(e) => scan_err(e),
+    }
 }
 async fn attach(
     State(s): State<BrowserState>,
@@ -807,7 +865,30 @@ async fn create(
         Ok(v) => v,
         Err(r) => return r,
     };
-    match call(move||s.service.create_device(CreateDeviceScan{operation_id:b.operation_id,entry_id:b.entry_id,tenant_id:b.tenant_id,delivery_secret_hash:hash},x)).await{Ok(v)=>(StatusCode::CREATED,Json(json!({"progress":progress(&v.progress),"display_code":v.display_code.into_exposed(),"verification_uri":verification_uri}))).into_response(),Err(e)=>scan_err(e)}
+    match call(move || {
+        s.service.create_device(
+            CreateDeviceScan {
+                operation_id: b.operation_id,
+                entry_id: b.entry_id,
+                tenant_id: b.tenant_id,
+                delivery_secret_hash: hash,
+            },
+            x,
+        )
+    })
+    .await
+    {
+        Ok(v) => (
+            StatusCode::CREATED,
+            Json(json!({
+                "progress": progress(&v.progress),
+                "display_code": v.display_code.into_exposed(),
+                "verification_uri": verification_uri
+            })),
+        )
+            .into_response(),
+        Err(e) => scan_err(e),
+    }
 }
 async fn claim(
     State(s): State<DeviceState>,
@@ -892,7 +973,28 @@ async fn lookup(
         Ok(v) => v,
         Err(r) => return r,
     };
-    match call(move||s.service.lookup_device(LookupDeviceScan{origin_action:b.origin_action.map(Into::into),origin_operation_id:b.origin_operation_id,entry_id:b.entry_id,tenant_id:b.tenant_id,delivery_secret:SecretString::new(b.delivery_secret)},x)).await{Ok(v)=>Json(json!({"progress":progress(&v.progress),"origin_operation_id":v.origin_operation_id,"display_code":v.display_code.map(SecretString::into_exposed)})).into_response(),Err(e)=>scan_err(e)}
+    match call(move || {
+        s.service.lookup_device(
+            LookupDeviceScan {
+                origin_action: b.origin_action.map(Into::into),
+                origin_operation_id: b.origin_operation_id,
+                entry_id: b.entry_id,
+                tenant_id: b.tenant_id,
+                delivery_secret: SecretString::new(b.delivery_secret),
+            },
+            x,
+        )
+    })
+    .await
+    {
+        Ok(v) => Json(json!({
+            "progress": progress(&v.progress),
+            "origin_operation_id": v.origin_operation_id,
+            "display_code": v.display_code.map(SecretString::into_exposed)
+        }))
+        .into_response(),
+        Err(e) => scan_err(e),
+    }
 }
 async fn close_origin(
     State(s): State<DeviceState>,
@@ -1022,7 +1124,14 @@ async fn abort(
     }
 }
 fn entry(x: &ScanLoginEntryConfig) -> serde_json::Value {
-    json!({"entry_id":x.entry_id,"target_client_id":x.target_client_id,"modes":x.modes.iter().map(|m|match m{ScanLoginMode::DeviceDisplay=>"device_display",ScanLoginMode::PhoneDisplay=>"phone_display"}).collect::<Vec<_>>()})
+    json!({
+        "entry_id": x.entry_id,
+        "target_client_id": x.target_client_id,
+        "modes": x.modes.iter().map(|m| match m {
+            ScanLoginMode::DeviceDisplay => "device_display",
+            ScanLoginMode::PhoneDisplay => "phone_display"
+        }).collect::<Vec<_>>()
+    })
 }
 fn close_origin_result(x: ScanOriginCloseResult) -> serde_json::Value {
     json!({
@@ -1039,13 +1148,71 @@ fn progress(x: &ScanProgress) -> serde_json::Value {
         .duration_since(x.server_time)
         .unwrap_or_default()
         .as_secs();
-    json!({"grant_id":x.grant_id,"mode":match x.mode {ScanLoginMode::DeviceDisplay=>"device_display",ScanLoginMode::PhoneDisplay=>"phone_display"},"state":x.state.as_str(),"version":x.version,"server_time_unix_secs":unix_time_secs(x.server_time),"expires_at_unix_secs":unix_time_secs(x.expires_at),"code_expires_at_unix_secs":unix_time_secs(x.code_expires_at),"approved_until_unix_secs":x.approved_until.map(unix_time_secs),"expires_in":expires_in,"poll_after_ms":x.poll_after_ms,"delivery_state":x.delivery_state.map(|x|x.as_str()),"issuance_operation_id":x.issuance_operation_id,"recover_until_unix_secs":x.recover_until.map(unix_time_secs),"next_action":x.next_action})
+    json!({
+        "grant_id": x.grant_id,
+        "mode": match x.mode {
+            ScanLoginMode::DeviceDisplay => "device_display",
+            ScanLoginMode::PhoneDisplay => "phone_display"
+        },
+        "state": x.state.as_str(),
+        "version": x.version,
+        "server_time_unix_secs": unix_time_secs(x.server_time),
+        "expires_at_unix_secs": unix_time_secs(x.expires_at),
+        "code_expires_at_unix_secs": unix_time_secs(x.code_expires_at),
+        "approved_until_unix_secs": x.approved_until.map(unix_time_secs),
+        "expires_in": expires_in,
+        "poll_after_ms": x.poll_after_ms,
+        "delivery_state": x.delivery_state.map(|x| x.as_str()),
+        "issuance_operation_id": x.issuance_operation_id,
+        "recover_until_unix_secs": x.recover_until.map(unix_time_secs),
+        "next_action": x.next_action
+    })
 }
 fn confirmation(x: ScanConfirmation) -> serde_json::Value {
-    json!({"progress":progress(&x.progress),"source":{"account_id":x.source.account_id,"session_id":x.source.session_id,"client_id":x.source.client_id,"display_name":x.source_display_name},"target":{"device_id":x.target.device_id,"display_name":x.presentation.display_name,"identification":x.presentation.identification,"context_label":x.presentation.context_label,"revision":x.presentation.revision},"confirmation_revision":x.confirmation_revision})
+    json!({
+        "progress": progress(&x.progress),
+        "source": {
+            "account_id": x.source.account_id,
+            "session_id": x.source.session_id,
+            "client_id": x.source.client_id,
+            "display_name": x.source_display_name
+        },
+        "target": {
+            "device_id": x.target.device_id,
+            "display_name": x.presentation.display_name,
+            "identification": x.presentation.identification,
+            "context_label": x.presentation.context_label,
+            "revision": x.presentation.revision
+        },
+        "confirmation_revision": x.confirmation_revision
+    })
 }
 fn delivery(x: ScanDeliveryResult) -> Response {
-    match x { ScanDeliveryResult::Progress(x)=>Json(json!({"progress":progress(&x)})).into_response(),ScanDeliveryResult::Bundle{progress: p,session,receipt_nonce}=>Json(json!({"progress":progress(&p),"receipt_nonce":receipt_nonce.into_exposed(),"session":{"tenant_id":session.session.tenant_id,"account_id":session.session.account_id,"session_id":session.session.id,"client_id":session.session.client_id,"expires_at_unix_secs":unix_time_secs(session.session.expires_at)},"tokens":{"access_token":session.tokens.access_token.into_exposed(),"refresh_token":session.tokens.refresh_token.into_exposed(),"access_expires_at_unix_secs":unix_time_secs(session.tokens.access_expires_at),"refresh_expires_at_unix_secs":unix_time_secs(session.tokens.refresh_expires_at)}})).into_response()}
+    match x {
+        ScanDeliveryResult::Progress(x) => Json(json!({"progress": progress(&x)})).into_response(),
+        ScanDeliveryResult::Bundle {
+            progress: p,
+            session,
+            receipt_nonce,
+        } => Json(json!({
+            "progress": progress(&p),
+            "receipt_nonce": receipt_nonce.into_exposed(),
+            "session": {
+                "tenant_id": session.session.tenant_id,
+                "account_id": session.session.account_id,
+                "session_id": session.session.id,
+                "client_id": session.session.client_id,
+                "expires_at_unix_secs": unix_time_secs(session.session.expires_at)
+            },
+            "tokens": {
+                "access_token": session.tokens.access_token.into_exposed(),
+                "refresh_token": session.tokens.refresh_token.into_exposed(),
+                "access_expires_at_unix_secs": unix_time_secs(session.tokens.access_expires_at),
+                "refresh_expires_at_unix_secs": unix_time_secs(session.tokens.refresh_expires_at)
+            }
+        }))
+        .into_response(),
+    }
 }
 
 #[cfg(test)]

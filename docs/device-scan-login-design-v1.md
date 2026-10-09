@@ -1,6 +1,6 @@
 # 通用扫码授权设备登录技术设计
 
-日期：2026-10-09。双向扫码登录基线已随 PR #16 合入主干（`33c4aa8`）；本次补齐原操作终止与 Pending 撤销修正，当前存储版本为 `tenant_v6`。第 23 节固定断网未知结果的收敛契约，分层验证见验证记录。
+里程碑：3.0.0；更新日期：2026-10-09。PR #16、#17、#18 已合入主干，当前存储为 `tenant_v6`。本文描述当前扫码契约；开发例外见[私网 HTTP 契约](development-private-http.md)，部署见[升级手册](device-scan-login-upgrade.md)，证据见[验收记录](device-scan-login-validation.md)。文件名 v1 是文档修订标识，不是软件版本或证明 profile。
 
 本设计为已登记设备提供两种人员登录方式：手机扫描设备显示码，以及设备扫描手机出示码。两种方式均由手机上的已认证人员确认具体目标设备，再为目标设备签发独立的人员设备会话。设备后续使用现有 refresh、注销、设备会话认证及业务授权体系。
 
@@ -69,7 +69,7 @@
 
 所有随机秘密使用密码学随机源。二维码与条形码只是编码载体；IDP 返回码文本，不生成图形。手机码建议采用扫描器可识别的 ASCII 编码，禁止为了缩短条形码把随机强度降低到工号或短数字 PIN。
 
-设备二维码可使用受配置限制的 HTTPS H5 地址与 fragment，例如 `https://login.example.test/device#code=D1.…`。H5 读取后立即移除 fragment，把码作为 POST JSON 提交。不能把码放在查询日志、分析埋点或 Referrer 中；登录页禁止第三方追踪。宿主自行保证跳转到登录后保留待处理码的短期内存上下文。
+设备二维码使用宿主配置的 H5 地址（默认 HTTPS 或既有回环 HTTP；显式私网开发例外见[开发模式](development-private-http.md)）与 fragment，例如 `https://login.example.test/device#code=D1.…`。H5 读取后立即移除 fragment，把码作为 POST JSON 提交。不能把码放在查询日志、分析埋点或 Referrer 中；登录页禁止第三方追踪。宿主自行保证跳转到登录后保留待处理码的短期内存上下文。
 
 固定设备贴纸只能定位目标；宿主必须找到该设备新鲜证明创建的唯一活动请求，并让手机确认。首期标准流程使用动态码，不把贴纸编号作为授权凭据。
 
@@ -130,7 +130,7 @@ stateDiagram-v2
 
 不记录具有误导性的 `delivered=true`：写出 HTTP 响应不能证明接收。`acknowledged` 只证明客户端完成协议确认，不证明用户开始业务操作。
 
-建议默认值及服务端硬上限：
+当前扫码默认值及硬上限（设备挑战另由宿主配置）：
 
 | 参数 | 默认 | 上限或约束 |
 | --- | --- | --- |
@@ -139,8 +139,8 @@ stateDiagram-v2
 | 手机发起 grant 总有效期 | 180 秒 | 600 秒；关联不延长总期限 |
 | 已批准待兑换 | 60 秒 | 不超过 grant 总期限 |
 | 结果恢复窗口 | 120 秒 | 300 秒且早于初始 access token 到期 |
-| 设备挑战 | 60 秒 | 沿用挑战配置的有效期和时钟偏差约束 |
-| 状态轮询 | 2 秒 | 返回 `poll_after_ms`；限流后按 `Retry-After` 退避 |
+| 设备挑战 | 由宿主配置；参考服务默认 300 秒 | 独立于扫码 grant 期限，沿用设备挑战和时钟偏差约束 |
+| 状态轮询 | 2 秒 | 返回 `poll_after_ms`；429 按宿主限流规则退避，模块不自动提供 `Retry-After` |
 | 宿主准入决定可用时间 | 最长 5 秒 | 每次动作重新判定；不是可缓存的授权许可证 |
 
 手机码关联后立即失去再次关联资格；同原操作重试返回原关联。所有过期以服务端时间为准，事务等待后重新判断。查询时即时计算过期状态，安全性不依赖清理任务及时执行。
@@ -213,7 +213,7 @@ pub struct ScanTargetPresentation {
 }
 ```
 
-允许决定由 Core 在本次调用内部消费，绑定 stage、全部已知身份、操作摘要和有效期，不作为客户端可携带票据。没有提供准入适配器时，构建失败；简单宿主可以显式注入 `IdentityOnlyScanAdmission`，它仅增加入口方式开关检查，所有 IDP 身份规则仍执行。参考应用不得默认为任何设备、人员允许生产业务登录。
+允许决定由 Core 在本次调用内部消费，绑定 stage、全部已知身份、操作摘要和有效期，不作为客户端可携带票据。没有提供准入适配器时，构建失败；简单宿主可按参考应用的 `IdentityOnlyScanAdmission` 实现自己的适配器；该参考实现不检查宿主业务事实，入口方式开关和 IDP 身份规则仍由 Core 执行。该适配器属于参考应用，生产宿主应自行实现准入接口。参考应用不得默认为任何设备、人员允许生产业务登录。
 
 | 阶段 | 已知身份 | 典型宿主检查 |
 | --- | --- | --- |
@@ -265,9 +265,9 @@ pub trait BrowserSessionIdentityService: Send + Sync {
 
 该服务验证 Cookie 内当前 refresh 凭据、会话、账号、成员、客户端、用途、期限及现有安全关系，但不轮换 refresh，不产生新 access token，不因为轮询增加认证凭据。旧 Cookie 与并发 refresh 竞争时返回需要重新读取身份的错误，不在只读接口触发 refresh 重用撤销；真正的 refresh 重用检测保持原规则。
 
-浏览器首次调用 context 可省略 expected；之后 attach、issue、inspect、approve、deny、cancel、status 必须传 `expected_session`。它是防止串账号的断言，不能代替 Cookie。服务端从当前 Cookie 取得实际身份，再比较 tenant/account/session/client。不同来源会话即使属于同一账号，也不能接管已有授权。
+完整 Cookie 模式首次调用 context 可省略 expected；开发模式 context 及两种模式的 attach、issue、inspect、approve、deny、cancel、status 必须传 `expected_session`。它是防止串账号的断言，不能代替 Cookie。服务端从当前 Cookie 取得实际身份，再比较 tenant/account/session/client。不同来源会话即使属于同一账号，也不能接管已有授权。
 
-路由放在 `/auth/browser/device-scan`，确保在当前业务 Cookie 的 Path 范围内；继续使用 HttpOnly、Secure、SameSite、精确 Origin、自定义请求头和 JSON 内容类型校验。管理 Cookie 不参与。H5 与这些 API 首期同源，宿主以反向代理或同源挂载实现；独立部署不意味开放跨域凭证 CORS。
+路由放在 `/auth/browser/device-scan`，确保在当前业务 Cookie 的 Path 范围内；继续使用 HttpOnly、SameSite=Strict、精确 Origin、自定义请求头和 JSON 校验；HTTPS 设置 Secure，回环及显式私网 HTTP 不设置 Secure。管理 Cookie 不参与。H5 与这些 API 首期同源，宿主以反向代理或同源挂载实现；独立部署不意味开放跨域凭证 CORS。
 
 为了其他宿主的原生手机客户端，Core 接受由来源客户端的业务认证服务构造的同一身份类型；HTTP Bearer 适配可另行组合，但不能让目标客户端认证服务直接接受另一客户端 token。首期交付至少含 H5 Cookie 适配，Bearer 适配不成为 SMT 首期前提。
 
@@ -275,7 +275,7 @@ pub trait BrowserSessionIdentityService: Send + Sync {
 
 ## 10 Rust 服务契约
 
-以下类型对应已编译的公共 API；完整定义见 [Core model.rs](../crates/embedded-idp-core/src/access/scan_login/model.rs)。标识类型实施时复用现有验证器；秘密使用 `SecretString`，不得派生会泄漏内容的 Debug/Serialize。HTTP DTO 与可信 Core 参数分别定义。
+以下为公共 API 调用面节选（省略 imports、derive 和部分返回模型），完整定义见 [Core model.rs](../crates/embedded-idp-core/src/access/scan_login/model.rs)。标识类型实施时复用现有验证器；秘密使用 `SecretString`，不得派生会泄漏内容的 Debug/Serialize。HTTP DTO 与可信 Core 参数分别定义。
 
 ```rust
 pub enum ScanLoginMode { DeviceDisplay, PhoneDisplay }
@@ -319,13 +319,24 @@ pub struct AbortScanDelivery {
     pub access: DeviceGrantAccess,
 }
 pub struct LookupDeviceScan {
+    pub origin_action: Option<ScanOriginAction>,
     pub origin_operation_id: String, pub entry_id: String,
     pub tenant_id: String, pub delivery_secret: SecretString,
 }
+pub enum ScanOriginAction { Create, Claim }
+pub struct CloseScanOrigin {
+    pub entry_id: String, pub tenant_id: String,
+    pub origin_action: ScanOriginAction, pub origin_operation_id: String,
+    pub delivery_secret: SecretString,
+}
+pub enum ScanOriginCloseOutcome { Closed, AlreadyActivated }
+pub struct ScanOriginCloseResult {
+    pub origin_action: ScanOriginAction, pub origin_operation_id: String,
+    pub outcome: ScanOriginCloseOutcome, pub closed_at: Option<SystemTime>,
+    pub progress: Option<ScanProgress>,
+}
 pub trait TenantDeviceScanLoginService: Send + Sync {
     fn entry_config(&self) -> ScanLoginEntryConfig;
-    fn device_status(&self, c: DeviceGrantAccess, actor: ScanDeviceCall)
-        -> Result<ScanProgress, ScanLoginError>;
     fn create_device(&self, c: CreateDeviceScan, actor: ScanDeviceCall)
         -> Result<CreatedDeviceScan, ScanLoginError>;
     fn issue_phone(&self, c: IssuePhoneScan, actor: ScanSourceCall)
@@ -378,11 +389,11 @@ pub trait TenantDeviceScanLoginService: Send + Sync {
 
 模块保留 `/auth` 与 `/devices` 路由根，宿主选择外层前缀。下表为模块路径，设备签名中的 path 必须包含实际外层前缀。请求均为 JSON POST，最大 16 KiB，拒绝未知字段和重复字段，响应 `Cache-Control: no-store`。所有时间是服务端 Unix 秒，grant 返回绝对到期时间和剩余秒数，手机码、批准和恢复窗口返回各自绝对到期时间。
 
-源端请求通过 Cookie 与浏览器保护校验；目标端请求通过第 12 节设备证明。设备端每个请求体包含 `tenant_id`；create、claim、lookup、close-origin 额外包含 `entry_id`，其他动作的 entry 由可信路由配置确定。tenant_id 是签名中的租户断言，Core 必须在该租户内验证设备、密钥、绑定和挑战归属，不能凭 JSON 断言建立身份。表中的 `access` 表示展开在 JSON 顶层的 `grant_id` 和 `delivery_secret`，不是嵌套字段。
+源端请求通过 Cookie 与浏览器保护校验；目标端请求通过第 12 节设备证明。设备端每个请求体包含 `tenant_id`；create、claim、lookup、close-origin 额外包含 `entry_id`，其他动作的 entry 由当前扫码服务的可信入口配置确定。tenant_id 是签名中的租户断言，Core 必须在该租户内验证设备、密钥、绑定和挑战归属，不能凭 JSON 断言建立身份。表中的 `access` 表示展开在 JSON 顶层的 `grant_id` 和 `delivery_secret`，不是嵌套字段。
 
 | 路由 | 请求体的其他字段 | 成功响应 |
 | --- | --- | --- |
-| `/auth/browser/device-scan/context` | 可选 expected_session | 200 当前来源身份、可用入口和方式 |
+| `/auth/browser/device-scan/context` | 完整 Cookie 模式可选 expected_session；开发模式必填 | 200 当前来源身份、可用入口和方式 |
 | `/auth/browser/device-scan/phone-codes` | operation_id、entry_id、expected_session | 201（含相同操作的幂等重试），grant、scan_code、期限 |
 | `/auth/browser/device-scan/attach` | operation_id、display_code、expected_session | 200 confirmation |
 | `/auth/browser/device-scan/inspect` | grant_id、expected_session | 200 confirmation |
@@ -587,11 +598,11 @@ scan-context-sha256:{context_digest}\n
 
 现有 `SessionStatus` 和 Postgres 已包含 Pending。扫码兑换事务创建 `Pending` 的 Business 人员设备会话、初始 refresh 摘要和 token bundle，grant 进入 issued，交付记录为 recoverable。不能先创建 Active 会话，再以第二个事务把它改 Pending。
 
-Pending 会话即使令牌签名有效，也不能通过人员认证、设备会话认证、受保护设备请求、OIDC introspection、授权码签发、切租户或 refresh。对已验证属于本次扫码交付的调用可返回 `delivery_pending`，其他调用沿用安全的无效会话错误。接收确认走设备证明和交付秘密，不要求 Pending token 先成为有效人员会话。
+Pending 会话即使令牌签名有效，也不能通过人员认证、设备会话认证、受保护设备请求、OIDC introspection、授权码签发、切租户或 refresh。普通认证入口按既有无效会话语义拒绝。接收确认走设备证明和交付秘密，不要求 Pending token 先成为有效人员会话。
 
 原设备提交 receipt nonce，经过 ActivateSession 准入后，同事务执行 Pending→Active、delivery→acknowledged、清除加密 bundle、清除 nonce 摘要及追加审计。只接受该 grant/issuance/session 组合，不允许以此激活任意 Pending 会话。目标身份、设备及人员设备关系仍须有效；不再检查手机来源会话。首次确认把 nonce 纳入操作语义摘要；其摘要清理后，原设备的同一确认操作仍可凭原幂等记录返回 200 acknowledged，不要求找回已删除的 nonce。不同确认操作对已 acknowledged 结果也只返回安全元数据，不产生任何激活副作用。
 
-对外 `delivery_confirmed` 是交付状态投影，不新增 session 布尔列。正常密码会话依旧直接 Active。扫码确认后复用现有 Active 会话认证与 refresh 路径，不增加长期扫码令牌格式。
+对外交付状态使用 `delivery_state=acknowledged`，会话继续使用现有状态列。正常密码会话依旧直接 Active。扫码确认后复用现有 Active 会话认证与 refresh 路径，不增加长期扫码令牌格式。
 
 所有资源服务器必须调用 IDP 的会话有效性校验或等价的有状态检查。只验证 JWT 签名的宿主不能满足 Pending 门禁或即时撤销契约，不属于此接入方案的安全验收范围。设备会话绑定也不能替代请求持有证明；需要限制令牌盗用的接口仍校验新鲜设备证明。[RFC 9700 第 4.10.1 节](https://www.rfc-editor.org/rfc/rfc9700.html#section-4.10.1)
 
@@ -834,7 +845,7 @@ H5 维护 expected_session、自己的 operation ID、grant ID、确认 revision
 5. 通用参考宿主联调：两种流程、宿主策略拒绝、断网恢复和重启；至少一个 IdentityOnly 示例及一个可替换业务策略示例。
 6. 实际宿主验收：H5 浏览器、原生安全存储、目标 OS、扫码枪识读、退出码牌和现场流程由宿主完成。
 
-## 20 实施顺序与交付物
+## 20 交付检查清单
 
 | 切片 | 工作与完成标准 |
 | --- | --- |
@@ -845,7 +856,7 @@ H5 维护 expected_session、自己的 operation ID、grant ID、确认 revision
 | E HTTP 与参考接入 | Cookie/设备路由、原生调用示例、宿主策略示例、补偿及运维说明；两方向端到端验证 |
 | F 发布验收 | 迁移演练、配置审阅、既有功能回归、完整接口材料；明确尚需宿主完成的目标平台与硬件验收 |
 
-首期上线必须覆盖 A 至 F，不能把 D 中的恢复、ack 或补偿作为后续增强。每个切片先按 crate 边界实施，Core 定义规则，security 实现密码学，Postgres 实现事务，Axum 保持薄适配，app 负责参考组合。
+3.0.0 的交付范围覆盖 A 至 F；恢复、ack 和补偿均为首期能力。实现按 crate 边界划分，Core 定义规则，security 实现密码学，Postgres 实现事务，Axum 保持薄适配，app 负责参考组合。
 
 最终交付包至少包括：可调用 Rust 接口、HTTP 契约和错误码、十种 proof 测试向量、迁移及回退限制说明、可运行参考宿主、H5 Cookie 与原生客户端接入示例、断网恢复／补偿运行手册、分层验证记录。API 形状如在实施中调整，应同步更新此文档及客户端例子，不能让宿主依据未实现的签名接入。
 
@@ -861,7 +872,7 @@ H5 维护 expected_session、自己的 operation ID、grant ID、确认 revision
 
 ## 22 当前实现与验证边界
 
-实现分支 `codex/device-scan-login` 已包含双向状态机、宿主阶段准入及真实目标资料接口、普通业务 Cookie 身份读取、十种设备证明、Postgres grant/operation/delivery/audit 事务、Pending 签发、结果恢复、ACK 激活、精确撤销和有界 cleanup。
+3.0.0 主干已包含双向状态机、宿主阶段准入及真实目标资料接口、普通业务 Cookie 身份读取、十种设备证明、Postgres grant/operation/delivery/audit 事务、Pending 签发、结果恢复、ACK 激活、精确撤销和有界 cleanup。
 
 HTTP 组合方式为 `scan_device_router(...).nest` 到 `/auth/device-scan`、`scan_browser_router(...).nest` 到 `/auth/browser/device-scan`。设备路由的 `ScanDeviceHttpConfig` 必须填写真实外部前缀；`TrustedScanHostContext` 通过宿主服务端 Extension 注入。Core 无 HTTP、环境或宿主业务表依赖。
 

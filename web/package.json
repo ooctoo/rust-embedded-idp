@@ -1,6 +1,6 @@
 {
   "name": "@embedded-idp/admin-web",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "packageManager": "pnpm@10.30.1",
   "private": true,
   "type": "module",

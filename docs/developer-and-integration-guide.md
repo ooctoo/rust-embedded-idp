@@ -30,8 +30,11 @@ cargo test --workspace
 ## Local reference runtime
 
 The reference host supports `disabled` and `enabled` modes. Each mode has its
-own schema and configuration file, but both use the `tenant_v3` Access layout
-and must be prepared offline before startup.
+own schema and configuration file, but both use the current `tenant_v6` Access
+layout and must be prepared offline before startup. Existing schemas require
+the explicit [device lifecycle upgrade procedure](device-identity-lifecycle-upgrade.md)
+and [scan-login upgrade procedure](device-scan-login-upgrade.md); startup never
+migrates them.
 
 ```bash
 ./scripts/dev_env.sh disabled init
@@ -97,6 +100,12 @@ The complete local variable reference is in
 [enabled mode](../.env.enabled.example). Keep those local files and
 signing keys untracked.
 
+The reference host also exposes the generic [two-way device scan-login
+contract](device-scan-login-design-v1.md) and the [private-network HTTP
+development contract](development-private-http.md). The latter is an explicit
+feature-gated debug mode for local RFC1918 HTTP origins; it keeps device proof,
+pending delivery, ACK, cancellation and response-recovery rules unchanged.
+
 ## Embedding in an Axum host
 
 The host owns the outer route prefix, trusted subject/session authentication,
@@ -142,4 +151,4 @@ production controls.
 
 ## Business authorization upgrade
 
-Access v3 requires an explicit business identifier for permissions, roles and authorization checks. Existing v2 data requires a stopped-service mapping migration; see [the business authorization design](business-domain-authorization-design-v1.md). Schema directory names do not determine the Access version. Do not rerun bootstrap or silently recreate an existing database.
+Access v3 requires an explicit business identifier for permissions, roles and authorization checks. Existing v2 data requires a stopped-service mapping migration; see [the business authorization design](business-domain-authorization-design-v1.md). Schema directory names do not determine the Access version. Do not rerun bootstrap or silently recreate an existing database. The current reference runtime is tenant_v6; follow the [scan-login upgrade procedure](device-scan-login-upgrade.md) after the earlier business and device lifecycle migrations.

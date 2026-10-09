@@ -49,4 +49,4 @@ pnpm --dir web install --frozen-lockfile
 
 示例配置必须显式提供 `NO_TENANT_HOST_BUSINESS_ID`，模板使用 `reports`。在 IDP 管理端创建权限、角色和用户分配时使用相同业务标识；服务端从配置构造授权查询，不接受前端覆盖该标识。可配置普通 `report/read` 角色范围，也可在该业务创建 `business_admin` 后直接分配用户。
 
-已有 IdP v2 schema 需先执行[显式映射迁移](../../docs/business-domain-authorization-design-v1.md)，示例启动不会自动升级或重新授予权限。业务报告表仍由单业务宿主独占，授权隔离不要求为该表增加第二套身份模型。
+当前示例随 3.0.0 使用 tenant_v6；已有 v3/v4/v5 schema 按[统一升级手册](../../docs/device-scan-login-upgrade.md)升级。已有 IdP v2 schema 需先执行[显式映射迁移](../../docs/business-domain-authorization-design-v1.md)，示例启动不会自动升级或重新授予权限。业务报告表仍由单业务宿主独占，授权隔离不要求为该表增加第二套身份模型。

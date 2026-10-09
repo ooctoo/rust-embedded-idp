@@ -1,6 +1,6 @@
 # 浏览器会话与 Cookie 恢复设计
 
-日期：2026-09-26。范围：可选浏览器接入；原显式令牌及设备证明接口保留。本文是本期新增能力的契约，实施与验收结果在文末记录。
+初版：2026-09-26；当前里程碑：3.0.0。本文主要描述默认完整 Cookie 模式，原显式令牌及设备证明接口保留。私网 HTTP 的 development_login 模式禁止恢复/续期，其服务端期限和身份断言以[开发模式契约](development-private-http.md)为准；文末保留初版验证记录。
 
 ## 1. 目标与本期范围
 
@@ -16,7 +16,7 @@
 
 - Core：新增浏览器会话服务契约，复用登录/选租户、严格刷新轮换、会话撤销事务。刷新与退出支持完整的预期会话断言（tenant_id/account_id/session_id/client_id）；断言不授予权限。用途、入口客户端、固定租户策略、账号/成员/租户/会话有效性仍由服务端验证。
 - Axum：独立的 browser 路由、Cookie 读取/写入、同源与 CSRF 请求校验、去掉刷新凭证的响应投影；不访问数据库。构造时确认服务用途与路由用途一致。
-- 宿主：注入可信 public_origin、Cookie 名称、含外层前缀的 Cookie Path、Secure 策略。生产必须 HTTPS；仅显式 loopback HTTP 开发配置允许非 Secure。不得根据不可信 Host/X-Forwarded-* 自动放宽来源。
+- 宿主：注入可信 public_origin、Cookie 名称、含外层前缀的 Cookie Path、Secure 策略。默认策略仅接受 HTTPS 与显式回环 HTTP；受门禁限制的私网开发策略例外见开发模式契约。HTTP 不设置 Secure。不得根据不可信 Host/X-Forwarded-* 自动放宽来源。
 - React：显式 cookie 模式，restore()、同源请求、跨标签页锁与失效通知。默认显式令牌模式保持兼容。独立管理页面与无租户宿主示例接入 cookie 模式。
 - PostgreSQL：复用 auth_sessions/refresh_tokens 及现有索引，无新表、迁移和分页变更。
 
@@ -32,7 +32,7 @@
 | POST `/refresh` | JSON `{expected_session: ...}` | 同 restore；客户端续期始终传完整原会话断言 |
 | POST `/logout` | JSON `{}` 或 `{expected_session: ...}` | 撤销 Cookie 对应的当前无设备会话及刷新令牌族，204 并清 Cookie |
 
-完整 expected_session 是 tenant_id、account_id、session_id、client_id 四个字符串。无脚本凭证时允许 restore/logout 不带断言；已建立上下文时必须发送断言。原始刷新令牌不允许作为这些 JSON 请求的字段；拒绝未知/重复字段和不支持的 Content-Type。普通 API 不接受 Cookie 作为访问凭证。
+完整 expected_session 是 tenant_id、account_id、session_id、client_id 四个字符串。完整模式无脚本凭证时允许 restore/logout 不带断言；已建立上下文时必须发送断言。开发模式拒绝 restore/refresh，logout 必须带断言。原始刷新令牌不允许作为这些 JSON 请求的字段；拒绝未知/重复字段和不支持的 Content-Type。普通 API 不接受 Cookie 作为访问凭证。
 
 成功 JSON 保持现有 `status/session/tokens` 结构，tokens 仅包含 access_token、access_expires_at_unix_secs、refresh_expires_at_unix_secs。租户选择结果保持现有票据结构。所有响应（含提取器错误）禁止缓存。
 
@@ -81,7 +81,7 @@ Cookie 退出不依赖未过期的访问令牌。Core 通过刷新凭证定位�
 - 设备绑定和 proof-required 不降级；原 token 客户端和设备接口回归通过。
 - Web 类型/构建/客户端测试、Rust fmt/check/test；有显式测试数据库连接时运行真实 PostgreSQL 测试。浏览器真实验收与离线模拟测试分别记录，不互相替代。
 
-## 8. 实施与验证记录
+## 8. 初版实施与历史验证记录
 
 已完成 Core、Axum、React、参考管理宿主与无租户业务示例接入；原显式令牌和设备证明入口保留。新分支最初基于 origin/main 的 88aa7cf，推送前已更新到 6873c7f（管理列表排序）；原工作区改动未混入本分支。
 
@@ -94,5 +94,3 @@ Cookie 退出不依赖未过期的访问令牌。Core 通过刷新凭证定位�
 - 真实应用内浏览器以合成身份服务运行同源多文档检查：恢复、HttpOnly、并发轮换、租户替换后旧页面失效、退出传播通过。它验证浏览器 Cookie/Web Locks/storage 行为，不等同于真实数据库后端加管理页面的完整多标签页端到端验收。
 
 仍需部署环境验收：实际 HTTPS 反向代理、完整管理/业务页面多标签页操作、各目标浏览器兼容性。Web Locks/存储不可用时 Cookie 模式明确失败；不会自动降级成无锁续期。跨站与多租户同时打开均不在本期范围。
-
-局域网 HTTP 联调的显式开发模式、900 秒浏览器会话上限和服务端/Web 契约见[开发接入说明](development-private-http.md)。默认 HTTPS/回环行为保持，设备会话与恢复窗口不受影响。

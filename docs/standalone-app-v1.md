@@ -8,12 +8,15 @@ operations, and its other security controls.
 ## Prepare a local mode
 
 The reference host has two independent local modes, `disabled` and `enabled`.
-Both use the `tenant_v4` Access schema and require an offline administrator
+Both use the current `tenant_v6` Access schema and require an offline administrator
 bootstrap before they can serve traffic. `init` copies templates only; it never
 rewrites an existing `.env` or `.env.<mode>` file.
-An existing `tenant_v3` schema must be backed up and upgraded with the explicit
-[device lifecycle upgrade procedure](device-identity-lifecycle-upgrade.md)
-before starting this branch; `db-init` does not upgrade it.
+An existing `tenant_v3`, `tenant_v4` or `tenant_v5` schema must be backed up and
+upgraded with the explicit [device lifecycle upgrade procedure](device-identity-lifecycle-upgrade.md)
+and [scan-login upgrade procedure](device-scan-login-upgrade.md) before starting
+3.0.0; `db-init` does not upgrade it. Existing `tenant_v2` data
+must first follow the business authorization migration described in the
+[business authorization design](business-domain-authorization-design-v1.md).
 
 ```bash
 ./scripts/dev_env.sh disabled init
@@ -159,14 +162,17 @@ For API contracts and embedding guidance, use the current
 
 ## Browser sessions
 
-The management page now uses the optional same-origin [browser session adapter](browser-session-design.md). The reference host also mounts business browser routes. Set `EMBEDDED_IDP_APP_BROWSER_ORIGIN` to the exact externally visible origin (scheme, host, optional port; no trailing slash) when it differs from the default `http://<bind_addr>`. Non-loopback origins must use HTTPS. The origin is trusted configuration, not inferred from forwarded headers or the token issuer.
+The management page now uses the optional same-origin [browser session adapter](browser-session-design.md). The reference host also mounts business browser routes. Set `EMBEDDED_IDP_APP_BROWSER_ORIGIN` to the exact externally visible origin (scheme, host, optional port; no trailing slash) when it differs from the default `http://<bind_addr>`. The default transport policy requires HTTPS for non-loopback origins. A host may explicitly select the feature-gated, debug-only [private-network HTTP development mode](development-private-http.md) for an RFC1918 IPv4 origin; the policy is never inferred from request headers or the token issuer.
 
 Cookies are host-only and named `idp_<bind-port>_business` and `idp_<bind-port>_management`, scoped to `/auth/browser` and `/api/admin/auth/browser`. The port suffix separates the local profiles because cookies themselves are not port-scoped. Production embedding hosts choose their own unique names and external paths. Serving the UI under another base path does not move these API paths. A Vite development reverse proxy must use the page's origin in this configuration.
 
-The original explicit-token login/refresh/logout and device-proof routes remain available. Browser cookies never authenticate ordinary business or management APIs; those still require the appropriate Bearer token.
+The original explicit-token login/refresh/logout and device-proof routes remain available. Browser cookies never authenticate ordinary business or management APIs; those still require the appropriate Bearer token. In private-network HTTP development mode, browser sessions use the restricted `development_login` contract: the server limits the session to 900 seconds by default (60–3600 seconds allowed), and restore/refresh are disabled. The server-provided Web mode and stable error codes are defined in the [private-network HTTP development contract](development-private-http.md).
 
 ## Business authorization upgrade
 
 Access v3 requires an explicit business identifier for permissions, roles and authorization checks. Existing v2 data requires a stopped-service mapping migration; see [the business authorization design](business-domain-authorization-design-v1.md). Schema directory names do not determine the Access version. Do not rerun bootstrap or silently recreate an existing database.
 
-局域网 HTTP 联调的显式开发模式、900 秒浏览器会话上限和服务端/Web 契约见[开发接入说明](development-private-http.md)。默认 HTTPS/回环行为保持，设备会话与恢复窗口不受影响。
+The current tenant_v6 upgrade path, including the scan-login schema and explicit
+recovery closure migration, is documented in the [scan-login upgrade
+procedure](device-scan-login-upgrade.md). Device sessions and recovery windows
+are not shortened by the browser-only private-network HTTP mode.
