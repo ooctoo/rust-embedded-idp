@@ -1,4 +1,4 @@
-import { BrowserSessionCoordinator } from "./browser-session";
+import { BrowserSessionCoordinator, assertBrowserOrigin, developmentBrowserMode, privateNetworkHttp, type BrowserClientConfig } from "./browser-session";
 
 export type LoginCapabilities =
   | { tenancy_enabled: false; login_tenant_policy: "fixed"; fixed_tenant_id: "0" }
@@ -52,7 +52,7 @@ export interface IdentitySnapshot {
 export type IdentityTransport = (url: string, init: RequestInit) => Promise<Response>;
 
 export class IdentityError extends Error {
-  constructor(message: string, public readonly status?: number) { super(message); }
+  constructor(message: string, public readonly status?: number, public readonly code?: string) { super(message); }
 }
 
 interface Credentials {
@@ -79,11 +79,11 @@ function sessionFrom(value: unknown): IdentitySession {
     session_id: session.session_id as string, client_id: session.client_id as string };
 }
 
-function basePath(value: string) {
+function basePath(value: string, development = false) {
   if (/^\/(?!\/)[\w/.-]*$/.test(value) && !value.split("/").includes("..")) return value.replace(/\/$/, "");
   try {
     const url = new URL(value);
-    if ((url.protocol === "https:" || url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) &&
+    if ((url.protocol === "https:" || development && privateNetworkHttp(url, value) || url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) &&
         !url.username && !url.password && !url.search && !url.hash && !url.pathname.split("/").includes("..")) return url.href.replace(/\/$/, "");
   } catch { /* Invalid URLs use the same public error. */ }
   throw new Error("身份服务地址必须是以 / 开头的路径或 HTTPS 地址；本机 localhost 可使用 HTTP。");
@@ -101,18 +101,21 @@ export class EmbeddedIdentityClient {
   private snapshot: IdentitySnapshot = { selecting: false };
   private sessionChanged = false;
   private readonly browser?: BrowserSessionCoordinator;
+  private readonly development: boolean;
   private restoring?: Promise<IdentitySession | undefined>;
 
-  constructor(baseUrl: string, transport: IdentityTransport = (url, init) => fetch(url, init), options: { mode?: "token" | "cookie" } = {}) {
-    this.base = basePath(baseUrl);
+  constructor(baseUrl: string, transport: IdentityTransport = (url, init) => fetch(url, init), options: { mode?: "token" | "cookie" | "development_login"; browserConfig?: BrowserClientConfig } = {}) {
+    this.development = developmentBrowserMode(options.mode, options.browserConfig);
+    this.base = basePath(baseUrl, this.development);
     this.transport = transport;
-    if (options.mode === "cookie") {
+    if (options.mode === "cookie" || this.development) {
       const origin = typeof location === "undefined" ? "https://embedded-idp.invalid" : location.origin;
+      assertBrowserOrigin(origin, this.development);
       const url = new URL(this.base || "/", origin);
       if (url.origin !== origin) throw new Error("Cookie 会话必须使用同源身份接口。");
       this.base = url.pathname.replace(/\/$/, "");
-      this.browser = new BrowserSessionCoordinator(`${this.base}/auth/browser`, "business");
-      this.browser.subscribe(() => { this.sessionChanged = true; this.clear(); });
+      if (!this.development) this.browser = new BrowserSessionCoordinator(`${this.base}/auth/browser`, "business");
+      this.browser?.subscribe(() => { this.sessionChanged = true; this.clear(); });
     }
   }
 
@@ -157,8 +160,7 @@ export class EmbeddedIdentityClient {
   }
 
   private async browserRequest(path: string, body: Record<string, unknown> = {}, authorization?: string): Promise<unknown> {
-    const browser = this.browser;
-    if (!browser) throw new IdentityError("当前客户端未启用 Cookie 会话。", 400);
+    if (!this.isCookieMode()) throw new IdentityError("当前客户端未启用 Cookie 会话。", 400);
     let response: Response;
     try {
       response = await this.transport(`${this.base}/auth/browser${path}`, {
@@ -168,7 +170,9 @@ export class EmbeddedIdentityClient {
     } catch { throw new IdentityError("无法连接身份服务，请检查网络后重试。"); }
     if (!response.ok) {
       const messages: Record<number, string> = { 400: "请求无效，请重新操作。", 401: "凭证无效或已过期，请重新登录。", 403: "当前身份无权执行此操作。", 409: "浏览器会话已被其他页面替换，请重新加载。", 429: "操作过于频繁，请稍后重试。" };
-      throw new IdentityError(messages[response.status] ?? "身份服务暂时不可用，请稍后重试。", response.status);
+      const failure = await response.json().catch(() => ({}));
+      const code = typeof failure?.code === "string" ? failure.code : typeof failure?.error === "string" ? failure.error : undefined;
+      throw new IdentityError(messages[response.status] ?? "身份服务暂时不可用，请稍后重试。", response.status, code);
     }
     if (response.status === 204) return undefined;
     try { return await response.json(); } catch { throw invalidResponse(); }
@@ -207,18 +211,22 @@ export class EmbeddedIdentityClient {
   }
 
   canChoose() { return this.snapshot.capabilities?.login_tenant_policy === "choose_after_authentication"; }
-  isCookieMode() { return !!this.browser; }
+  isCookieMode() { return !!this.browser || this.development; }
+  isDevelopmentMode() { return this.development; }
+  supportsRestore() { return !!this.browser; }
+  // Development operations use identity assertions on the server; there is no substitute cross-tab lock.
+  private browserOperation<T>(operation: () => Promise<T>) { return this.browser ? this.browser.run(operation) : operation(); }
   async login(email: string, password: string) {
     if (!this.snapshot.capabilities) throw invalidResponse();
     this.clear();
     const revision = this.revision;
-    if (this.browser) {
-      await this.browser.run(async () => {
+    if (this.isCookieMode()) {
+      await this.browserOperation(async () => {
         this.current(revision);
         try {
           const result = await this.browserRequest("/login", { email, password });
           this.current(revision);
-          this.browser!.mark("changed");
+          this.browser?.mark("changed");
           this.accept(result, true, true);
         } catch (error) { this.browserFailure(error, revision, false); throw error; }
       });
@@ -231,19 +239,21 @@ export class EmbeddedIdentityClient {
 
   private browserFailure(error: unknown, revision: number, readsCookie = true) {
     if (revision !== this.revision) return;
+    if (error instanceof IdentityError && error.code === "browser_session_changed") this.sessionChanged = true;
     this.clear();
     const status = error instanceof IdentityError ? error.status : 0;
-    if (status === 401 && readsCookie) this.browser!.mark("changed");
-    else if (!status || status >= 500) this.browser!.mark("blocked");
+    if (status === 401 && readsCookie) this.browser?.mark("changed");
+    else if (!status || status >= 500) this.browser?.mark("blocked");
   }
 
   async restore() {
+    if (this.development) throw new IdentityError("开发登录模式不支持恢复，请重新登录。", 403, "browser_restore_disabled");
     if (!this.browser) throw new IdentityError("当前客户端未启用 Cookie 会话。", 400);
     if (this.restoring) return this.restoring;
     const revision = this.revision;
     const expected = this.expectedSession();
     const pending = this.browser.run(async () => {
-      this.browser!.check();
+      this.browser?.check();
       this.current(revision);
       try {
         const value = await this.browserRequest("/restore", expected);
@@ -261,9 +271,14 @@ export class EmbeddedIdentityClient {
   }
 
   private async access(): Promise<Credentials> {
-    if (this.browser && this.selection) throw new IdentityError("请先完成或取消租户切换。", 409);
+    if (this.isCookieMode() && this.selection) throw new IdentityError("请先完成或取消租户切换。", 409);
     const credentials = this.credentials;
     if (!credentials) throw new IdentityError("请先登录。", 401);
+    if (this.development) {
+      if (credentials.tokens.access_expires_at_unix_secs > Date.now() / 1000) return credentials;
+      this.clear();
+      throw new IdentityError("开发会话已到期，请重新登录。", 401, "browser_session_expired");
+    }
     if (this.browser) {
       this.browser.check();
       if (this.refreshing) return this.refreshing;
@@ -271,7 +286,7 @@ export class EmbeddedIdentityClient {
       const revision = this.revision;
       const expected = this.expectedSession();
       const pending = this.browser.run(async () => {
-        this.browser!.check();
+        this.browser?.check();
         this.current(revision);
         try {
           const value = await this.browserRequest("/refresh", expected);
@@ -397,19 +412,19 @@ export class EmbeddedIdentityClient {
   }
   async selectTenant(tenantId: string) {
     if (!id(tenantId) || tenantId === "0") throw new IdentityError("请选择有效租户。", 400);
-    if (this.browser) {
+    if (this.isCookieMode()) {
       const selection = this.selection;
       if (!selection || selection.expiresAt <= Date.now()) throw new IdentityError("请重新登录以选择租户。", 401);
       const revision = this.revision;
       const original = this.credentials?.session;
-      await this.browser.run(async () => {
-        this.browser!.check(); this.current(revision);
+      await this.browserOperation(async () => {
+        this.browser?.check(); this.current(revision);
         try {
           const result = await this.browserRequest("/tenant-selection/complete", { tenant_id: tenantId }, `TenantSelection ${selection.ticket}`);
           this.current(revision);
           const session = sessionFrom(record(result).session);
           if (session.tenant_id !== tenantId || original && session.account_id !== original.account_id) throw invalidResponse();
-          this.browser!.mark("changed");
+          this.browser?.mark("changed");
           this.accept(result, false, true); this.revision++; this.refreshing = undefined;
         } catch (error) { this.browserFailure(error, revision, false); throw error; }
       });
@@ -426,16 +441,17 @@ export class EmbeddedIdentityClient {
   }
 
   async logout() {
-    if (this.browser) {
+    if (this.isCookieMode()) {
       const expected = this.expectedSession();
       this.clear();
+      if (this.development && !expected) return;
       const revision = this.revision;
-      await this.browser.run(async () => {
-        this.browser!.check(); this.current(revision);
+      await this.browserOperation(async () => {
+        this.browser?.check(); this.current(revision);
         try {
           await this.browserRequest("/logout", expected);
           this.current(revision);
-          this.browser!.mark("changed");
+          this.browser?.mark("changed");
         } catch (error) { this.browserFailure(error, revision); throw error; }
       });
       return;

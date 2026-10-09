@@ -7,7 +7,7 @@ import ts from "typescript";
 const source = await readFile(new URL("./client.ts", import.meta.url), "utf8");
 const browserSource = await readFile(new URL("../embedded/browser-session.ts", import.meta.url), "utf8");
 const browserModule = ts.transpileModule(browserSource, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
-const { outputText } = ts.transpileModule(source.replace('import { BrowserSessionCoordinator } from "../embedded/browser-session";', browserModule), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } });
+const { outputText } = ts.transpileModule(source.replace(/import \{[^\n]+\} from "\.\.\/embedded\/browser-session";/, browserModule), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } });
 const { ManagementClient } = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString("base64")}`);
 const fixed = { tenancy_enabled: false, login_tenant_policy: "fixed", fixed_tenant_id: "0" };
 const choose = { tenancy_enabled: true, login_tenant_policy: "choose_after_authentication" };
@@ -1380,4 +1380,89 @@ test("management list sort order defaults to descending, forwards cursors, and r
   const count = calls.length;
   await assert.rejects(client.listClients({}, undefined, "sideways"));
   assert.equal(calls.length, count);
+});
+
+const developmentConfig = { mode: "development_login", session_ttl_secs: 900, restore: false, refresh: false };
+function insecureEnvironment(t) {
+  const originals = new Map(["location", "navigator", "crypto", "localStorage"].map(k => [k, Object.getOwnPropertyDescriptor(globalThis, k)]));
+  const random = globalThis.crypto.getRandomValues.bind(globalThis.crypto);
+  for (const [key, value] of Object.entries({ location: { origin: "http://192.168.31.159:8080" }, navigator: {}, crypto: { getRandomValues: random }, localStorage: undefined }))
+    Object.defineProperty(globalThis, key, { configurable: true, value });
+  t.after(() => { for (const [key, descriptor] of originals) descriptor ? Object.defineProperty(globalThis, key, descriptor) : delete globalThis[key]; });
+}
+function developmentClient() { return new ManagementClient("/host/idp", { mode: "development_login", browserConfig: developmentConfig }); }
+
+test("management development mode validates trusted configuration and private HTTP", t => {
+  insecureEnvironment(t);
+  assert.throws(() => new ManagementClient("/host/idp", { mode: "cookie" }));
+  assert.throws(() => new ManagementClient("/host/idp", { mode: "development_login" }));
+  assert.throws(() => new ManagementClient("/host/idp", { mode: "cookie", browserConfig: developmentConfig }));
+  assert.equal(developmentClient().supportsRestore(), false);
+});
+
+test("management private HTTP login needs no secure-context APIs and expiry never rotates", async t => {
+  insecureEnvironment(t);
+  const calls = [];
+  t.mock.method(globalThis, "fetch", async (url, init) => {
+    calls.push({ url, init });
+    if (url.endsWith("capabilities")) return json(fixed);
+    if (url.endsWith("/login")) { const value = authenticated("0", 60); delete value.tokens.refresh_token; return json(value); }
+    if (url.endsWith("/session")) return json(identity());
+    throw new Error("unexpected request");
+  });
+  const client = developmentClient();
+  await assert.rejects(client.restore(), error => error.code === "browser_restore_disabled");
+  assert.equal(calls.length, 0);
+  await client.loadCapabilities(); await client.login("user@example.test", "password"); await client.verifySession();
+  const now = Date.now(); t.mock.method(Date, "now", () => now + 60_000);
+  await assert.rejects(client.verifySession(), error => error.code === "browser_session_expired");
+  assert.equal(client.getSnapshot().session, undefined);
+  await client.logout();
+  assert.equal(calls.length, 3);
+});
+
+test("management development logout asserts identity and mismatch clears page", async t => {
+  insecureEnvironment(t);
+  const calls = [];
+  t.mock.method(globalThis, "fetch", async (url, init) => {
+    calls.push({ url, init });
+    if (url.endsWith("capabilities")) return json(fixed);
+    if (url.endsWith("/login")) { const value = authenticated(); delete value.tokens.refresh_token; return json(value); }
+    return json({ code: "browser_session_changed", message: "browser session changed" }, 409);
+  });
+  const client = developmentClient(); await client.loadCapabilities(); await client.login("user@example.test", "password");
+  await assert.rejects(client.logout(), error => error.code === "browser_session_changed");
+  assert.deepEqual(JSON.parse(calls.at(-1).init.body), { expected_session: identity() });
+  assert.equal(client.getSnapshot().session, undefined);
+  assert.equal(client.getSnapshot().sessionChanged, true);
+});
+
+test("management development late login cannot restore cleared identity", async t => {
+  insecureEnvironment(t);
+  const pending = deferred();
+  t.mock.method(globalThis, "fetch", async url => url.endsWith("capabilities") ? json(fixed) : pending.promise);
+  const client = developmentClient(); await client.loadCapabilities();
+  const login = client.login("user@example.test", "password");
+  await client.logout();
+  const value = authenticated(); delete value.tokens.refresh_token; pending.resolve(json(value));
+  await assert.rejects(login);
+  assert.equal(client.getSnapshot().session, undefined);
+});
+
+test("management development tenant selection retains trusted ticket and uses Cookie endpoint", async t => {
+  insecureEnvironment(t);
+  const calls = [];
+  t.mock.method(globalThis, "fetch", async (url, init) => {
+    calls.push({ url, init });
+    if (url.endsWith("capabilities")) return json(choose);
+    if (url.endsWith("/login")) return json(ticket);
+    if (url.endsWith("/tenant-selection/complete")) { const value = authenticated("tenant-1"); delete value.tokens.refresh_token; return json(value); }
+    throw new Error("unexpected request");
+  });
+  const client = developmentClient(); await client.loadCapabilities(); await client.login("user@example.test", "password");
+  await client.selectTenant("tenant-1");
+  assert.equal(client.getSnapshot().session.tenant_id, "tenant-1");
+  assert.deepEqual(JSON.parse(calls.at(-1).init.body), { tenant_id: "tenant-1" });
+  assert.equal(calls.at(-1).init.headers.Authorization, "TenantSelection synthetic-ticket");
+  assert.equal(calls.at(-1).init.credentials, "same-origin");
 });

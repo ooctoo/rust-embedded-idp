@@ -6,8 +6,8 @@ import ts from "typescript";
 const source = await readFile(new URL("./client.ts", import.meta.url), "utf8");
 const browserSource = await readFile(new URL("./browser-session.ts", import.meta.url), "utf8");
 const browserModule = ts.transpileModule(browserSource, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
-const { outputText } = ts.transpileModule(source.replace('import { BrowserSessionCoordinator } from "./browser-session";', browserModule), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } });
-const { EmbeddedIdentityClient } = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString("base64")}`);
+const { outputText } = ts.transpileModule(source.replace(/import \{[^\n]+\} from "\.\/browser-session";/, browserModule), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } });
+const { EmbeddedIdentityClient, secureRandomUuid, validateBrowserClientConfig } = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString("base64")}`);
 const json = (value, status = 200) => new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json" } });
 const fixed = { tenancy_enabled: false, login_tenant_policy: "fixed", fixed_tenant_id: "0" };
 const choose = { tenancy_enabled: true, login_tenant_policy: "choose_after_authentication" };
@@ -144,7 +144,7 @@ test("stale 409 does not block a replacement Cookie login", async t => {
     const path = new URL(url, "https://host.test").pathname.replace("/idp", "");
     if (path === "/auth/access/capabilities") return json(fixed);
     if (path === "/auth/browser/login") { const value = authenticated("0", 3600, "-new"); delete value.tokens.refresh_token; return json(value); }
-    if (path === "/auth/browser/restore") { restoreCalls++; return json({ error: "browser_session_changed" }, 409); }
+    if (path === "/auth/browser/restore") { restoreCalls++; return json({ code: "browser_session_changed", message: "browser session changed" }, 409); }
     throw new Error(path);
   };
   const client = new EmbeddedIdentityClient("/idp", handler, { mode: "cookie" }); await client.loadCapabilities();
@@ -380,4 +380,105 @@ test("Cookie mode rejects cross-origin endpoints and leaked refresh credentials"
   await client.loadCapabilities();
   await assert.rejects(client.login("user@example.test", "password"));
   assert.equal(client.getSnapshot().session, undefined);
+});
+
+const developmentConfig = { mode: "development_login", session_ttl_secs: 900, restore: false, refresh: false };
+function insecureEnvironment(t) {
+  const originals = new Map(["location", "navigator", "crypto", "localStorage"].map(k => [k, Object.getOwnPropertyDescriptor(globalThis, k)]));
+  const random = globalThis.crypto.getRandomValues.bind(globalThis.crypto);
+  for (const [key, value] of Object.entries({ location: { origin: "http://192.168.31.159:8080" }, navigator: {}, crypto: { getRandomValues: random }, localStorage: undefined }))
+    Object.defineProperty(globalThis, key, { configurable: true, value });
+  t.after(() => { for (const [key, descriptor] of originals) descriptor ? Object.defineProperty(globalThis, key, descriptor) : delete globalThis[key]; });
+}
+function developmentClient(handler) {
+  return new EmbeddedIdentityClient("/idp", handler, { mode: "development_login", browserConfig: developmentConfig });
+}
+
+test("private HTTP requires explicit trusted descriptor; canonical address and mode validation fail closed", t => {
+  insecureEnvironment(t);
+  assert.throws(() => new EmbeddedIdentityClient("/idp", undefined, { mode: "cookie" }));
+  assert.throws(() => new EmbeddedIdentityClient("/idp", undefined, { mode: "development_login" }));
+  assert.throws(() => new EmbeddedIdentityClient("/idp", undefined, { mode: "cookie", browserConfig: developmentConfig }));
+  for (const config of [{ ...developmentConfig, refresh: true }, { ...developmentConfig, session_ttl_secs: 59 }, { ...developmentConfig, session_ttl_secs: 3601 }]) assert.throws(() => validateBrowserClientConfig(config));
+  const options = { mode: "development_login", browserConfig: developmentConfig };
+  for (const origin of ["http://8.8.8.8", "http://host.local", "http://169.254.0.1", "http://192.168.031.159:8080", "http://0xc0a81f9f:8080"]) assert.throws(() => new EmbeddedIdentityClient(origin, undefined, options));
+  assert.equal(new EmbeddedIdentityClient("http://192.168.31.159:8080/idp", undefined, options).isDevelopmentMode(), true);
+  for (let n = 0; n < 50; n++) assert.match(secureRandomUuid(), /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+});
+
+test("development login without locks or randomUUID expires locally and never restores or refreshes", async t => {
+  insecureEnvironment(t);
+  const calls = [];
+  const client = developmentClient(async (url, init) => {
+    calls.push({ url, init });
+    if (url.endsWith("capabilities")) return json(fixed);
+    if (url.endsWith("/login")) { const value = authenticated("0", 60); delete value.tokens.refresh_token; return json(value); }
+    if (url.endsWith("/session")) return json(identity());
+    throw new Error("unexpected request");
+  });
+  assert.equal(client.supportsRestore(), false);
+  await assert.rejects(client.restore(), error => error.code === "browser_restore_disabled");
+  assert.equal(calls.length, 0);
+  await client.loadCapabilities(); await client.login("user@example.test", "password");
+  assert.equal(calls.at(-1).init.credentials, "same-origin");
+  assert.equal(await client.accessToken(), "synthetic-access");
+  const now = Date.now(); t.mock.method(Date, "now", () => now + 60_000);
+  await assert.rejects(client.accessToken(), error => error.code === "browser_session_expired");
+  assert.equal(client.getSnapshot().session, undefined);
+  assert.equal(calls.filter(c => /restore|refresh/.test(c.url)).length, 0);
+  await client.logout();
+  assert.equal(calls.length, 2);
+});
+
+test("development logout sends exact identity and cannot adopt another tab's account", async t => {
+  insecureEnvironment(t);
+  const calls = [];
+  const client = developmentClient(async (url, init) => {
+    calls.push({ url, init });
+    if (url.endsWith("capabilities")) return json(fixed);
+    if (url.endsWith("/login")) { const value = authenticated(); delete value.tokens.refresh_token; return json(value); }
+    if (url.endsWith("/logout")) return json({ code: "browser_session_changed", message: "browser session changed" }, 409);
+    throw new Error("unexpected request");
+  });
+  await client.loadCapabilities(); await client.login("user@example.test", "password");
+  await assert.rejects(client.logout(), error => error.code === "browser_session_changed");
+  assert.deepEqual(JSON.parse(calls.at(-1).init.body), { expected_session: identity() });
+  assert.equal(client.getSnapshot().session, undefined);
+  assert.equal(client.getSnapshot().sessionChanged, true);
+});
+
+test("development late login cannot replace a newer explicit login", async t => {
+  insecureEnvironment(t);
+  let resolveOld;
+  const old = new Promise(resolve => { resolveOld = resolve; });
+  const client = developmentClient(async (url, init) => {
+    if (url.endsWith("capabilities")) return json(fixed);
+    if (JSON.parse(init.body).email === "old@example.test") return old;
+    const value = authenticated("0", 3600, "-new"); delete value.tokens.refresh_token; return json(value);
+  });
+  await client.loadCapabilities();
+  const pending = client.login("old@example.test", "password");
+  await client.login("new@example.test", "password");
+  const value = authenticated("0", 3600, "-old"); delete value.tokens.refresh_token; resolveOld(json(value));
+  await assert.rejects(pending);
+  assert.equal(await client.accessToken(), "synthetic-access-new");
+});
+
+test("development tenant selection completes through Cookie endpoint without Web Locks", async t => {
+  insecureEnvironment(t);
+  const calls = [];
+  const client = developmentClient(async (url, init) => {
+    calls.push({ url, init });
+    if (url.endsWith("capabilities")) return json(choose);
+    if (url.endsWith("/login")) return json(ticket);
+    if (url.endsWith("/tenant-selection/complete")) { const value = authenticated("tenant-1"); delete value.tokens.refresh_token; return json(value); }
+    throw new Error("unexpected request");
+  });
+  await client.loadCapabilities(); await client.login("user@example.test", "password");
+  assert.equal(client.getSnapshot().selecting, true);
+  await client.selectTenant("tenant-1");
+  assert.equal(client.getSnapshot().session.tenant_id, "tenant-1");
+  assert.deepEqual(JSON.parse(calls.at(-1).init.body), { tenant_id: "tenant-1" });
+  assert.equal(calls.at(-1).init.headers.Authorization, "TenantSelection synthetic-ticket");
+  assert.equal(calls.at(-1).init.credentials, "same-origin");
 });

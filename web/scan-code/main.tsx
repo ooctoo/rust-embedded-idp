@@ -1,3 +1,5 @@
+import { EmbeddedIdentityClient } from "../embedded/client";
+import { secureRandomUuid } from "../embedded/browser-session";
 import { QRCode } from "antd";
 import JsBarcode from "jsbarcode";
 import { createRoot, type Root } from "react-dom/client";
@@ -21,5 +23,10 @@ function render(element: Element, value: string, kind: Kind) {
   root.render(<Code value={value} kind={kind} />);
 }
 
-declare global { interface Window { EmbeddedIdpScanCode?: { render: typeof render }; } }
-window.EmbeddedIdpScanCode = { render };
+function clear(element: Element) {
+  roots.get(element)?.unmount();
+  roots.delete(element);
+}
+
+declare global { interface Window { EmbeddedIdpScanCode?: { render: typeof render; clear: typeof clear; secureRandomUuid: typeof secureRandomUuid; EmbeddedIdentityClient: typeof EmbeddedIdentityClient }; } }
+window.EmbeddedIdpScanCode = { render, clear, secureRandomUuid, EmbeddedIdentityClient };

@@ -68,3 +68,5 @@ scripts/migrate_scan_login_origin_closures.sh "$schema" --apply
 只归档已无秘密的历史记录。操作记录至少保留 7 天，issued grant 不可重发标记覆盖关联会话生命周期加 90 天；模块 cleanup 不自动删除审计或幂等记录。
 
 原操作终止记录 `scan_login_origin_closures` 不含原始 delivery secret，只有摘要；cleanup 不删除它。其保存期限与短期恢复密文不同：同一 scoped operation ID 的迟到提交必须永久被拒绝。宿主归档必须保留等价的拒绝索引，禁止删除 tombstone 后重新开放旧 ID；备份和灾备恢复须同时包含该表。关闭入口后应继续保留 lookup、close-origin、abort 和可信服务端补偿能力。
+
+局域网 HTTP 联调的显式开发模式、900 秒浏览器会话上限和服务端/Web 契约见[开发接入说明](development-private-http.md)。默认 HTTPS/回环行为保持，设备会话与恢复窗口不受影响。

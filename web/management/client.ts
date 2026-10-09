@@ -4,7 +4,7 @@ export interface Capabilities {
   fixed_tenant_id?: string;
 }
 
-import { BrowserSessionCoordinator } from "../embedded/browser-session";
+import { BrowserSessionCoordinator, assertBrowserOrigin, developmentBrowserMode, secureRandomUuid, type BrowserClientConfig } from "../embedded/browser-session";
 
 export interface Session {
   tenant_id: string;
@@ -324,7 +324,7 @@ function detailFrom(value: unknown, tenant: string, business: string): RoleDetai
 
 export class ManagementError extends Error {
   status: number;
-  constructor(message: string, status = 0) {
+  constructor(message: string, status = 0, public readonly code?: string) {
     super(message);
     this.status = status;
   }
@@ -359,18 +359,21 @@ export class ManagementClient {
   private state: AuthState = { selecting: false };
   private sessionChanged = false;
   private readonly browser?: BrowserSessionCoordinator;
+  private readonly development: boolean;
   private restoring?: Promise<Session | undefined>;
   private deviceIntents = new Map<string, string>();
 
-  constructor(basePath = "/api", options: { mode?: "token" | "cookie" } = {}) {
+  constructor(basePath = "/api", options: { mode?: "token" | "cookie" | "development_login"; browserConfig?: BrowserClientConfig } = {}) {
+    this.development = developmentBrowserMode(options.mode, options.browserConfig);
     if (!/^\/(?!\/)[\w/.-]*$/.test(basePath) || basePath.split("/").includes("..")) {
       throw new Error("管理 API 前缀必须是同源绝对路径。");
     }
     this.basePath = basePath.replace(/\/$/, "");
-    if (options.mode === "cookie") {
+    if (options.mode === "cookie" || this.development) {
+      assertBrowserOrigin(typeof location === "undefined" ? "https://embedded-idp.invalid" : location.origin, this.development);
       this.basePath = new URL(this.basePath || "/", "https://embedded-idp.invalid").pathname.replace(/\/$/, "");
-      this.browser = new BrowserSessionCoordinator(`${this.basePath}/admin/auth/browser`, "management");
-      this.browser.subscribe(() => { this.sessionChanged = true; this.clear(); });
+      if (!this.development) this.browser = new BrowserSessionCoordinator(`${this.basePath}/admin/auth/browser`, "management");
+      this.browser?.subscribe(() => { this.sessionChanged = true; this.clear(); });
     }
   }
 
@@ -436,13 +439,17 @@ export class ManagementClient {
     try { return await response.json(); } catch { throw invalidResponse(); }
   }
 
-  isCookieMode() { return !!this.browser; }
+  isCookieMode() { return !!this.browser || this.development; }
+  isDevelopmentMode() { return this.development; }
+  supportsRestore() { return !!this.browser; }
+  // Development operations use identity assertions on the server; there is no substitute cross-tab lock.
+  private browserOperation<T>(operation: () => Promise<T>) { return this.browser ? this.browser.run(operation) : operation(); }
   private expectedSession() {
     const session = this.credentials?.session;
     return session && { expected_session: session };
   }
   private async browserRequest(path: string, body: Record<string, unknown> = {}, authorization?: string): Promise<unknown> {
-    if (!this.browser) throw new ManagementError("当前客户端未启用 Cookie 会话。", 400);
+    if (!this.isCookieMode()) throw new ManagementError("当前客户端未启用 Cookie 会话。", 400);
     let response: Response;
     try {
       response = await fetch(`${this.basePath}/admin/auth/browser${path}`, { method: "POST",
@@ -451,7 +458,9 @@ export class ManagementClient {
     } catch { throw new ManagementError("无法连接管理服务，请检查网络后重试。"); }
     if (!response.ok) {
       const messages: Record<number, string> = { 400: "请求无效，请重新操作。", 401: "凭证无效或已过期，请重新登录。", 403: "当前账号无权执行此操作。", 409: "浏览器会话已被其他页面替换，请重新加载。", 429: "操作过于频繁，请稍后重试。" };
-      throw new ManagementError(messages[response.status] ?? "管理服务暂时不可用，请稍后重试。", response.status);
+      const failure = await response.json().catch(() => ({}));
+      const code = typeof failure?.code === "string" ? failure.code : typeof failure?.error === "string" ? failure.error : undefined;
+      throw new ManagementError(messages[response.status] ?? "管理服务暂时不可用，请稍后重试。", response.status, code);
     }
     if (response.status === 204) return undefined;
     try { return await response.json(); } catch { throw invalidResponse(); }
@@ -477,10 +486,10 @@ export class ManagementClient {
     } else {
       if (result.status !== "authenticated") throw invalidResponse();
       const session = sessionFrom(result.session);
-      if (this.browser && !session.client_id) throw invalidResponse();
+      if (this.isCookieMode() && !session.client_id) throw invalidResponse();
       const tokens = object(result.tokens);
-      if (this.browser && (tokens.refresh_token !== undefined || !session.client_id)) throw invalidResponse();
-      if (!(typeof tokens.access_token === "string" && tokens.access_token.length) || (!this.browser && !(typeof tokens.refresh_token === "string" && tokens.refresh_token.length)) ||
+      if (this.isCookieMode() && (tokens.refresh_token !== undefined || !session.client_id)) throw invalidResponse();
+      if (!(typeof tokens.access_token === "string" && tokens.access_token.length) || (!this.isCookieMode() && !(typeof tokens.refresh_token === "string" && tokens.refresh_token.length)) ||
           ![tokens.access_expires_at_unix_secs, tokens.refresh_expires_at_unix_secs].every(v => typeof v === "number" && Number.isSafeInteger(v) && v > Date.now() / 1000)) throw invalidResponse();
       const c = this.state.capabilities;
       if (!c || (c.login_tenant_policy === "fixed" && session.tenant_id !== c.fixed_tenant_id) ||
@@ -499,13 +508,13 @@ export class ManagementClient {
     if (!this.state.capabilities) throw invalidResponse();
     this.clear();
     const revision = this.revision;
-    if (this.browser) {
-      await this.browser.run(async () => {
+    if (this.isCookieMode()) {
+      await this.browserOperation(async () => {
         this.current(revision);
         try {
           const result = await this.browserRequest("/login", { email, password });
           this.current(revision);
-          this.browser!.mark("changed");
+          this.browser?.mark("changed");
           this.accept(result, true);
         } catch (error) { this.browserFailure(error, revision, false); throw error; }
       });
@@ -517,19 +526,21 @@ export class ManagementClient {
 
   private browserFailure(error: unknown, revision: number, readsCookie = true) {
     if (revision !== this.revision) return;
+    if (error instanceof ManagementError && error.code === "browser_session_changed") this.sessionChanged = true;
     this.clear();
     const status = error instanceof ManagementError ? error.status : 0;
-    if (status === 401 && readsCookie) this.browser!.mark("changed");
-    else if (!status || status >= 500) this.browser!.mark("blocked");
+    if (status === 401 && readsCookie) this.browser?.mark("changed");
+    else if (!status || status >= 500) this.browser?.mark("blocked");
   }
 
   async restore() {
+    if (this.development) throw new ManagementError("开发登录模式不支持恢复，请重新登录。", 403, "browser_restore_disabled");
     if (!this.browser) throw new ManagementError("当前客户端未启用 Cookie 会话。", 400);
     if (this.restoring) return this.restoring;
     const revision = this.revision;
     const expected = this.expectedSession();
     const pending = this.browser.run(async () => {
-      this.browser!.check();
+      this.browser?.check();
       this.current(revision);
       try {
         const value = await this.browserRequest("/restore", expected);
@@ -547,9 +558,14 @@ export class ManagementClient {
   }
 
   private async access(): Promise<Credentials> {
-    if (this.browser && this.selection) throw new ManagementError("请先完成或取消租户切换。", 409);
+    if (this.isCookieMode() && this.selection) throw new ManagementError("请先完成或取消租户切换。", 409);
     const credentials = this.credentials;
     if (!credentials) throw new ManagementError("请先登录。", 401);
+    if (this.development) {
+      if (credentials.tokens.access_expires_at_unix_secs > Date.now() / 1000) return credentials;
+      this.clear();
+      throw new ManagementError("开发会话已到期，请重新登录。", 401, "browser_session_expired");
+    }
     if (this.browser) {
       this.browser.check();
       if (this.refreshing) return this.refreshing;
@@ -557,7 +573,7 @@ export class ManagementClient {
       const revision = this.revision;
       const expected = this.expectedSession();
       const pending = this.browser.run(async () => {
-        this.browser!.check();
+        this.browser?.check();
         this.current(revision);
         try {
           const result = await this.browserRequest("/refresh", expected);
@@ -790,7 +806,7 @@ export class ManagementClient {
     if (device.tenant_id !== tenant || device.status === "revoked" || device.status === status || status === "active" && device.status !== "disabled") throw new ManagementError("设备状态已变化，请重新加载核对。", 409);
     const path = `/devices/${encodeURIComponent(device.device_id)}`;
     const key = JSON.stringify([tenant, device.device_id, device.version, status, trimmed]);
-    const operationId = this.deviceIntents.get(key) ?? crypto.randomUUID();
+    const operationId = this.deviceIntents.get(key) ?? secureRandomUuid();
     this.deviceIntents.set(key, operationId);
     const receipt = await this.deviceMutation(path, status === "active" ? "enable" : status === "disabled" ? "disable" : "revoke", tenant, operationId, device.version, status, trimmed);
     if (receipt.binding_id !== null) throw invalidResponse();
@@ -820,7 +836,7 @@ export class ManagementClient {
       throw new ManagementError("绑定已变化或原因无效，请重新加载核对。", 400);
     const path = `/devices/${encodeURIComponent(binding.device_id)}`;
     const key = JSON.stringify([tenant, binding.device_id, binding.binding_id, binding.version, trimmed]);
-    const operationId = this.deviceIntents.get(key) ?? crypto.randomUUID();
+    const operationId = this.deviceIntents.get(key) ?? secureRandomUuid();
     this.deviceIntents.set(key, operationId);
     const receipt = await this.deviceMutation(`${path}/bindings/${encodeURIComponent(binding.binding_id)}`, "unbind", tenant, operationId, binding.version, "unbound", trimmed, path);
     if (receipt.binding_id !== binding.binding_id) throw invalidResponse();
@@ -1256,19 +1272,19 @@ export class ManagementClient {
   }
 
   async selectTenant(tenantId: string) {
-    if (this.browser) {
+    if (this.isCookieMode()) {
       const selection = this.selection;
       if (!selection || selection.expiresAt <= Date.now()) throw new ManagementError("请重新登录以选择租户。", 401);
       const revision = this.revision;
       const original = this.credentials?.session;
-      await this.browser.run(async () => {
-        this.browser!.check(); this.current(revision);
+      await this.browserOperation(async () => {
+        this.browser?.check(); this.current(revision);
         try {
           const result = await this.browserRequest("/tenant-selection/complete", { tenant_id: tenantId }, `TenantSelection ${selection.ticket}`);
           this.current(revision);
           const session = sessionFrom(object(result).session);
           if (session.tenant_id !== tenantId || original && session.account_id !== original.account_id) throw invalidResponse();
-          this.browser!.mark("changed");
+          this.browser?.mark("changed");
           this.accept(result, false); this.revision++; this.refreshing = undefined;
         } catch (error) { this.browserFailure(error, revision, false); throw error; }
       });
@@ -1286,16 +1302,17 @@ export class ManagementClient {
   }
 
   async logout() {
-    if (this.browser) {
+    if (this.isCookieMode()) {
       const expected = this.expectedSession();
       this.clear();
+      if (this.development && !expected) return;
       const revision = this.revision;
-      await this.browser.run(async () => {
-        this.browser!.check(); this.current(revision);
+      await this.browserOperation(async () => {
+        this.browser?.check(); this.current(revision);
         try {
           await this.browserRequest("/logout", expected);
           this.current(revision);
-          this.browser!.mark("changed");
+          this.browser?.mark("changed");
         } catch (error) { this.browserFailure(error, revision); throw error; }
       });
       return;

@@ -38,20 +38,23 @@ impl ScanDeviceHttpConfig {
         external_prefix: &str,
         verification_uri: &str,
     ) -> Result<Self, crate::ProofHttpError> {
+        Self::new_with_transport_policy(
+            audience,
+            external_prefix,
+            verification_uri,
+            &crate::HttpTransportPolicy::Default,
+        )
+    }
+    pub fn new_with_transport_policy(
+        audience: &str,
+        external_prefix: &str,
+        verification_uri: &str,
+        policy: &crate::HttpTransportPolicy,
+    ) -> Result<Self, crate::ProofHttpError> {
         let verification: Uri = verification_uri
             .parse()
             .map_err(|_| crate::ProofHttpError::ProofInvalid)?;
-        let scheme = verification.scheme_str().unwrap_or_default();
-        let loopback = matches!(
-            verification.host(),
-            Some("localhost" | "127.0.0.1" | "[::1]")
-        );
-        if verification_uri.contains('#')
-            || verification
-                .authority()
-                .is_some_and(|authority| authority.as_str().contains('@'))
-            || !(scheme == "https" || scheme == "http" && loopback)
-        {
+        if verification_uri.contains('#') || policy.restricted(&verification).is_err() {
             return Err(crate::ProofHttpError::ProofInvalid);
         }
         let profile = DeviceProofProfile::new(SCAN_LOGIN_PROOF_PROFILE)
@@ -111,6 +114,20 @@ struct DeviceState {
     config: ScanDeviceHttpConfig,
 }
 
+/// Validates identity-service restriction at host startup.
+pub fn try_scan_browser_router(
+    service: Arc<dyn TenantDeviceScanLoginService>,
+    identity: Arc<dyn BrowserSessionIdentityService>,
+    config: BrowserSessionHttpConfig,
+) -> Result<Router, &'static str> {
+    if identity.browser_session_lifetime_secs() != config.development_ttl_secs() {
+        return Err("browser identity service lifetime mismatch");
+    }
+    if config.purpose() != embedded_idp_core::AccessTokenPurpose::Business {
+        return Err("scan browser requires business purpose");
+    }
+    Ok(scan_browser_router(service, identity, config))
+}
 pub fn scan_browser_router(
     service: Arc<dyn TenantDeviceScanLoginService>,
     identity: Arc<dyn BrowserSessionIdentityService>,
@@ -161,6 +178,12 @@ fn exactly(h: &HeaderMap, key: &str, expected: &str) -> bool {
     it.next().is_some_and(|v| v == expected) && it.next().is_none()
 }
 async fn browser_guard(State(s): State<BrowserState>, request: Request, next: Next) -> Response {
+    if s.identity.browser_session_lifetime_secs() != s.config.development_ttl_secs() {
+        return err(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "browser_session_configuration_mismatch",
+        );
+    }
     let h = request.headers();
     if s.config.purpose() != embedded_idp_core::AccessTokenPurpose::Business
         || !exactly(h, "origin", s.config.origin())
@@ -242,13 +265,40 @@ async fn source(
     expected: Option<Expected>,
     host: TrustedScanHostContext,
 ) -> Result<ScanSourceCall, Response> {
+    let restricted = state.config.development_ttl_secs().is_some();
+    if restricted && expected.is_none() {
+        return Err(err(
+            StatusCode::BAD_REQUEST,
+            "browser_expected_session_required",
+        ));
+    }
     let cookie = credential(headers, state.config.cookie_name())
         .map_err(|_| err(StatusCode::BAD_REQUEST, "invalid_request"))?
-        .ok_or_else(|| err(StatusCode::UNAUTHORIZED, "browser_session_invalid"))?;
+        .ok_or_else(|| {
+            err(
+                StatusCode::UNAUTHORIZED,
+                if restricted {
+                    "browser_session_expired"
+                } else {
+                    "browser_session_invalid"
+                },
+            )
+        })?;
     let identity = state.identity.clone();
     let session = call(move || identity.authenticate_browser(cookie, expected.map(Into::into)))
         .await
-        .map_err(|error| scan_err(ScanLoginError::Auth(error)))?;
+        .map_err(|error| {
+            if restricted
+                && matches!(
+                    error,
+                    TenantAuthError::InvalidSession | TenantAuthError::InvalidRefresh
+                )
+            {
+                err(StatusCode::UNAUTHORIZED, "browser_session_expired")
+            } else {
+                scan_err(ScanLoginError::Auth(error))
+            }
+        })?;
     Ok(ScanSourceCall {
         source: session,
         host,
@@ -1199,6 +1249,112 @@ mod tests {
             .status(),
             StatusCode::SERVICE_UNAVAILABLE
         );
+    }
+    #[test]
+    fn private_verification_uri_uses_the_same_transport_gate() {
+        let policy = crate::HttpTransportPolicy::DevelopmentPrivateNetworkHttp;
+        let result = ScanDeviceHttpConfig::new_with_transport_policy(
+            "device",
+            "/auth/device-scan",
+            "http://192.168.31.159/scan",
+            &policy,
+        );
+        assert_eq!(
+            result.is_ok(),
+            cfg!(all(
+                feature = "development-private-network-http",
+                debug_assertions
+            ))
+        );
+        for uri in [
+            "http://public.example/scan",
+            "http://8.8.8.8/scan",
+            "http://192.168.31.159/scan#fragment",
+            "http://user@192.168.31.159/scan",
+        ] {
+            assert!(ScanDeviceHttpConfig::new_with_transport_policy(
+                "device",
+                "/auth/device-scan",
+                uri,
+                &policy
+            )
+            .is_err());
+        }
+    }
+
+    #[cfg(all(feature = "development-private-network-http", debug_assertions))]
+    #[tokio::test]
+    async fn private_context_requires_restricted_identity_and_page_assertion() {
+        struct RestrictedIdentity;
+        impl BrowserSessionIdentityService for RestrictedIdentity {
+            fn browser_session_lifetime_secs(&self) -> Option<u64> {
+                Some(900)
+            }
+            fn authenticate_browser(
+                &self,
+                _: SecretString,
+                expected: Option<BrowserSessionIdentity>,
+            ) -> Result<AuthenticatedBrowserSession, TenantAuthError> {
+                assert!(expected.is_some());
+                Err(TenantAuthError::InvalidRefresh)
+            }
+        }
+        let config = BrowserSessionHttpConfig::new_with_transport_policy(
+            "http://192.168.31.159",
+            "business",
+            "/auth/browser",
+            embedded_idp_core::AccessTokenPurpose::Business,
+            &crate::HttpTransportPolicy::DevelopmentPrivateNetworkHttp,
+        )
+        .unwrap();
+        assert!(try_scan_browser_router(
+            Arc::new(ScanStub::default()),
+            Arc::new(IdentityStub),
+            config.clone()
+        )
+        .is_err());
+        let app = try_scan_browser_router(
+            Arc::new(ScanStub::default()),
+            Arc::new(RestrictedIdentity),
+            config,
+        )
+        .unwrap()
+        .layer(Extension(TrustedScanHostContext::new(
+            "host".into(),
+            SystemTime::now() + Duration::from_secs(5),
+        )));
+        for (body, status, code) in [
+            (
+                "{}",
+                StatusCode::BAD_REQUEST,
+                "browser_expected_session_required",
+            ),
+            (
+                r#"{"expected_session":{"tenant_id":"tenant-a","account_id":"account-a","session_id":"session-a","client_id":"phone"}}"#,
+                StatusCode::UNAUTHORIZED,
+                "browser_session_expired",
+            ),
+        ] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::post("/context")
+                        .header("origin", "http://192.168.31.159")
+                        .header("content-type", "application/json")
+                        .header("x-embedded-idp-browser", "1")
+                        .header("cookie", "business=synthetic")
+                        .body(Body::from(body))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), status);
+            let bytes = to_bytes(response.into_body(), 4096).await.unwrap();
+            assert_eq!(
+                serde_json::from_slice::<serde_json::Value>(&bytes).unwrap()["error"],
+                code
+            );
+        }
     }
     #[test]
     fn rejects_unsafe_verification_uri() {

@@ -1,7 +1,13 @@
+mod http_transport;
+pub use http_transport::HttpTransportPolicy;
 mod browser_session;
-pub use browser_session::{browser_session_router, BrowserSessionHttpConfig};
+pub use browser_session::{
+    browser_session_router, BrowserSessionClientConfig, BrowserSessionHttpConfig,
+};
 mod device_scan_login;
-pub use device_scan_login::{scan_browser_router, scan_device_router, ScanDeviceHttpConfig};
+pub use device_scan_login::{
+    scan_browser_router, scan_device_router, try_scan_browser_router, ScanDeviceHttpConfig,
+};
 mod management_auth;
 pub use management_auth::management_router;
 mod access_diagnostic;

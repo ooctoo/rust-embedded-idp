@@ -85,7 +85,7 @@ function Console({ client }: { client: ManagementClient }) {
   }, []);
   useEffect(() => { void run(() => client.loadCapabilities()); }, [client, run]);
   useEffect(() => {
-    if (!client.isCookieMode() || !state.capabilities || restoreAttempted.current === client) return;
+    if (!client.supportsRestore() || !state.capabilities || restoreAttempted.current === client) return;
     restoreAttempted.current = client;
     setBusy(true);
     void client.restore().catch(reason => { if (!(reason instanceof ManagementError && reason.status === 401)) setError(errorMessage(reason)); }).finally(() => setBusy(false));
@@ -98,7 +98,7 @@ function Console({ client }: { client: ManagementClient }) {
       await client.verifySession();
       setVerifiedAt(new Date().toLocaleTimeString("zh-CN"));
     });
-    const timeout = window.setTimeout(verify, Math.max(1000, Math.min(2_147_000_000, (state.accessExpiresAt! - 30) * 1000 - Date.now())));
+    const timeout = window.setTimeout(verify, Math.max(1000, Math.min(2_147_000_000, (state.accessExpiresAt! - (client.isDevelopmentMode() ? 0 : 30)) * 1000 - Date.now())));
     const visible = () => { if (document.visibilityState === "visible") verify(); };
     document.addEventListener("visibilitychange", visible);
     return () => { clearTimeout(timeout); document.removeEventListener("visibilitychange", visible); };
@@ -118,6 +118,7 @@ function Console({ client }: { client: ManagementClient }) {
         <div className="management-guidance"><Text strong>登录前确认</Text><Paragraph type="secondary">账号需由管理员创建或授权。登录后的可用操作由服务端实时校验。</Paragraph></div>
       </section>}
       <section className="management-panel" aria-label="管理认证" aria-busy={busy}>
+        {client.isDevelopmentMode() && <Alert type="warning" message="开发登录模式：页面重载或会话到期后需重新登录。" />}
         {state.sessionChanged && <Alert type="info" message="其他页面已更改此会话，请重新加载后继续。" action={<Button onClick={() => window.location.reload()}>重新加载</Button>} />}
         {error && <Alert className="management-error" type="error" showIcon message={error} role="alert" />}
         {!capabilities ? <Card className="management-card">
@@ -156,7 +157,7 @@ function Console({ client }: { client: ManagementClient }) {
             </Form.Item>
             <Button type="primary" htmlType="submit" block size="large" loading={busy}>登录</Button>
           </Form>
-          <Paragraph type="secondary" className="management-note">访问令牌仅保存在当前页面，刷新后会尝试恢复浏览器会话。</Paragraph>
+          <Paragraph type="secondary" className="management-note">{client.supportsRestore() ? "访问令牌仅保存在当前页面，刷新后会尝试恢复浏览器会话。" : "凭证仅保存在当前页面，刷新或到期后需重新登录。"}</Paragraph>
         </Card>}
       </section>
     </main>

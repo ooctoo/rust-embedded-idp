@@ -4,3 +4,5 @@ import "./admin.css";
 export { PermissionDirectory, type PermissionDirectoryClient, type PermissionDirectoryProps } from "../management/permission-directory";
 export { ManagementClient, ManagementError, type AdminPage, type AuthState,
   type DirectoryPermission, type PermissionDirectoryFilter, type PermissionKey, type SortOrder } from "../management/client";
+
+export { secureRandomUuid, validateBrowserClientConfig, type BrowserClientConfig } from "./browser-session";

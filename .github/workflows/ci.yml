@@ -39,3 +39,6 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo check --workspace --all-targets --locked
       - run: cargo test --workspace --locked
+
+      - run: cargo test -p embedded-idp-core -p embedded-idp-axum -p embedded-idp-app --features embedded-idp-app/development-private-network-http --locked
+      - run: cargo test -p embedded-idp-axum --release --features development-private-network-http http_transport::tests --locked
