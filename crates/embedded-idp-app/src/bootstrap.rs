@@ -121,8 +121,11 @@ pub fn build_app(config: &EmbeddedIdpAppConfig) -> Result<Router, String> {
 pub fn build_app_with_scan_cleanup(
     config: &EmbeddedIdpAppConfig,
 ) -> Result<AppComposition, String> {
+    let business_http = config.browser_http_config(AccessTokenPurpose::Business)?;
+    let management_http = config.browser_http_config(AccessTokenPurpose::Management)?;
+    let browser_lifetime = business_http.client_config().session_ttl_secs;
     let key = signing_key(&config.signing_key_file)?;
-    let jwt_config = |management: bool| ProductionJwtConfig {
+    let jwt_config = |management: bool, browser: bool| ProductionJwtConfig {
         issuer: config.embedded_idp.issuer.clone(),
         audience: if management {
             "embedded-idp-management"
@@ -136,17 +139,27 @@ pub fn build_app_with_scan_cleanup(
             "openid profile email"
         }
         .into(),
-        access_token_ttl_secs: config.embedded_idp.auth.access_token_ttl_secs,
-        refresh_token_ttl_secs: config.embedded_idp.auth.refresh_token_ttl_secs,
+        access_token_ttl_secs: if browser {
+            browser_lifetime.map_or(config.embedded_idp.auth.access_token_ttl_secs, |ttl| {
+                config.embedded_idp.auth.access_token_ttl_secs.min(ttl - 1)
+            })
+        } else {
+            config.embedded_idp.auth.access_token_ttl_secs
+        },
+        refresh_token_ttl_secs: if browser {
+            browser_lifetime.map_or(config.embedded_idp.auth.refresh_token_ttl_secs, |ttl| {
+                config.embedded_idp.auth.refresh_token_ttl_secs.min(ttl)
+            })
+        } else {
+            config.embedded_idp.auth.refresh_token_ttl_secs
+        },
         clock_skew_secs: 0,
     };
-    let tokens = || {
-        Rs256JwtService::new(jwt_config(false), key.clone(), vec![])
+    let tokens = |browser: bool| {
+        Rs256JwtService::new(jwt_config(false, browser), key.clone(), vec![])
             .map_err(|_| "invalid business token configuration".to_string())
     };
-    let management_tokens = Rs256JwtService::new_management(jwt_config(true), key.clone(), vec![])
-        .map_err(|_| "invalid management token configuration")?;
-    let metadata = tokens()?;
+    let metadata = tokens(false)?;
     let jwks = metadata
         .jwks_document()
         .map_err(|_| "cannot publish public signing key")?;
@@ -213,24 +226,28 @@ pub fn build_app_with_scan_cleanup(
             admin(),
             PhcClientSecretCodec,
         ))));
-    let management = CoreManagementAuthenticationService::new(
-        mode,
-        config.embedded_idp.auth.clone(),
-        TenantLoginEntry {
-            client_id: MANAGEMENT_CLIENT.into(),
-            login_entry: "management".into(),
-            policy: config.management_policy.clone(),
-            require_device_proof: false,
-        },
-        store.clone(),
-        management_tokens,
-        SecureRefreshTokenGenerator,
-        Sha256RefreshTokenDigester,
-        SystemClock,
-        UuidV7IdGenerator,
-    )
-    .map_err(|_| "invalid management login configuration")?;
-    let auth = || {
+    let management_auth = |browser: bool| {
+        CoreManagementAuthenticationService::new(
+            mode,
+            config.embedded_idp.auth.clone(),
+            TenantLoginEntry {
+                client_id: MANAGEMENT_CLIENT.into(),
+                login_entry: "management".into(),
+                policy: config.management_policy.clone(),
+                require_device_proof: false,
+            },
+            store.clone(),
+            Rs256JwtService::new_management(jwt_config(true, browser), key.clone(), vec![])
+                .map_err(|_| "invalid management token configuration")?,
+            SecureRefreshTokenGenerator,
+            Sha256RefreshTokenDigester,
+            SystemClock,
+            UuidV7IdGenerator,
+        )
+        .map_err(|_| "invalid management login configuration")
+    };
+    let management = management_auth(false)?;
+    let auth = |browser: bool| {
         CoreTenantAuthenticationService::new(
             mode,
             config.embedded_idp.auth.clone(),
@@ -241,7 +258,7 @@ pub fn build_app_with_scan_cleanup(
                 require_device_proof: false,
             },
             store.clone(),
-            tokens()?,
+            tokens(browser)?,
             SecureRefreshTokenGenerator,
             Sha256RefreshTokenDigester,
             SystemClock,
@@ -298,12 +315,12 @@ pub fn build_app_with_scan_cleanup(
         .map_err(|_| "invalid device proof configuration")
     };
     let devices = Arc::new(CoreTenantDeviceAuthenticationService::new(
-        auth()?,
+        auth(false)?,
         proofs()?,
     ));
     let oidc = || {
         CoreTenantOidcService::new(
-            auth()?,
+            auth(false)?,
             config.embedded_idp.issuer.clone(),
             config.embedded_idp.oidc.clone(),
             "openid profile email".into(),
@@ -329,25 +346,33 @@ pub fn build_app_with_scan_cleanup(
         },
     ));
     let management = Arc::new(management);
-    let cookie_prefix = format!("idp_{}", config.bind_addr.port());
-    let browser_business = browser_session_router(
-        Arc::new(auth()?),
-        BrowserSessionHttpConfig::new(
-            &config.browser_origin,
-            &format!("{cookie_prefix}_business"),
-            "/auth/browser",
-            AccessTokenPurpose::Business,
-        )?,
-    )?;
-    let browser_management = browser_session_router(
-        management.clone(),
-        BrowserSessionHttpConfig::new(
-            &config.browser_origin,
-            &format!("{cookie_prefix}_management"),
-            "/api/admin/auth/browser",
-            AccessTokenPurpose::Management,
-        )?,
-    )?;
+    let browser_business_service: Arc<dyn BrowserSessionService> = match browser_lifetime {
+        Some(ttl) => Arc::new(
+            auth(true)?
+                .into_restricted_browser(ttl)
+                .map_err(|_| "invalid browser lifetime")?,
+        ),
+        None => Arc::new(auth(false)?),
+    };
+    let browser_identity: Arc<dyn BrowserSessionIdentityService> = match browser_lifetime {
+        Some(ttl) => Arc::new(
+            auth(true)?
+                .into_restricted_browser(ttl)
+                .map_err(|_| "invalid browser lifetime")?,
+        ),
+        None => Arc::new(auth(false)?),
+    };
+    let browser_management_service: Arc<dyn BrowserSessionService> = match browser_lifetime {
+        Some(ttl) => Arc::new(
+            management_auth(true)?
+                .into_restricted_browser(ttl)
+                .map_err(|_| "invalid management browser lifetime")?,
+        ),
+        None => management.clone(),
+    };
+    let browser_business = browser_session_router(browser_business_service, business_http.clone())?;
+    let browser_management =
+        browser_session_router(browser_management_service, management_http.clone())?;
     let scan_service: Option<Arc<dyn TenantDeviceScanLoginService>> = match &config.scan_login {
         None => None,
         Some(scan) => {
@@ -361,7 +386,7 @@ pub fn build_app_with_scan_cleanup(
                     require_device_proof: true,
                 },
                 store.clone(),
-                tokens()?,
+                tokens(false)?,
                 SecureRefreshTokenGenerator,
                 Sha256RefreshTokenDigester,
                 SystemClock,
@@ -425,7 +450,7 @@ pub fn build_app_with_scan_cleanup(
     ))
     .merge(tenant_oidc_resource_router(Arc::new(oidc()?)));
     let public = public.merge(tenant_self_router(
-        Arc::new(auth()?),
+        Arc::new(auth(false)?),
         Arc::new(CoreAccessService::new(mode, catalog.clone(), store.clone())),
     ));
     let public = if let Some(service) = scan_service.clone() {
@@ -433,20 +458,12 @@ pub fn build_app_with_scan_cleanup(
             "reference-host".into(),
             SystemTime::now() + Duration::from_secs(365 * 24 * 60 * 60),
         );
-        let browser = scan_browser_router(
-            service.clone(),
-            Arc::new(auth()?),
-            BrowserSessionHttpConfig::new(
-                &config.browser_origin,
-                &format!("{cookie_prefix}_business"),
-                "/auth/browser",
-                AccessTokenPurpose::Business,
-            )?,
-        )
-        .layer(Extension(host.clone()));
+        let browser =
+            try_scan_browser_router(service.clone(), browser_identity, business_http.clone())?
+                .layer(Extension(host.clone()));
         let device = scan_device_router(
             service,
-            ScanDeviceHttpConfig::new(
+            ScanDeviceHttpConfig::new_with_transport_policy(
                 BUSINESS_AUDIENCE,
                 "/auth/device-scan",
                 &config
@@ -454,13 +471,17 @@ pub fn build_app_with_scan_cleanup(
                     .as_ref()
                     .expect("scan service requires scan config")
                     .verification_uri,
+                &config.transport_policy,
             )
             .map_err(|_| "invalid reference scan-login device routes")?,
         )
         .layer(Extension(host));
         public
             .nest("/auth/browser/device-scan", browser)
-            .nest("/auth/browser/device-scan/ui", scan_reference_ui_router())
+            .nest(
+                "/auth/browser/device-scan/ui",
+                scan_reference_ui_router(business_http.client_config()),
+            )
             .nest("/auth/device-scan", device)
     } else {
         public
@@ -511,7 +532,10 @@ pub fn build_app_with_scan_cleanup(
                     }
                 }),
             )
-            .merge(admin_console_router(&config.admin_ui_base_path))
+            .merge(admin_console_router(
+                &config.admin_ui_base_path,
+                management_http.client_config(),
+            ))
             .nest(
                 "/api",
                 management_router(management, admin_routes).merge(browser_management),

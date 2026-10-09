@@ -10,7 +10,7 @@ use axum::{
     Json, Router,
 };
 use embedded_idp_core::{access::*, AccessTokenPurpose, IssuedTokenBundle, SecretString};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::{
@@ -23,7 +23,8 @@ use crate::{
 };
 
 /// Trusted external origin and cookie scope, including the host's outer prefix.
-/// HTTP is accepted only for explicit loopback development origins.
+/// Defaults to HTTPS or explicit loopback HTTP. Private HTTP requires a gated
+/// host-selected policy and a matching restricted browser service.
 #[derive(Clone, Debug)]
 pub struct BrowserSessionHttpConfig {
     origin: String,
@@ -31,6 +32,7 @@ pub struct BrowserSessionHttpConfig {
     cookie_path: String,
     secure: bool,
     purpose: AccessTokenPurpose,
+    development_ttl_secs: Option<u64>,
 }
 impl BrowserSessionHttpConfig {
     pub fn new(
@@ -39,18 +41,28 @@ impl BrowserSessionHttpConfig {
         cookie_path: &str,
         purpose: AccessTokenPurpose,
     ) -> Result<Self, &'static str> {
+        Self::new_with_transport_policy(
+            origin,
+            cookie_name,
+            cookie_path,
+            purpose,
+            &crate::HttpTransportPolicy::Default,
+        )
+    }
+    pub fn new_with_transport_policy(
+        origin: &str,
+        cookie_name: &str,
+        cookie_path: &str,
+        purpose: AccessTokenPurpose,
+        policy: &crate::HttpTransportPolicy,
+    ) -> Result<Self, &'static str> {
         let uri: Uri = origin.parse().map_err(|_| "invalid browser origin")?;
         let scheme = uri.scheme_str().ok_or("invalid browser origin")?;
         let authority = uri.authority().ok_or("invalid browser origin")?;
-        if uri.host().is_none_or(str::is_empty)
-            || origin != format!("{scheme}://{authority}")
-            || authority.as_str().contains('@')
-            || !(scheme == "https"
-                || scheme == "http"
-                    && matches!(uri.host(), Some("localhost" | "127.0.0.1" | "[::1]")))
-        {
-            return Err("browser origin requires HTTPS or explicit loopback HTTP");
+        if origin != format!("{scheme}://{authority}") {
+            return Err("invalid browser origin");
         }
+        let restricted = policy.restricted(&uri)?;
         if cookie_name.is_empty()
             || cookie_name.len() > 64
             || cookie_name.starts_with("__Host-")
@@ -80,7 +92,31 @@ impl BrowserSessionHttpConfig {
             cookie_path: cookie_path.into(),
             secure: scheme == "https",
             purpose,
+            development_ttl_secs: restricted.then_some(900),
         })
+    }
+    /// Only private HTTP has restricted sessions. HTTPS and loopback defaults are unchanged.
+    pub fn with_development_session_ttl_secs(mut self, secs: u64) -> Result<Self, &'static str> {
+        if self.development_ttl_secs.is_none() || !(60..=3600).contains(&secs) {
+            return Err("development browser lifetime requires private HTTP and 60..=3600 seconds");
+        }
+        self.development_ttl_secs = Some(secs);
+        Ok(self)
+    }
+    pub fn client_config(&self) -> BrowserSessionClientConfig {
+        BrowserSessionClientConfig {
+            mode: if self.development_ttl_secs.is_some() {
+                "development_login"
+            } else {
+                "cookie"
+            },
+            session_ttl_secs: self.development_ttl_secs,
+            restore: self.development_ttl_secs.is_none(),
+            refresh: self.development_ttl_secs.is_none(),
+        }
+    }
+    pub(crate) fn development_ttl_secs(&self) -> Option<u64> {
+        self.development_ttl_secs
     }
     fn cookie(&self, raw: &str, max_age: u64) -> HeaderValue {
         // raw is validated before this boundary; no user-controlled header syntax.
@@ -108,6 +144,14 @@ impl BrowserSessionHttpConfig {
         self.purpose
     }
 }
+/// Serialize this server-derived descriptor into trusted host Web bootstrap data.
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct BrowserSessionClientConfig {
+    pub mode: &'static str,
+    pub session_ttl_secs: Option<u64>,
+    pub restore: bool,
+    pub refresh: bool,
+}
 fn route_root(purpose: AccessTokenPurpose) -> &'static str {
     match purpose {
         AccessTokenPurpose::Business => "/auth/browser",
@@ -127,6 +171,9 @@ pub fn browser_session_router(
 ) -> Result<Router, &'static str> {
     if service.browser_purpose() != config.purpose {
         return Err("browser service purpose mismatch");
+    }
+    if service.browser_session_lifetime_secs() != config.development_ttl_secs {
+        return Err("browser service lifetime mismatch");
     }
     let root = route_root(config.purpose);
     let state = BrowserState { service, config };
@@ -199,6 +246,23 @@ fn bad_cookie() -> Response {
         "invalid_request",
         "invalid browser cookie",
     )
+}
+pub(crate) fn restricted_browser_error(error: TenantAuthError) -> Response {
+    match error {
+        TenantAuthError::InvalidSession | TenantAuthError::InvalidRefresh => tenant_error(
+            StatusCode::UNAUTHORIZED,
+            "browser_session_expired",
+            "browser session expired",
+        ),
+        TenantAuthError::Access(AccessError::InvalidInput("browser_expected_session_required")) => {
+            tenant_error(
+                StatusCode::BAD_REQUEST,
+                "browser_expected_session_required",
+                "expected session is required",
+            )
+        }
+        other => browser_error(other),
+    }
 }
 fn browser_error(error: TenantAuthError) -> Response {
     match error {
@@ -303,6 +367,13 @@ async fn refresh(
     headers: HeaderMap,
     body: Json<SessionRequest>,
 ) -> Response {
+    if state.config.development_ttl_secs.is_some() {
+        return tenant_error(
+            StatusCode::FORBIDDEN,
+            "browser_refresh_disabled",
+            "browser refresh disabled",
+        );
+    }
     if body.expected_session.is_none() {
         return tenant_error(
             StatusCode::BAD_REQUEST,
@@ -317,6 +388,13 @@ async fn restore(
     headers: HeaderMap,
     Json(body): Json<SessionRequest>,
 ) -> Response {
+    if state.config.development_ttl_secs.is_some() {
+        return tenant_error(
+            StatusCode::FORBIDDEN,
+            "browser_restore_disabled",
+            "browser restore disabled",
+        );
+    }
     let token = match credential(&headers, &state.config.cookie_name) {
         Ok(Some(token)) => token,
         Ok(None) => {
@@ -364,6 +442,13 @@ async fn logout(
     headers: HeaderMap,
     Json(body): Json<SessionRequest>,
 ) -> Response {
+    if state.config.development_ttl_secs.is_some() && body.expected_session.is_none() {
+        return tenant_error(
+            StatusCode::BAD_REQUEST,
+            "browser_expected_session_required",
+            "expected session is required",
+        );
+    }
     let token = match credential(&headers, &state.config.cookie_name) {
         Ok(Some(token)) => token,
         Ok(None) => return state.config.clear(StatusCode::NO_CONTENT.into_response()),
@@ -377,6 +462,9 @@ async fn logout(
     .await
     {
         Ok(()) => state.config.clear(StatusCode::NO_CONTENT.into_response()),
+        Err(error) if state.config.development_ttl_secs.is_some() => {
+            restricted_browser_error(error)
+        }
         Err(error) => browser_error(error),
     }
 }

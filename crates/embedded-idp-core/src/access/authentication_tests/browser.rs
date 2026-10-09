@@ -551,3 +551,347 @@ fn browser_sessions_reject_device_proof_entries() {
         Err(TenantAuthError::DeviceProofRequired)
     );
 }
+
+fn long_browser_service(
+    store: S,
+    policy: LoginTenantPolicy,
+) -> CoreTenantAuthenticationService<S, Tok, G, Dg, C, I> {
+    CoreTenantAuthenticationService::new(
+        TenancyMode::Enabled,
+        AuthConfig {
+            allow_local_registration: true,
+            access_token_ttl_secs: 60,
+            refresh_token_ttl_secs: 86400,
+            session_ttl_secs: 86400,
+            verification_code_ttl_secs: 60,
+            password_min_length: 8,
+            password_max_length: 128,
+        },
+        TenantLoginEntry {
+            client_id: "web".into(),
+            login_entry: "login".into(),
+            policy,
+            require_device_proof: false,
+        },
+        store,
+        Tok,
+        G,
+        Dg,
+        C,
+        I,
+    )
+    .unwrap()
+}
+
+#[test]
+fn restricted_browser_issuance_is_persisted_bounded_and_cannot_refresh() {
+    let store = seed();
+    let policy = LoginTenantPolicy::Fixed {
+        tenant_id: "t1".into(),
+    };
+    let auth = long_browser_service(store.clone(), policy.clone())
+        .into_restricted_browser(120)
+        .unwrap();
+    assert_eq!(
+        BrowserSessionService::browser_session_lifetime_secs(&auth),
+        Some(120)
+    );
+    assert_eq!(
+        BrowserSessionIdentityService::browser_session_lifetime_secs(&auth),
+        Some(120)
+    );
+    let TenantLoginOutcome::Authenticated(session) = auth.browser_login(login()).unwrap() else {
+        panic!()
+    };
+    assert_eq!(
+        session.session.expires_at,
+        C.now() + Duration::from_secs(120)
+    );
+    assert_eq!(
+        store.0.lock().unwrap().sessions[0].expires_at,
+        session.session.expires_at
+    );
+    assert_eq!(
+        store.0.lock().unwrap().refreshes[0].expires_at,
+        session.tokens.refresh_expires_at
+    );
+    assert_eq!(
+        auth.browser_refresh(
+            session.tokens.refresh_token.clone(),
+            Some(identity(&session.session))
+        ),
+        Err(AccessError::InvalidInput("browser_refresh_disabled").into())
+    );
+    assert_eq!(
+        auth.browser_logout(session.tokens.refresh_token.clone(), None),
+        Err(AccessError::InvalidInput("browser_expected_session_required").into())
+    );
+    assert_eq!(
+        auth.authenticate_browser(session.tokens.refresh_token.clone(), None),
+        Err(AccessError::InvalidInput("browser_expected_session_required").into())
+    );
+    let mut wrong = identity(&session.session);
+    wrong.account_id = "other".into();
+    assert_eq!(
+        auth.authenticate_browser(session.tokens.refresh_token.clone(), Some(wrong.clone())),
+        Err(AccessError::InvalidInput("browser_session_changed").into())
+    );
+    assert_eq!(
+        auth.browser_logout(session.tokens.refresh_token.clone(), Some(wrong)),
+        Err(AccessError::InvalidInput("browser_session_changed").into())
+    );
+    assert!(store.0.lock().unwrap().refreshes[0].revoked_at.is_none());
+    assert!(auth
+        .authenticate_browser(
+            session.tokens.refresh_token.clone(),
+            Some(identity(&session.session))
+        )
+        .is_ok());
+    auth.browser_logout(
+        session.tokens.refresh_token,
+        Some(identity(&session.session)),
+    )
+    .unwrap();
+    assert!(store.0.lock().unwrap().refreshes[0].revoked_at.is_some());
+
+    // A separately composed ordinary service retains its configured duration.
+    let ordinary = long_browser_service(store.clone(), policy);
+    let TenantLoginOutcome::Authenticated(session) = ordinary.browser_login(login()).unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(
+        session.session.expires_at,
+        C.now() + Duration::from_secs(86400)
+    );
+    assert_eq!(
+        BrowserSessionService::browser_session_lifetime_secs(&ordinary),
+        None
+    );
+}
+
+#[test]
+fn restricted_browser_rejects_overlong_issuer_atomically_including_selection() {
+    for selection in [false, true] {
+        let store = seed();
+        let policy = if selection {
+            LoginTenantPolicy::ChooseAfterAuthentication
+        } else {
+            LoginTenantPolicy::Fixed {
+                tenant_id: "t1".into(),
+            }
+        };
+        let auth = long_browser_service(store.clone(), policy)
+            .into_restricted_browser(60)
+            .unwrap();
+        let result = if selection {
+            let TenantLoginOutcome::SelectionRequired(ticket) =
+                auth.browser_login(login()).unwrap()
+            else {
+                panic!()
+            };
+            auth.browser_select(ticket.ticket, "t1".into())
+                .map(TenantLoginOutcome::Authenticated)
+        } else {
+            auth.browser_login(login())
+        };
+        assert!(matches!(result, Err(TenantAuthError::Token(_))));
+        let state = store.0.lock().unwrap();
+        assert!(state.sessions.is_empty());
+        assert!(state.refreshes.is_empty());
+        assert!(state
+            .selections
+            .iter()
+            .all(|ticket| ticket.consumed_at.is_none()));
+    }
+    for seconds in [0, 59, 3601, u64::MAX] {
+        assert!(long_browser_service(
+            seed(),
+            LoginTenantPolicy::Fixed {
+                tenant_id: "t1".into()
+            }
+        )
+        .into_restricted_browser(seconds)
+        .is_err());
+    }
+}
+
+#[test]
+fn restricted_browser_rejects_existing_long_lived_cookie_for_scan_identity() {
+    let store = seed();
+    let policy = LoginTenantPolicy::Fixed {
+        tenant_id: "t1".into(),
+    };
+    let ordinary = long_browser_service(store.clone(), policy.clone());
+    let TenantLoginOutcome::Authenticated(session) = ordinary.browser_login(login()).unwrap()
+    else {
+        panic!()
+    };
+    let restricted = long_browser_service(store.clone(), policy)
+        .into_restricted_browser(120)
+        .unwrap();
+    assert_eq!(
+        restricted.authenticate_browser(
+            session.tokens.refresh_token.clone(),
+            Some(identity(&session.session))
+        ),
+        Err(TenantAuthError::InvalidSession)
+    );
+    assert!(ordinary
+        .authenticate_browser(
+            session.tokens.refresh_token,
+            Some(identity(&session.session))
+        )
+        .is_ok());
+    assert_eq!(
+        store.0.lock().unwrap().sessions[0].status,
+        SessionStatus::Active
+    );
+}
+
+#[test]
+fn restricted_browser_selection_and_management_remain_purpose_bound() {
+    let store = seed();
+    let restricted =
+        long_browser_service(store.clone(), LoginTenantPolicy::ChooseAfterAuthentication)
+            .into_restricted_browser(120)
+            .unwrap();
+    let TenantLoginOutcome::SelectionRequired(ticket) = restricted.browser_login(login()).unwrap()
+    else {
+        panic!()
+    };
+    let selected = restricted
+        .browser_select(ticket.ticket, "t1".into())
+        .unwrap();
+    assert_eq!(
+        selected.session.expires_at,
+        C.now() + Duration::from_secs(120)
+    );
+    store.0.lock().unwrap().members.push(m("0", "a"));
+    let admin = management::management(
+        TenancyMode::Enabled,
+        LoginTenantPolicy::Fixed {
+            tenant_id: "0".into(),
+        },
+        store.clone(),
+    )
+    .into_restricted_browser(120)
+    .unwrap();
+    let TenantLoginOutcome::Authenticated(session) = admin.browser_login(login()).unwrap() else {
+        panic!()
+    };
+    assert_eq!(admin.browser_purpose(), AccessTokenPurpose::Management);
+    assert_eq!(session.session.purpose, AccessTokenPurpose::Management);
+    assert_eq!(
+        admin.authenticate_browser(
+            session.tokens.refresh_token.clone(),
+            Some(identity(&session.session))
+        ),
+        Err(TenantAuthError::InvalidSession)
+    );
+    assert_eq!(
+        admin.browser_refresh(
+            session.tokens.refresh_token.clone(),
+            Some(identity(&session.session))
+        ),
+        Err(AccessError::InvalidInput("browser_refresh_disabled").into())
+    );
+    admin
+        .browser_logout(
+            session.tokens.refresh_token,
+            Some(identity(&session.session)),
+        )
+        .unwrap();
+}
+
+#[test]
+fn restricted_browser_rejects_overlong_signed_claim_even_with_short_bundle_metadata() {
+    struct LongClaims;
+    impl TokenIssuer for LongClaims {
+        fn issue_session_tokens(
+            &self,
+            t: &str,
+            s: &str,
+            a: &str,
+            c: &str,
+            v: u64,
+            n: SystemTime,
+        ) -> Result<IssuedTokenBundle, TokenError> {
+            Tok.issue_session_tokens(t, s, a, c, v, n)
+        }
+    }
+    impl AccessTokenIssuer for LongClaims {
+        fn issue_access_token(
+            &self,
+            t: &str,
+            s: &str,
+            a: &str,
+            c: &str,
+            n: SystemTime,
+        ) -> Result<IssuedAccessToken, TokenError> {
+            Tok.issue_access_token(t, s, a, c, n)
+        }
+    }
+    impl ScopedAccessTokenIssuer for LongClaims {
+        fn issue_scoped_access_token(
+            &self,
+            t: &str,
+            s: &str,
+            a: &str,
+            c: &str,
+            n: SystemTime,
+            scope: &str,
+        ) -> Result<IssuedAccessToken, TokenError> {
+            Tok.issue_scoped_access_token(t, s, a, c, n, scope)
+        }
+    }
+    impl AccessTokenValidator for LongClaims {
+        fn validate_access_token(
+            &self,
+            raw: &str,
+            now: SystemTime,
+        ) -> Result<Option<ValidatedAccessToken>, TokenError> {
+            Ok(Tok.validate_access_token(raw, now)?.map(|mut claims| {
+                claims.expires_at = now + Duration::from_secs(3600);
+                claims
+            }))
+        }
+    }
+    let store = seed();
+    let restricted = CoreTenantAuthenticationService::new(
+        TenancyMode::Enabled,
+        AuthConfig {
+            allow_local_registration: true,
+            access_token_ttl_secs: 60,
+            refresh_token_ttl_secs: 86400,
+            session_ttl_secs: 86400,
+            verification_code_ttl_secs: 60,
+            password_min_length: 8,
+            password_max_length: 128,
+        },
+        TenantLoginEntry {
+            client_id: "web".into(),
+            login_entry: "login".into(),
+            policy: LoginTenantPolicy::Fixed {
+                tenant_id: "t1".into(),
+            },
+            require_device_proof: false,
+        },
+        store.clone(),
+        LongClaims,
+        G,
+        Dg,
+        C,
+        I,
+    )
+    .unwrap()
+    .into_restricted_browser(120)
+    .unwrap();
+    assert_eq!(
+        restricted.browser_login(login()),
+        Err(TenantAuthError::InvalidSession)
+    );
+    let state = store.0.lock().unwrap();
+    assert!(state.sessions.is_empty());
+    assert!(state.refreshes.is_empty());
+}

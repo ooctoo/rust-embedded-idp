@@ -1,7 +1,9 @@
 use base64ct::{Base64UrlUnpadded, Encoding};
+use embedded_idp_axum::{BrowserSessionHttpConfig, HttpTransportPolicy};
 use embedded_idp_core::access::{
     LoginTenantPolicy, ScanLoginEntryConfig, ScanLoginLimits, ScanLoginMode, TenancyMode,
 };
+use embedded_idp_core::AccessTokenPurpose;
 use std::env;
 use std::net::SocketAddr;
 
@@ -14,6 +16,8 @@ use embedded_idp_storage_postgres::{DbPoolConfig, PgConnectionConfig, PgStorageC
 pub struct EmbeddedIdpAppConfig {
     pub bind_addr: SocketAddr,
     pub browser_origin: String,
+    pub transport_policy: HttpTransportPolicy,
+    pub development_session_ttl_secs: u64,
     pub embedded_idp: EmbeddedIdpConfig,
     pub admin_ui_base_path: String,
     pub postgres: PgStorageConfig,
@@ -98,6 +102,31 @@ pub enum SmtpTlsMode {
 }
 
 impl EmbeddedIdpAppConfig {
+    pub fn browser_http_config(
+        &self,
+        purpose: AccessTokenPurpose,
+    ) -> Result<BrowserSessionHttpConfig, String> {
+        let (suffix, path) = match purpose {
+            AccessTokenPurpose::Business => ("business", "/auth/browser"),
+            AccessTokenPurpose::Management => ("management", "/api/admin/auth/browser"),
+        };
+        let config = BrowserSessionHttpConfig::new_with_transport_policy(
+            &self.browser_origin,
+            &format!("idp_{}_{suffix}", self.bind_addr.port()),
+            path,
+            purpose,
+            &self.transport_policy,
+        )
+        .map_err(str::to_owned)?;
+        if config.client_config().session_ttl_secs.is_some() {
+            config
+                .with_development_session_ttl_secs(self.development_session_ttl_secs)
+                .map_err(str::to_owned)
+        } else {
+            Ok(config)
+        }
+    }
+
     pub fn from_env() -> Result<Self, String> {
         let tenancy_mode = match env::var("EMBEDDED_IDP_APP_TENANCY_MODE") {
             Ok(value) => value,
@@ -114,6 +143,28 @@ impl EmbeddedIdpAppConfig {
             "EMBEDDED_IDP_APP_BROWSER_ORIGIN",
             &format!("http://{bind_addr}"),
         );
+        let transport_policy =
+            match env_var("EMBEDDED_IDP_APP_HTTP_TRANSPORT_POLICY", "default").as_str() {
+                "default" => HttpTransportPolicy::Default,
+                "development-private-network-http" => {
+                    HttpTransportPolicy::DevelopmentPrivateNetworkHttp
+                }
+                _ => return Err("invalid EMBEDDED_IDP_APP_HTTP_TRANSPORT_POLICY".into()),
+            };
+        let development_session_ttl_secs =
+            env_u64("EMBEDDED_IDP_APP_DEVELOPMENT_SESSION_TTL_SECS", 900)?;
+        if !(60..=3600).contains(&development_session_ttl_secs) {
+            return Err("EMBEDDED_IDP_APP_DEVELOPMENT_SESSION_TTL_SECS must be 60..=3600".into());
+        }
+        // Check transport before reading keys or making any database mutation.
+        BrowserSessionHttpConfig::new_with_transport_policy(
+            &browser_origin,
+            "idp_config_check",
+            "/auth/browser",
+            AccessTokenPurpose::Business,
+            &transport_policy,
+        )
+        .map_err(str::to_owned)?;
         let issuer = env_var("EMBEDDED_IDP_APP_ISSUER", &format!("http://{bind_addr}"));
         let admin_ui_base_path = match env::var("EMBEDDED_IDP_APP_ADMIN_UI_BASE_PATH") {
             Ok(value) => normalize_admin_ui_base_path(&value)?,
@@ -220,6 +271,8 @@ impl EmbeddedIdpAppConfig {
         Ok(Self {
             bind_addr,
             browser_origin,
+            transport_policy,
+            development_session_ttl_secs,
             embedded_idp,
             admin_ui_base_path,
             postgres,

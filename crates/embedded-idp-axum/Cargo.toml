@@ -7,6 +7,10 @@ publish.workspace = true
 repository.workspace = true
 description = "Axum HTTP adapter for rust-embedded-idp"
 
+[features]
+default = []
+development-private-network-http = []
+
 [dependencies]
 axum = { version = "0.7", default-features = false, features = ["form", "http1", "json", "original-uri", "query", "tokio"] }
 form_urlencoded = "1"

@@ -799,8 +799,24 @@ impl Host {
         ticket: Option<&str>,
         body: Value,
     ) -> (u16, Option<String>, Value) {
+        self.browser_with_origin(
+            path,
+            cookie,
+            ticket,
+            body,
+            &format!("http://127.0.0.1:{}", self.port),
+        )
+    }
+    fn browser_with_origin(
+        &self,
+        path: &str,
+        cookie: Option<&str>,
+        ticket: Option<&str>,
+        body: Value,
+        origin: &str,
+    ) -> (u16, Option<String>, Value) {
         let body = body.to_string();
-        let mut request = format!("POST {path} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nOrigin: http://127.0.0.1:{}\r\nX-Embedded-Idp-Browser: 1\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: {}\r\n", self.port, self.port, body.len());
+        let mut request = format!("POST {path} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nOrigin: {origin}\r\nX-Embedded-Idp-Browser: 1\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: {}\r\n", self.port, body.len());
         if let Some(cookie) = cookie {
             request.push_str(&format!("Cookie: {cookie}\r\n"));
         }
@@ -991,4 +1007,198 @@ fn browser_cookie_restore_logout_and_purpose_isolation_in_both_modes() {
             401
         );
     }
+}
+
+/// Exercises the actual feature-enabled reference binary with a private external
+/// Origin and a disposable PostgreSQL schema. The TCP socket is loopback: this
+/// is HTTP/server acceptance, not evidence of browser insecure-context support.
+#[cfg(all(feature = "development-private-network-http", debug_assertions))]
+#[test]
+#[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
+fn private_http_development_bounds_browser_sessions_and_rejects_stale_identity() {
+    const ORIGIN: &str = "http://192.168.31.159:8080";
+    const TTL: i64 = 120;
+    let db = Db::new(TenancyMode::Disabled);
+    db.bootstrap();
+    let host = db.start_with(&[
+        ("EMBEDDED_IDP_APP_BROWSER_ORIGIN", ORIGIN),
+        (
+            "EMBEDDED_IDP_APP_HTTP_TRANSPORT_POLICY",
+            "development-private-network-http",
+        ),
+        ("EMBEDDED_IDP_APP_DEVELOPMENT_SESSION_TTL_SECS", "120"),
+        ("EMBEDDED_IDP_APP_SCAN_LOGIN_ENABLED", "true"),
+        (
+            "EMBEDDED_IDP_APP_SCAN_LOGIN_ENTRY_ID",
+            "reference-device-scan",
+        ),
+        (
+            "EMBEDDED_IDP_APP_SCAN_LOGIN_ALLOWED_SOURCE_CLIENT_IDS",
+            "desktop-app",
+        ),
+        (
+            "EMBEDDED_IDP_APP_SCAN_LOGIN_MODES",
+            "device_display,phone_display",
+        ),
+        (
+            "EMBEDDED_IDP_APP_SCAN_LOGIN_VERIFICATION_URI",
+            "http://192.168.31.159:8080/auth/browser/device-scan/ui",
+        ),
+        ("EMBEDDED_IDP_APP_SCAN_LOGIN_RESULT_KEY_ID", "test-key"),
+        (
+            "EMBEDDED_IDP_APP_SCAN_LOGIN_RESULT_KEY_BASE64URL",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        ),
+    ]);
+    let browser = |path: &str, cookie: Option<&str>, body: Value| {
+        host.browser_with_origin(path, cookie, None, body, ORIGIN)
+    };
+    let credentials = json!({"email":"admin@example.test","password":"Runtime-Admin123"});
+    let (status, changed, _) = host.browser_with_origin(
+        "/api/admin/auth/browser/login",
+        None,
+        None,
+        credentials.clone(),
+        "http://192.168.31.160:8080",
+    );
+    assert_eq!(status, 403);
+    assert!(changed.is_none());
+
+    let (status, cookie, admin) = browser("/api/admin/auth/browser/login", None, credentials);
+    assert_eq!(status, 200, "{admin}");
+    let cookie = cookie.unwrap();
+    assert!(cookie.contains("HttpOnly") && cookie.contains("SameSite=Strict"));
+    assert!(cookie.contains("Path=/api/admin/auth/browser"));
+    assert!(!cookie.contains("; Secure"));
+    assert!(admin["tokens"].get("refresh_token").is_none());
+    let admin_id = admin["session"]["session_id"].as_str().unwrap();
+    let lifetime = |session_id: &str| -> (i64, i64, i64) {
+        let row = db.adapter.connect().unwrap().query_one(
+            &format!("select s.expires_at_epoch-s.created_at_epoch, r.expires_at_epoch-r.issued_at_epoch, s.refresh_token_version, r.revoked_at_epoch, s.status from {}.auth_sessions s join {}.refresh_tokens r on r.tenant_id=s.tenant_id and r.session_id=s.id and r.token_version=s.refresh_token_version where s.id::text=$1", db.adapter.schema_name(), db.adapter.schema_name()),
+            &[&session_id],
+        ).unwrap();
+        assert!(
+            row.get::<_, Option<i64>>(3).is_none(),
+            "refresh token was revoked"
+        );
+        assert_eq!(row.get::<_, String>(4), "active");
+        (row.get(0), row.get(1), row.get(2))
+    };
+    let before = lifetime(admin_id);
+    assert!(
+        before.0 > 0 && before.0 <= TTL,
+        "actual database session lifetime: {before:?}"
+    );
+    assert!(
+        before.1 > 0 && before.1 <= TTL,
+        "actual database refresh lifetime: {before:?}"
+    );
+    assert!(
+        admin["tokens"]["access_expires_at_unix_secs"]
+            .as_u64()
+            .unwrap()
+            <= admin["session"]["expires_at_unix_secs"].as_u64().unwrap()
+    );
+    for (action, code) in [
+        ("restore", "browser_restore_disabled"),
+        ("refresh", "browser_refresh_disabled"),
+    ] {
+        let (status, replacement, result) = browser(
+            &format!("/api/admin/auth/browser/{action}"),
+            Some(cookie_pair(&cookie)),
+            json!({"expected_session":browser_identity(&admin["session"])}),
+        );
+        assert_eq!(status, 403, "{result}");
+        assert_eq!(result["code"], code);
+        assert!(replacement.is_none());
+        assert_eq!(
+            lifetime(admin_id),
+            before,
+            "disabled action must not rotate or revoke"
+        );
+    }
+    // Ordinary token login retains the independently configured long lifetime.
+    let ordinary = login(&host, true, "admin@example.test", "Runtime-Admin123");
+    let ordinary_id = ordinary["session"]["session_id"].as_str().unwrap();
+    assert!(lifetime(ordinary_id).0 > TTL);
+    assert!(lifetime(ordinary_id).1 > TTL);
+
+    for name in ["alice", "bob"] {
+        host.json("POST", "/api/admin/platform/accounts", Some(token(&admin)), None,
+            Some(json!({"tenant_id":"0","email":format!("{name}@example.test"),"password":"Browser-Member123"})), 200);
+    }
+    let mut sessions = vec![];
+    for name in ["alice", "bob"] {
+        let (status, cookie, value) = browser(
+            "/auth/browser/login",
+            None,
+            json!({"email":format!("{name}@example.test"),"password":"Browser-Member123"}),
+        );
+        assert_eq!(status, 200, "{value}");
+        let id = value["session"]["session_id"].as_str().unwrap();
+        assert!(lifetime(id).0 <= TTL);
+        sessions.push((cookie.unwrap(), value));
+    }
+    let alice_identity = browser_identity(&sessions[0].1["session"]);
+    let bob_identity = browser_identity(&sessions[1].1["session"]);
+    let bob_cookie = cookie_pair(&sessions[1].0);
+    let bob_id = sessions[1].1["session"]["session_id"].as_str().unwrap();
+    let bob_before = lifetime(bob_id);
+    // Simulate an old tab whose page still shows Alice, but whose browser Cookie
+    // was replaced when another tab signed in as Bob.
+    for path in ["/auth/browser/logout", "/auth/browser/device-scan/context"] {
+        let (status, replacement, value) = browser(
+            path,
+            Some(bob_cookie),
+            json!({"expected_session":alice_identity}),
+        );
+        assert_eq!(status, 409, "{path}: {value}");
+        let error_field = if path.ends_with("/context") {
+            "error"
+        } else {
+            "code"
+        };
+        assert_eq!(value[error_field], "browser_session_changed");
+        assert!(replacement.is_none());
+        assert_eq!(lifetime(bob_id), bob_before);
+        let (status, replacement, value) = browser(path, Some(bob_cookie), json!({}));
+        assert_eq!(status, 400, "{path}: {value}");
+        assert_eq!(value[error_field], "browser_expected_session_required");
+        assert!(replacement.is_none());
+    }
+    let (status, replacement, context) = browser(
+        "/auth/browser/device-scan/context",
+        Some(bob_cookie),
+        json!({"expected_session":bob_identity}),
+    );
+    assert_eq!(status, 200, "{context}");
+    assert_eq!(context["account_id"], bob_identity["account_id"]);
+    assert!(replacement.is_none());
+    let (status, _, phone) = browser(
+        "/auth/browser/device-scan/phone-codes",
+        Some(bob_cookie),
+        json!({"expected_session":bob_identity,"entry_id":"reference-device-scan","operation_id":UuidV7IdGenerator.next_id("operation")}),
+    );
+    assert_eq!(status, 201, "{phone}");
+
+    for path in ["/", "/auth/browser/device-scan/ui"] {
+        let (status, html) = host.raw("GET", path, None, None, None);
+        assert_eq!(status, 200);
+        assert!(html.contains("idp-browser-config"));
+        assert!(html.contains("development_login"));
+        assert!(html.contains("session_ttl_secs"));
+    }
+    // Expire the persisted browser session without waiting for wall-clock TTL;
+    // its still-unexpired presented token must not authorize the scan context.
+    db.adapter.connect().unwrap().execute(
+        &format!("update {}.auth_sessions set created_at_epoch=created_at_epoch-300, authenticated_at_epoch=authenticated_at_epoch-300, expires_at_epoch=floor(extract(epoch from clock_timestamp()))::bigint-1 where id::text=$1", db.adapter.schema_name()),
+        &[&bob_id],
+    ).unwrap();
+    let (status, _, expired) = browser(
+        "/auth/browser/device-scan/context",
+        Some(bob_cookie),
+        json!({"expected_session":bob_identity}),
+    );
+    assert_eq!(status, 401, "{expired}");
+    assert_eq!(expired["error"], "browser_session_expired");
 }

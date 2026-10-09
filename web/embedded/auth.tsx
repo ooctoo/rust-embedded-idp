@@ -68,7 +68,7 @@ export function EmbeddedAuth({ client, businessId, language = "zh-CN", className
   }, [client, state.capabilities]);
 
   useEffect(() => {
-    if (!client.isCookieMode() || !state.capabilities || restoreAttempted.current === client) return;
+    if (!client.supportsRestore() || !state.capabilities || restoreAttempted.current === client) return;
     restoreAttempted.current = client;
     setBusy(true);
     void client.restore().catch(reason => {
@@ -105,7 +105,7 @@ export function EmbeddedAuth({ client, businessId, language = "zh-CN", className
     setVerified(false);
     if (!state.session || state.selecting || !state.accessExpiresAt) return;
     const check = () => void run(async () => { await client.verifySession(); setVerified(true); });
-    const timeout = window.setTimeout(check, Math.max(1000, Math.min(2_147_000_000, (state.accessExpiresAt - 30) * 1000 - Date.now())));
+    const timeout = window.setTimeout(check, Math.max(1000, Math.min(2_147_000_000, (state.accessExpiresAt - (client.isDevelopmentMode() ? 0 : 30)) * 1000 - Date.now())));
     const visible = () => { if (document.visibilityState === "visible") check(); };
     document.addEventListener("visibilitychange", visible);
     return () => { window.clearTimeout(timeout); document.removeEventListener("visibilitychange", visible); };
@@ -118,6 +118,7 @@ export function EmbeddedAuth({ client, businessId, language = "zh-CN", className
   }
 
   return <section className={`${styles.root}${className ? ` ${className}` : ""}`} style={style} lang={language} aria-busy={busy || tenantLoading}>
+    {client.isDevelopmentMode() && <p role="status">{language === "zh-CN" ? "开发登录模式：页面重载或会话到期后需重新登录。" : "Development login: sign in again after reload or session expiry."}</p>}
     {state.sessionChanged && <p role="status">{language === "zh-CN" ? "其他页面已更改此会话，请重新加载后继续。" : "Another page changed this session. Reload to continue."} <button type="button" onClick={() => window.location.reload()}>{language === "zh-CN" ? "重新加载" : "Reload"}</button></p>}
     {error && <p className={styles.error} role="alert">{error}</p>}
     {!state.capabilities ? <div>
@@ -182,7 +183,7 @@ export function EmbeddedAuth({ client, businessId, language = "zh-CN", className
         <input id={passwordId} type="password" autoComplete="current-password" required maxLength={4096} disabled={busy} value={password} onChange={event => setPassword(event.target.value)} />
         <button type="submit" disabled={busy}>{busy ? t.signingIn : t.login}</button>
       </form>
-      <p className={styles.helper}>{client.isCookieMode() ? t.note : language === "zh-CN" ? "凭证仅保存在本页内存中，刷新后需重新登录。" : "Credentials stay in memory. Sign in again after a reload."}</p>
+      <p className={styles.helper}>{client.supportsRestore() ? t.note : language === "zh-CN" ? "凭证仅保存在本页内存中，刷新后需重新登录。" : "Credentials stay in memory. Sign in again after a reload."}</p>
     </div>}
   </section>;
 }

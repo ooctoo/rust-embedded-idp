@@ -168,3 +168,5 @@ The original explicit-token login/refresh/logout and device-proof routes remain 
 ## Business authorization upgrade
 
 Access v3 requires an explicit business identifier for permissions, roles and authorization checks. Existing v2 data requires a stopped-service mapping migration; see [the business authorization design](business-domain-authorization-design-v1.md). Schema directory names do not determine the Access version. Do not rerun bootstrap or silently recreate an existing database.
+
+局域网 HTTP 联调的显式开发模式、900 秒浏览器会话上限和服务端/Web 契约见[开发接入说明](development-private-http.md)。默认 HTTPS/回环行为保持，设备会话与恢复窗口不受影响。

@@ -34,6 +34,7 @@ struct Fake {
     purpose: AccessTokenPurpose,
     calls: Arc<Mutex<Calls>>,
     login_selection: bool,
+    lifetime: Option<u64>,
     refresh_error: Option<TenantAuthError>,
     logout_error: Option<TenantAuthError>,
 }
@@ -44,6 +45,7 @@ impl Fake {
             purpose,
             calls: Arc::new(Mutex::new(Calls::default())),
             login_selection: false,
+            lifetime: None,
             refresh_error: None,
             logout_error: None,
         }
@@ -77,6 +79,9 @@ impl Fake {
 }
 
 impl BrowserSessionService for Fake {
+    fn browser_session_lifetime_secs(&self) -> Option<u64> {
+        self.lifetime
+    }
     fn browser_purpose(&self) -> AccessTokenPurpose {
         self.purpose
     }
@@ -552,4 +557,130 @@ async fn refresh_requires_identity_before_touching_the_cookie() {
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     assert!(!response.headers().contains_key(header::SET_COOKIE));
     assert_eq!(calls.lock().unwrap().refresh, 0);
+}
+
+#[test]
+fn private_transport_configuration_is_gated_and_descriptor_is_server_derived() {
+    use crate::HttpTransportPolicy;
+    let create = |origin| {
+        BrowserSessionHttpConfig::new_with_transport_policy(
+            origin,
+            "browser",
+            "/auth/browser",
+            AccessTokenPurpose::Business,
+            &HttpTransportPolicy::DevelopmentPrivateNetworkHttp,
+        )
+    };
+    assert!(BrowserSessionHttpConfig::new(
+        "http://192.168.31.159",
+        "browser",
+        "/auth/browser",
+        AccessTokenPurpose::Business
+    )
+    .is_err());
+    if !cfg!(all(
+        feature = "development-private-network-http",
+        debug_assertions
+    )) {
+        assert!(create("http://192.168.31.159").is_err());
+        assert!(create("https://idp.example").is_err());
+        return;
+    }
+    let config = create("http://192.168.31.159").unwrap();
+    assert_eq!(
+        serde_json::to_value(config.client_config()).unwrap(),
+        json!({"mode":"development_login", "session_ttl_secs":900,"restore":false,"refresh":false})
+    );
+    let cookie = config.cookie("token", 900).to_str().unwrap().to_owned();
+    assert!(cookie.contains("HttpOnly; SameSite=Strict"));
+    assert!(cookie.contains("Path=/auth/browser"));
+    assert!(!cookie.contains("Secure"));
+    assert!(config
+        .clone()
+        .with_development_session_ttl_secs(59)
+        .is_err());
+    assert!(config
+        .clone()
+        .with_development_session_ttl_secs(3601)
+        .is_err());
+    assert_eq!(
+        config
+            .clone()
+            .with_development_session_ttl_secs(60)
+            .unwrap()
+            .client_config()
+            .session_ttl_secs,
+        Some(60)
+    );
+    for origin in ["https://idp.example", "http://127.0.0.1"] {
+        let full = create(origin).unwrap();
+        assert_eq!(full.client_config().mode, "cookie");
+        assert!(full.with_development_session_ttl_secs(900).is_err());
+    }
+    assert!(
+        browser_session_router(Arc::new(Fake::new(AccessTokenPurpose::Business)), config).is_err()
+    );
+}
+
+#[cfg(all(feature = "development-private-network-http", debug_assertions))]
+#[tokio::test]
+async fn private_mode_rejects_restore_refresh_and_missing_identity_without_service_calls() {
+    let mut fake = Fake::new(AccessTokenPurpose::Business);
+    fake.lifetime = Some(900);
+    fake.logout_error = Some(AccessError::InvalidInput("browser_session_changed").into());
+    let calls = fake.calls.clone();
+    let config = BrowserSessionHttpConfig::new_with_transport_policy(
+        "http://192.168.31.159",
+        "browser",
+        "/auth/browser",
+        AccessTokenPurpose::Business,
+        &crate::HttpTransportPolicy::DevelopmentPrivateNetworkHttp,
+    )
+    .unwrap();
+    let app = browser_session_router(Arc::new(fake), config).unwrap();
+    for (suffix, content, status, code) in [
+        (
+            "restore",
+            "{}",
+            StatusCode::FORBIDDEN,
+            "browser_restore_disabled",
+        ),
+        (
+            "refresh",
+            "{}",
+            StatusCode::FORBIDDEN,
+            "browser_refresh_disabled",
+        ),
+        (
+            "logout",
+            "{}",
+            StatusCode::BAD_REQUEST,
+            "browser_expected_session_required",
+        ),
+        (
+            "logout",
+            expected(),
+            StatusCode::CONFLICT,
+            "browser_session_changed",
+        ),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::post(format!("/auth/browser/{suffix}"))
+                    .header("content-type", "application/json")
+                    .header("origin", "http://192.168.31.159")
+                    .header("x-embedded-idp-browser", "1")
+                    .header("cookie", "browser=credential")
+                    .body(Body::from(content))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), status);
+        assert!(!response.headers().contains_key(header::SET_COOKIE));
+        assert_eq!(body(response).await["code"], code);
+    }
+    assert_eq!(calls.lock().unwrap().refresh, 0);
+    assert_eq!(calls.lock().unwrap().logout, 1);
 }

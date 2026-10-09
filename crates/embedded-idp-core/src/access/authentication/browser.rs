@@ -53,6 +53,10 @@ impl AuthenticatedBrowserSession {
 /// rotating, issuing, or revoking credentials. This is limited to business
 /// browser workflows that need to bind an action to the current person.
 pub trait BrowserSessionIdentityService: Send + Sync {
+    /// Configured upper bound for restricted, non-renewable browser sessions.
+    fn browser_session_lifetime_secs(&self) -> Option<u64> {
+        None
+    }
     fn authenticate_browser(
         &self,
         cookie: SecretString,
@@ -63,6 +67,10 @@ pub trait BrowserSessionIdentityService: Send + Sync {
 /// Cookie adapters use this dedicated contract instead of exposing refresh
 /// credentials to browser scripts. Implementations remain purpose-specific.
 pub trait BrowserSessionService: Send + Sync {
+    /// Configured upper bound for restricted, non-renewable browser sessions.
+    fn browser_session_lifetime_secs(&self) -> Option<u64> {
+        None
+    }
     fn browser_purpose(&self) -> AccessTokenPurpose;
     fn browser_login(
         &self,
@@ -198,6 +206,7 @@ where
         &self,
         cookie: SecretString,
         expected: Option<BrowserSessionIdentity>,
+        lifetime_secs: Option<u64>,
     ) -> Result<AuthenticatedBrowserSession, TenantAuthError> {
         if self.purpose != AccessTokenPurpose::Business || self.entry.require_device_proof {
             return Err(TenantAuthError::InvalidSession);
@@ -251,6 +260,14 @@ where
                 &account.id,
                 now,
             )?;
+            if lifetime_secs.is_some_and(|lifetime| {
+                session
+                    .created_at
+                    .checked_add(Duration::from_secs(lifetime))
+                    .is_none_or(|bound| session.expires_at > bound)
+            }) {
+                return Err(TenantAuthError::InvalidSession);
+            }
             if session.device_id.is_some() {
                 return Err(TenantAuthError::DeviceProofRequired);
             }
@@ -301,7 +318,7 @@ where
         cookie: SecretString,
         expected: Option<BrowserSessionIdentity>,
     ) -> Result<AuthenticatedBrowserSession, TenantAuthError> {
-        self.authenticate_browser_impl(cookie, expected)
+        self.authenticate_browser_impl(cookie, expected, None)
     }
 }
 
@@ -401,5 +418,121 @@ where
         expected: Option<BrowserSessionIdentity>,
     ) -> Result<(), TenantAuthError> {
         self.auth.browser_logout_impl(token, expected)
+    }
+}
+
+/// A purpose-specific browser-only service with bounded issuance and no refresh.
+/// Construct a separate service and compatible token issuer for this mode;
+/// consuming the service does not modify other browser or device services.
+pub struct RestrictedBrowserSessionService<S, T, G, D, C, I> {
+    auth: CoreTenantAuthenticationService<S, T, G, D, C, I>,
+    lifetime_secs: u64,
+}
+
+impl<S, T, G, D, C, I> CoreTenantAuthenticationService<S, T, G, D, C, I> {
+    pub fn into_restricted_browser(
+        mut self,
+        lifetime_secs: u64,
+    ) -> Result<RestrictedBrowserSessionService<S, T, G, D, C, I>, TenantAuthError> {
+        if !(60..=3600).contains(&lifetime_secs) {
+            return Err(AccessError::InvalidInput("browser_session_lifetime").into());
+        }
+        if self.entry.require_device_proof {
+            return Err(TenantAuthError::DeviceProofRequired);
+        }
+        self.config.session_ttl_secs = self.config.session_ttl_secs.min(lifetime_secs);
+        self.config.refresh_token_ttl_secs = self.config.refresh_token_ttl_secs.min(lifetime_secs);
+        self.config.access_token_ttl_secs = self
+            .config
+            .access_token_ttl_secs
+            .min(self.config.refresh_token_ttl_secs - 1);
+        self.config
+            .validate()
+            .map_err(TenantAuthError::Configuration)?;
+        Ok(RestrictedBrowserSessionService {
+            auth: self,
+            lifetime_secs,
+        })
+    }
+}
+impl<S, T, G, D, C, I> CoreManagementAuthenticationService<S, T, G, D, C, I> {
+    pub fn into_restricted_browser(
+        self,
+        lifetime_secs: u64,
+    ) -> Result<RestrictedBrowserSessionService<S, T, G, D, C, I>, TenantAuthError> {
+        self.auth.into_restricted_browser(lifetime_secs)
+    }
+}
+impl<S, T, G, D, C, I> BrowserSessionService for RestrictedBrowserSessionService<S, T, G, D, C, I>
+where
+    S: TenantAuthStore + Send + Sync,
+    for<'a> S::Transaction<'a>: TenantRefreshTransaction,
+    T: TokenIssuer + AccessTokenValidator + ScopedAccessTokenIssuer + Send + Sync,
+    G: RefreshTokenGenerator + Send + Sync,
+    D: RefreshTokenDigester + Send + Sync,
+    C: Clock + Send + Sync,
+    I: IdGenerator + Send + Sync,
+{
+    fn browser_session_lifetime_secs(&self) -> Option<u64> {
+        Some(self.lifetime_secs)
+    }
+    fn browser_purpose(&self) -> AccessTokenPurpose {
+        self.auth.purpose
+    }
+    fn browser_login(
+        &self,
+        command: TenantPasswordLogin,
+    ) -> Result<TenantLoginOutcome, TenantAuthError> {
+        self.auth.browser_login(command)
+    }
+    fn browser_select(
+        &self,
+        ticket: SecretString,
+        tenant: String,
+    ) -> Result<TenantLoginSession, TenantAuthError> {
+        self.auth.browser_select(ticket, tenant)
+    }
+    fn browser_refresh(
+        &self,
+        _: SecretString,
+        _: Option<BrowserSessionIdentity>,
+    ) -> Result<TenantRefreshOutcome, TenantAuthError> {
+        Err(AccessError::InvalidInput("browser_refresh_disabled").into())
+    }
+    fn browser_logout(
+        &self,
+        token: SecretString,
+        expected: Option<BrowserSessionIdentity>,
+    ) -> Result<(), TenantAuthError> {
+        let expected = expected.ok_or(AccessError::InvalidInput(
+            "browser_expected_session_required",
+        ))?;
+        self.auth.browser_logout(token, Some(expected))
+    }
+}
+impl<S, T, G, D, C, I> BrowserSessionIdentityService
+    for RestrictedBrowserSessionService<S, T, G, D, C, I>
+where
+    S: TenantAuthStore + Send + Sync,
+    for<'a> S::Transaction<'a>: TenantRefreshTransaction,
+    T: TokenIssuer + AccessTokenValidator + ScopedAccessTokenIssuer + Send + Sync,
+    G: RefreshTokenGenerator + Send + Sync,
+    D: RefreshTokenDigester + Send + Sync,
+    C: Clock + Send + Sync,
+    I: IdGenerator + Send + Sync,
+{
+    fn browser_session_lifetime_secs(&self) -> Option<u64> {
+        Some(self.lifetime_secs)
+    }
+    fn authenticate_browser(
+        &self,
+        cookie: SecretString,
+        expected: Option<BrowserSessionIdentity>,
+    ) -> Result<AuthenticatedBrowserSession, TenantAuthError> {
+        let expected = expected.ok_or(AccessError::InvalidInput(
+            "browser_expected_session_required",
+        ))?;
+        self.auth
+            .authenticate_browser_impl(cookie, Some(expected), Some(self.lifetime_secs))
     }
 }

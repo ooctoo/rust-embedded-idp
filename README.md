@@ -123,3 +123,5 @@ cargo test --workspace --locked
 - [扫码授权设备登录验证记录](docs/device-scan-login-validation.md)
 
 `docs/*-v1.md` 中的早期模型和切片文档保留作历史背景；以当前设计、执行计划、代码和测试为准，不把旧开发适配器示例用于生产接入。
+
+局域网 HTTP 联调的显式开发模式、900 秒浏览器会话上限和服务端/Web 契约见[开发接入说明](docs/development-private-http.md)。默认 HTTPS/回环行为保持，设备会话与恢复窗口不受影响。

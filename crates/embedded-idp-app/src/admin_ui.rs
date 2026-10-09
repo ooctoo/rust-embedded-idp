@@ -5,15 +5,17 @@ use axum::response::Redirect;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::Router;
+use embedded_idp_axum::BrowserSessionClientConfig;
 
 include!(concat!(env!("OUT_DIR"), "/management_assets.rs"));
 
 #[derive(Clone)]
 struct AdminUiState {
     asset_prefix: String,
+    browser_config: BrowserSessionClientConfig,
 }
 
-pub fn admin_console_router(base_path: &str) -> Router {
+pub fn admin_console_router(base_path: &str, browser_config: BrowserSessionClientConfig) -> Router {
     let asset_prefix = if base_path == "/" {
         "/assets".to_string()
     } else {
@@ -21,6 +23,7 @@ pub fn admin_console_router(base_path: &str) -> Router {
     };
     let state = AdminUiState {
         asset_prefix: asset_prefix.clone(),
+        browser_config,
     };
     let assets_route = format!("{asset_prefix}/*path");
     let router = Router::new().route(&assets_route, get(asset));
@@ -44,7 +47,22 @@ async fn index(State(state): State<AdminUiState>) -> Response {
     let html = asset_bytes("index.html").expect("management distribution must contain index.html");
     let html =
         String::from_utf8_lossy(html).replace("./assets/", &format!("{}/", state.asset_prefix));
+    let html = html.replace(
+        "</head>",
+        &format!("{}</head>", browser_config_meta(&state.browser_config)),
+    );
     static_response("text/html; charset=utf-8", html.into_bytes())
+}
+
+/// Only a server-derived, non-sensitive typed descriptor enters the HTML.
+pub(crate) fn browser_config_meta(config: &BrowserSessionClientConfig) -> String {
+    let value = serde_json::to_string(config)
+        .expect("browser configuration serializes")
+        .replace('&', "&amp;")
+        .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;");
+    format!("<meta name=\"idp-browser-config\" content=\"{value}\">")
 }
 
 async fn asset(AxumPath(path): AxumPath<String>) -> Response {
@@ -109,10 +127,22 @@ mod tests {
 
     use super::{admin_console_router, index, valid_asset_path, AdminUiState, MANAGEMENT_ASSETS};
 
+    fn full_config() -> embedded_idp_axum::BrowserSessionClientConfig {
+        embedded_idp_axum::BrowserSessionHttpConfig::new(
+            "http://localhost",
+            "test",
+            "/admin/auth/browser",
+            embedded_idp_core::AccessTokenPurpose::Management,
+        )
+        .unwrap()
+        .client_config()
+    }
+
     #[tokio::test]
     async fn index_serves_management_html_with_hashed_assets() {
         let response = index(State(AdminUiState {
             asset_prefix: "/assets".to_string(),
+            browser_config: full_config(),
         }))
         .await;
 
@@ -145,7 +175,7 @@ mod tests {
 
     #[tokio::test]
     async fn router_serves_root_management_assets_and_rejects_unknown_paths() {
-        let app = admin_console_router("/");
+        let app = admin_console_router("/", full_config());
         let response = app
             .clone()
             .oneshot(Request::get("/").body(Body::empty()).unwrap())
@@ -178,7 +208,7 @@ mod tests {
 
     #[tokio::test]
     async fn router_preserves_nested_base_redirect_and_assets() {
-        let app = admin_console_router("/admin");
+        let app = admin_console_router("/admin", full_config());
         let response = app
             .clone()
             .oneshot(Request::get("/admin").body(Body::empty()).unwrap())
