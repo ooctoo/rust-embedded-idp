@@ -1,6 +1,6 @@
 # 设备身份与安全生命周期：详细技术设计 v1
 
-日期：2026-09-28。状态：**P0 代码与本机参考 schema 升级已完成；生产发布验收尚未完成**。
+初版：2026-09-28。本文保留设备生命周期的初始契约与 P0 历史验收，现已纳入 3.0.0；部署当前版本须使用 tenant_v6，按[统一升级手册](device-scan-login-upgrade.md)执行，不能以本机历史 v4 记录判断当前数据库。宿主现场与生产容量验收仍由部署方完成。
 
 代码基线：`b8e5d1648de861b5308ed24b9e7be05fafc15f72`（2.0.0，`tenant_v3`）。实施顺序和交付门槛见[实施计划](device-identity-lifecycle-implementation-plan.md)。本文仅设计 IDP 内部能力，不设计宿主业务、接入项目、终端配对页面或离线同步。
 
@@ -321,11 +321,11 @@ P1 不新增表、不修改管理角色默认分配。若将来要求更细的�
 
 ## 13. 数据迁移与兼容
 
-本方案新增必填登记/版本字段并改变解绑响应，是破坏性设备接口及 Core 契约变更；正式发布号尚未确定。本分支使用 `tenant_v4`，保留旧 `tenant_v3.sql` 的历史含义；升级步骤见[操作手册](device-identity-lifecycle-upgrade.md)。
+本方案新增必填登记/版本字段并改变解绑响应，是破坏性设备接口及 Core 契约变更；正式里程碑版本为 3.0.0。该生命周期步骤引入 `tenant_v4`，当前版本另包含扫码 v5/v6，运行要求 `tenant_v6`；保留旧 SQL 的历史含义，完整升级见[统一手册](device-scan-login-upgrade.md)，v3→v4 撤销规则见[生命周期步骤](device-identity-lifecycle-upgrade.md)。
 
 ### 13.1 显式 v3→v4 迁移
 
-迁移只通过离线命令执行，不由 app 启动自动升级：停写所有身份入口→验证备份→验证 v3 布局和模式→dry-run→显式 apply→只读结构与代表性身份检查→恢复服务。
+迁移只通过离线命令执行，不由 app 启动自动升级：停写所有身份入口→验证备份→验证 v3 布局和模式→dry-run→显式 apply→只读结构与代表性身份检查；升级 3.0.0 时继续统一手册的 v5/v6 步骤和启动验收后才恢复服务。
 
 1. 新增设备/绑定版本，现有行设为 1，作为新版本起点，不伪造既往修改次数。
 2. 建立登记表及约束、设备复合唯一约束、审计操作关联列和索引；旧审计操作关联为 NULL。
@@ -370,11 +370,11 @@ P1 不新增表、不修改管理角色默认分配。若将来要求更细的�
 
 单元/HTTP/实库/管理页面验证分别在[实施计划](device-identity-lifecycle-implementation-plan.md)归档。源码审查不代替上述运行证据。
 
-## 15. 跨文档审查结论
+## 15. 初始实施时的跨文档审查记录
 
 | 文档/契约 | 本轮关系 |
 | --- | --- |
-| README、overview | 已标明本分支使用未验收的 tenant_v4 切片；已发布 2.0.0 仍为 tenant_v3，不宣称 P0 交付 |
+| README、overview | 当时标明 tenant_v4 切片及 2.0.0 的 tenant_v3；当前已更新为 3.0.0 / tenant_v6 与统一升级入口 |
 | business-domain-authorization-design-v1 | 保持“设备/会话不强加业务标识”及业务管理员不获得 IDP 管理权，无冲突 |
 | tenant-role-permission-design-v1 的设备实施补充 | `expected_status` 仅是 2.0.0 历史契约；本分支使用版本与回执契约 |
 | production-security 两份文档 | 保留密码学、fresh proof、nonce、refresh 安全要求；新登记 pinned key 和版本控制是增量，不恢复旧证明格式 |

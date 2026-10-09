@@ -1,6 +1,6 @@
 # 局域网 HTTP 开发接入
 
-状态：实施契约。适用于通用嵌入宿主和 IDP 参考应用，不依赖 SMT 数据或配置。
+当前里程碑：3.0.0。适用于通用嵌入宿主和 IDP 参考应用，不依赖 SMT 数据或配置。
 
 ## 模式与启用条件
 
@@ -48,7 +48,7 @@ const client = new EmbeddedIdentityClient('/idp', undefined, {
 
 ## 浏览器生命周期和身份断言
 
-开发模式支持密码登录、选租户、退出和两种扫码授权。页面重载无自动恢复，访问到期重新登录；调用 restore 明确失败，取访问凭据时不自动 refresh。访问凭据只在内存。Cookie 仍是 HttpOnly、SameSite=Strict、原路径和用途隔离，仅私网 HTTP 不设置 Secure。
+开发模式支持密码登录、选租户、退出和两种扫码授权。页面重载无自动恢复，访问到期重新登录；调用 restore 明确失败，取访问凭据时不自动 refresh。访问凭据只在内存。Cookie 仍是 HttpOnly、SameSite=Strict、原路径和用途隔离；HTTPS 设置 Secure，既有回环和显式私网 HTTP 不设置 Secure。
 
 扫码身份从本页成功登录/选租户响应取得。context 及所有扫码动作携带 tenant_id/account_id/session_id/client_id 四字段 expected_session；服务端与当前 Cookie 的真实身份核对。旧标签页不能把新 Cookie 身份自动接纳为原操作的操作者。身份变化或失效后清理工位确认和显示码，并要求重新登录。
 

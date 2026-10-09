@@ -1,6 +1,6 @@
 # 租户、角色与权限：2.0.0 交付记录
 
-更新时间：2026-09-27。本文保留 `2.0.0` 交付时的历史状态；本分支设备升级现状见[设备生命周期实施计划](device-identity-lifecycle-implementation-plan.md)；授权契约见[业务标识设计](business-domain-authorization-design-v1.md)，运行方式见[参考服务说明](standalone-app-v1.md)。
+更新时间：2026-09-27。本文保留 `2.0.0` 交付时的历史状态；当前 3.0.0 的 tenant_v6 升级见[统一手册](device-scan-login-upgrade.md)，扫码交付与验收见[验证记录](device-scan-login-validation.md)；授权契约见[业务标识设计](business-domain-authorization-design-v1.md)，运行方式见[参考服务说明](standalone-app-v1.md)。
 
 ## 已实现
 
@@ -31,7 +31,7 @@
 
 ## 仍需完成
 
-- IDP 内部设备身份与生命周期增量见[详细技术设计](device-identity-lifecycle-design-v1.md)和[独立实施计划](device-identity-lifecycle-implementation-plan.md)。本页 2.0 验证结果不覆盖这些增量；本分支 P0 代码和本机 schema 升级已完成，生产验收尚未完成。
+- IDP 内部设备身份与生命周期增量见[详细技术设计](device-identity-lifecycle-design-v1.md)和[独立实施计划](device-identity-lifecycle-implementation-plan.md)。本页 2.0 验证结果不覆盖这些增量；该生命周期步骤已纳入 3.0.0；其本机 v4 记录属于历史，当前部署版本和生产验收须另行核对。
 
 - 扩展示例中的报告列表与分页：必须先按业务数据库和授权范围过滤，再分页；当前示例只提供单份报告读取。
 - 完成宿主中的设备自助 UI、真实设备证明接入，以及部分管理页面的浏览器交互补验。

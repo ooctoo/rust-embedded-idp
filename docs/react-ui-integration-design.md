@@ -1,10 +1,10 @@
 # React 管理后台与宿主嵌入组件
 
-> 2.0 客户端契约见[租户内业务标识与业务管理员设计](business-domain-authorization-design-v1.md)：租户内业务筛选、`business_admin`、业务级分配和游标隔离。本文示例对应 2.0。
+> 业务客户端的 2.0 契约见[租户内业务标识与业务管理员设计](business-domain-authorization-design-v1.md)：租户内业务筛选、`business_admin`、业务级分配和游标隔离。本文当前示例对应 3.0.0 Web 契约；2.0 仅作为历史背景。
 
 > 浏览器 Cookie 接入的新增契约见[浏览器会话设计](browser-session-design.md)。原显式令牌与设备证明接口继续适用；本期不支持跨标签页同时使用不同业务租户。
 
-更新时间：2026-09-25。Web 工程有两个交付面：参考服务使用的独立管理后台，以及宿主可本地导入的 `@embedded-idp/react` 组件包。源码和构建产物在同一工程，均未发布到 npm。
+更新时间：2026-10-09。Web 工程有两个交付面：参考服务使用的独立管理后台，以及宿主可本地导入的 `@embedded-idp/react` 组件包。源码和构建产物在同一工程，均未发布到 npm。当前设备扫码登录 UI 与客户端约束见[通用扫码登录设计](device-scan-login-design-v1.md)。
 
 | 入口 | 内容 | 主要依赖 |
 | --- | --- | --- |
@@ -14,7 +14,7 @@
 
 ## 身份和安全边界
 
-管理后台先读取 `/admin/auth/capabilities`，再使用独立管理登录与管理用途 JWT；业务组件只调用公开 `/auth` 和本人接口。两种凭证不能互换。当前管理客户端只接受同源绝对 API 前缀，默认显式令牌模式的凭证和选择票据保存在客户端实例内存。可选 Cookie 模式仅把访问令牌与选择票据留在内存，刷新凭证由 HttpOnly Cookie 保存；本地存储只保存跨标签页协调标记，不保存凭证。参考管理页面使用 Cookie 模式，启动时先读取 capabilities 再 restore()。业务组件的请求适配器可由宿主提供，以承载其设备证明；真实签名和业务资源授权始终由宿主服务端负责。
+管理后台先读取 `/admin/auth/capabilities`，再使用独立管理登录与管理用途 JWT；业务组件只调用公开 `/auth` 和本人接口。两种凭证不能互换。当前管理客户端只接受同源绝对 API 前缀，默认显式令牌模式的凭证和选择票据保存在客户端实例内存。可选 Cookie 模式仅把访问令牌与选择票据留在内存，刷新凭证由 HttpOnly Cookie 保存；本地存储只保存跨标签页协调标记，不保存凭证。完整 Cookie 模式的参考管理页面启动时先读取 capabilities 再 restore()；局域网 HTTP 开发模式由服务端传入 `development_login` 配置，禁止自动 restore/refresh，页面重载或会话到期后重新登录。模式、身份断言和稳定错误码见[局域网 HTTP 开发接入](development-private-http.md)。业务组件的请求适配器可由宿主提供，以承载其设备证明；真实签名和业务资源授权始终由宿主服务端负责。
 
 Disabled 模式固定域 `0`，不展示租户管理或切换。Enabled 模式的业务登录遵循服务端 Fixed/Choose 策略；管理平台 `0` 选择业务租户时，目标域通过专用管理 Header 传递，管理身份并不变成目标租户的业务身份。界面隐藏或显示操作只是交互提示，Core 与管理服务每次写入仍复查实时权限。管理写入遇到冲突或结果不确定时不自动重放，需重新读取核对。
 
@@ -59,6 +59,6 @@ export function PermissionSettings({ client, tenantId, businessId }: {
 
 ## Cookie 模式接入
 
-业务端使用 `new EmbeddedIdentityClient("/idp", undefined, { mode: "cookie" })`；管理端使用 `new ManagementClient("/api", { mode: "cookie" })`。默认不传选项时仍使用显式令牌模式。Cookie 模式只能连接同源端点，路径会规范化以避免同一接口使用不同跨标签页锁。
+业务端使用 `new EmbeddedIdentityClient("/idp", undefined, { mode: "cookie" })`；管理端使用 `new ManagementClient("/api", { mode: "cookie" })`。默认不传选项时仍使用显式令牌模式。Cookie 模式只能连接同源端点，路径会规范化以避免同一接口使用不同跨标签页锁。宿主使用局域网 HTTP 开发模式时，应将服务端返回的 `client_config` 原样传给 Web 客户端并选择 `development_login`；页面不能通过 query 或 localStorage 自行启用该模式。
 
-`EmbeddedAuth` 和管理 Console 在读取 capabilities 后调用一次 `restore()`。自行构建界面的宿主应先 `loadCapabilities()` 再 `restore()`；401 表示未登录，其他错误应显示给用户，不能无限重试。已登录实例调用 restore 会发送完整预期身份；并发 restore 在实例内合并。订阅快照的 `sessionChanged` 时停止旧操作、清除业务数据并提示重新加载；`selecting` 期间不得继续操作旧业务上下文。设备证明宿主继续使用原显式令牌模式及自定义 transport。
+完整 Cookie 模式下，`EmbeddedAuth` 和管理 Console 在读取 capabilities 后调用一次 `restore()`。开发登录模式不调用 restore，也不调用 refresh；401 的 `browser_session_expired`、403 的 `browser_restore_disabled`/`browser_refresh_disabled` 和 409 的 `browser_session_changed` 按[稳定错误契约](development-private-http.md)处理，要求清理当前页面状态并重新登录。自行构建界面的宿主应先 `loadCapabilities()`，再依据服务端模式决定是否 restore。已登录实例调用 restore 会发送完整预期身份；并发 restore 在实例内合并。订阅快照的 `sessionChanged` 时停止旧操作、清除业务数据并提示重新加载；`selecting` 期间不得继续操作旧业务上下文。设备证明宿主继续使用原显式令牌模式及自定义 transport。

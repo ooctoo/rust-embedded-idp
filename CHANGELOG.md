@@ -1,20 +1,30 @@
 # Changelog
 
-## Unreleased — device identity lifecycle (breaking)
+## 3.0.0 — 2026-10-09
 
-### Device contracts
+### Device scan login milestone
 
-- Registration requires a host-approved canonical device UUID, stable registration request UUID, pinned public key and trusted admission scope. A matching retry or scoped result lookup returns the same registration and current device state without replaying a consumed proof. The reference host still denies production admission by default.
-- Device and binding versions guard changes. Administrators can enable eligible disabled devices, disable or revoke devices, inspect bindings and key metadata, and unbind one exact binding. Self-service unbind requires the exact binding ID and version. Scoped, auditable operation receipts support recovery after a lost response.
-- The management page shows current device/key versions, reasons and precise bindings. Its client resolves uncertain writes through the original operation ID and reloads current detail; the page does not expose registration records or render the receipt itself.
-- Device login, refresh, OIDC exchange and tenant selection recheck current device authority. Enabling a device never restores old sessions, tokens or challenges. V2 proof bytes and business authorization remain unchanged. Historical public-JWK access and an independent machine principal remain outside this release.
-- Embedding hosts can call `TenantDeviceAuthenticationService::authenticate_device` for each terminal request. It returns the validated session's tenant, person, session, device and expiry, and rejects device-less browser sessions. The existing `authenticate` remains available; no JWT or schema change is needed.
+- Added both device-display and phone-display scan login. An authenticated business user explicitly confirms the exact registered target device; same-client and directional cross-client authorization require an explicit source-client allowlist. Hosts inject business admission and target presentation without adding factory/workstation/business ownership to IDP models.
+- A successful authorization creates one Pending personnel-device session. Host release and device ACK activate it; exchange/recovery retries return the same protected initial result. Device proofs bind the actual mounted path, request bytes, tenant, entry and action through `EMBEDDED-IDP-DEVICE-SCAN-V2`. The existing device request profile remains unchanged.
+- Added `close_origin` to conclusively end an uncertain original create/claim operation, including one not yet visible. Durable scoped closure records reject late submissions permanently. `scan_not_found` is nonterminal; lookup requires explicit `origin_action` to report a conclusive closure. Already activated sessions use normal logout.
+- Fixed Pending-session compensation to persist the valid `client_revocation` refresh reason, so session, refresh and delivery-secret revocation commit atomically.
+- Added strictly gated private-network HTTP development login across Rust, Web SDKs and the reference host. Feature + debug assertions + trusted explicit policy permit canonical RFC1918 IPv4 HTTP. Browser-only lifetime defaults to 900 seconds (60–3600 configurable), with restore/refresh disabled and expected identity checks. Device-session lifetimes and delivery-recovery windows are unaffected.
+- Server-derived Web mode configuration and cryptographic UUID fallback support real insecure contexts. Default HTTPS/loopback Cookie coordination remains available. Browser camera restrictions still require HTTPS or native scanning.
 
-### Upgrade
+### Device lifecycle and host contracts (breaking)
 
-- Access storage moves from `tenant_v3` to `tenant_v4`. Existing schemas require the explicit [upgrade procedure](docs/device-identity-lifecycle-upgrade.md): stop all writers, verify a backup, review the dry-run list, apply with `--apply`, then start the new binary and verify identity and authorization. Startup never migrates. Old device write DTOs and old binaries are incompatible with v4.
-- The migration lists and revokes legacy pending or keyless disabled identities with associated credentials and bindings. Valid existing devices and business permissions are retained; the change is transactional and audited. The script uses libpq connection environment variables instead of a command-line connection URI.
-- Both local reference schemas were upgraded and passed readiness checks. Production deployment, real-account checks on those existing schemas, and the remaining management-browser scenarios still require acceptance; this unreleased entry is not a production release claim.
+- Registration now requires a host-approved canonical device UUID, stable registration request UUID, pinned public key and trusted admission scope. Version-guarded device/binding mutations, exact unbind, scoped operation receipts, key metadata and identity audit support response-loss recovery. Enabling a device does not restore old sessions, credentials or challenges.
+- Management clients display device/key versions, reason metadata and precise bindings. Uncertain writes retain their original operation ID and reload current details; registration records and raw receipts are not exposed by that page.
+- Added strict `authenticate_device` returning validated tenant/person/session/device identity, and the separate device-only `verify_device_transport_request` capability for `client_sync_transport`. Ordinary browser authentication stays device-optional; device-only verification grants no personnel or business authority.
+- Custom scan services/stores implement the new contracts, including `close_origin` and durable closure queries/writes. Rust `LookupDeviceScan` constructors include `origin_action`. Hosts must check Active session state in addition to token cryptography; Pending tokens are unusable.
+- Rust workspace, internal path dependencies, the reference example and local Web packages are versioned 3.0.0. This major version includes the previously unreleased lifecycle DTO/schema changes since 2.0.0; it is not an automatic compatibility upgrade.
+
+### Upgrade and acceptance
+
+- Current Access storage is `tenant_v6` in both tenancy modes. From released 2.0.0 (`tenant_v3`), stop all writers and follow **v3 → v4 → v5 → v6**; v4/v5 installations start at their respective step, v6 needs no migration, and new schemas initialize v6. Each migration defaults to dry-run and applies in a separate transaction. Startup never migrates. See the consolidated [upgrade procedure](docs/device-scan-login-upgrade.md).
+- Preserve encrypted-result keys until all protected presentations and recoverable results have expired and been cleaned; retain durable origin-closure denial records. Historical migration scripts target their own step and cannot be replayed against v6. There is no downgrade by changing the version marker or deleting tables.
+- Pin matching Rust and Web artifacts by version, source commit and SHA-256. Source defaults keep scan login disabled; enable it only after admission, presentation, proof purposes, cleanup and secure result-key configuration are installed.
+- Core/HTTP/storage, isolated PostgreSQL, default/feature/Release gates and real private-HTTP browser flows have been validated. Physical phones/scanners, host target platforms, real HTTPS proxy deployment and production capacity remain deployment acceptance work. Evidence is recorded in [scan validation](docs/device-scan-login-validation.md) and [development HTTP validation](docs/development-private-http-validation.md).
 
 ## 2.0.0 — 2026-09-27
 

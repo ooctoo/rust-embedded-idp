@@ -1,10 +1,10 @@
 # Host Integration v1
 
-> Version 2.0 authorization contract: [business-scoped authorization and business administrators](business-domain-authorization-design-v1.md). Management selects a tenant; same-tenant lists use an optional business filter, while creation, detail and mutation requests carry or derive the exact business. Old requests without the exact business header and old affected cursors must be updated. Existing person-bound authentication and device-proof wire formats remain unchanged.
+> The 2.0 authorization contract is documented in [business-scoped authorization and business administrators](business-domain-authorization-design-v1.md). The current 3.0.0 integration baseline adds the tenant_v6 device lifecycle and two-way scan-login contracts. Management selects a tenant; same-tenant lists use an optional business filter, while creation, detail and mutation requests carry or derive the exact business. Old requests without the exact business header and old affected cursors must be updated. Existing person-bound authentication and device-proof wire formats remain unchanged.
 
 > 浏览器 Cookie 接入的新增契约见[浏览器会话设计](browser-session-design.md)。原显式令牌与设备证明接口继续适用；本期不支持跨标签页同时使用不同业务租户。
 
-> 本分支的设备身份接口及 `tenant_v4` 显式迁移见[设备生命周期设计](device-identity-lifecycle-design-v1.md)和[实施计划](device-identity-lifecycle-implementation-plan.md)。下文按历史阶段保留的 `tenant_v3` 描述不代表当前参考服务可连接旧结构。
+> 当前参考服务使用 `tenant_v6`。设备身份接口及从 `tenant_v3` 到 `tenant_v4` 的显式迁移见[设备生命周期设计](device-identity-lifecycle-design-v1.md)和[实施计划](device-identity-lifecycle-implementation-plan.md)；扫码登录及 `tenant_v4/v5 → tenant_v6` 升级见[扫码登录设计](device-scan-login-design-v1.md)和[升级手册](device-scan-login-upgrade.md)。下文按历史阶段保留的 `tenant_v3`/`tenant_v4` 描述不代表当前参考服务可连接旧结构。
 
 ## Current reference-host composition
 
@@ -143,6 +143,12 @@ inject it into `CoreAccessService` / `CoreAccessAdminService`. The latter requir
 trusted `AccessAdminContext` and rechecks its current session and permissions inside
 the write transaction. The supplied store also implements `TenantRegistrationStore`.
 The reference host now injects this store into the tenant-aware login and HTTP services.
+
+For the current generic two-way device scan-login flow, use the
+[scan-login design](device-scan-login-design-v1.md) for the Core/Axum contracts,
+host admission callbacks, Pending delivery and ACK, and response-loss recovery.
+The host owns its business target and admission data; the IdP does not read host
+business tables.
 
 The admin service accepts tenant creation and updates plus tenant-scoped business
 permission creation, reading, description updates, enabled-state changes and
@@ -1853,8 +1859,8 @@ policies. Device-bound management is still not supported by this bearer service.
 This independently mountable module is exercised with real RS256 and PostgreSQL.
 The reference host now uses it in both modes, behind startup/readiness validation.
 
-## Optional browser Cookie adapter (2026-09-26)
+## Optional browser Cookie adapter (2026-09-26; current transport extension)
 
-`BrowserSessionService` is implemented by the business Core authentication service and the independent management Core service. `browser_session_router(service, BrowserSessionHttpConfig::new(origin, cookie_name, external_cookie_path, purpose)?)` merges additional routes without replacing explicit-token or proof routes. Compose it beside `management_router`, not inside its protected admin routes. The configuration validates the origin, external path and service purpose. The adapter owns Cookie and CSRF handling; Core remains independent of HTTP and storage schema changes are not required.
+`BrowserSessionService` is implemented by the business Core authentication service and the independent management Core service. `browser_session_router(service, BrowserSessionHttpConfig::new(origin, cookie_name, external_cookie_path, purpose)?)` merges additional routes without replacing explicit-token or proof routes. Compose it beside `management_router`, not inside its protected admin routes. The configuration validates the origin, external path and service purpose. The adapter owns Cookie and CSRF handling; Core remains independent of HTTP and storage schema changes are not required. For local RFC1918 HTTP testing, hosts may use `new_with_transport_policy(..., &HttpTransportPolicy::DevelopmentPrivateNetworkHttp)` only with the feature-gated debug configuration and must also use the restricted browser service described in the [private-network HTTP development contract](development-private-http.md). The default constructor and behavior remain unchanged.
 
-Full requests, expiry/rotation/logout semantics, multi-tenant rules and React coordination are specified in [browser session design](browser-session-design.md). Statements above that the original adapters do not create cookies still apply to those adapters. Only the new opt-in browser routes read/write refresh cookies.
+Full requests, expiry/rotation/logout semantics, multi-tenant rules and React coordination are specified in [browser session design](browser-session-design.md). Development-mode restore/refresh rejection, the 900-second default browser lifetime, stable errors and server-to-Web mode delivery are specified in [private-network HTTP development](development-private-http.md). Statements above that the original adapters do not create cookies still apply to those adapters. Only the new opt-in browser routes read/write refresh cookies.
