@@ -3,6 +3,7 @@ use std::error::Error;
 mod admin_ui;
 mod administrator_init;
 mod bootstrap;
+mod composition_config;
 mod config;
 mod email_sender;
 mod scan_ui;
@@ -10,7 +11,8 @@ mod scan_ui;
 use tokio::net::TcpListener;
 use tokio::runtime::Builder;
 
-use crate::bootstrap::build_app_with_scan_cleanup;
+use crate::bootstrap::build_composition;
+use crate::composition_config::AppConfig;
 use crate::config::EmbeddedIdpAppConfig;
 
 const SCAN_CLEANUP_INTERVAL_SECS: u64 = 30;
@@ -18,21 +20,34 @@ const SCAN_CLEANUP_BATCH_SIZE: u32 = 100;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let mut args = std::env::args().skip(1);
-    if let Some(command) = args.next() {
-        return match command.as_str() {
-            "bootstrap-admin" => administrator_init::run(args.collect()).map_err(Into::into),
+    let config = if let Some(command) = args.next() {
+        match command.as_str() {
+            "bootstrap-admin" => {
+                return administrator_init::run(args.collect()).map_err(Into::into)
+            }
+            "--config" => {
+                let path = args
+                    .next()
+                    .filter(|value| !value.is_empty())
+                    .ok_or("--config requires one file path")?;
+                if args.next().is_some() {
+                    return Err("--config accepts exactly one file path".into());
+                }
+                AppConfig::from_file(std::path::Path::new(&path))?
+            }
             "--help" if args.next().is_none() => {
                 println!(
-                    "Run with no arguments to start the reference host.\n{}",
+                    "Run with no arguments to start the reference host.\nUse --config <path> for explicit JSON configuration (management-only in this build).\n{}",
                     administrator_init::USAGE
                 );
-                Ok(())
+                return Ok(());
             }
-            _ => Err("unknown command; use --help".into()),
-        };
-    }
-    let config = EmbeddedIdpAppConfig::from_env()?;
-    let composition = build_app_with_scan_cleanup(&config)?;
+            _ => return Err("unknown command; use --help".into()),
+        }
+    } else {
+        AppConfig::from_legacy(&EmbeddedIdpAppConfig::from_env()?)
+    };
+    let composition = build_composition(&config)?;
     let app = composition.router;
     let scan_cleanup = composition.scan_cleanup;
     let runtime = Builder::new_multi_thread().enable_all().build()?;
@@ -68,19 +83,23 @@ fn main() -> Result<(), Box<dyn Error>> {
             "embedded-idp-app listening on http://{}",
             listener.local_addr()?
         );
+        if let Some(reference) = &config.reference_business {
+            println!(
+                "oidc discovery: {}/.well-known/openid-configuration",
+                config.embedded_idp.issuer
+            );
+            println!(
+                "public client: {} -> {}",
+                reference.public_client.client_id, reference.public_client.redirect_uri
+            );
+        }
+        if let Some(path) = &config.management.ui_base_path {
+            println!("admin console: {}{}", config.embedded_idp.issuer, path);
+        }
         println!(
-            "oidc discovery: {}/.well-known/openid-configuration",
-            config.embedded_idp.issuer
+            "management authentication: {}/admin/auth/login",
+            config.management.mount_prefix
         );
-        println!(
-            "public client: {} -> {}",
-            config.public_client.client_id, config.public_client.redirect_uri
-        );
-        println!(
-            "admin console: {}{}",
-            config.embedded_idp.issuer, config.admin_ui_base_path
-        );
-        println!("management authentication: /api/admin/auth/login");
         println!("tenancy mode: {:?}", config.tenancy_mode);
 
         axum::serve(listener, app).await?;

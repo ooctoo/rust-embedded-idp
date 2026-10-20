@@ -110,7 +110,13 @@ cargo test --workspace --locked
 
 内置角色键为 `idp_system_admin`（IDP管理员）、`idp_tenant_security_admin`（IDP租户管理员），其 kind 和职责不变；`business_admin` 只授予所属租户、业务下的业务权限，不授予 IDP 管理能力。
 
+- [M1-01 设计核对交接任务](docs/m1-01-design-review-task.md) / [UP-M1-01 r2](docs/m1-01-compatibility-handoff.md) / [设计核对回传](docs/m1-01-design-review-result.md)（M1-02 兼容依据；M1-01 设计核对记录）
+- [M1-02 审查调整交接说明](docs/m1-02-design-adjustments-handoff.md) / [配置与共同装配设计修订 3](docs/m1-02-configuration-composition-design.md) / [逐项设计回传](docs/m1-02-design-adjustments-result.md)（设计调整历史记录；后续实施与验收见收尾回传）
 - [参考服务配置与启动](docs/standalone-app-v1.md)
+- [M1-02 显式配置与仅管理启动实施结果](docs/m1-02-implementation-result.md)（旧参考行为保留；含示例、验收范围与后续边界）
+- [M1-02 修订 3 收尾与验收回传](docs/m1-02-closure-result.md)（可选 browser/UI、完整管理生命周期及归一偏差修复；保留旧参考行为；M1-03–06、试点与部署待定）
+- [M1-02 实现审查调整交接说明](docs/m1-02-implementation-adjustments-handoff.md) / [A01–A05 静态核对与调整计划回传](docs/m1-02-implementation-adjustments-result.md)（实施前计划；后续处置与运行证据见收尾回传）
+- [M1-02 实际代码完整审查](docs/m1-02-code-review.md) / [原设计修订 2 固定快照](docs/m1-02-configuration-composition-design-r2.md)（修复前审查与固定基线；问题处置与运行证据见收尾回传）
 - [开发与嵌入指南](docs/developer-and-integration-guide.md)
 - [宿主集成边界](docs/host-integration-v1.md)
 - [租户/角色/权限设计](docs/tenant-role-permission-design-v1.md)

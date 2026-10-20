@@ -317,7 +317,9 @@ dependencies = [
  "embedded-idp-storage-postgres",
  "lettre",
  "postgres",
+ "serde",
  "serde_json",
+ "serde_path_to_error",
  "tokio",
  "tower",
 ]

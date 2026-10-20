@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "runtime": {
+    "tenancy_mode": "enabled",
+    "bind_addr": "127.0.0.1:9100",
+    "issuer": "https://idp.example.test",
+    "signing_key_file": "secrets/signing-key.der",
+    "postgres": {
+      "connection": {
+        "uri_ref": { "env": "IDP_DATABASE_URI" },
+        "schema_name": "embedded_idp",
+        "tls_mode": "require"
+      }
+    },
+    "http": { "browser_origin": "https://idp.example.test" }
+  },
+  "management": {
+    "login_entry": "management",
+    "client_id": "idp-management",
+    "tenant_policy": { "kind": "fixed", "tenant_id": "0" },
+    "mount_prefix": "/api",
+    "browser": { "cookie_name": "idp_management" },
+    "ui": { "base_path": "/" }
+  },
+  "business_entries": []
+}
