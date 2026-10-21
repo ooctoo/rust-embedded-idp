@@ -264,15 +264,15 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
 
-        let role_asset = MANAGEMENT_ASSETS
+        let workspace_asset = MANAGEMENT_ASSETS
             .iter()
-            .find(|(name, _)| name.starts_with("assets/roles-") && name.ends_with(".js"))
-            .expect("role chunk")
+            .find(|(name, _)| name.starts_with("assets/shell-") && name.ends_with(".js"))
+            .expect("management workspace chunk")
             .0;
         let response = app
             .clone()
             .oneshot(
-                Request::get(format!("/{role_asset}"))
+                Request::get(format!("/{workspace_asset}"))
                     .body(Body::empty())
                     .unwrap(),
             )

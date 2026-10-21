@@ -362,6 +362,14 @@ export class ManagementClient {
   private readonly development: boolean;
   private restoring?: Promise<Session | undefined>;
   private deviceIntents = new Map<string, string>();
+  // Navigation observes the full authenticated write, including access/refresh
+  // waits; no credentials, bodies or authentication decisions enter this state.
+  private mutationSnapshot: Readonly<{ pending: number; revision: number }> = { pending: 0, revision: 0 };
+  getMutationSnapshot = () => this.mutationSnapshot;
+  private mutationActivity(delta: number) {
+    this.mutationSnapshot = { pending: this.mutationSnapshot.pending + delta,
+      revision: this.mutationSnapshot.revision + (delta > 0 ? 1 : 0) };
+  }
 
   constructor(basePath = "/api", options: { mode?: "token" | "cookie" | "development_login"; browserConfig?: BrowserClientConfig } = {}) {
     this.development = developmentBrowserMode(options.mode, options.browserConfig);
@@ -615,6 +623,8 @@ export class ManagementClient {
 
   private async authenticated(path: string, method = "GET", body?: unknown, target?: string, business?: string) {
     const revision = this.revision;
+    const mutation = method !== "GET" && !path.startsWith("/auth/");
+    if (mutation) this.mutationActivity(1);
     try {
       const c = await this.access();
       this.current(revision);
@@ -624,6 +634,8 @@ export class ManagementClient {
     } catch (error) {
       if (revision === this.revision && error instanceof ManagementError && error.status === 401) this.clear();
       throw error;
+    } finally {
+      if (mutation) this.mutationActivity(-1);
     }
   }
 
@@ -663,6 +675,15 @@ export class ManagementClient {
 
   async getManagedTenant(tenant: string): Promise<TenantDetail> {
     this.requireTenantPlatform(); this.requireTarget(tenant);
+    // Dot-only IDs are valid domain identifiers, but URL parsers normalize them
+    // when used as HTTP path segments. Reuse the existing exact list filter.
+    if (tenant === "." || tenant === "..") {
+      const query = new URLSearchParams({ tenant_id: tenant, limit: "2" });
+      const page = pageFrom(await this.authenticated(`/tenants?${query}`), value => tenantDetailFrom(value, tenant));
+      if (page.has_more || page.items.length > 1) throw invalidResponse();
+      if (!page.items.length) throw new ManagementError("目标资源不存在或不可见，请重新加载。", 404);
+      return page.items[0];
+    }
     return tenantDetailFrom(await this.authenticated(`/tenants/${encodeURIComponent(tenant)}`), tenant);
   }
 

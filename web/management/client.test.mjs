@@ -647,6 +647,50 @@ test("tenant creation and settings use platform scope, explicit initial admin an
   assert.equal(calls.length, count);
 });
 
+test("dot-only managed tenant IDs use an exact filtered page and require one visible match", async t => {
+  const { client, calls } = setup(t, (path, init) => {
+    if (path === "/capabilities") return json(platformCapabilities);
+    if (path === "/login") return json(authenticated());
+    const url = new URL(path, "https://management.test");
+    assert.equal(url.pathname, "/tenants");
+    assert.equal(url.searchParams.get("limit"), "2");
+    const tenant = url.searchParams.get("tenant_id");
+    assert.ok([".", ".."].includes(tenant));
+    return json(page([managedTenant({ tenant_id: tenant })]));
+  });
+  await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
+  for (const tenant of [".", ".."]) {
+    const expected = managedTenant({ tenant_id: tenant });
+    const result = await client.getManagedTenant(tenant);
+    assert.deepEqual(result, expected);
+    assert.equal(calls.at(-1).path.includes("/tenants/."), false);
+    assert.equal(calls.at(-1).path.includes("/tenants/.."), false);
+  }
+  assert.equal(calls.filter(call => call.path === "/tenants/.").length, 0);
+  assert.equal(calls.filter(call => call.path === "/tenants/..").length, 0);
+});
+
+test("dot-only managed tenant lookup rejects empty, ambiguous, different and malformed pages", async t => {
+  let payload = page([]);
+  const { client, calls } = setup(t, path => {
+    if (path === "/capabilities") return json(platformCapabilities);
+    if (path === "/login") return json(authenticated());
+    return json(payload);
+  });
+  await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
+  for (const value of [
+    page([]),
+    page([managedTenant({ tenant_id: "other" })]),
+    page([managedTenant({ tenant_id: "." }), managedTenant({ tenant_id: "." })]),
+    { ...page([managedTenant({ tenant_id: "." })]), has_more: true },
+    { items: "not-a-list", has_more: false },
+  ]) {
+    payload = value;
+    await assert.rejects(client.getManagedTenant("."));
+  }
+  assert.equal(calls.every(call => !call.path.startsWith("/tenants/.")), true);
+});
+
 test("existing account discovery is platform-only, paginated and distinct from scoped membership", async t => {
   const { client, calls } = setup(t, path => {
     if (path === "/capabilities") return json(platformCapabilities);
@@ -1465,4 +1509,159 @@ test("management development tenant selection retains trusted ticket and uses Co
   assert.deepEqual(JSON.parse(calls.at(-1).init.body), { tenant_id: "tenant-1" });
   assert.equal(calls.at(-1).init.headers.Authorization, "TenantSelection synthetic-ticket");
   assert.equal(calls.at(-1).init.credentials, "same-origin");
+});
+
+test("navigation activity observes overlapping writes without credentials or read/auth traffic", async t => {
+  const first = deferred(), second = deferred(); let writes = 0;
+  const { client } = setup(t, (path, init) => {
+    if (path === "/capabilities") return json(platformCapabilities);
+    if (path === "/login") return json(authenticated("0"));
+    if (init.method === "GET") return json(page([]));
+    return (++writes === 1 ? first : second).promise;
+  });
+  await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password"); await client.listClients();
+  assert.deepEqual(client.getMutationSnapshot(), { pending: 0, revision: 0 });
+  const input = { client_id: "desktop-client", client_name: "Desktop", redirect_uris: ["http://127.0.0.1/callback"], client_type: "public_desktop", pkce_required: true };
+  const a = client.upsertClient(input), b = client.upsertClient(input);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(client.getMutationSnapshot(), { pending: 2, revision: 2 });
+  first.resolve(json({ audit_id: "audit", client: managedClient(input) })); await a;
+  assert.deepEqual(client.getMutationSnapshot(), { pending: 1, revision: 2 });
+  second.resolve(json({ audit_id: "audit", client: managedClient(input) })); await b;
+  assert.deepEqual(client.getMutationSnapshot(), { pending: 0, revision: 2 });
+  assert.deepEqual(Object.keys(client.getMutationSnapshot()).sort(), ["pending", "revision"]);
+  await client.listClients(); assert.deepEqual(client.getMutationSnapshot(), { pending: 0, revision: 2 });
+});
+
+test("navigation write activity settles failed and invalid responses without retrying", async t => {
+  let writes = 0;
+  const { client } = setup(t, (path, init) => {
+    if (path === "/capabilities") return json(platformCapabilities);
+    if (path === "/login") return json(authenticated("0"));
+    writes++;
+    if (writes === 1) throw new Error("lost response");
+    return new Response("invalid JSON", { status: 200 });
+  });
+  await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
+  const input = { client_id: "desktop-client", client_name: "Desktop", redirect_uris: ["http://127.0.0.1/callback"], client_type: "public_desktop", pkce_required: true };
+  for (let count = 1; count <= 2; count++) {
+    await assert.rejects(client.upsertClient(input));
+    assert.deepEqual(client.getMutationSnapshot(), { pending: 0, revision: count });
+    assert.equal(writes, count);
+  }
+});
+
+test("navigation write activity covers a shared token refresh and sends one request after it", async t => {
+  const refresh = deferred();
+  const refreshStarted = deferred();
+  const writeStarted = deferred();
+  const { client, calls } = setup(t, (path, init) => {
+    if (path === "/capabilities") return json(platformCapabilities);
+    if (path === "/login") return json(authenticated("0", 1));
+    if (path === "/refresh") { refreshStarted.resolve(); return refresh.promise; }
+    if (path === "/clients/upsert") { writeStarted.resolve(); return json({ audit_id: "audit", client: managedClient(input) }); }
+    throw new Error(path);
+  });
+  await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
+  const input = { client_id: "desktop-client", client_name: "Desktop", redirect_uris: ["http://127.0.0.1/callback"], client_type: "public_desktop", pkce_required: true };
+  const pending = client.upsertClient(input);
+  await refreshStarted.promise;
+  assert.deepEqual(client.getMutationSnapshot(), { pending: 1, revision: 1 });
+  refresh.resolve(json(authenticated("0", 3600, "-rotated")));
+  await writeStarted.promise;
+  assert.deepEqual(client.getMutationSnapshot(), { pending: 1, revision: 1 });
+  await pending;
+  assert.deepEqual(client.getMutationSnapshot(), { pending: 0, revision: 1 });
+  assert.equal(calls.filter(call => call.path === "/refresh").length, 1);
+  assert.equal(calls.filter(call => call.path === "/clients/upsert").length, 1);
+});
+
+test("cookie write activity waits for refresh and suppresses stale writes after refresh failure", async t => {
+  const environment = cookieEnvironment(t);
+  const refresh = deferred();
+  const refreshStarted = deferred();
+  const calls = [];
+  t.mock.method(globalThis, "fetch", async (url, init) => {
+    const path = new URL(url, "https://host.test").pathname;
+    calls.push({ path, init });
+    if (path.endsWith("/auth/capabilities")) return json(platformCapabilities);
+    if (path.endsWith("/admin/auth/browser/login")) {
+      const value = authenticated("0", 1); delete value.tokens.refresh_token; return json(value);
+    }
+    if (path.endsWith("/admin/auth/browser/refresh")) { refreshStarted.resolve(); return refresh.promise; }
+    if (path.endsWith("/admin/clients/upsert")) throw new Error("stale write");
+    throw new Error(path);
+  });
+  const client = new ManagementClient("/host/idp", { mode: "cookie" });
+  await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
+  const input = { client_id: "desktop-client", client_name: "Desktop", redirect_uris: ["http://127.0.0.1/callback"], client_type: "public_desktop", pkce_required: true };
+  const pending = client.upsertClient(input);
+  await refreshStarted.promise;
+  assert.deepEqual(client.getMutationSnapshot(), { pending: 1, revision: 1 });
+  refresh.resolve(new Response(null, { status: 401 }));
+  await assert.rejects(pending);
+  assert.deepEqual(client.getMutationSnapshot(), { pending: 0, revision: 1 });
+  assert.equal(calls.filter(call => call.path.endsWith("/admin/clients/upsert")).length, 0);
+});
+
+test("cookie write activity shares one refresh across writes and settles both requests", async t => {
+  cookieEnvironment(t);
+  const refresh = deferred();
+  const refreshStarted = deferred();
+  const calls = [];
+  const input = { client_id: "desktop-client", client_name: "Desktop", redirect_uris: ["http://127.0.0.1/callback"], client_type: "public_desktop", pkce_required: true };
+  t.mock.method(globalThis, "fetch", async (url, init) => {
+    const path = new URL(url, "https://host.test").pathname;
+    calls.push({ path, init });
+    if (path.endsWith("/auth/capabilities")) return json(platformCapabilities);
+    if (path.endsWith("/admin/auth/browser/login")) {
+      const value = authenticated("0", 1); delete value.tokens.refresh_token; return json(value);
+    }
+    if (path.endsWith("/admin/auth/browser/refresh")) { refreshStarted.resolve(); return refresh.promise; }
+    if (path.endsWith("/admin/clients/upsert")) return json({ audit_id: "audit", client: managedClient(input) });
+    throw new Error(path);
+  });
+  const client = new ManagementClient("/host/idp", { mode: "cookie" });
+  await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
+  const first = client.upsertClient(input), second = client.upsertClient(input);
+  await refreshStarted.promise;
+  assert.deepEqual(client.getMutationSnapshot(), { pending: 2, revision: 2 });
+  const refreshed = authenticated("0", 3600, "-rotated"); delete refreshed.tokens.refresh_token;
+  refresh.resolve(json(refreshed));
+  await Promise.all([first, second]);
+  assert.deepEqual(client.getMutationSnapshot(), { pending: 0, revision: 2 });
+  assert.equal(calls.filter(call => call.path.endsWith("/admin/auth/browser/refresh")).length, 1);
+  assert.equal(calls.filter(call => call.path.endsWith("/admin/clients/upsert")).length, 2);
+});
+
+test("cookie logout during refresh suppresses the old write and settles activity", async t => {
+  cookieEnvironment(t);
+  const refresh = deferred();
+  const refreshStarted = deferred();
+  const calls = [];
+  const input = { client_id: "desktop-client", client_name: "Desktop", redirect_uris: ["http://127.0.0.1/callback"], client_type: "public_desktop", pkce_required: true };
+  t.mock.method(globalThis, "fetch", async (url, init) => {
+    const path = new URL(url, "https://host.test").pathname;
+    calls.push({ path, init });
+    if (path.endsWith("/auth/capabilities")) return json(platformCapabilities);
+    if (path.endsWith("/admin/auth/browser/login")) {
+      const value = authenticated("0", 1); delete value.tokens.refresh_token; return json(value);
+    }
+    if (path.endsWith("/admin/auth/browser/refresh")) { refreshStarted.resolve(); return refresh.promise; }
+    if (path.endsWith("/admin/auth/browser/logout")) return new Response(null, { status: 204 });
+    if (path.endsWith("/admin/clients/upsert")) throw new Error("stale write");
+    throw new Error(path);
+  });
+  const client = new ManagementClient("/host/idp", { mode: "cookie" });
+  await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
+  const pending = client.upsertClient(input);
+  await refreshStarted.promise;
+  assert.deepEqual(client.getMutationSnapshot(), { pending: 1, revision: 1 });
+  const loggedOut = client.logout();
+  const refreshed = authenticated("0", 3600, "-rotated"); delete refreshed.tokens.refresh_token;
+  refresh.resolve(json(refreshed));
+  await loggedOut;
+  await assert.rejects(pending);
+  assert.deepEqual(client.getMutationSnapshot(), { pending: 0, revision: 1 });
+  assert.equal(calls.filter(call => call.path.endsWith("/admin/clients/upsert")).length, 0);
 });

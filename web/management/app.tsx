@@ -1,11 +1,12 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { Alert, App, Button, Card, ConfigProvider, Descriptions, Empty, Form, Input, Space, Spin, Tag, Typography } from "antd";
+import { Alert, App, Button, Card, ConfigProvider, Empty, Form, Input, Space, Spin, Tag, Typography } from "antd";
 import zhCN from "antd/locale/zh_CN";
 import { ManagementClient, ManagementError, type TenantPage } from "./client";
+import { defaultRoute, routeHash } from "./navigation";
 import "./styles.css";
 
 const { Title, Paragraph, Text } = Typography;
-const RoleWorkspace = lazy(() => import("./roles").then(module => ({ default: module.RoleWorkspace })));
+const ManagementShell = lazy(() => import("./shell").then(module => ({ default: module.ManagementShell })));
 
 function errorMessage(error: unknown) {
   return error instanceof ManagementError ? error.message : "操作未完成，请稍后重试。";
@@ -75,7 +76,7 @@ function Console({ client }: { client: ManagementClient }) {
   const [error, setError] = useState("");
   const [verifiedAt, setVerifiedAt] = useState<string>();
   const restoreAttempted = useRef<ManagementClient | undefined>(undefined);
-  const sessionHeading = useRef<HTMLHeadingElement>(null);
+  const [verifiedKey, setVerifiedKey] = useState<string>();
   const [form] = Form.useForm();
   const run = useCallback(async (operation: () => Promise<void>) => {
     setError("");
@@ -91,7 +92,29 @@ function Console({ client }: { client: ManagementClient }) {
     void client.restore().catch(reason => { if (!(reason instanceof ManagementError && reason.status === 401)) setError(errorMessage(reason)); }).finally(() => setBusy(false));
   }, [client, state.capabilities]);
   useEffect(() => { setVerifiedAt(undefined); }, [state.session?.session_id]);
-  useEffect(() => { if (!state.selecting) sessionHeading.current?.focus(); }, [state.session?.session_id, state.selecting]);
+  const priorSelection = useRef({ selecting: state.selecting, tenant: state.session?.tenant_id });
+  useEffect(() => {
+    const previous = priorSelection.current;
+    if (previous.selecting && !state.selecting && previous.tenant && state.session &&
+        previous.tenant !== state.session.tenant_id && state.capabilities) {
+      // An explicit Choose completion changes the login scope. Copied URLs and
+      // ordinary logins still retain their original (revalidated) location.
+      history.replaceState(history.state, "", `${location.pathname}${location.search}${routeHash(defaultRoute(state.capabilities, state.session))}`);
+    }
+    priorSelection.current = { selecting: state.selecting, tenant: state.session?.tenant_id };
+  }, [state.selecting, state.session?.tenant_id, state.capabilities]);
+
+  const sessionKey = state.session && JSON.stringify([state.session.tenant_id, state.session.account_id, state.session.session_id, state.session.client_id]);
+  useEffect(() => {
+    setVerifiedKey(undefined);
+    if (!sessionKey || state.selecting) return;
+    let active = true;
+    void run(async () => {
+      await client.verifySession();
+      if (active) { setVerifiedKey(sessionKey); setVerifiedAt(new Date().toLocaleTimeString("zh-CN")); }
+    });
+    return () => { active = false; };
+  }, [client, sessionKey, state.selecting, run]);
   useEffect(() => {
     if (!state.session || state.selecting || busy) return;
     const verify = () => void run(async () => {
@@ -108,42 +131,27 @@ function Console({ client }: { client: ManagementClient }) {
   const modeLabel = !capabilities ? "连接管理服务" : !capabilities.tenancy_enabled ? "单域管理" :
     capabilities.fixed_tenant_id === "0" ? "平台管理" : capabilities.login_tenant_policy === "fixed" ? "固定租户" : "多租户管理";
 
+  const notices = <>
+    {client.isDevelopmentMode() && <Alert type="warning" message="开发登录模式：页面重载或会话到期后需重新登录。" />}
+    {state.sessionChanged && <Alert type="info" message="其他页面已更改此会话，请重新加载后继续。" action={<Button onClick={() => window.location.reload()}>重新加载</Button>} />}
+    {error && <Alert className="management-error" type="error" showIcon message={error} role="alert" />}
+  </>;
+  const verify = () => void run(async () => { await client.verifySession(); setVerifiedAt(new Date().toLocaleTimeString("zh-CN")); });
   return <div className="management-root">
-    <header className="management-header"><div className="management-brand">IDP <span>身份管理控制台</span></div><Tag>{modeLabel}</Tag></header>
-    <main className={`management-main ${state.session && !state.selecting ? "management-session" : ""}`}>
-      {!state.session && !state.selecting && <section className="management-intro">
-        <Text className="management-eyebrow">IDENTITY & ACCESS</Text>
-        <Title>每一次访问，<br />都有明确的身份。</Title>
-        <Paragraph>使用管理账号登录，进入授权的管理范围。</Paragraph>
-        <div className="management-guidance"><Text strong>登录前确认</Text><Paragraph type="secondary">账号需由管理员创建或授权。登录后的可用操作由服务端实时校验。</Paragraph></div>
-      </section>}
-      <section className="management-panel" aria-label="管理认证" aria-busy={busy}>
-        {client.isDevelopmentMode() && <Alert type="warning" message="开发登录模式：页面重载或会话到期后需重新登录。" />}
-        {state.sessionChanged && <Alert type="info" message="其他页面已更改此会话，请重新加载后继续。" action={<Button onClick={() => window.location.reload()}>重新加载</Button>} />}
-        {error && <Alert className="management-error" type="error" showIcon message={error} role="alert" />}
+    {state.session && !state.selecting && verifiedKey === sessionKey ? <Suspense fallback={<div className="management-loading" role="status"><Spin /> 正在加载管理工作区…</div>}>
+      <ManagementShell key={sessionKey} client={client} busy={busy} verifiedAt={verifiedAt} notices={notices} verify={verify}
+        logout={() => void run(() => client.logout())} switchTenant={() => void run(() => client.beginSwitch())} />
+    </Suspense> : <>
+      <header className="management-header"><div className="management-brand">IDP <span>身份管理控制台</span></div><Tag>{modeLabel}</Tag></header>
+      <main className="management-main"><section className="management-panel" aria-label="管理认证" aria-busy={busy}>
+        {notices}
         {!capabilities ? <Card className="management-card">
           <Title level={2}>连接管理服务</Title>
           {busy ? <div role="status"><Spin /> 正在读取登录方式…</div> : <Button onClick={() => void run(() => client.loadCapabilities())}>重新连接</Button>}
-        </Card> : state.selecting ? <TenantPicker client={client} busy={busy} run={run} reportError={setError} /> : state.session ? <>
-          <div className="management-session-title"><div><h1 ref={sessionHeading} tabIndex={-1}>管理控制台</h1><Paragraph type="secondary">按明确的管理范围维护角色与权限</Paragraph></div>
-            <Space wrap>{client.canChoose() && <Button disabled={busy} onClick={() => void run(() => client.beginSwitch())}>切换租户</Button>}
-              <Button disabled={busy} onClick={() => void run(() => client.logout())}>退出登录</Button></Space></div>
-          <details className="management-identity">
-          <summary>当前身份：{!capabilities.tenancy_enabled ? "单域" : state.session.tenant_id === "0" ? "平台" : `租户 ${state.session.tenant_id}`} · 查看会话信息</summary>
-          <Card title="当前身份" className="management-card">
-            <Descriptions column={1} items={[
-              { key: "scope", label: "管理范围", children: !capabilities.tenancy_enabled ? "单域" : state.session.tenant_id === "0" ? "平台" : `租户 ${state.session.tenant_id}` },
-              { key: "account", label: "用户 ID", children: state.session.account_id },
-              { key: "session", label: "会话 ID", children: state.session.session_id },
-              { key: "verified", label: "会话校验", children: verifiedAt ? `最近校验 ${verifiedAt}` : "已完成登录认证" },
-            ]} />
-            <Button loading={busy} onClick={() => void run(async () => { await client.verifySession(); setVerifiedAt(new Date().toLocaleTimeString("zh-CN")); })}>校验当前会话</Button>
-          </Card>
-          </details>
-          <Suspense fallback={<div className="management-loading" role="status"><Spin /> 正在加载角色管理…</div>}>
-            <RoleWorkspace key={`${state.session.session_id}:${state.session.tenant_id}`} client={client} />
-          </Suspense>
-        </> : <Card className="management-card">
+        </Card> : state.selecting ? <TenantPicker client={client} busy={busy} run={run} reportError={setError} /> : state.session ?
+          <Card className="management-card"><div role="status"><Spin /> 正在验证当前管理会话…</div>
+            {!busy && <Button onClick={() => void run(async () => { await client.verifySession(); setVerifiedKey(sessionKey); })}>重新验证会话</Button>}
+          </Card> : <Card className="management-card">
           <Title level={2}>登录管理控制台</Title>
           <Paragraph type="secondary">{!capabilities.tenancy_enabled ? "使用管理员邮箱和密码登录。" : capabilities.login_tenant_policy === "fixed" ?
             capabilities.fixed_tenant_id === "0" ? "此入口用于平台管理员登录。" : `此入口仅登录租户 ${capabilities.fixed_tenant_id}。` : "验证账号后，选择已加入的租户。"}</Paragraph>
@@ -159,9 +167,9 @@ function Console({ client }: { client: ManagementClient }) {
           </Form>
           <Paragraph type="secondary" className="management-note">{client.supportsRestore() ? "访问令牌仅保存在当前页面，刷新后会尝试恢复浏览器会话。" : "凭证仅保存在当前页面，刷新或到期后需重新登录。"}</Paragraph>
         </Card>}
-      </section>
-    </main>
-    <footer className="management-footer">Embedded IDP · 管理控制台</footer>
+      </section></main>
+      <footer className="management-footer">Embedded IDP · 管理控制台</footer>
+    </>}
   </div>;
 }
 

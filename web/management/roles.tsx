@@ -1,19 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, Button, Card, Drawer, Form, Input, Modal, Popconfirm, Select, Space, Table, Tabs, Tag, Typography } from "antd";
-import { ManagementClient, ManagementError, type ManagedTenant, type Role, type RoleDetail } from "./client";
+import { Alert, Button, Card, Drawer, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, Typography } from "antd";
+import { ManagementClient, ManagementError, type Role, type RoleDetail } from "./client";
 
 import { useCursorPage } from "./pagination";
 import { RolePermissions } from "./permissions";
-import { MemberRoles } from "./members";
-import { TenantManagement } from "./tenants";
-import { PlatformAdministrators } from "./administrators";
-import { AccountSecurityAccounts } from "./accounts";
-import { DeviceManagement } from "./devices";
-import { SessionManagement } from "./sessions";
-import { ClientManagement } from "./clients";
-import { PermissionDirectory } from "./permission-directory";
-import { AuditManagement } from "./audit";
-import { AccessDiagnostic } from "./diagnostic";
 
 const { Text, Paragraph } = Typography;
 const statusLabel = { active: "启用", suspended: "停用", archived: "已归档", disabled: "停用" };
@@ -116,7 +106,7 @@ function RoleEditor({ client, tenant, business, roleId, close, changed }: {
   </Drawer>;
 }
 
-function RoleTable({ client, tenant }: { client: ManagementClient; tenant: string }) {
+export function RoleTable({ client, tenant }: { client: ManagementClient; tenant: string }) {
   const [business, setBusiness] = useState<string>();
   const load = useCallback((cursor?: string) => client.listRoles(tenant, business, cursor), [client, tenant, business]);
   const result = useCursorPage(load);
@@ -148,37 +138,4 @@ function RoleTable({ client, tenant }: { client: ManagementClient; tenant: strin
     {creating && <CreateRole client={client} tenant={tenant} business={business} businessAdmin={creating === "business_admin"} close={() => { close(); result.reload(); }} />}
     {selected && <RoleEditor key={selected.role_id} client={client} tenant={tenant} business={selected.business_id} roleId={selected.role_id} close={close} changed={result.reload} />}
   </Card>;
-}
-
-export function RoleWorkspace({ client }: { client: ManagementClient }) {
-  const { capabilities, session } = client.getSnapshot();
-  const platform = capabilities!.tenancy_enabled && session!.tenant_id === "0";
-  const [selected, setSelected] = useState<ManagedTenant>();
-  const tenant = platform ? selected?.tenant_id : session!.tenant_id;
-  return <section className="management-role-workspace" aria-label="身份与访问管理">
-    {platform && !selected ? <Tabs destroyOnHidden items={[
-      { key: "tenants", label: "租户管理", children: <TenantManagement client={client} select={setSelected} /> },
-      { key: "administrators", label: "系统管理员", children: <PlatformAdministrators client={client} /> },
-      { key: "accounts", label: "账号安全", children: <AccountSecurityAccounts client={client} /> },
-      { key: "clients", label: "客户端管理", children: <ClientManagement client={client} /> },
-      { key: "directory", label: "平台权限", children: <PermissionDirectory client={client} tenant="0" /> },
-      { key: "audit", label: "审计记录", children: <AuditManagement client={client} tenant="0" platformScope /> },
-    ]} /> : <>
-      <div className="management-target"><Text strong>管理目标：{capabilities!.tenancy_enabled ? `${selected?.name ?? tenant}（${tenant}）` : "单域"}</Text>
-        {platform && <Button onClick={() => setSelected(undefined)}>更换管理目标</Button>}</div>
-      <Tabs key={tenant} destroyOnHidden items={[
-        { key: "roles", label: "角色与权限", children: <RoleTable client={client} tenant={tenant!} /> },
-        { key: "directory", label: "权限目录", children: <PermissionDirectory client={client} tenant={tenant!} /> },
-        { key: "members", label: "成员管理", children: <MemberRoles client={client} tenant={tenant!} /> },
-        { key: "diagnostic", label: "权限诊断", children: <AccessDiagnostic client={client} tenant={tenant!} /> },
-        { key: "devices", label: "设备管理", children: <DeviceManagement client={client} tenant={tenant!} /> },
-        { key: "sessions", label: "会话管理", children: <SessionManagement client={client} tenant={tenant!} /> },
-        { key: "audit", label: "审计记录", children: <AuditManagement client={client} tenant={tenant!} /> },
-        ...(!capabilities!.tenancy_enabled ? [
-          { key: "accounts", label: "账号安全", children: <AccountSecurityAccounts client={client} /> },
-          { key: "clients", label: "客户端管理", children: <ClientManagement client={client} /> },
-        ] : []),
-      ]} />
-    </>}
-  </section>;
 }
