@@ -118,7 +118,8 @@ cargo test --workspace --locked
 - [M1-02 实现审查调整交接说明](docs/m1-02-implementation-adjustments-handoff.md) / [A01–A05 静态核对与调整计划回传](docs/m1-02-implementation-adjustments-result.md)（实施前计划；后续处置与运行证据见收尾回传）
 - [M1-02 实际代码完整审查](docs/m1-02-code-review.md) / [原设计修订 2 固定快照](docs/m1-02-configuration-composition-design-r2.md)（修复前审查与固定基线；问题处置与运行证据见收尾回传）
 - [管理后台与社区能力补齐详细设计](docs/management-console-capability-design.md)（修订2设计基线；UI-A/UI-B进展另见交付记录，新增社区能力未实施）
-- [UI-B 后台壳层与导航实施验收](docs/ui-b-implementation-result.md) / [运行截图](docs/design/ui-b/README.md)（本地实现、审查收尾与提交前核对完成，未推送；UI-C–F、M1-03–06未启动，试点与部署待定）
+- [UI-B 后台壳层与导航实施验收](docs/ui-b-implementation-result.md) / [运行截图](docs/design/ui-b/README.md)（已完成本地实现、审查收尾与提交前核对，未推送；后续进展见UI-C报告）
+- [UI-C 列表与详情样板实施验收](docs/ui-c-implementation-result.md) / [运行截图](docs/design/ui-c/README.md)（客户端列表、ID定位、配置确认与异常恢复；本地实现、专项补验及提交前核对完成，本批随UI-C提交归档，未推送；UI-D–F、M1-03–06未启动，试点与部署待定）
 - [开发与嵌入指南](docs/developer-and-integration-guide.md)
 - [宿主集成边界](docs/host-integration-v1.md)
 - [租户/角色/权限设计](docs/tenant-role-permission-design-v1.md)

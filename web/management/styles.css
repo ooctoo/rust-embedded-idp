@@ -70,3 +70,40 @@
   .management-page .ant-card-extra > .ant-space { max-width: 100%; flex-wrap: wrap; }
   .management-shell button { min-height: 40px; }
 }
+
+/* UI-C: client list/detail stays local to the management surface. */
+.management-client-page .ant-card-body { padding: 24px; }
+.management-client-page > .ant-card-head { box-shadow: none; }
+.management-client-list-actions, .management-client-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 20px 0; flex-wrap: wrap; }
+.management-client-loading { display: flex; align-items: center; justify-content: center; gap: 12px; min-height: 180px; }
+.management-client-name { min-width: 180px; overflow-wrap: anywhere; }
+.management-client-name code { white-space: normal; }
+.management-client-editor .ant-alert { margin-bottom: 16px; }
+.management-client-editor .ant-form { margin-top: 24px; }
+.management-client-editor .ant-descriptions { margin-top: 20px; }
+.management-client-editor .ant-drawer-body, .management-client-confirm .ant-modal-body { overflow-wrap: anywhere; }
+.management-client-confirm .ant-descriptions { margin: 16px 0; }
+.management-client-confirm ul { padding-inline-start: 20px; }
+.management-client-confirm-content { max-height: calc(100dvh - 260px); overflow-y: auto; }
+.management-client-confirm .ant-alert + .ant-alert { margin-top: 16px; }
+@media (max-width: 767px) {
+  .management-client-page .ant-card-body { padding: 16px; }
+  .management-client-filter { display: flex; flex-direction: column; align-items: stretch; gap: 16px; }
+  .management-client-filter .ant-form-item { margin-inline-end: 0; }
+  .management-client-filter .ant-select { width: 100%; min-width: 0 !important; }
+  .management-client-editor .ant-drawer-content-wrapper { max-width: 100vw; }
+  .management-client-editor .ant-drawer-body { padding: 16px; }
+  .management-client-confirm .ant-modal-footer { display: flex; flex-direction: column; gap: 8px; }
+  .management-client-confirm .ant-modal-footer > .ant-btn { margin-inline-start: 0; width: 100%; min-height: 40px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .management-client-editor *, .management-client-confirm * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+.management-client-page .ant-typography-secondary,
+.management-client-page .ant-empty-description,
+.management-client-page .ant-result-subtitle,
+.management-client-editor .ant-typography-secondary,
+.management-client-editor .ant-form-item-extra,
+.management-client-editor .ant-descriptions-item-label,
+.management-client-editor .ant-result-subtitle,
+.management-client-confirm .ant-descriptions-item-label { color: #58677c; }
