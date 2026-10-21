@@ -1,4 +1,5 @@
 use super::registration_email_support::*;
+use embedded_idp_core::access::RegistrationEmailService;
 use embedded_idp_storage_postgres::RegistrationEmailPreparation;
 use std::sync::{Arc, Barrier};
 use std::thread;
@@ -26,14 +27,20 @@ fn processing_advisory_slots_bound_cross_instance_preparation() {
             fixture.schema, fixture.schema, fixture.schema
         ))
         .expect("processing slot trigger");
-    let barrier = Arc::new(Barrier::new(contexts.len()));
+    // Claim separately so scheduling contention cannot masquerade as a capacity
+    // guarantee. Four durable leases exist before any physical B starts.
+    let claims: Vec<_> = (0..4)
+        .map(|_| fixture.store().claim_preparation().unwrap().unwrap())
+        .collect();
+    assert!(fixture.store().claim_preparation().unwrap().is_none());
+    let barrier = Arc::new(Barrier::new(claims.len()));
     let mut handles = Vec::new();
-    for context in contexts {
+    for claim in claims {
         let fixture = Arc::clone(&fixture);
         let barrier = Arc::clone(&barrier);
         handles.push(thread::spawn(move || {
             barrier.wait();
-            fixture.store().prepare(context, 1)
+            fixture.store().prepare_claimed(&claim)
         }));
     }
     let results: Vec<_> = handles
@@ -56,5 +63,6 @@ fn processing_advisory_slots_bound_cross_instance_preparation() {
             .count(),
         4
     );
-    assert_eq!(results.iter().filter(|result| result.is_err()).count(), 1);
+    assert_eq!(results.iter().filter(|result| result.is_err()).count(), 0);
+    assert!(fixture.store().claim_preparation().unwrap().is_some());
 }

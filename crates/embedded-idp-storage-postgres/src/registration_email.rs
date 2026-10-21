@@ -4,6 +4,8 @@ mod admission;
 mod capacity;
 mod maintenance;
 mod processing;
+mod runtime;
+mod runtime_guard;
 mod support;
 mod types;
 mod verification;
@@ -18,6 +20,7 @@ pub struct PostgresRegistrationEmailStore<C: RegistrationEmailCrypto> {
     scope: RegistrationEmailScope,
     policy: RegistrationEmailPolicy,
     crypto: Arc<C>,
+    password_budget: embedded_idp_core::PasswordWorkBudget,
 }
 impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
     pub fn new(
@@ -57,7 +60,15 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
             scope,
             policy,
             crypto,
+            password_budget: embedded_idp_core::PasswordWorkBudget::default(),
         })
+    }
+    pub fn with_password_work_budget(
+        mut self,
+        budget: embedded_idp_core::PasswordWorkBudget,
+    ) -> Self {
+        self.password_budget = budget;
+        self
     }
     pub fn scope(&self) -> &RegistrationEmailScope {
         &self.scope

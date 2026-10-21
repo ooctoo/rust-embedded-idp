@@ -20,6 +20,48 @@ pub struct PostgresTenantAuthTransaction<'a> {
 impl TenantAuthStore for PostgresAccessStore {
     type Transaction<'a> = PostgresTenantAuthTransaction<'a>;
 
+    fn credential_snapshot_by_email(
+        &self,
+        mode: TenancyMode,
+        email: &str,
+    ) -> Result<Option<TenantLoginIdentity>, TenantAuthError> {
+        if mode != self.mode {
+            return Err(embedded_idp_core::access::AccessError::ModeMismatch.into());
+        }
+        let mut client = self.adapter.connect()?;
+        let mut transaction = client
+            .build_transaction()
+            .isolation_level(IsolationLevel::ReadCommitted)
+            .read_only(true)
+            .start()
+            .map_err(access_db_error)?;
+        // Bound the only potentially blocked reads.  `transaction_timeout` is
+        // deliberately not used because the supported PostgreSQL floor may be
+        // older than the server version that introduced that setting.
+        transaction
+            .batch_execute("set local statement_timeout='5s'; set local lock_timeout='5s'")
+            .map_err(access_db_error)?;
+        let schema = self.adapter.schema_name();
+        transaction
+            .query_one(
+                &format!("select singleton from {schema}.access_state where singleton"),
+                &[],
+            )
+            .map_err(access_db_error)?;
+        self.verify(&mut transaction)?;
+        let result = transaction
+            .query_opt(
+                &format!("select id,password_hash,status from {schema}.accounts where email=$1"),
+                &[&email],
+            )
+            .map_err(access_db_error)?
+            .as_ref()
+            .map(decode_identity)
+            .transpose()?;
+        transaction.commit().map_err(access_db_error)?;
+        Ok(result)
+    }
+
     fn auth_transaction<R>(
         &self,
         mode: embedded_idp_core::access::TenancyMode,

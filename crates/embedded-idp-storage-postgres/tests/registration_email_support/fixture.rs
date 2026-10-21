@@ -69,14 +69,18 @@ pub struct Fixture {
 
 impl Fixture {
     pub fn new() -> Self {
-        Self::build(false)
+        Self::build_mode(false, TenancyMode::Enabled)
     }
 
     pub fn with_existing_account() -> Self {
-        Self::build(true)
+        Self::build_mode(true, TenancyMode::Enabled)
     }
 
-    fn build(existing_account: bool) -> Self {
+    pub fn with_disabled_mode() -> Self {
+        Self::build_mode(false, TenancyMode::Disabled)
+    }
+
+    fn build_mode(existing_account: bool, mode: TenancyMode) -> Self {
         let uri = test_uri();
         let schema = format!("reg_email_foundation_i1_{}", Uuid::now_v7().simple());
         let adapter = PostgresStorageAdapter::new(PgStorageConfig {
@@ -94,36 +98,30 @@ impl Fixture {
         })
         .expect("fixture config");
         adapter
-            .initialize_access_schema(
-                TenancyMode::Enabled,
-                &PermissionCatalog::new(vec![]).unwrap(),
-            )
+            .initialize_access_schema(mode, &PermissionCatalog::new(vec![]).unwrap())
             .expect("tenant_v6 schema");
-        CoreAccessBootstrapService::new(
-            TenancyMode::Enabled,
-            adapter.clone(),
-            FixedClock,
-            UuidV7IdGenerator,
-        )
-        .initialize_administrator(
-            &auth_config(),
-            BootstrapAdministrator {
-                email: "admin@example.test".to_string(),
-                display_name: Some("Fixture administrator".to_string()),
-                password: SecretString::new("AdminPass123"),
-                request_id: "registration-email-foundation".to_string(),
-            },
-        )
-        .expect("bootstrap administrator");
-        let mut client = adapter.connect().expect("fixture connection");
-        client
-            .execute(
-                &format!(
-                    "insert into {schema}.access_tenants(id,kind,name,status,allow_registration,created_at_epoch) values($1,'tenant','Tenant 1','active',true,$2)"
-                ),
-                &[&TENANT, &1_i64],
+        CoreAccessBootstrapService::new(mode, adapter.clone(), FixedClock, UuidV7IdGenerator)
+            .initialize_administrator(
+                &auth_config(),
+                BootstrapAdministrator {
+                    email: "admin@example.test".to_string(),
+                    display_name: Some("Fixture administrator".to_string()),
+                    password: SecretString::new("AdminPass123"),
+                    request_id: "registration-email-foundation".to_string(),
+                },
             )
-            .expect("tenant binding seed");
+            .expect("bootstrap administrator");
+        let mut client = adapter.connect().expect("fixture connection");
+        if mode == TenancyMode::Enabled {
+            client
+                .execute(
+                    &format!(
+                        "insert into {schema}.access_tenants(id,kind,name,status,allow_registration,created_at_epoch) values($1,'tenant','Tenant 1','active',true,$2)"
+                    ),
+                    &[&TENANT, &1_i64],
+                )
+                .expect("tenant binding seed");
+        }
         if existing_account {
             let store = PostgresAccessStore::new(adapter.clone(), TenancyMode::Enabled)
                 .expect("access store");
@@ -145,12 +143,17 @@ impl Fixture {
             .expect("seed pending account");
         }
         let plan = adapter
-            .registration_email_migration_plan(TenancyMode::Enabled)
+            .registration_email_migration_plan(mode)
             .expect("foundation plan");
         adapter
-            .apply_registration_email_foundation(&plan, AUTHORITY, TenancyMode::Enabled)
+            .apply_registration_email_foundation(&plan, AUTHORITY, mode)
             .expect("foundation apply");
-        let scope = RegistrationEmailScope::new(AUTHORITY, PRODUCT, TENANT, TenancyMode::Enabled)
+        let tenant = if mode == TenancyMode::Disabled {
+            "0"
+        } else {
+            TENANT
+        };
+        let scope = RegistrationEmailScope::new(AUTHORITY, PRODUCT, tenant, mode)
             .expect("registration scope");
         adapter
             .bind_registration_email_product(&scope)

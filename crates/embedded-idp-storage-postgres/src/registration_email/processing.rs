@@ -6,6 +6,18 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
         context: Uuid,
         sequence: i64,
     ) -> Result<RegistrationEmailPreparation, RegistrationEmailError> {
+        match self.claim_specific_preparation(context, sequence)? {
+            Some(claim) => self.prepare_claimed_inner(&claim),
+            None => Err(RegistrationEmailError::Unavailable),
+        }
+    }
+
+    pub(super) fn prepare_claimed_inner(
+        &self,
+        claim: &RegistrationEmailPreparationClaim,
+    ) -> Result<RegistrationEmailPreparation, RegistrationEmailError> {
+        let context = claim.context_id;
+        let sequence = claim.sequence;
         let mut c = self
             .adapter
             .connect()
@@ -43,6 +55,31 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
             )
             .map_err(db)?
             .ok_or(RegistrationEmailError::Unavailable)?;
+        let stored_token: Option<Uuid> = intent.get("claim_token");
+        let stored_lease: Option<i64> = intent.get("lease_until");
+        let at_claim = now(&mut tx)?;
+        if stored_token != Some(claim.claim_token) || stored_lease != Some(claim.lease_until) {
+            return Err(RegistrationEmailError::Unavailable);
+        }
+        if intent.get::<_, String>("status") == "prepared" {
+            if ctx.get::<_, i64>("accepted_seq") != sequence {
+                tx.execute(
+                    &format!(
+                        "update {} set status='superseded' where context_id=$1 and seq=$2",
+                        self.table("intents")
+                    ),
+                    &[&context, &sequence],
+                )
+                .map_err(db)?;
+                tx.commit().map_err(db)?;
+                return Ok(RegistrationEmailPreparation::Superseded);
+            }
+            tx.commit().map_err(db)?;
+            return Ok(RegistrationEmailPreparation::Prepared);
+        }
+        if intent.get::<_, String>("status") != "reserved" || claim.lease_until <= at_claim {
+            return Err(RegistrationEmailError::Unavailable);
+        }
         let kind = if intent.get::<_, String>("kind") == "register" {
             RegistrationEmailOperationKind::Register
         } else {
@@ -51,13 +88,6 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
         let operation: Uuid = intent.get("operation_id");
         let at = now(&mut tx)?;
         let latest = ctx.get::<_, i64>("accepted_seq") == sequence;
-        if latest
-            && intent.get::<_, String>("status") == "prepared"
-            && ctx.get::<_, i64>("expires_at") > at
-        {
-            tx.commit().map_err(db)?;
-            return Ok(RegistrationEmailPreparation::Prepared);
-        }
         if !latest
             || !ctx.get::<_, bool>("deliverable")
             || ctx.get::<_, i64>("expires_at") <= at
@@ -84,6 +114,9 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
                 if latest { "expired" } else { "superseded" },
                 at,
             )?;
+            if now(&mut tx)? >= claim.lease_until {
+                return Err(RegistrationEmailError::Unavailable);
+            }
             tx.commit().map_err(db)?;
             return Ok(if latest {
                 RegistrationEmailPreparation::Suppressed
@@ -140,6 +173,9 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
                 "suppressed",
                 at,
             )?;
+            if now(&mut tx)? >= claim.lease_until {
+                return Err(RegistrationEmailError::Unavailable);
+            }
             tx.commit().map_err(db)?;
             return Ok(RegistrationEmailPreparation::Suppressed);
         }
@@ -207,6 +243,9 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
             "prepared",
             at,
         )?;
+        if now(&mut tx)? >= claim.lease_until {
+            return Err(RegistrationEmailError::Unavailable);
+        }
         tx.commit().map_err(db)?;
         Ok(RegistrationEmailPreparation::Prepared)
     }

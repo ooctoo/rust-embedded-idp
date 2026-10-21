@@ -14,14 +14,24 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
         Ok(removed)
     }
 
-    fn phase_cancel_and_receipts(&self, limit: i64) -> Result<(), RegistrationEmailError> {
+    pub(in crate::registration_email) fn phase_cancel_and_receipts(
+        &self,
+        limit: i64,
+    ) -> Result<(), RegistrationEmailError> {
         let mut client = self
             .adapter
             .connect()
             .map_err(RegistrationEmailError::Store)?;
         let mut tx = client.transaction().map_err(db)?;
         self.tx_begin_maintenance(&mut tx)?;
+        let installed = self.runtime_lock(&mut tx, true)?.is_some();
         let at = now(&mut tx)?;
+        if installed {
+            let overdue:bool=tx.query_one(&format!("select exists(select 1 from {} d join {} x on x.id=d.context_id where x.authority=$1 and d.status='claimed' and d.lease_until<=$2)",self.table("deliveries"),self.table("contexts")),&[&self.scope.authority,&at]).map_err(db)?.get(0);
+            if overdue {
+                self.pause_runtime_locked(&mut tx)?;
+            }
+        }
 
         tx.execute(
             &format!(

@@ -186,7 +186,11 @@ pub fn browser_session_router(
         .with_state(state.clone())
         .layer(DefaultBodyLimit::max(AUTH_DEVICE_BODY_LIMIT_BYTES))
         .route_layer(middleware::from_fn_with_state(state, browser_guard))
-        .layer(middleware::from_fn(no_store)))
+        .layer(middleware::from_fn(no_store))
+        .layer(middleware::from_fn_with_state(
+            crate::AnonymousLoginBudget::default(),
+            crate::anonymous_login::admit,
+        )))
 }
 fn exactly(headers: &HeaderMap, name: &str, expected: &str) -> bool {
     let mut values = headers.get_all(name).iter();

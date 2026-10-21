@@ -35,6 +35,11 @@ struct D {
     scan_deliveries: Vec<ScanDeliveryRecord>,
     scan_audits: Vec<ScanAuditEvent>,
     fail_scan_audit: bool,
+    mutate_after_snapshot: bool,
+    rename_after_snapshot: bool,
+    email_changed: bool,
+    password_work_probe: Option<PasswordWorkBudget>,
+    auth_transaction_saw_password_work_released: bool,
 }
 #[derive(Clone)]
 struct S(Arc<Mutex<D>>);
@@ -323,6 +328,11 @@ fn seed() -> S {
         scan_deliveries: vec![],
         scan_audits: vec![],
         fail_scan_audit: false,
+        mutate_after_snapshot: false,
+        rename_after_snapshot: false,
+        email_changed: false,
+        password_work_probe: None,
+        auth_transaction_saw_password_work_released: false,
     })))
 }
 
@@ -344,12 +354,44 @@ fn login() -> TenantPasswordLogin {
 }
 impl TenantAuthStore for S {
     type Transaction<'a> = T<'a>;
+    fn credential_snapshot_by_email(
+        &self,
+        _mode: TenancyMode,
+        email: &str,
+    ) -> Result<Option<TenantLoginIdentity>, TenantAuthError> {
+        let mut data = self.0.lock().unwrap();
+        let snapshot = (email == "a@example.com")
+            .then(|| data.accounts.get("a").cloned())
+            .flatten();
+        if data.mutate_after_snapshot {
+            data.accounts
+                .get_mut("a")
+                .expect("seed account")
+                .password_hash = SecretString::new(hash_password("changed-password1").unwrap());
+            data.mutate_after_snapshot = false;
+        }
+        if data.rename_after_snapshot {
+            data.email_changed = true;
+        }
+        Ok(snapshot)
+    }
     fn auth_transaction<R>(
         &self,
         _mode: TenancyMode,
         f: impl FnOnce(&mut T<'_>) -> Result<R, TenantAuthError>,
     ) -> Result<R, TenantAuthError> {
         let mut data = self.0.lock().unwrap();
+        if let Some(budget) = data.password_work_probe.as_ref() {
+            let mut permits = Vec::new();
+            for _ in 0..4 {
+                match budget.try_login() {
+                    Ok(permit) => permits.push(permit),
+                    Err(_) => break,
+                }
+            }
+            data.auth_transaction_saw_password_work_released = permits.len() == 4;
+            drop(permits);
+        }
         let mut t = T {
             d: data.clone(),
             _s: self,
@@ -367,9 +409,11 @@ impl TenantAuthTransaction for T<'_> {
     }
     fn lock_account_by_email(
         &mut self,
-        _: &str,
+        email: &str,
     ) -> Result<Option<TenantLoginIdentity>, StoreError> {
-        Ok(self.d.accounts.get("a").cloned())
+        Ok((email == "a@example.com" && !self.d.email_changed)
+            .then(|| self.d.accounts.get("a").cloned())
+            .flatten())
     }
     fn lock_account(&mut self, id: &str) -> Result<Option<TenantLoginIdentity>, StoreError> {
         Ok(self.d.accounts.get(id).cloned())
@@ -570,6 +614,189 @@ fn fixed_login_requires_membership_and_issues_session() {
     );
     assert_eq!(y.login(login()), Err(TenantAuthError::InvalidCredentials));
 }
+
+#[test]
+fn login_rechecks_credential_snapshot_before_issuing_session() {
+    let s = seed();
+    s.0.lock().unwrap().mutate_after_snapshot = true;
+    let x = svc(
+        LoginTenantPolicy::Fixed {
+            tenant_id: "t1".into(),
+        },
+        s.clone(),
+    );
+
+    assert_eq!(x.login(login()), Err(TenantAuthError::InvalidCredentials));
+    assert!(s.0.lock().unwrap().sessions.is_empty());
+}
+
+#[test]
+fn email_binding_changed_after_snapshot_cannot_issue_a_session() {
+    let s = seed();
+    s.0.lock().unwrap().rename_after_snapshot = true;
+    let x = svc(
+        LoginTenantPolicy::Fixed {
+            tenant_id: "t1".into(),
+        },
+        s.clone(),
+    );
+    assert_eq!(x.login(login()), Err(TenantAuthError::InvalidCredentials));
+    assert!(s.0.lock().unwrap().sessions.is_empty());
+}
+
+#[test]
+fn unknown_login_performs_no_identity_write_or_session_issue() {
+    let s = seed();
+    let x = svc(
+        LoginTenantPolicy::Fixed {
+            tenant_id: "t1".into(),
+        },
+        s.clone(),
+    );
+
+    let mut command = login();
+    command.email = "unknown@example.com".into();
+    assert_eq!(x.login(command), Err(TenantAuthError::InvalidCredentials));
+    let data = s.0.lock().unwrap();
+    assert_eq!(data.accounts.len(), 1);
+    assert!(data.sessions.is_empty());
+}
+
+#[test]
+fn inactive_login_uses_the_same_public_failure_as_unknown_login() {
+    let unknown = seed();
+    let unknown_auth = svc(
+        LoginTenantPolicy::Fixed {
+            tenant_id: "t1".into(),
+        },
+        unknown.clone(),
+    );
+    let mut unknown_command = login();
+    unknown_command.email = "unknown@example.com".into();
+    let unknown_result = unknown_auth.login(unknown_command);
+
+    let inactive = seed();
+    inactive
+        .0
+        .lock()
+        .unwrap()
+        .accounts
+        .get_mut("a")
+        .unwrap()
+        .active = false;
+    let inactive_auth = svc(
+        LoginTenantPolicy::Fixed {
+            tenant_id: "t1".into(),
+        },
+        inactive,
+    );
+    let inactive_result = inactive_auth.login(login());
+
+    assert_eq!(unknown_result, Err(TenantAuthError::InvalidCredentials));
+    assert_eq!(inactive_result, Err(TenantAuthError::InvalidCredentials));
+}
+
+#[test]
+fn login_releases_password_work_before_private_auth_transaction() {
+    let s = seed();
+    let budget = PasswordWorkBudget::default();
+    s.0.lock().unwrap().password_work_probe = Some(budget.clone());
+    let auth = svc(
+        LoginTenantPolicy::Fixed {
+            tenant_id: "t1".into(),
+        },
+        s.clone(),
+    )
+    .with_password_work_budget(budget);
+
+    assert!(matches!(
+        auth.login(login()),
+        Ok(TenantLoginOutcome::Authenticated(_))
+    ));
+    assert!(
+        s.0.lock()
+            .unwrap()
+            .auth_transaction_saw_password_work_released
+    );
+}
+
+#[test]
+fn shared_password_work_budget_reserves_registration_slots_for_login_entries() {
+    let budget = PasswordWorkBudget::default();
+    let registration_a = budget.try_registration().unwrap();
+    let registration_b = budget.try_registration().unwrap();
+    assert!(budget.try_registration().is_err());
+
+    let login_a = budget.try_login().unwrap();
+    let login_b = budget.try_login().unwrap();
+    assert!(budget.try_login().is_err());
+
+    drop((registration_a, registration_b, login_a, login_b));
+    assert!(budget.try_registration().is_ok());
+}
+
+#[test]
+fn invalid_credential_states_do_not_write_identity_or_session_state() {
+    for state in ["unknown", "wrong_password", "inactive"] {
+        let s = seed();
+        if state == "inactive" {
+            s.0.lock().unwrap().accounts.get_mut("a").unwrap().active = false;
+        }
+        let before = {
+            let data = s.0.lock().unwrap();
+            (
+                data.accounts
+                    .values()
+                    .map(|account| {
+                        (
+                            account.id.clone(),
+                            account.password_hash.expose_secret().to_owned(),
+                            account.active,
+                        )
+                    })
+                    .collect::<Vec<_>>(),
+                data.sessions.clone(),
+                data.refreshes.clone(),
+                data.selections.clone(),
+            )
+        };
+        let mut command = login();
+        match state {
+            "unknown" => command.email = "unknown@example.com".into(),
+            "wrong_password" => command.password = SecretString::new("wrong-password1"),
+            "inactive" => {}
+            _ => unreachable!(),
+        }
+        let auth = svc(
+            LoginTenantPolicy::Fixed {
+                tenant_id: "t1".into(),
+            },
+            s.clone(),
+        );
+        assert_eq!(
+            auth.login(command),
+            Err(TenantAuthError::InvalidCredentials),
+            "{state}"
+        );
+        let data = s.0.lock().unwrap();
+        let after_accounts = data
+            .accounts
+            .values()
+            .map(|account| {
+                (
+                    account.id.clone(),
+                    account.password_hash.expose_secret().to_owned(),
+                    account.active,
+                )
+            })
+            .collect::<Vec<_>>();
+        assert!(after_accounts == before.0, "{state} accounts");
+        assert!(data.sessions == before.1, "{state} sessions");
+        assert!(data.refreshes == before.2, "{state} refreshes");
+        assert!(data.selections == before.3, "{state} selections");
+    }
+}
+
 #[test]
 fn choose_login_creates_only_ticket_then_selects_and_authenticates() {
     let s = seed();

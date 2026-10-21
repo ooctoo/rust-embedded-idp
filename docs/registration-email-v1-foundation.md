@@ -1,5 +1,7 @@
 # Registration email v1: D0 contract and I1 foundation
 
+Latest runtime candidate: [I2 implementation and limits](registration-email-v1-runtime.md). The I1 record below is historical.
+
 Date: 2026-10-21. Scope: local D0 engineering freeze and I1 storage/identity
 foundation. This is not a released HTTP capability, an OpenAPI publication, or
 production security acceptance. SUT's owning revision-2 design is

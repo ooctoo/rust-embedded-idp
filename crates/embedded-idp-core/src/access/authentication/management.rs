@@ -64,6 +64,13 @@ impl<S, T, G, D, C, I> CoreManagementAuthenticationService<S, T, G, D, C, I> {
             )?,
         })
     }
+
+    /// Trusted Host composition can share one bounded password budget across
+    /// management and business login entries.
+    pub fn with_password_work_budget(mut self, budget: crate::PasswordWorkBudget) -> Self {
+        self.auth = self.auth.with_password_work_budget(budget);
+        self
+    }
 }
 
 impl<S, T, G, D, C, I> ManagementAuthenticationService

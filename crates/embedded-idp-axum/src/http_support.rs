@@ -215,7 +215,11 @@ pub(crate) async fn run_service_call<R>(
 where
     R: Send + 'static,
 {
-    task::spawn_blocking(run)
-        .await
-        .map_err(|error| ServiceError::Store(StoreError::Backend(error.to_string())))?
+    let holds = crate::anonymous_login::physical_holds();
+    task::spawn_blocking(move || {
+        let _hold = holds;
+        run()
+    })
+    .await
+    .map_err(|error| ServiceError::Store(StoreError::Backend(error.to_string())))?
 }

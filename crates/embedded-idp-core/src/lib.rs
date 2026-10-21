@@ -1,3 +1,5 @@
+mod password_work;
+pub use password_work::{PasswordWorkBudget, PasswordWorkPermit};
 pub mod access;
 mod client_secret;
 mod config;

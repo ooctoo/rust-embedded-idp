@@ -16,8 +16,10 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
             .map_err(RegistrationEmailError::Store)?;
         let mut tx = client.transaction().map_err(db)?;
         self.tx_begin(&mut tx)?;
-        if kind != RegistrationEmailOperationKind::Verify {
+        if kind == RegistrationEmailOperationKind::Register {
             self.ensure_registration_open(&mut tx)?;
+        } else if kind == RegistrationEmailOperationKind::Resend {
+            self.require_runtime_open(&mut tx)?;
         }
         let at = now(&mut tx)?;
         check_registration_operation_freshness(&operation, at)?;
@@ -158,10 +160,13 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
             .adapter
             .connect()
             .map_err(RegistrationEmailError::Store)?;
-        check_registration_operation_freshness(&operation, now(&mut *client)?)?;
-        if let Some(row) = self.operation(&mut *client, kind, operation)? {
+        let mut tx = client.transaction().map_err(db)?;
+        tx.batch_execute("set transaction read only; set local transaction_timeout='5s'; set local statement_timeout='5s'; set local lock_timeout='1s'").map_err(db)?;
+        check_registration_operation_freshness(&operation, now(&mut tx)?)?;
+        if let Some(row) = self.operation(&mut tx, kind, operation)? {
             self.check_digest(&row, digest)?;
             if row.get::<_, String>("phase") == "attached" {
+                tx.commit().map_err(db)?;
                 return Ok(Some(row));
             }
         }

@@ -13,6 +13,7 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
             .map_err(RegistrationEmailError::Store)?;
         let mut tx = client.transaction().map_err(db)?;
         self.tx_begin(&mut tx)?;
+        self.require_runtime_open(&mut tx)?;
         let candidate = tx
             .query_opt(
                 &format!(
@@ -141,6 +142,7 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
             .map_err(RegistrationEmailError::Store)?;
         let mut tx = client.transaction().map_err(db)?;
         self.tx_begin_maintenance(&mut tx)?;
+        let runtime_installed = self.runtime_lock(&mut tx, true)?.is_some();
         let row = self.locked_delivery(&mut tx, claim.effect_id, "claimed")?;
         let Some(row) = row else {
             return Err(RegistrationEmailError::Unavailable);
@@ -161,6 +163,9 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
                 RegistrationEmailDeliveryResult::Unknown => "unknown",
             }
         };
+        if status == "unknown" && runtime_installed {
+            self.pause_runtime_locked(&mut tx)?;
+        }
         let stopped = result != RegistrationEmailDeliveryResult::Unknown;
         let n = tx
             .execute(

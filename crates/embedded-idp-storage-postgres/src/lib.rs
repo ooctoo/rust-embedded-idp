@@ -1,3 +1,5 @@
+mod registration_email_runtime_migration;
+pub use registration_email_runtime_migration::*;
 mod registration_email;
 mod registration_email_migration;
 pub use registration_email::*;

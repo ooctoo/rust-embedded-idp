@@ -1,5 +1,7 @@
 mod http_transport;
 pub use http_transport::HttpTransportPolicy;
+mod registration_email_http;
+pub use registration_email_http::{registration_email_router, RegistrationEmailHttpConfig};
 mod browser_session;
 pub use browser_session::{
     browser_session_router, BrowserSessionClientConfig, BrowserSessionHttpConfig,
@@ -226,6 +228,10 @@ fn public_routes() -> Router<EmbeddedIdpHttpState> {
         .route(OIDC_JWKS_PATH, get(jwks))
         .route(embedded_idp_core::OIDC_DISCOVERY_PATH, get(discovery))
         .layer(DefaultBodyLimit::max(AUTH_DEVICE_BODY_LIMIT_BYTES))
+        .layer(axum::middleware::from_fn_with_state(
+            AnonymousLoginBudget::default(),
+            anonymous_login::admit,
+        ))
 }
 
 fn subject_routes() -> Router<EmbeddedIdpHttpState> {
@@ -381,6 +387,10 @@ async fn login(
             }),
         )
             .into_response(),
+        Err(
+            embedded_idp_core::ServiceError::AccountPendingVerification
+            | embedded_idp_core::ServiceError::AccountDisabled,
+        ) => map_service_error(embedded_idp_core::ServiceError::InvalidCredentials),
         Err(error) => map_service_error(error),
     }
 }
@@ -1330,3 +1340,13 @@ fn binding_status(status: &embedded_idp_core::AccountDeviceBindingStatus) -> &'s
         embedded_idp_core::AccountDeviceBindingStatus::Suspended => "suspended",
     }
 }
+
+mod registration_runtime;
+pub(crate) use registration_runtime::{anonymous_response_delay, registration_call};
+pub use registration_runtime::{
+    RegistrationEmailRequestPermit, RegistrationEmailRuntime, RegistrationEmailShutdown,
+    RegistrationEmailWorkers,
+};
+
+mod anonymous_login;
+pub use anonymous_login::{with_anonymous_login_budget, AnonymousLoginBudget};

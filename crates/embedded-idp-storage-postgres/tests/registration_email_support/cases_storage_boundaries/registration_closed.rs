@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 #[test]
 #[ignore = "requires fresh loopback sut_idp3_test with explicit confirmation"]
-fn closed_registration_blocks_new_register_and_resend_but_verify_continues() {
+fn closed_registration_blocks_new_register_but_prior_resend_and_verify_continue() {
     let fixture = Fixture::new();
     let accepted = fixture
         .store()
@@ -46,12 +46,10 @@ fn closed_registration_blocks_new_register_and_resend_but_verify_continues() {
         fixture.store().register(&new_registration),
         Err(RegistrationEmailError::RegistrationClosed)
     ));
-    assert!(matches!(
-        fixture
-            .store()
-            .resend(Uuid::now_v7(), token.expose_secret()),
-        Err(RegistrationEmailError::RegistrationClosed)
-    ));
+    fixture
+        .store()
+        .resend(Uuid::now_v7(), token.expose_secret())
+        .expect("normal closure retains prior context resend under existing cooldown");
     assert_eq!(fixture.count("registration_email_contexts"), 1);
     assert_eq!(
         fixture

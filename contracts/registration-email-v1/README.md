@@ -92,7 +92,8 @@ Frozen status mapping:
 | Core semantic registration rejection (`invalid_registration`) | 400 |
 | Source-only rate limit | 429, with source-scoped `Retry-After` |
 | Global forbidden | 403 |
-| Global or verification service unavailable | 503 |
+| Business verification rejection (`verification_unavailable`) | 400 |
+| Infrastructure unavailable (`temporarily_unavailable`) | 503 |
 | Operation conflict | 409 |
 | Register/resend accepted | 202 |
 | Verify success | 200 |
@@ -140,3 +141,8 @@ Canonical serialization for manifest and fixture hashes is UTF-8 JSON with
 Each manifest fixture hash covers one complete fixture object in that canonical
 form. `manifest.canonical_sha256` covers the manifest with only its own
 `canonical_sha256` member removed, using the same canonical form.
+
+I2 erratum (2026-10-21): three business verification fixture statuses and the
+checker were corrected from 503 to 400 to match revision 2 and the owning
+foundation design. Schema and profile names are unchanged; the manifest and
+fixture hashes are updated together. Do not accept the superseded hash.

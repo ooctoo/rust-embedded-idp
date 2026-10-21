@@ -15,7 +15,11 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
                 .adapter
                 .connect()
                 .map_err(RegistrationEmailError::Store)?;
-            return self.acceptance(&mut *c, &row);
+            let mut tx = c.transaction().map_err(db)?;
+            tx.batch_execute("set transaction read only; set local transaction_timeout='5s'; set local statement_timeout='5s'; set local lock_timeout='1s'").map_err(db)?;
+            let accepted = self.acceptance(&mut tx, &row)?;
+            tx.commit().map_err(db)?;
+            return Ok(accepted);
         }
         let fence = self.reserve(kind, op, prepared.request(), 2)?;
         let mut c = self
@@ -80,7 +84,7 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
             .map_err(RegistrationEmailError::Store)?;
         let mut tx = c.transaction().map_err(db)?;
         self.tx_begin(&mut tx)?;
-        self.ensure_registration_open(&mut tx)?;
+        self.require_runtime_open(&mut tx)?;
         let old = self.lock_operation(&mut tx, kind, operation, &digest, fence)?;
         if old.get::<_, String>("phase") == "attached" {
             tx.commit().map_err(db)?;

@@ -12,6 +12,7 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
         &self,
         tx: &mut Transaction<'_>,
     ) -> Result<(), RegistrationEmailError> {
+        self.require_runtime_open(tx)?;
         let open: bool = tx
             .query_one(
                 &format!(

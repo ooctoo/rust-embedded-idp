@@ -197,7 +197,7 @@ def check_status_mapping(fixture: dict[str, Any]) -> None:
             "registration_closed": 403,
             "source_limited": 429,
             "temporarily_unavailable": 503,
-            "verification_unavailable": 503,
+            "verification_unavailable": 400,
         }[code]
     if status != expected:
         fail(f"{fixture['id']}: {code} must use HTTP {expected}, got {status}")

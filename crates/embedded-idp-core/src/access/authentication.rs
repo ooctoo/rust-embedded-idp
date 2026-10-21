@@ -12,7 +12,7 @@ pub use management::*;
 pub use refresh::*;
 
 use super::{query::validate_id, service::finish_page, *};
-use crate::service::password::verify_password;
+use crate::service::password::verify_password_or_dummy;
 use crate::{
     AccessTokenPurpose, AccessTokenValidator, AuthConfig, Clock, ConfigValidationError,
     IdGenerator, IssuedTokenBundle, RefreshTokenDigester, RefreshTokenGenerator, SecretString,
@@ -195,6 +195,15 @@ pub trait TenantAuthStore: Send + Sync {
     type Transaction<'a>: TenantAuthTransaction
     where
         Self: 'a;
+    /// Read the account credential snapshot without taking an account or
+    /// membership lock.  Login performs password work against this snapshot
+    /// before entering the private authentication transaction, then rechecks
+    /// the locked account before issuing any session or device proof.
+    fn credential_snapshot_by_email(
+        &self,
+        mode: TenancyMode,
+        email: &str,
+    ) -> Result<Option<TenantLoginIdentity>, TenantAuthError>;
     /// Read Committed, shared access_state lock and mode/bootstrap check before
     /// callback. Core then locks domains -> account -> ticket. Commit only on Ok.
     fn auth_transaction<R>(
@@ -241,6 +250,7 @@ pub struct CoreTenantAuthenticationService<S, T, G, D, C, I> {
     digester: D,
     pub(super) clock: C,
     pub(super) ids: I,
+    password_work: crate::PasswordWorkBudget,
 }
 impl<S, T, G, D, C, I> CoreTenantAuthenticationService<S, T, G, D, C, I> {
     fn validate_login_tenant(&self, tenant: &str) -> Result<(), AccessError> {
@@ -319,7 +329,15 @@ impl<S, T, G, D, C, I> CoreTenantAuthenticationService<S, T, G, D, C, I> {
             digester,
             clock,
             ids,
+            password_work: crate::PasswordWorkBudget::default(),
         })
+    }
+
+    /// Trusted Host composition can share one bounded password budget across
+    /// all login entries mounted by the process.
+    pub fn with_password_work_budget(mut self, budget: crate::PasswordWorkBudget) -> Self {
+        self.password_work = budget;
+        self
     }
 }
 impl<S, T, G, D, C, I> CoreTenantAuthenticationService<S, T, G, D, C, I>
@@ -347,6 +365,22 @@ where
         {
             return Err(TenantAuthError::InvalidCredentials);
         }
+        let snapshot = self
+            .store
+            .credential_snapshot_by_email(self.mode, &command.email)?;
+        let permit = self.password_work.try_login()?;
+        let password_valid = verify_password_or_dummy(
+            snapshot
+                .as_ref()
+                .map(|account| account.password_hash.expose_secret()),
+            command.password.expose_secret(),
+        )?;
+        drop(permit);
+        let snapshot = snapshot.ok_or(TenantAuthError::InvalidCredentials)?;
+        if !snapshot.active || !password_valid {
+            return Err(TenantAuthError::InvalidCredentials);
+        }
+
         self.store.auth_transaction(self.mode, |tx| {
             if let LoginTenantPolicy::Fixed { tenant_id } = &self.entry.policy {
                 tx.lock_tenants(&[tenant_id.clone()])?;
@@ -354,11 +388,9 @@ where
             let account = tx
                 .lock_account_by_email(&command.email)?
                 .ok_or(TenantAuthError::InvalidCredentials)?;
-            if !account.active
-                || !verify_password(
-                    account.password_hash.expose_secret(),
-                    command.password.expose_secret(),
-                )?
+            if account.id != snapshot.id
+                || account.active != snapshot.active
+                || account.password_hash.expose_secret() != snapshot.password_hash.expose_secret()
                 || !tx.client_exists(&self.entry.client_id)?
             {
                 return Err(TenantAuthError::InvalidCredentials);

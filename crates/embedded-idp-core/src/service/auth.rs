@@ -16,7 +16,7 @@ use super::{
     auth_support::{
         build_email_verification_code, map_account_status_conflict, require_active_account_status,
     },
-    password::{hash_password, validate_registration_password, verify_password},
+    password::{hash_password, validate_registration_password, verify_password_or_dummy},
     ServiceError,
 };
 
@@ -29,6 +29,7 @@ pub struct CoreAuthService<S, T, K, I, V> {
     clock: K,
     id_generator: I,
     verification_code_generator: V,
+    password_work: crate::PasswordWorkBudget,
 }
 
 impl<S, T, K, I, V> CoreAuthService<S, T, K, I, V> {
@@ -47,7 +48,15 @@ impl<S, T, K, I, V> CoreAuthService<S, T, K, I, V> {
             clock,
             id_generator,
             verification_code_generator,
+            password_work: crate::PasswordWorkBudget::default(),
         }
+    }
+
+    /// Trusted Host composition can share one bounded password budget across
+    /// legacy and tenant-aware login entries.
+    pub fn with_password_work_budget(mut self, budget: crate::PasswordWorkBudget) -> Self {
+        self.password_work = budget;
+        self
     }
 }
 
@@ -75,7 +84,13 @@ where
         let now = self.clock.now();
         let id_generator = &self.id_generator;
         let verification_code_generator = &self.verification_code_generator;
-        let password_hash = hash_password(&command.password).map_err(ServiceError::Store)?;
+        let permit = self
+            .password_work
+            .try_registration()
+            .map_err(map_store_error)?;
+        let password_hash = hash_password(&command.password).map_err(ServiceError::Store);
+        drop(permit);
+        let password_hash = password_hash?;
 
         self.store_runner
             .transaction(|tx| {
@@ -118,16 +133,39 @@ where
         let token_issuer = &self.token_issuer;
         let session_ttl_secs = self.config.session_ttl_secs;
 
+        let snapshot = self
+            .store_runner
+            .transaction(|tx| tx.find_by_email(&command.email))
+            .map_err(map_store_error)?;
+        let permit = self.password_work.try_login().map_err(map_store_error)?;
+        let password_valid = verify_password_or_dummy(
+            snapshot
+                .as_ref()
+                .map(|account| account.password_hash.as_str()),
+            &command.password,
+        )
+        .map_err(map_store_error)?;
+        drop(permit);
+        let snapshot = snapshot
+            .ok_or(StoreError::NotFound("account.credentials"))
+            .map_err(map_store_error)?;
+        if !password_valid {
+            return Err(ServiceError::InvalidCredentials);
+        }
+        require_active_account_status(&snapshot.status).map_err(map_store_error)?;
+
         self.store_runner
             .transaction(|tx| {
                 let client = resolve_client(tx, &command.client_id)?;
                 let account = tx
                     .find_by_email(&command.email)?
                     .ok_or(StoreError::NotFound("account.credentials"))?;
-                if !verify_password(&account.password_hash, &command.password)? {
+                if account.id != snapshot.id
+                    || account.password_hash != snapshot.password_hash
+                    || account.status != snapshot.status
+                {
                     return Err(StoreError::NotFound("account.credentials"));
                 }
-                require_active_account_status(&account.status)?;
                 let session_device_id = maybe_attach_device_to_account(
                     tx,
                     &self.id_generator,

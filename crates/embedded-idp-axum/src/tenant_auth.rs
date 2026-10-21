@@ -121,6 +121,10 @@ pub fn tenant_auth_router(service: Arc<dyn TenantAuthenticationService>) -> Rout
         .with_state(state)
         .layer(DefaultBodyLimit::max(AUTH_DEVICE_BODY_LIMIT_BYTES))
         .layer(middleware::from_fn(no_store))
+        .layer(middleware::from_fn_with_state(
+            crate::AnonymousLoginBudget::default(),
+            crate::anonymous_login::admit,
+        ))
 }
 
 pub(super) fn base_routes(state: &TenantAuthState, selection: bool) -> Router<TenantAuthState> {
@@ -374,7 +378,13 @@ where
     T: Send + 'static,
     E: From<embedded_idp_core::StoreError> + Send + 'static,
 {
-    match tokio::task::spawn_blocking(operation).await {
+    let holds = crate::anonymous_login::physical_holds();
+    match tokio::task::spawn_blocking(move || {
+        let _hold = holds;
+        operation()
+    })
+    .await
+    {
         Ok(result) => result,
         Err(error) => Err(embedded_idp_core::StoreError::Backend(error.to_string()).into()),
     }
@@ -514,6 +524,15 @@ pub(crate) async fn no_store(request: Request<Body>, next: Next) -> Response {
 
 pub(crate) fn map_tenant_auth_error(error: TenantAuthError) -> Response {
     match error {
+        TenantAuthError::Store(embedded_idp_core::StoreError::Backend(ref code))
+            if code == "password.work_unavailable" =>
+        {
+            tenant_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "temporarily_unavailable",
+                "the request could not be completed",
+            )
+        }
         TenantAuthError::InvalidCredentials
         | TenantAuthError::InvalidAuthorization
         | TenantAuthError::InvalidGrant

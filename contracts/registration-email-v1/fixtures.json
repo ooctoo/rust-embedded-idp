@@ -1260,7 +1260,7 @@
           "name": "X-IDP-Registration-Profile",
           "value": "idp-registration-email-v1"
         },
-        "expected_status": 503,
+        "expected_status": 400,
         "cache_control": "no-store",
         "set_cookie": false,
         "location": null,
@@ -1344,7 +1344,7 @@
           "name": "X-IDP-Registration-Profile",
           "value": "idp-registration-email-v1"
         },
-        "expected_status": 503,
+        "expected_status": 400,
         "cache_control": "no-store",
         "set_cookie": false,
         "location": null,
@@ -1487,7 +1487,7 @@
           "name": "X-IDP-Registration-Profile",
           "value": "idp-registration-email-v1"
         },
-        "expected_status": 503,
+        "expected_status": 400,
         "cache_control": "no-store",
         "set_cookie": false,
         "location": null,

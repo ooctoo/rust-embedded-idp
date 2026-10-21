@@ -145,7 +145,10 @@ fn failed_new_generation_transaction_preserves_the_previous_code() {
             fixture.schema, fixture.schema, fixture.schema
         ))
         .unwrap();
-    assert!(fixture.store().prepare(context, 2).is_err());
+    use embedded_idp_core::access::RegistrationEmailService;
+    let retry_claim = fixture.store().claim_preparation().unwrap().unwrap();
+    assert_eq!(retry_claim.sequence, 2);
+    assert!(fixture.store().prepare_claimed(&retry_claim).is_err());
     client
         .batch_execute(&format!(
             "drop trigger reject_registration_code on {}.registration_email_codes; drop function {}.reject_registration_code()",
@@ -156,7 +159,7 @@ fn failed_new_generation_transaction_preserves_the_previous_code() {
     assert!(delivery(&fixture, context, 1).code.expose_secret() == first.code.expose_secret());
     assert_eq!(context_row(&fixture, context).2, Some(1));
     assert_eq!(
-        fixture.store().prepare(context, 2),
+        fixture.store().prepare_claimed(&retry_claim),
         Ok(RegistrationEmailPreparation::Prepared)
     );
     assert_eq!(fixture.count("registration_email_codes"), 2);

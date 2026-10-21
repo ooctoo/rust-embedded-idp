@@ -61,7 +61,13 @@ pub fn management_router(
     } else {
         admin_routes
     };
-    protected.merge(auth).layer(middleware::from_fn(no_store))
+    protected
+        .merge(auth)
+        .layer(middleware::from_fn(no_store))
+        .layer(middleware::from_fn_with_state(
+            crate::AnonymousLoginBudget::default(),
+            crate::anonymous_login::admit,
+        ))
 }
 
 async fn authenticate_management(

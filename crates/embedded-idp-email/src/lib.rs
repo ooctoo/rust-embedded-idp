@@ -1,3 +1,5 @@
+mod registration;
+pub use registration::*;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -77,6 +77,10 @@ pub fn tenant_device_auth_router(
             AUTH_DEVICE_BODY_LIMIT_BYTES,
         ))
         .layer(middleware::from_fn(no_store))
+        .layer(middleware::from_fn_with_state(
+            crate::AnonymousLoginBudget::default(),
+            crate::anonymous_login::admit,
+        ))
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
