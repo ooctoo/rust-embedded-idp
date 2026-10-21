@@ -128,6 +128,7 @@ cargo test --workspace --locked
 - [React 管理与嵌入组件](docs/react-ui-integration-design.md)
 - [无租户嵌入宿主示例](examples/no-tenant-host/README.md)
 - [生产安全要求](docs/rust-embedded-idp-production-security-delivery-v2.md)
+- [注册邮件 v1 契约与身份底座](docs/registration-email-v1-foundation.md)（D0/I1 本地交付；HTTP/投递、SUT 接入和生产门禁尚未通过）
 - [通用扫码授权设备登录设计](docs/device-scan-login-design-v1.md)（双向扫码、宿主准入、Pending 交付恢复、ACK 与原操作终止）
 - [扫码授权设备登录升级手册](docs/device-scan-login-upgrade.md)
 - [扫码授权设备登录验证记录](docs/device-scan-login-validation.md)

@@ -1,0 +1,189 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:embedded-idp:registration-email-v1:schema",
+  "title": "IDP registration email v1 JSON shapes",
+  "description": "Independent request, accepted-response, and error definitions for the local I1 profile. HTTP routing and semantic validation are outside this schema.",
+  "$defs": {
+    "ClientOperationId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "VerificationContext": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+    },
+    "RegisterRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tenant_id",
+        "email",
+        "password",
+        "client_operation_id"
+      ],
+      "properties": {
+        "tenant_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "email": {
+          "type": "string",
+          "maxLength": 254
+        },
+        "password": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 128
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "client_operation_id": {
+          "$ref": "#/$defs/ClientOperationId"
+        }
+      }
+    },
+    "ResendRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tenant_id",
+        "verification_context",
+        "client_operation_id"
+      ],
+      "properties": {
+        "tenant_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "verification_context": {
+          "$ref": "#/$defs/VerificationContext"
+        },
+        "client_operation_id": {
+          "$ref": "#/$defs/ClientOperationId"
+        }
+      }
+    },
+    "VerifyRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tenant_id",
+        "verification_context",
+        "verification_code",
+        "client_operation_id"
+      ],
+      "properties": {
+        "tenant_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "verification_context": {
+          "$ref": "#/$defs/VerificationContext"
+        },
+        "verification_code": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "client_operation_id": {
+          "$ref": "#/$defs/ClientOperationId"
+        }
+      }
+    },
+    "RegisterAccepted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "verification_context",
+        "accepted_at_unix_secs",
+        "context_lifetime_secs",
+        "resend_after_secs"
+      ],
+      "properties": {
+        "status": {
+          "const": "verification_requested"
+        },
+        "verification_context": {
+          "$ref": "#/$defs/VerificationContext"
+        },
+        "accepted_at_unix_secs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "context_lifetime_secs": {
+          "const": 900
+        },
+        "resend_after_secs": {
+          "const": 60
+        }
+      }
+    },
+    "ResendAccepted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "resend_after_secs"
+      ],
+      "properties": {
+        "status": {
+          "const": "verification_requested"
+        },
+        "resend_after_secs": {
+          "const": 60
+        }
+      }
+    },
+    "VerifySuccess": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "const": "verified"
+        }
+      }
+    },
+    "Error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "error"
+      ],
+      "properties": {
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "code"
+          ],
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "registration_profile_required",
+                "invalid_request",
+                "invalid_registration",
+                "invalid_tenant",
+                "request_expired",
+                "request_conflict",
+                "registration_closed",
+                "source_limited",
+                "temporarily_unavailable",
+                "verification_unavailable"
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,3 +1,7 @@
+mod registration_email;
+mod registration_email_migration;
+pub use registration_email::*;
+pub use registration_email_migration::*;
 mod access;
 mod adapter;
 mod config;

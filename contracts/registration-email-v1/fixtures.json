@@ -1,0 +1,1569 @@
+{
+  "profile": "idp-registration-email-v1",
+  "fixtures": [
+    {
+      "id": "operation-conflict",
+      "profile": "idp-registration-email-v1",
+      "kind": "error",
+      "valid": true,
+      "input_schema": "RegisterRequest",
+      "response_schema": "Error",
+      "response": {
+        "error": {
+          "code": "request_conflict"
+        }
+      },
+      "http": {
+        "method": "POST",
+        "path": "/auth/register",
+        "profile_header": {
+          "name": "X-IDP-Registration-Profile",
+          "value": "idp-registration-email-v1"
+        },
+        "expected_status": 409,
+        "cache_control": "no-store",
+        "set_cookie": false,
+        "location": null,
+        "retry_after": null
+      },
+      "input": {
+        "tenant_id": "tenant-a",
+        "email": "member@example.test",
+        "password": "Correct-Horse-7",
+        "client_operation_id": "018f0c0e-0000-7000-8000-000000000060"
+      },
+      "runtime": {
+        "server_now_unix_secs": 1713894200,
+        "trusted_scope": {
+          "authority": "sut",
+          "product": "registration",
+          "tenant": "tenant-a",
+          "mode": "enabled"
+        },
+        "operation_timestamp_unix_secs": 1713894195,
+        "operation_max_age_secs": 900
+      },
+      "semantic": {
+        "result": "error",
+        "expected_error_code": "request_conflict"
+      }
+    },
+    {
+      "id": "register-extra-actor-field",
+      "profile": "idp-registration-email-v1",
+      "kind": "error",
+      "valid": false,
+      "input_schema": "RegisterRequest",
+      "response_schema": "Error",
+      "response": {
+        "error": {
+          "code": "invalid_request"
+        }
+      },
+      "http": {
+        "method": "POST",
+        "path": "/auth/register",
+        "profile_header": {
+          "name": "X-IDP-Registration-Profile",
+          "value": "idp-registration-email-v1"
+        },
+        "expected_status": 422,
+        "cache_control": "no-store",
+        "set_cookie": false,
+        "location": null,
+        "retry_after": null
+      },
+      "input": {
+        "tenant_id": "tenant-a",
+        "email": "member@example.test",
+        "password": "Correct-Horse-7",
+        "client_operation_id": "018f0c0e-0000-7000-8000-000000000047",
+        "actor": "unexpected"
+      },
+      "subtype": "unknown_field"
+    },
+    {
+      "id": "register-extra-profile-body-field",
+      "profile": "idp-registration-email-v1",
+      "kind": "error",
+      "valid": false,
+      "input_schema": "RegisterRequest",
+      "response_schema": "Error",
+      "response": {
+        "error": {
+          "code": "invalid_request"
+        }
+      },
+      "http": {
+        "method": "POST",
+        "path": "/auth/register",
+        "profile_header": {
+          "name": "X-IDP-Registration-Profile",
+          "value": "idp-registration-email-v1"
+        },
+        "expected_status": 422,
+        "cache_control": "no-store",
+        "set_cookie": false,
+        "location": null,
+        "retry_after": null
+      },
+      "input": {
+        "tenant_id": "tenant-a",
+        "email": "member@example.test",
+        "password": "Correct-Horse-7",
+        "client_operation_id": "018f0c0e-0000-7000-8000-000000000048",
+        "profile": "idp-registration-email-v1"
+      },
+      "subtype": "unknown_field"
+    },
+    {
+      "id": "register-invalid-display-name-empty",
+      "profile": "idp-registration-email-v1",
+      "kind": "error",
+      "valid": false,
+      "input_schema": "RegisterRequest",
+      "response_schema": "Error",
+      "response": {
+        "error": {
+          "code": "invalid_request"
+        }
+      },
+      "http": {
+        "method": "POST",
+        "path": "/auth/register",
+        "profile_header": {
+          "name": "X-IDP-Registration-Profile",
+          "value": "idp-registration-email-v1"
+        },
+        "expected_status": 422,
+        "cache_control": "no-store",
+        "set_cookie": false,
+        "location": null,
+        "retry_after": null
+      },
+      "input": {
+        "tenant_id": "tenant-a",
+        "email": "member@example.test",
+        "password": "Correct-Horse-7",
+        "client_operation_id": "018f0c0e-0000-7000-8000-000000000040",
+        "display_name": ""
+      },
+      "subtype": "dto_field"
+    },
+    {
+      "id": "register-invalid-email-too-long",
+      "profile": "idp-registration-email-v1",
+      "kind": "error",
+      "valid": false,
+      "input_schema": "RegisterRequest",
+      "response_schema": "Error",
+      "response": {
+        "error": {
+          "code": "invalid_request"
+        }
+      },
+      "http": {
+        "method": "POST",
+        "path": "/auth/register",
+        "profile_header": {
+          "name": "X-IDP-Registration-Profile",
+          "value": "idp-registration-email-v1"
+        },
+        "expected_status": 422,
+        "cache_control": "no-store",
+        "set_cookie": false,
+        "location": null,
+        "retry_after": null
+      },
+      "input": {
+        "tenant_id": "tenant-a",
+        "email": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@example.test",
+        "password": "Correct-Horse-7",
+        "client_operation_id": "018f0c0e-0000-7000-8000-000000000041"
+      },
+      "subtype": "dto_field"
+    },
+    {
+      "id": "register-invalid-json",
+      "profile": "idp-registration-email-v1",
+      "kind": "error",
+      "valid": false,
+      "input_schema": null,
+      "response_schema": "Error",
+      "response": {
+        "error": {
+          "code": "invalid_request"
+        }
+      },
+      "http": {
+        "method": "POST",
+        "path": "/auth/register",
+        "profile_header": {
+          "name": "X-IDP-Registration-Profile",
+          "value": "idp-registration-email-v1"
+        },
+        "expected_status": 400,
+        "cache_control": "no-store",
+        "set_cookie": false,
+        "location": null,
+        "retry_after": null
+      },
+      "input_kind": "invalid_json",
+      "raw_body": "{\"tenant_id\":\"tenant-a\",\"email\":",
+      "subtype": "invalid_json"
+    },
+    {
+      "id": "register-invalid-password-too-long",
+      "profile": "idp-registration-email-v1",
+      "kind": "error",
+      "valid": false,
+      "input_schema": "RegisterRequest",
+      "response_schema": "Error",
+      "response": {
+        "error": {
+          "code": "invalid_request"
+        }
+      },
+      "http": {
+        "method": "POST",
+        "path": "/auth/register",
+        "profile_header": {
+          "name": "X-IDP-Registration-Profile",
+          "value": "idp-registration-email-v1"
+        },
+        "expected_status": 422,
+        "cache_control": "no-store",
+        "set_cookie": false,
+        "location": null,
+        "retry_after": null
+      },
+      "input": {
+        "tenant_id": "tenant-a",
+        "email": "member@example.test",
+        "password": "ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp",
+        "client_operation_id": "018f0c0e-0000-7000-8000-000000000042"
+      },
+      "subtype": "dto_field"
+    },
+    {
+      "id": "register-invalid-password-too-short",
+      "profile": "idp-registration-email-v1",
+      "kind": "error",
+      "valid": false,
+      "input_schema": "RegisterRequest",
+      "response_schema": "Error",
+      "response": {
+        "error": {
+          "code": "invalid_request"
+        }
+      },
+      "http": {
+        "method": "POST",
+        "path": "/auth/register",
+        "profile_header": {
+          "name": "X-IDP-Registration-Profile",
+          "value": "idp-registration-email-v1"
+        },
+        "expected_status": 422,
+        "cache_control": "no-store",
+        "set_cookie": false,
+        "location": null,
+        "retry_after": null
+      },
+      "input": {
+        "tenant_id": "tenant-a",
+        "email": "member@example.test",
+        "password": "short",
+        "client_operation_id": "018f0c0e-0000-7000-8000-000000000043"
+      },
+      "subtype": "dto_field"
+    },
+    {
+      "id": "register-invalid-tenant-empty",
+      "profile": "idp-registration-email-v1",
+      "kind": "error",
+      "valid": false,
+      "input_schema": "RegisterRequest",
+      "response_schema": "Error",
+      "response": {
+        "error": {
+          "code": "invalid_request"
+        }
+      },
+      "http": {
+        "method": "POST",
+        "path": "/auth/register",
+        "profile_header": {
+          "name": "X-IDP-Registration-Profile",
+          "value": "idp-registration-email-v1"
+        },
+        "expected_status": 422,
+        "cache_control": "no-store",
+        "set_cookie": false,
+        "location": null,
+        "retry_after": null
+      },
+      "input": {
+        "tenant_id": "",
+        "email": "member@example.test",
+        "password": "Correct-Horse-7",
+        "client_operation_id": "018f0c0e-0000-7000-8000-000000000044"
+      },
+      "subtype": "dto_field"
+    },
+    {
+      "id": "register-invalid-uuidv7-date",
+      "profile": "idp-registration-email-v1",
+      "kind": "error",
+      "valid": false,
+      "input_schema": "RegisterRequest",
+      "response_schema": "Error",
+      "response": {
+        "error": {
+          "code": "invalid_request"
+        }
+      },
+      "http": {
+        "method": "POST",
+        "path": "/auth/register",
+        "profile_header": {
+          "name": "X-IDP-Registration-Profile",
+          "value": "idp-registration-email-v1"
+        },
+        "expected_status": 422,
+        "cache_control": "no-store",
+        "set_cookie": false,
+        "location": null,
+        "retry_after": null
+      },
+      "input": {
+        "tenant_id": "tenant-a",
+        "email": "member@example.test",
+        "password": "Correct-Horse-7",
+        "client_operation_id": "018f0c0e-0000-4000-8000-000000000045"
+      },
+      "subtype": "dto_field"
+    },
+    {
+      "id": "register-invalid-uuidv7-uppercase",
+      "profile": "idp-registration-email-v1",
+      "kind": "error",
+      "valid": false,
+      "input_schema": "RegisterRequest",
+      "response_schema": "Error",
+      "response": {
+        "error": {
+          "code": "invalid_request"
+        }
+      },
+      "http": {
+        "method": "POST",
+        "path": "/auth/register",
+        "profile_header": {
+          "name": "X-IDP-Registration-Profile",
+          "value": "idp-registration-email-v1"
+        },
+        "expected_status": 422,
+        "cache_control": "no-store",
+        "set_cookie": false,
+        "location": null,
+        "retry_after": null
+      },
+      "input": {
+        "tenant_id": "tenant-a",
+        "email": "member@example.test",
+        "password": "Correct-Horse-7",
+        "client_operation_id": "018F0C0E-0000-7000-8000-000000000046"
+      },
+      "subtype": "dto_field"
+    },
+    {
+      "id": "register-profile-header-missing",
+      "profile": "idp-registration-email-v1",
+      "kind": "error",
+      "valid": true,
+      "input_schema": "RegisterRequest",
+      "response_schema": "Error",
+      "response": {
+        "error": {
+          "code": "registration_profile_required"
+        }
+      },
+      "http": {
+        "method": "POST",
+        "path": "/auth/register",
+        "profile_header": null,
+        "expected_status": 400,
+        "cache_control": "no-store",
+        "set_cookie": false,
+        "location": null,
+        "retry_after": null
+      },
+      "input": {
+        "tenant_id": "tenant-a",
+        "email": "member@example.test",
+        "password": "Correct-Horse-7",
+        "client_operation_id": "018f0c0e-0000-7000-8000-000000000050"
+      },
+      "subtype": "missing_header",
+      "runtime": {
+        "server_now_unix_secs": 1713894200,
+        "trusted_scope": {
+          "authority": "sut",
+          "product": "registration",
+          "tenant": "tenant-a",
+          "mode": "enabled"
+        },
+        "operation_timestamp_unix_secs": 1713894195,
+        "operation_max_age_secs": 900
+      },
+      "semantic": {
+        "result": "error",
+        "expected_error_code": "registration_profile_required"
+      }
+    },
+    {
+      "id": "register-profile-header-wrong",
+      "profile": "idp-registration-email-v1",
+      "kind": "error",
+      "valid": true,
+      "input_schema": "RegisterRequest",
+      "response_schema": "Error",
+      "response": {
+        "error": {
+          "code": "registration_profile_required"
+        }
+      },
+      "http": {
+        "method": "POST",
+        "path": "/auth/register",
+        "profile_header": {
+          "name": "X-IDP-Registration-Profile",
+          "value": "other-profile"
+        },
+        "expected_status": 400,
+        "cache_control": "no-store",
+        "set_cookie": false,
+        "location": null,
+        "retry_after": null
+      },
+      "input": {
+        "tenant_id": "tenant-a",
+        "email": "member@example.test",
+        "password": "Correct-Horse-7",
+        "client_operation_id": "018f0c0e-0000-7000-8000-000000000051"
+      },
+      "subtype": "wrong_header",
+      "runtime": {
+        "server_now_unix_secs": 1713894200,
+        "trusted_scope": {
+          "authority": "sut",
+          "product": "registration",
+          "tenant": "tenant-a",
+          "mode": "enabled"
+        },
+        "operation_timestamp_unix_secs": 1713894195,
+        "operation_max_age_secs": 900
+      },
+      "semantic": {
+        "result": "error",
+        "expected_error_code": "registration_profile_required"
+      }
+    },
+    {
+      "id": "register-replay-same-key",
+      "profile": "idp-registration-email-v1",
+      "kind": "request",
+      "valid": true,
+      "input_schema": "RegisterRequest",
+      "input": {
+        "tenant_id": "tenant-a",
+        "email": "member@example.test",
+        "password": "Correct-Horse-7",
+        "client_operation_id": "018f0c0e-0000-7000-8000-000000000001"
+      },
+      "response_schema": "RegisterAccepted",
+      "response": {
+        "status": "verification_requested",
+        "verification_context": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "accepted_at_unix_secs": 1713894200,
+        "context_lifetime_secs": 900,
+        "resend_after_secs": 60
+      },
+      "http": {
+        "method": "POST",
+        "path": "/auth/register",
+        "profile_header": {
+          "name": "X-IDP-Registration-Profile",
+          "value": "idp-registration-email-v1"
+        },
+        "expected_status": 202,
+        "cache_control": "no-store",
+        "set_cookie": false,
+        "location": null,
+        "retry_after": null
+      },
+      "replay_of": "register-valid-minimal",
+      "runtime": {
+        "server_now_unix_secs": 1713894200,
+        "trusted_scope": {
+          "authority": "sut",
+          "product": "registration",
+          "tenant": "tenant-a",
+          "mode": "enabled"
+        },
+        "operation_timestamp_unix_secs": 1713894195,
+        "operation_max_age_secs": 900
+      },
+      "semantic": {
+        "result": "register_accepted",
+        "expected_error_code": null
+      },
+      "replay": {
+        "group": "register-original-key",
+        "role": "replay",
+        "peer_fixture_id": "register-valid-minimal",
+        "deadline_unix_secs": 1713895100,
+        "deadline_extended": false
+      }
+    },
+    {
+      "id": "register-semantic-email-rejected",
+      "profile": "idp-registration-email-v1",
+      "kind": "error",
+      "valid": true,
+      "input_schema": "RegisterRequest",
+      "input": {
+        "tenant_id": "tenant-a",
+        "email": "not-an-email",
+        "password": "Correct-Horse-7",
+        "client_operation_id": "018f0c0e-0000-7000-8000-000000000049"
+      },
+      "subtype": "core_semantics",
+      "response_schema": "Error",
+      "response": {
+        "error": {
+          "code": "invalid_registration"
+        }
+      },
+      "http": {
+        "method": "POST",
+        "path": "/auth/register",
+        "profile_header": {
+          "name": "X-IDP-Registration-Profile",
+          "value": "idp-registration-email-v1"
+        },
+        "expected_status": 400,
+        "cache_control": "no-store",
+        "set_cookie": false,
+        "location": null,
+        "retry_after": null
+      },
+      "runtime": {
+        "server_now_unix_secs": 1713894200,
+        "trusted_scope": {
+          "authority": "sut",
+          "product": "registration",
+          "tenant": "tenant-a",
+          "mode": "enabled"
+        },
+        "operation_timestamp_unix_secs": 1713894195,
+        "operation_max_age_secs": 900
+      },
+      "semantic": {
+        "result": "error",
+        "expected_error_code": "invalid_registration"
+      }
+    },
+    {
+      "id": "register-state-active",
+      "profile": "idp-registration-email-v1",
+      "kind": "request",
+      "valid": true,
+      "input_schema": "RegisterRequest",
+      "input": {
+        "tenant_id": "tenant-state-active",
+        "email": "member@example.test",
+        "password": "Correct-Horse-7",
+        "client_operation_id": "018f0c0e-0000-7000-8000-000000000002"
+      },
+      "response_schema": "RegisterAccepted",
+      "response": {
+        "status": "verification_requested",
+        "verification_context": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "accepted_at_unix_secs": 1713894200,
+        "context_lifetime_secs": 900,
+        "resend_after_secs": 60
+      },
+      "http": {
+        "method": "POST",
+        "path": "/auth/register",
+        "profile_header": {
+          "name": "X-IDP-Registration-Profile",
+          "value": "idp-registration-email-v1"
+        },
+        "expected_status": 202,
+        "cache_control": "no-store",
+        "set_cookie": false,
+        "location": null,
+        "retry_after": null
+      },
+      "state": "active",
+      "runtime": {
+        "server_now_unix_secs": 1713894200,
+        "trusted_scope": {
+          "authority": "sut",
+          "product": "registration",
+          "tenant": "tenant-state-active",
+          "mode": "enabled"
+        },
+        "operation_timestamp_unix_secs": 1713894195,
+        "operation_max_age_secs": 900
+      },
+      "semantic": {
+        "result": "register_accepted",
+        "expected_error_code": null
+      }
+    },
+    {
+      "id": "register-state-disabled",
+      "profile": "idp-registration-email-v1",
+      "kind": "request",
+      "valid": true,
+      "input_schema": "RegisterRequest",
+      "input": {
+        "tenant_id": "tenant-state-disabled",
+        "email": "member@example.test",
+        "password": "Correct-Horse-7",
+        "client_operation_id": "018f0c0e-0000-7000-8000-000000000003"
+      },
+      "response_schema": "RegisterAccepted",
+      "response": {
+        "status": "verification_requested",
+        "verification_context": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "accepted_at_unix_secs": 1713894200,
+        "context_lifetime_secs": 900,
+        "resend_after_secs": 60
+      },
+      "http": {
+        "method": "POST",
+        "path": "/auth/register",
+        "profile_header": {
+          "name": "X-IDP-Registration-Profile",
+          "value": "idp-registration-email-v1"
+        },
+        "expected_status": 202,
+        "cache_control": "no-store",
+        "set_cookie": false,
+        "location": null,
+        "retry_after": null
+      },
+      "state": "disabled",
+      "runtime": {
+        "server_now_unix_secs": 1713894200,
+        "trusted_scope": {
+          "authority": "sut",
+          "product": "registration",
+          "tenant": "tenant-state-disabled",
+          "mode": "enabled"
+        },
+        "operation_timestamp_unix_secs": 1713894195,
+        "operation_max_age_secs": 900
+      },
+      "semantic": {
+        "result": "register_accepted",
+        "expected_error_code": null
+      }
+    },
+    {
+      "id": "register-state-pending",
+      "profile": "idp-registration-email-v1",
+      "kind": "request",
+      "valid": true,
+      "input_schema": "RegisterRequest",
+      "input": {
+        "tenant_id": "tenant-state-pending",
+        "email": "member@example.test",
+        "password": "Correct-Horse-7",
+        "client_operation_id": "018f0c0e-0000-7000-8000-000000000004"
+      },
+      "response_schema": "RegisterAccepted",
+      "response": {
+        "status": "verification_requested",
+        "verification_context": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "accepted_at_unix_secs": 1713894200,
+        "context_lifetime_secs": 900,
+        "resend_after_secs": 60
+      },
+      "http": {
+        "method": "POST",
+        "path": "/auth/register",
+        "profile_header": {
+          "name": "X-IDP-Registration-Profile",
+          "value": "idp-registration-email-v1"
+        },
+        "expected_status": 202,
+        "cache_control": "no-store",
+        "set_cookie": false,
+        "location": null,
+        "retry_after": null
+      },
+      "state": "pending",
+      "runtime": {
+        "server_now_unix_secs": 1713894200,
+        "trusted_scope": {
+          "authority": "sut",
+          "product": "registration",
+          "tenant": "tenant-state-pending",
+          "mode": "enabled"
+        },
+        "operation_timestamp_unix_secs": 1713894195,
+        "operation_max_age_secs": 900
+      },
+      "semantic": {
+        "result": "register_accepted",
+        "expected_error_code": null
+      }
+    },
+    {
+      "id": "register-state-unknown",
+      "profile": "idp-registration-email-v1",
+      "kind": "request",
+      "valid": true,
+      "input_schema": "RegisterRequest",
+      "input": {
+        "tenant_id": "tenant-state-unknown",
+        "email": "member@example.test",
+        "password": "Correct-Horse-7",
+        "client_operation_id": "018f0c0e-0000-7000-8000-000000000005"
+      },
+      "response_schema": "RegisterAccepted",
+      "response": {
+        "status": "verification_requested",
+        "verification_context": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "accepted_at_unix_secs": 1713894200,
+        "context_lifetime_secs": 900,
+        "resend_after_secs": 60
+      },
+      "http": {
+        "method": "POST",
+        "path": "/auth/register",
+        "profile_header": {
+          "name": "X-IDP-Registration-Profile",
+          "value": "idp-registration-email-v1"
+        },
+        "expected_status": 202,
+        "cache_control": "no-store",
+        "set_cookie": false,
+        "location": null,
+        "retry_after": null
+      },
+      "state": "unknown",
+      "runtime": {
+        "server_now_unix_secs": 1713894200,
+        "trusted_scope": {
+          "authority": "sut",
+          "product": "registration",
+          "tenant": "tenant-state-unknown",
+          "mode": "enabled"
+        },
+        "operation_timestamp_unix_secs": 1713894195,
+        "operation_max_age_secs": 900
+      },
+      "semantic": {
+        "result": "register_accepted",
+        "expected_error_code": null
+      }
+    },
+    {
+      "id": "register-valid-display-name",
+      "profile": "idp-registration-email-v1",
+      "kind": "request",
+      "valid": true,
+      "input_schema": "RegisterRequest",
+      "input": {
+        "tenant_id": "tenant-a",
+        "email": "member@example.test",
+        "password": "Correct-Horse-7",
+        "client_operation_id": "018f0c0e-0000-7000-8000-000000000006",
+        "display_name": "Example Member"
+      },
+      "response_schema": "RegisterAccepted",
+      "response": {
+        "status": "verification_requested",
+        "verification_context": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "accepted_at_unix_secs": 1713894200,
+        "context_lifetime_secs": 900,
+        "resend_after_secs": 60
+      },
+      "http": {
+        "method": "POST",
+        "path": "/auth/register",
+        "profile_header": {
+          "name": "X-IDP-Registration-Profile",
+          "value": "idp-registration-email-v1"
+        },
+        "expected_status": 202,
+        "cache_control": "no-store",
+        "set_cookie": false,
+        "location": null,
+        "retry_after": null
+      },
+      "runtime": {
+        "server_now_unix_secs": 1713894200,
+        "trusted_scope": {
+          "authority": "sut",
+          "product": "registration",
+          "tenant": "tenant-a",
+          "mode": "enabled"
+        },
+        "operation_timestamp_unix_secs": 1713894195,
+        "operation_max_age_secs": 900
+      },
+      "semantic": {
+        "result": "register_accepted",
+        "expected_error_code": null
+      }
+    },
+    {
+      "id": "register-valid-long-tenant",
+      "profile": "idp-registration-email-v1",
+      "kind": "request",
+      "valid": true,
+      "input_schema": "RegisterRequest",
+      "input": {
+        "tenant_id": "tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt",
+        "email": "member@example.test",
+        "password": "Correct-Horse-7",
+        "client_operation_id": "018f0c0e-0000-7000-8000-000000000007"
+      },
+      "response_schema": "RegisterAccepted",
+      "response": {
+        "status": "verification_requested",
+        "verification_context": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "accepted_at_unix_secs": 1713894200,
+        "context_lifetime_secs": 900,
+        "resend_after_secs": 60
+      },
+      "http": {
+        "method": "POST",
+        "path": "/auth/register",
+        "profile_header": {
+          "name": "X-IDP-Registration-Profile",
+          "value": "idp-registration-email-v1"
+        },
+        "expected_status": 202,
+        "cache_control": "no-store",
+        "set_cookie": false,
+        "location": null,
+        "retry_after": null
+      },
+      "runtime": {
+        "server_now_unix_secs": 1713894200,
+        "trusted_scope": {
+          "authority": "sut",
+          "product": "registration",
+          "tenant": "tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt",
+          "mode": "enabled"
+        },
+        "operation_timestamp_unix_secs": 1713894195,
+        "operation_max_age_secs": 900
+      },
+      "semantic": {
+        "result": "register_accepted",
+        "expected_error_code": null
+      }
+    },
+    {
+      "id": "register-valid-minimal",
+      "profile": "idp-registration-email-v1",
+      "kind": "request",
+      "valid": true,
+      "input_schema": "RegisterRequest",
+      "input": {
+        "tenant_id": "tenant-a",
+        "email": "member@example.test",
+        "password": "Correct-Horse-7",
+        "client_operation_id": "018f0c0e-0000-7000-8000-000000000001"
+      },
+      "response_schema": "RegisterAccepted",
+      "response": {
+        "status": "verification_requested",
+        "verification_context": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "accepted_at_unix_secs": 1713894200,
+        "context_lifetime_secs": 900,
+        "resend_after_secs": 60
+      },
+      "http": {
+        "method": "POST",
+        "path": "/auth/register",
+        "profile_header": {
+          "name": "X-IDP-Registration-Profile",
+          "value": "idp-registration-email-v1"
+        },
+        "expected_status": 202,
+        "cache_control": "no-store",
+        "set_cookie": false,
+        "location": null,
+        "retry_after": null
+      },
+      "runtime": {
+        "server_now_unix_secs": 1713894200,
+        "trusted_scope": {
+          "authority": "sut",
+          "product": "registration",
+          "tenant": "tenant-a",
+          "mode": "enabled"
+        },
+        "operation_timestamp_unix_secs": 1713894195,
+        "operation_max_age_secs": 900
+      },
+      "semantic": {
+        "result": "register_accepted",
+        "expected_error_code": null
+      },
+      "replay": {
+        "group": "register-original-key",
+        "role": "original",
+        "peer_fixture_id": "register-replay-same-key",
+        "deadline_unix_secs": 1713895100,
+        "deadline_extended": false
+      }
+    },
+    {
+      "id": "registration-closed",
+      "profile": "idp-registration-email-v1",
+      "kind": "error",
+      "valid": true,
+      "input_schema": "RegisterRequest",
+      "response_schema": "Error",
+      "response": {
+        "error": {
+          "code": "registration_closed"
+        }
+      },
+      "http": {
+        "method": "POST",
+        "path": "/auth/register",
+        "profile_header": {
+          "name": "X-IDP-Registration-Profile",
+          "value": "idp-registration-email-v1"
+        },
+        "expected_status": 403,
+        "cache_control": "no-store",
+        "set_cookie": false,
+        "location": null,
+        "retry_after": null
+      },
+      "input": {
+        "tenant_id": "tenant-a",
+        "email": "member@example.test",
+        "password": "Correct-Horse-7",
+        "client_operation_id": "018f0c0e-0000-7000-8000-000000000061"
+      },
+      "runtime": {
+        "server_now_unix_secs": 1713894200,
+        "trusted_scope": {
+          "authority": "sut",
+          "product": "registration",
+          "tenant": "tenant-a",
+          "mode": "enabled"
+        },
+        "operation_timestamp_unix_secs": 1713894195,
+        "operation_max_age_secs": 900
+      },
+      "semantic": {
+        "result": "error",
+        "expected_error_code": "registration_closed"
+      }
+    },
+    {
+      "id": "resend-invalid-context-padded",
+      "profile": "idp-registration-email-v1",
+      "kind": "error",
+      "valid": false,
+      "input_schema": "ResendRequest",
+      "response_schema": "Error",
+      "response": {
+        "error": {
+          "code": "invalid_request"
+        }
+      },
+      "http": {
+        "method": "POST",
+        "path": "/auth/resend-verification",
+        "profile_header": {
+          "name": "X-IDP-Registration-Profile",
+          "value": "idp-registration-email-v1"
+        },
+        "expected_status": 422,
+        "cache_control": "no-store",
+        "set_cookie": false,
+        "location": null,
+        "retry_after": null
+      },
+      "input": {
+        "tenant_id": "tenant-a",
+        "verification_context": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        "client_operation_id": "018f0c0e-0000-7000-8000-000000000052"
+      },
+      "subtype": "dto_field"
+    },
+    {
+      "id": "resend-invalid-context-short",
+      "profile": "idp-registration-email-v1",
+      "kind": "error",
+      "valid": false,
+      "input_schema": "ResendRequest",
+      "response_schema": "Error",
+      "response": {
+        "error": {
+          "code": "invalid_request"
+        }
+      },
+      "http": {
+        "method": "POST",
+        "path": "/auth/resend-verification",
+        "profile_header": {
+          "name": "X-IDP-Registration-Profile",
+          "value": "idp-registration-email-v1"
+        },
+        "expected_status": 422,
+        "cache_control": "no-store",
+        "set_cookie": false,
+        "location": null,
+        "retry_after": null
+      },
+      "input": {
+        "tenant_id": "tenant-a",
+        "verification_context": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "client_operation_id": "018f0c0e-0000-7000-8000-000000000053"
+      },
+      "subtype": "dto_field"
+    },
+    {
+      "id": "resend-request-expired",
+      "profile": "idp-registration-email-v1",
+      "kind": "error",
+      "valid": true,
+      "input_schema": "ResendRequest",
+      "response_schema": "Error",
+      "response": {
+        "error": {
+          "code": "request_expired"
+        }
+      },
+      "http": {
+        "method": "POST",
+        "path": "/auth/resend-verification",
+        "profile_header": {
+          "name": "X-IDP-Registration-Profile",
+          "value": "idp-registration-email-v1"
+        },
+        "expected_status": 400,
+        "cache_control": "no-store",
+        "set_cookie": false,
+        "location": null,
+        "retry_after": null
+      },
+      "input": {
+        "tenant_id": "tenant-a",
+        "verification_context": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "client_operation_id": "018f0c0e-0000-7000-8000-000000000054"
+      },
+      "runtime": {
+        "server_now_unix_secs": 1713895101,
+        "trusted_scope": {
+          "authority": "sut",
+          "product": "registration",
+          "tenant": "tenant-a",
+          "mode": "enabled"
+        },
+        "operation_timestamp_unix_secs": 1713894195,
+        "operation_max_age_secs": 900,
+        "context_accepted_at_unix_secs": 1713894200,
+        "context_lifetime_secs": 900,
+        "context_expires_at_unix_secs": 1713895100
+      },
+      "semantic": {
+        "result": "error",
+        "expected_error_code": "request_expired"
+      }
+    },
+    {
+      "id": "resend-valid",
+      "profile": "idp-registration-email-v1",
+      "kind": "request",
+      "valid": true,
+      "input_schema": "ResendRequest",
+      "input": {
+        "tenant_id": "tenant-a",
+        "verification_context": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "client_operation_id": "018f0c0e-0000-7000-8000-000000000020"
+      },
+      "response_schema": "ResendAccepted",
+      "response": {
+        "status": "verification_requested",
+        "resend_after_secs": 60
+      },
+      "http": {
+        "method": "POST",
+        "path": "/auth/resend-verification",
+        "profile_header": {
+          "name": "X-IDP-Registration-Profile",
+          "value": "idp-registration-email-v1"
+        },
+        "expected_status": 202,
+        "cache_control": "no-store",
+        "set_cookie": false,
+        "location": null,
+        "retry_after": null
+      },
+      "runtime": {
+        "server_now_unix_secs": 1713894200,
+        "trusted_scope": {
+          "authority": "sut",
+          "product": "registration",
+          "tenant": "tenant-a",
+          "mode": "enabled"
+        },
+        "operation_timestamp_unix_secs": 1713894195,
+        "operation_max_age_secs": 900,
+        "context_accepted_at_unix_secs": 1713894200,
+        "context_lifetime_secs": 900,
+        "context_expires_at_unix_secs": 1713895100
+      },
+      "semantic": {
+        "result": "resend_accepted",
+        "expected_error_code": null
+      }
+    },
+    {
+      "id": "source-rate-limited",
+      "profile": "idp-registration-email-v1",
+      "kind": "error",
+      "valid": true,
+      "input_schema": "RegisterRequest",
+      "response_schema": "Error",
+      "response": {
+        "error": {
+          "code": "source_limited"
+        }
+      },
+      "http": {
+        "method": "POST",
+        "path": "/auth/register",
+        "profile_header": {
+          "name": "X-IDP-Registration-Profile",
+          "value": "idp-registration-email-v1"
+        },
+        "expected_status": 429,
+        "cache_control": "no-store",
+        "set_cookie": false,
+        "location": null,
+        "retry_after": {
+          "scope": "source",
+          "seconds": 60
+        }
+      },
+      "input": {
+        "tenant_id": "tenant-a",
+        "email": "member@example.test",
+        "password": "Correct-Horse-7",
+        "client_operation_id": "018f0c0e-0000-7000-8000-000000000062"
+      },
+      "runtime": {
+        "server_now_unix_secs": 1713894200,
+        "trusted_scope": {
+          "authority": "sut",
+          "product": "registration",
+          "tenant": "tenant-a",
+          "mode": "enabled"
+        },
+        "operation_timestamp_unix_secs": 1713894195,
+        "operation_max_age_secs": 900
+      },
+      "semantic": {
+        "result": "error",
+        "expected_error_code": "source_limited"
+      }
+    },
+    {
+      "id": "temporarily-unavailable",
+      "profile": "idp-registration-email-v1",
+      "kind": "error",
+      "valid": true,
+      "input_schema": "RegisterRequest",
+      "response_schema": "Error",
+      "response": {
+        "error": {
+          "code": "temporarily_unavailable"
+        }
+      },
+      "http": {
+        "method": "POST",
+        "path": "/auth/register",
+        "profile_header": {
+          "name": "X-IDP-Registration-Profile",
+          "value": "idp-registration-email-v1"
+        },
+        "expected_status": 503,
+        "cache_control": "no-store",
+        "set_cookie": false,
+        "location": null,
+        "retry_after": null
+      },
+      "input": {
+        "tenant_id": "tenant-a",
+        "email": "member@example.test",
+        "password": "Correct-Horse-7",
+        "client_operation_id": "018f0c0e-0000-7000-8000-000000000063"
+      },
+      "runtime": {
+        "server_now_unix_secs": 1713894200,
+        "trusted_scope": {
+          "authority": "sut",
+          "product": "registration",
+          "tenant": "tenant-a",
+          "mode": "enabled"
+        },
+        "operation_timestamp_unix_secs": 1713894195,
+        "operation_max_age_secs": 900
+      },
+      "semantic": {
+        "result": "error",
+        "expected_error_code": "temporarily_unavailable"
+      }
+    },
+    {
+      "id": "verify-empty-code-budgeted",
+      "profile": "idp-registration-email-v1",
+      "kind": "error",
+      "valid": true,
+      "input_schema": "VerifyRequest",
+      "input": {
+        "tenant_id": "tenant-a",
+        "verification_context": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "verification_code": "",
+        "client_operation_id": "018f0c0e-0000-7000-8000-000000000031"
+      },
+      "response_schema": "Error",
+      "response": {
+        "error": {
+          "code": "verification_unavailable"
+        }
+      },
+      "http": {
+        "method": "POST",
+        "path": "/auth/verify-email",
+        "profile_header": {
+          "name": "X-IDP-Registration-Profile",
+          "value": "idp-registration-email-v1"
+        },
+        "expected_status": 503,
+        "cache_control": "no-store",
+        "set_cookie": false,
+        "location": null,
+        "retry_after": null
+      },
+      "subtype": "verification_budget",
+      "runtime": {
+        "server_now_unix_secs": 1713894200,
+        "trusted_scope": {
+          "authority": "sut",
+          "product": "registration",
+          "tenant": "tenant-a",
+          "mode": "enabled"
+        },
+        "operation_timestamp_unix_secs": 1713894195,
+        "operation_max_age_secs": 900,
+        "context_accepted_at_unix_secs": 1713894200,
+        "context_lifetime_secs": 900,
+        "context_expires_at_unix_secs": 1713895100
+      },
+      "semantic": {
+        "result": "error",
+        "expected_error_code": "verification_unavailable"
+      }
+    },
+    {
+      "id": "verify-invalid-code-too-long",
+      "profile": "idp-registration-email-v1",
+      "kind": "error",
+      "valid": false,
+      "input_schema": "VerifyRequest",
+      "response_schema": "Error",
+      "response": {
+        "error": {
+          "code": "invalid_request"
+        }
+      },
+      "http": {
+        "method": "POST",
+        "path": "/auth/verify-email",
+        "profile_header": {
+          "name": "X-IDP-Registration-Profile",
+          "value": "idp-registration-email-v1"
+        },
+        "expected_status": 422,
+        "cache_control": "no-store",
+        "set_cookie": false,
+        "location": null,
+        "retry_after": null
+      },
+      "input": {
+        "tenant_id": "tenant-a",
+        "verification_context": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "verification_code": "99999999999999999999999999999999999999999999999999999999999999999",
+        "client_operation_id": "018f0c0e-0000-7000-8000-000000000055"
+      },
+      "subtype": "dto_field"
+    },
+    {
+      "id": "verify-nonnumeric-code-budgeted",
+      "profile": "idp-registration-email-v1",
+      "kind": "error",
+      "valid": true,
+      "input_schema": "VerifyRequest",
+      "input": {
+        "tenant_id": "tenant-a",
+        "verification_context": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "verification_code": "not-a-number",
+        "client_operation_id": "018f0c0e-0000-7000-8000-000000000032"
+      },
+      "response_schema": "Error",
+      "response": {
+        "error": {
+          "code": "verification_unavailable"
+        }
+      },
+      "http": {
+        "method": "POST",
+        "path": "/auth/verify-email",
+        "profile_header": {
+          "name": "X-IDP-Registration-Profile",
+          "value": "idp-registration-email-v1"
+        },
+        "expected_status": 503,
+        "cache_control": "no-store",
+        "set_cookie": false,
+        "location": null,
+        "retry_after": null
+      },
+      "subtype": "verification_budget",
+      "runtime": {
+        "server_now_unix_secs": 1713894200,
+        "trusted_scope": {
+          "authority": "sut",
+          "product": "registration",
+          "tenant": "tenant-a",
+          "mode": "enabled"
+        },
+        "operation_timestamp_unix_secs": 1713894195,
+        "operation_max_age_secs": 900,
+        "context_accepted_at_unix_secs": 1713894200,
+        "context_lifetime_secs": 900,
+        "context_expires_at_unix_secs": 1713895100
+      },
+      "semantic": {
+        "result": "error",
+        "expected_error_code": "verification_unavailable"
+      }
+    },
+    {
+      "id": "verify-request-expired",
+      "profile": "idp-registration-email-v1",
+      "kind": "error",
+      "valid": true,
+      "input_schema": "VerifyRequest",
+      "response_schema": "Error",
+      "response": {
+        "error": {
+          "code": "request_expired"
+        }
+      },
+      "http": {
+        "method": "POST",
+        "path": "/auth/verify-email",
+        "profile_header": {
+          "name": "X-IDP-Registration-Profile",
+          "value": "idp-registration-email-v1"
+        },
+        "expected_status": 400,
+        "cache_control": "no-store",
+        "set_cookie": false,
+        "location": null,
+        "retry_after": null
+      },
+      "input": {
+        "tenant_id": "tenant-a",
+        "verification_context": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "verification_code": "123456",
+        "client_operation_id": "018f0c0e-0000-7000-8000-000000000056"
+      },
+      "runtime": {
+        "server_now_unix_secs": 1713895101,
+        "trusted_scope": {
+          "authority": "sut",
+          "product": "registration",
+          "tenant": "tenant-a",
+          "mode": "enabled"
+        },
+        "operation_timestamp_unix_secs": 1713894195,
+        "operation_max_age_secs": 900,
+        "context_accepted_at_unix_secs": 1713894200,
+        "context_lifetime_secs": 900,
+        "context_expires_at_unix_secs": 1713895100
+      },
+      "semantic": {
+        "result": "error",
+        "expected_error_code": "request_expired"
+      }
+    },
+    {
+      "id": "verify-valid-code",
+      "profile": "idp-registration-email-v1",
+      "kind": "request",
+      "valid": true,
+      "input_schema": "VerifyRequest",
+      "input": {
+        "tenant_id": "tenant-a",
+        "verification_context": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "verification_code": "123456",
+        "client_operation_id": "018f0c0e-0000-7000-8000-000000000030"
+      },
+      "response_schema": "VerifySuccess",
+      "response": {
+        "status": "verified"
+      },
+      "http": {
+        "method": "POST",
+        "path": "/auth/verify-email",
+        "profile_header": {
+          "name": "X-IDP-Registration-Profile",
+          "value": "idp-registration-email-v1"
+        },
+        "expected_status": 200,
+        "cache_control": "no-store",
+        "set_cookie": false,
+        "location": null,
+        "retry_after": null
+      },
+      "runtime": {
+        "server_now_unix_secs": 1713894200,
+        "trusted_scope": {
+          "authority": "sut",
+          "product": "registration",
+          "tenant": "tenant-a",
+          "mode": "enabled"
+        },
+        "operation_timestamp_unix_secs": 1713894195,
+        "operation_max_age_secs": 900,
+        "context_accepted_at_unix_secs": 1713894200,
+        "context_lifetime_secs": 900,
+        "context_expires_at_unix_secs": 1713895100
+      },
+      "semantic": {
+        "result": "verify_success",
+        "expected_error_code": null
+      }
+    },
+    {
+      "id": "verify-verification-unavailable",
+      "profile": "idp-registration-email-v1",
+      "kind": "error",
+      "valid": true,
+      "input_schema": "VerifyRequest",
+      "response_schema": "Error",
+      "response": {
+        "error": {
+          "code": "verification_unavailable"
+        }
+      },
+      "http": {
+        "method": "POST",
+        "path": "/auth/verify-email",
+        "profile_header": {
+          "name": "X-IDP-Registration-Profile",
+          "value": "idp-registration-email-v1"
+        },
+        "expected_status": 503,
+        "cache_control": "no-store",
+        "set_cookie": false,
+        "location": null,
+        "retry_after": null
+      },
+      "input": {
+        "tenant_id": "tenant-a",
+        "verification_context": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "verification_code": "000000",
+        "client_operation_id": "018f0c0e-0000-7000-8000-000000000057"
+      },
+      "runtime": {
+        "server_now_unix_secs": 1713894200,
+        "trusted_scope": {
+          "authority": "sut",
+          "product": "registration",
+          "tenant": "tenant-a",
+          "mode": "enabled"
+        },
+        "operation_timestamp_unix_secs": 1713894195,
+        "operation_max_age_secs": 900,
+        "context_accepted_at_unix_secs": 1713894200,
+        "context_lifetime_secs": 900,
+        "context_expires_at_unix_secs": 1713895100
+      },
+      "semantic": {
+        "result": "error",
+        "expected_error_code": "verification_unavailable"
+      }
+    },
+    {
+      "id": "wrong-tenant",
+      "profile": "idp-registration-email-v1",
+      "kind": "error",
+      "valid": true,
+      "input_schema": "RegisterRequest",
+      "response_schema": "Error",
+      "response": {
+        "error": {
+          "code": "invalid_tenant"
+        }
+      },
+      "http": {
+        "method": "POST",
+        "path": "/auth/register",
+        "profile_header": {
+          "name": "X-IDP-Registration-Profile",
+          "value": "idp-registration-email-v1"
+        },
+        "expected_status": 400,
+        "cache_control": "no-store",
+        "set_cookie": false,
+        "location": null,
+        "retry_after": null
+      },
+      "input": {
+        "tenant_id": "tenant-not-admitted",
+        "email": "member@example.test",
+        "password": "Correct-Horse-7",
+        "client_operation_id": "018f0c0e-0000-7000-8000-000000000064"
+      },
+      "runtime": {
+        "server_now_unix_secs": 1713894200,
+        "trusted_scope": {
+          "authority": "sut",
+          "product": "registration",
+          "tenant": "tenant-a",
+          "mode": "enabled"
+        },
+        "operation_timestamp_unix_secs": 1713894195,
+        "operation_max_age_secs": 900
+      },
+      "semantic": {
+        "result": "error",
+        "expected_error_code": "invalid_tenant"
+      }
+    }
+  ]
+}

@@ -1,0 +1,181 @@
+{
+  "profile": "idp-registration-email-v1",
+  "schema_file": "schema.json",
+  "fixtures_file": "fixtures.json",
+  "schema_sha256": "ed7d46f0027243c5410dc534610c2ca7bdb0c3be71cd34b85f6ad7525fd46a99",
+  "fixtures_sha256": "25aa41b56d7f9e843196eab38a7ad596d8bab720fef3212af24759609409c52e",
+  "canonicalization": {
+    "encoding": "UTF-8",
+    "ensure_ascii": false,
+    "separators": [
+      ",",
+      ":"
+    ],
+    "sort_keys": true
+  },
+  "header": {
+    "name": "X-IDP-Registration-Profile",
+    "value": "idp-registration-email-v1"
+  },
+  "routes": [
+    {
+      "method": "POST",
+      "path": "/auth/register"
+    },
+    {
+      "method": "POST",
+      "path": "/auth/resend-verification"
+    },
+    {
+      "method": "POST",
+      "path": "/auth/verify-email"
+    }
+  ],
+  "fixture_hashes": [
+    {
+      "id": "operation-conflict",
+      "canonical_sha256": "17671c7c55d66efdb0a8c374a2d6bd658beef3041c3779bc6944e4a46f4d8cd4"
+    },
+    {
+      "id": "register-extra-actor-field",
+      "canonical_sha256": "3c52b001a49f0b00cd8196d724c587aaf3b4e988eb9fcde62a13214916124542"
+    },
+    {
+      "id": "register-extra-profile-body-field",
+      "canonical_sha256": "fb35e386da71c3e1e7cc4114f3bf840a9fbc9c09e6e851f87ae6350597aa5238"
+    },
+    {
+      "id": "register-invalid-display-name-empty",
+      "canonical_sha256": "cd3f754b1c14e50221db7329f2e1545f6f850f194f351f6f3771fe38085f0a66"
+    },
+    {
+      "id": "register-invalid-email-too-long",
+      "canonical_sha256": "5f15ef645f3ebc82c8b34abddcec96fcdd84a81611a856bee5d51e5967924df9"
+    },
+    {
+      "id": "register-invalid-json",
+      "canonical_sha256": "29f14f78f43c2cfcaf425cc791ab85d28752157d2c11e1385afb4060d75a097a"
+    },
+    {
+      "id": "register-invalid-password-too-long",
+      "canonical_sha256": "ce402680d74873fddf2c7929e35467f53918bec38254fd2ccf19bfb6cdd500de"
+    },
+    {
+      "id": "register-invalid-password-too-short",
+      "canonical_sha256": "7e3593e4feb694e7d7583284fb44ecea84d8c6200517e7b9c1c358637101aa92"
+    },
+    {
+      "id": "register-invalid-tenant-empty",
+      "canonical_sha256": "5eac389b487737941866c3191fd950eaf9f1d28ca914003064da1103c9ef227e"
+    },
+    {
+      "id": "register-invalid-uuidv7-date",
+      "canonical_sha256": "59e90d0d97a5008a4fec208f95fcd0e666f3720ca0a1a54be12e45985014fa66"
+    },
+    {
+      "id": "register-invalid-uuidv7-uppercase",
+      "canonical_sha256": "129844304b8344719d0bcd1c7224744a6de6cfa9075d7404eb97e0fb31cb6962"
+    },
+    {
+      "id": "register-profile-header-missing",
+      "canonical_sha256": "0159ebfd8e00db27d576360db982faff5f9fdd1fcce52807c1b26b1b5a785431"
+    },
+    {
+      "id": "register-profile-header-wrong",
+      "canonical_sha256": "32e54c0238941dccede30ae89cde2bd4bbe1c733f259675e187c6f64d70a5089"
+    },
+    {
+      "id": "register-replay-same-key",
+      "canonical_sha256": "6f3a54fd0a4b9212914a26a3dc41a520e93db72097cdec2fdc7ee6b483a5cc7a"
+    },
+    {
+      "id": "register-semantic-email-rejected",
+      "canonical_sha256": "8ba514892c3049bec99c8e0df043dac28595db72c3847e60a00f7f5642e27bd9"
+    },
+    {
+      "id": "register-state-active",
+      "canonical_sha256": "e9ad79f3cca489bb73902f749cb1ee7c521866cd4330aa75759c57e2dde745cf"
+    },
+    {
+      "id": "register-state-disabled",
+      "canonical_sha256": "6b373fa9649dcdf77a2ccfde6d0918d544cb8d4d7fc55fe1f040daf3ec99bbc3"
+    },
+    {
+      "id": "register-state-pending",
+      "canonical_sha256": "f6753988d2c67469581f237ae9764b7f48700cde9c990a836d14aeddfd3ab12f"
+    },
+    {
+      "id": "register-state-unknown",
+      "canonical_sha256": "010da4481df2e0c88bc88e3bbd4556d2e53d78b5a617e1932f43c791f8f8d410"
+    },
+    {
+      "id": "register-valid-display-name",
+      "canonical_sha256": "3c4c2c2b0dfa7890cef99ec5aeab83cb98fd6f14f8e629a86b0b6cbbbf869b90"
+    },
+    {
+      "id": "register-valid-long-tenant",
+      "canonical_sha256": "4bb749c07cc16efb6c928822812907ec47bcd5c456043273f3d098b0ee99862f"
+    },
+    {
+      "id": "register-valid-minimal",
+      "canonical_sha256": "0074535215f25114ac755f2806b9db023206e8ceafd58b23e5b4217d038993f0"
+    },
+    {
+      "id": "registration-closed",
+      "canonical_sha256": "5979cf3b525990e86479e088d3bc4a8e938f20629c285dd41438876ba5ed842e"
+    },
+    {
+      "id": "resend-invalid-context-padded",
+      "canonical_sha256": "73c1763d8635fb18d77ceddc74537752ca200f4fa596d86a8bed450260acfab3"
+    },
+    {
+      "id": "resend-invalid-context-short",
+      "canonical_sha256": "5d5dddb634edf6e9c5fbd79c0e7b938b08e6f9dc36e50629c5525bfcbcc1c065"
+    },
+    {
+      "id": "resend-request-expired",
+      "canonical_sha256": "40b7c7090d834fd26bd3e637d1d8ed1eb2440aa72e4f13f8c89074045488e7f2"
+    },
+    {
+      "id": "resend-valid",
+      "canonical_sha256": "821884a97eb1e682ab0b187435f0eaa593e8f385a263eea74583656af7255116"
+    },
+    {
+      "id": "source-rate-limited",
+      "canonical_sha256": "c002e6a30bb844d1e6f74b264d11bff51710401a7cdb0e92b79be63c224722d0"
+    },
+    {
+      "id": "temporarily-unavailable",
+      "canonical_sha256": "24bc633eda2f12b9ab12de23489183a1836f2cd03d3b8250cb469b018aaebddc"
+    },
+    {
+      "id": "verify-empty-code-budgeted",
+      "canonical_sha256": "64c010f61d60f37fd98cf2822e1fc2b92cab0e52429d044fc6aa9c92294dbda9"
+    },
+    {
+      "id": "verify-invalid-code-too-long",
+      "canonical_sha256": "92b51c5e16bd7c20e31c3850b741f92819b8ab6eb6b335a5ad7698b5970a2ede"
+    },
+    {
+      "id": "verify-nonnumeric-code-budgeted",
+      "canonical_sha256": "a9dcbf6781a9c49283571bff3d532a1b0b94267c13a5b9c3976be9c8f49924fa"
+    },
+    {
+      "id": "verify-request-expired",
+      "canonical_sha256": "a7c5ee19904aaa229999ae2ee877c851f0da43e36b33521c2b2871e9e4a6bb7d"
+    },
+    {
+      "id": "verify-valid-code",
+      "canonical_sha256": "019fd733b3ed1382976998812a4df5fc5fb905efd5dca7ef905efbb5fb5d62c1"
+    },
+    {
+      "id": "verify-verification-unavailable",
+      "canonical_sha256": "43bf6a4bfa5bf7964ed4c982d0918c3181acffe8fd66ede1ee97b7a4849b3221"
+    },
+    {
+      "id": "wrong-tenant",
+      "canonical_sha256": "b1d9d09f0c6826ca4c462c9dba3d7bde96820cab93ac30dd3374ce8005ec6aeb"
+    }
+  ],
+  "canonical_sha256": "4e31ecc7cc5991fec073b9992c93d7d87fe1d890f060f2668e90f390003bc8e8"
+}
