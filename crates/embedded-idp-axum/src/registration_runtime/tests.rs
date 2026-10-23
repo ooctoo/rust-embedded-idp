@@ -13,6 +13,7 @@ use std::sync::{
 use std::time::{Duration, Instant as StdInstant};
 use tokio::sync::Notify;
 
+mod fault;
 mod shutdown;
 
 #[derive(Clone)]

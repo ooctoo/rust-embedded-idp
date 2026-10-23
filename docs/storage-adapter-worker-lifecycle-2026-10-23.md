@@ -74,6 +74,11 @@ it may coexist with `failed` after a real prior fault, so Hosts must check both.
 A short budget truthfully returns unresolved; driver deadlines still close the
 physical connection. Drop signals stop/abort and never claims successful drain.
 There is no automatic unpause, lease reset, redistribution or mutation retry.
+A completed failed/aborted outer JoinHandle is reported once; only a timeout
+requires abort followed by join. A regression aborts the outer task while a
+physical storage closure is still blocked, checks failed/unresolved without
+shutdown panic, then releases and observes the real storage counter reach zero.
+The same test on unchanged 6a7b483 fails with JoinHandle polled after completion.
 
 The SUT consumer starts this deadline when HTTP draining starts and spends one
 G + F + 5s budget across HTTP/audit/server/worker, reserving at most one second
@@ -91,7 +96,8 @@ The relay stays alive until observed EOF; teardown cannot manufacture a pass.
 SUT additionally tests SIGTERM under a worker query blackhole and rejects a clean
 exit while the physical storage call remains unresolved.
 
-Final owning checks: 466 library tests pass. The latest results for all 18
+The initial owning checkpoint passes 466 library tests. The final worker follow-up
+passes all 140 Axum component tests (one new fault regression). The latest results for all 18
 storage live targets total 198 passing cases; a new fresh-instance full command
 also passes all 198 on the lifecycle checkpoint. A consumer follow-up caught
 legacy defaults overwriting the Host readiness one-second statement limit.

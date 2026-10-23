@@ -150,11 +150,12 @@ impl RegistrationEmailWorkers {
             };
             match task_result {
                 Ok(Ok(())) => task_joined = true,
-                Ok(Err(_)) | Err(_) => {
+                Ok(Err(_)) => {
                     runtime.failed.store(true, Ordering::Release);
-                    if !task.is_finished() {
-                        task.abort();
-                    }
+                }
+                Err(_) => {
+                    runtime.failed.store(true, Ordering::Release);
+                    task.abort();
                     let _ = task.await;
                 }
             }
