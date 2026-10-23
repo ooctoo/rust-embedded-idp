@@ -36,8 +36,10 @@ end-to-end HTTP deadlines.
 
 Registration retains its existing five-second read and ten-second identity
 budgets and PG17+ `transaction_timeout`. Generic access does not newly require
-that parameter; statement/lock/idle server limits and the physical client timer
-remain. This preserves old generic PostgreSQL parameter compatibility; live
+that parameter; statement/lock/idle server defaults and the physical client timer
+remain. Generic defaults precede trusted Host startup options, preserving stricter
+readiness limits. Host GUC settings cannot extend the independent physical timer;
+registration retains its frozen startup policy applied last. This preserves old generic PostgreSQL parameter compatibility; live
 acceptance here uses PostgreSQL 18.3 only.
 
 One one-worker Tokio runtime per transport drives all its native connection
@@ -90,8 +92,12 @@ SUT additionally tests SIGTERM under a worker query blackhole and rejects a clea
 exit while the physical storage call remains unresolved.
 
 Final owning checks: 466 library tests pass. The latest results for all 18
-storage live targets total 198 passing cases (combined targeted runs, not a
-claim that the earlier interrupted full invocation passed). Reference app
+storage live targets total 198 passing cases; a new fresh-instance full command
+also passes all 198 on the lifecycle checkpoint. A consumer follow-up caught
+legacy defaults overwriting the Host readiness one-second statement limit.
+The generic option precedence correction has 13 fresh live cases passing,
+including a new strict Host read-only/statement/lock-settings test. The exact
+new Host-settings test fails against unchanged f7b5db3, proving that regression. Reference app
 all-target checking passes after building its own locked Web assets offline.
 The unchanged old fdecd391 source plus the new lifecycle test rejects the old
 implementation with a nested-runtime panic and no observed EOF.

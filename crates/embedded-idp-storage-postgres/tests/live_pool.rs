@@ -102,3 +102,19 @@ fn failed_legacy_cutover_releases_transaction_and_advisory_locks() {
         .query_one("select pg_advisory_unlock(hashtext($1))", &[&lock_key])
         .unwrap();
 }
+
+#[test]
+#[ignore = "requires EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
+fn generic_transport_preserves_stricter_host_readonly_probe_limits() {
+    let mut config = adapter("embedded_idp_pool_test".into()).config().clone();
+    config.connection.connection_uri.push_str("&options=-c%20default_transaction_read_only%3Don%20-c%20statement_timeout%3D1000%20-c%20lock_timeout%3D500");
+    let adapter = PostgresStorageAdapter::new(config).unwrap();
+    let mut client = adapter.connect().unwrap();
+    let protected: bool = client.query_one(
+        "select current_setting('default_transaction_read_only')='on' and current_setting('statement_timeout')::interval=interval '1 second' and current_setting('lock_timeout')::interval=interval '500 milliseconds'", &[]
+    ).unwrap().get(0);
+    assert!(
+        protected,
+        "generic defaults must preserve stricter trusted Host options"
+    );
+}

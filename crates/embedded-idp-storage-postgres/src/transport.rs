@@ -147,7 +147,16 @@ impl Transport {
         } else {
             String::new()
         };
-        let options=format!("{}{} -c statement_timeout={} -c lock_timeout=1000 -c idle_in_transaction_session_timeout={}",config.get_options().unwrap_or(""),transaction,budget.as_millis(),budget.as_millis());
+        let limits = format!("{transaction} -c statement_timeout={} -c lock_timeout=1000 -c idle_in_transaction_session_timeout={}", budget.as_millis(), budget.as_millis());
+        // Generic Host options may already impose stricter readiness limits.
+        // Preserve their authority; the physical driver deadline is independent
+        // and cannot be extended by any server GUC. The registration profile
+        // retains its frozen startup policy and therefore applies limits last.
+        let options = if registration {
+            format!("{} {limits}", config.get_options().unwrap_or(""))
+        } else {
+            format!("{limits} {}", config.get_options().unwrap_or(""))
+        };
         config.options(&options);
         let (slot, client, drivers) = blocking(|| {
             self.runtime.get().block_on(async {
