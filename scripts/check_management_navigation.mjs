@@ -62,9 +62,11 @@ async function actualSession(test) {
   await page.getByRole("button", { name: "当前会话", exact: true }).click();
   const drawer = page.getByRole("dialog", { name: "当前管理会话", exact: true });
   const id = (await drawer.locator(".ant-descriptions-item").filter({ hasText: "会话 ID" }).locator(".ant-descriptions-item-content").innerText()).trim();
-  const response = page.waitForResponse(r => r.url() === host.origin + host.mount + "/admin/auth/session" && r.request().method() === "GET");
-  await drawer.getByRole("button", { name: "校验当前会话", exact: true }).click();
-  const verified = await response;
+  await page.waitForFunction(el => !el.closest(".ant-drawer-content-wrapper")?.getAnimations().some(animation => animation.playState === "running"), await drawer.elementHandle());
+  const [verified] = await Promise.all([
+    page.waitForResponse(r => r.url() === host.origin + host.mount + "/admin/auth/session" && r.request().method() === "GET"),
+    drawer.getByRole("button", { name: "校验当前会话", exact: true }).click(),
+  ]);
   assert.equal(verified.status(), 200);
   const identity = await verified.json();
   assert.equal(identity.session_id, id);
@@ -148,8 +150,7 @@ try {
   pass("dot tenant IDs are managed and restored without normalized detail paths");
   await setHash(page, "#/tenants/tenant-b/roles"); await waitHeading(page, "角色与权限"); await settle(page);
   await page.getByRole("button", { name: "新建角色", exact: true }).click();
-  // Legacy role forms share an Ant field id with the page filter. Keep this
-  // shell acceptance scoped to the actual dialog input rather than that label.
+  // Keep shell acceptance scoped to the creation form, independent of the page filter.
   await page.getByRole("dialog").getByPlaceholder("例如 biz_test", { exact: true }).fill("uib");
   await page.getByLabel("角色标识", { exact: true }).fill(`navigation_guard_${Date.now()}`);
   await page.getByLabel("角色名称", { exact: true }).fill("UI B guard fixture");
@@ -166,13 +167,14 @@ try {
   let seenWrite; const writeSeen = new Promise(resolve => { seenWrite = resolve; });
   const writePattern = `${platform.host.origin}${platform.host.mount}/admin/access/roles`;
   await page.route(writePattern, async route => { if (route.request().method() !== "POST") return route.continue(); seenWrite(); await delayedWrite; await route.continue(); });
-  await page.getByRole("button", { name: "创建角色", exact: true }).click(); await bounded(writeSeen, "role POST");
+  await page.getByRole("button", { name: "创建角色", exact: true }).click();
+  await page.getByRole("dialog", { name: "确认创建角色", exact: true }).getByRole("button", { name: "确认创建", exact: true }).click(); await bounded(writeSeen, "role POST");
   await expectDialog(platform, () => setHash(page, "#/tenants/tenant-a/members"));
   await page.waitForURL("**/#/tenants/tenant-b/roles");
   assert.equal(platform.dialogs.at(-1).type, "alert");
   const writeDone = page.waitForResponse(r => r.url() === writePattern && r.request().method() === "POST");
   releaseWrite(); await writeDone; await page.unroute(writePattern);
-  await page.getByRole("dialog").waitFor({ state: "hidden" }); await settle(page);
+  await page.getByRole("dialog", { name: "新建业务角色", exact: true }).waitFor({ state: "hidden" }); await settle(page);
   platform.answer("accept");
   await expectDialog(platform, () => setHash(page, "#/tenants/tenant-b/members")); await waitHeading(page, "成员管理");
   assert.equal(calls.filter(c => c.method === "POST" && c.path.endsWith("/access/roles")).length, 1);
@@ -202,11 +204,12 @@ try {
     await route.abort("connectionfailed");
   });
   await page.getByRole("button", { name: "创建角色", exact: true }).click();
+  await page.getByRole("dialog", { name: "确认创建角色", exact: true }).getByRole("button", { name: "确认创建", exact: true }).click();
   await page.getByText("操作结果未确认，请先重新加载数据核对，勿重复提交。", { exact: true }).waitFor();
   platform.answer("dismiss");
   await expectDialog(platform, () => setHash(page, "#/tenants/tenant-a/members"));
   await page.waitForURL("**/#/tenants/tenant-b/roles");
-  assert.ok((await page.getByRole("dialog").innerText()).includes("tenant-b"));
+  assert.ok((await page.getByRole("dialog", { name: "新建业务角色", exact: true }).innerText()).includes("tenant-b"));
   platform.answer("accept");
   await expectDialog(platform, () => setHash(page, "#/tenants/tenant-a/members")); await waitHeading(page, "成员管理"); await settle(page);
   await page.unroute(writePattern);
@@ -220,8 +223,9 @@ try {
   await unknownHistory.page.waitForURL("**/#/tenants/tenant-a/roles");
   assert.equal(await unknownHistory.page.getByLabel("角色名称", { exact: true }).inputValue(), "Preserve pre-login history draft");
   pass("cancelling Back to an unmarked pre-login entry preserves the current page and draft");
-  await unknownHistory.page.keyboard.press("Escape");
   unknownHistory.answer("accept");
+  await expectDialog(unknownHistory, () => unknownHistory.page.keyboard.press("Escape"));
+  await unknownHistory.page.getByRole("dialog", { name: "新建业务角色", exact: true }).waitFor({ state: "hidden" });
   await menu(unknownHistory.page, "成员管理").click(); await waitHeading(unknownHistory.page, "成员管理");
   await menu(unknownHistory.page, "角色与权限").click(); await waitHeading(unknownHistory.page, "角色与权限"); await settle(unknownHistory.page);
   // Simulate a restored duplicate entry within a managed history chain. Its URL
@@ -335,6 +339,7 @@ try {
   await refreshing.page.route(refreshPath, async route => { sawRefresh(); await refreshGate; await route.continue(); });
   await refreshing.page.evaluate(() => { const now = Date.now.bind(Date); Date.now = () => now() + 280_000; });
   await refreshing.page.getByRole("button", { name: "创建角色", exact: true }).click();
+  await refreshing.page.getByRole("dialog", { name: "确认创建角色", exact: true }).getByRole("button", { name: "确认创建", exact: true }).click();
   await bounded(refreshSeen, "pre-write browser refresh");
   for (const action of [
     // The busy modal intentionally masks background pointer input. Explicit
@@ -352,7 +357,7 @@ try {
   const post = refreshing.page.waitForResponse(r => r.url() === writePattern.replace(platform.host.origin, refreshing.host.origin) && r.request().method() === "POST");
   releaseRefresh();
   const written = await bounded(post, "post after browser refresh"); assert.ok(written.ok());
-  await refreshing.page.getByRole("dialog").waitFor({ state: "hidden" });
+  await refreshing.page.getByRole("dialog", { name: "新建业务角色", exact: true }).waitFor({ state: "hidden" });
   const writes = refreshing.calls.filter(c => c.method === "POST" && c.path.endsWith("/access/roles"));
   assert.equal(writes.length, 1); assert.equal(writes[0].target, "tenant-b");
   await refreshing.page.unroute(refreshPath);

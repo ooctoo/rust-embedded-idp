@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Alert, Button, Card, Drawer, Form, Input, Modal, Space, Table, Typography } from "antd";
-import { ManagementClient, ManagementError, type Account } from "./client";
+import { ManagementClient, ManagementError, type Account, type Member } from "./client";
 import { useCursorPage } from "./pagination";
+import { discardChanges, SafeConfirm, useWriteFeedback, WriteFeedback } from "./workflow";
 
 const failure = (reason: unknown) => reason instanceof ManagementError ? reason.message : "操作失败，请重新加载后核对。";
 const accountStatus: Record<Account["status"], string> = {
@@ -145,43 +146,42 @@ export function AccountSecurityAccounts({ client }: { client: ManagementClient }
   </Card>;
 }
 
-export function CreateAccount({ client, tenant, close }: { client: ManagementClient; tenant: string; close: () => void }) {
+export function CreateAccount({ client, tenant, close, created }: { client: ManagementClient; tenant: string; close: () => void; created?: (member: Member) => void }) {
   const [form] = Form.useForm<{ email: string; password: string; display_name?: string }>();
   const [draft, setDraft] = useState<{ email: string; display_name?: string }>();
-  const [busy, setBusy] = useState(false);
-  const [blocked, setBlocked] = useState(false);
-  const [error, setError] = useState("");
-  const mounted = useRef(true);
+  const [originalEmail, setOriginalEmail] = useState("");
+  const [readback, setReadback] = useState("");
+  const write = useWriteFeedback(client);
+  const id = useId(), mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; form.resetFields(); }; }, [form]);
-  const done = () => { form.resetFields(); setDraft(undefined); close(); };
-  const tenantEnabled = client.getSnapshot().capabilities?.tenancy_enabled;
-  const submit = (values: { email: string; password: string; display_name?: string }) => { setError(""); setDraft({ email: values.email.trim(), display_name: values.display_name?.trim() || undefined }); };
-  const confirm = async () => {
-    const values = form.getFieldsValue();
-    if (!draft || !values.password) return;
-    setBusy(true); setError("");
-    try {
-      await client.createAccount(tenant, { email: draft.email, password: values.password, ...(draft.display_name ? { display_name: draft.display_name } : {}) });
-      if (mounted.current) done();
-    }
-    catch (reason) { if (mounted.current) { setError(failure(reason)); setBlocked(true); form.resetFields(["password"]); } }
-    finally { form.resetFields(["password"]); if (mounted.current) setBusy(false); }
-  };
-  return <Modal rootClassName="management-overlay" open title="创建账号" okText="下一步" cancelText="取消" confirmLoading={busy}
-    okButtonProps={{ disabled: blocked }} cancelButtonProps={{ disabled: busy }} closable={!busy} keyboard={!busy} maskClosable={false}
+  const done = () => { if (!write.busy && discardChanges(form.isFieldsTouched() || write.outcome === "unknown")) { form.resetFields(); setDraft(undefined); close(); } };
+  return <Modal rootClassName="management-overlay management-workflow-editor" open title="创建账号" okText="下一步" cancelText="取消" confirmLoading={write.busy}
+    okButtonProps={{ disabled: write.blocked }} cancelButtonProps={{ disabled: write.busy }} closable={!write.busy} keyboard={!write.busy && !draft} maskClosable={false}
     onCancel={done} onOk={() => form.submit()}>
-    {error && <Alert type="error" role="alert" showIcon message={error} description="请关闭并核对账号列表后再决定下一步。" />}
-    <Form name="account-create" form={form} layout="vertical" onFinish={submit} disabled={busy || blocked}>
+    <Typography.Paragraph>目标域：{tenant}。创建共享账号及本域有效成员关系，不自动分配业务角色或管理员权限。</Typography.Paragraph>
+    <WriteFeedback state={write} />
+    {write.blocked && <><Typography.Paragraph>请按原邮箱 {originalEmail} 核对本域成员。回读不能证明初始密码已写入，不可盲目再次创建。</Typography.Paragraph><Button onClick={async () => {
+      try {
+        const page = await client.listMembers(tenant, originalEmail);
+        if (mounted.current) setReadback(page.items.filter(m => m.email.toLowerCase() === originalEmail.toLowerCase()).map(m => `${m.email}（${m.account_id} / ${m.membership.status}）`).join("、") || (page.has_more ? "当前页未找到，请返回成员列表继续分页核对。" : "当前未读取到匹配成员；这不能证明此前请求归因或密码结果。"));
+      } catch (reason) { if (mounted.current) setReadback(failure(reason)); }
+    }}>读取原邮箱成员</Button>{readback && <Typography.Paragraph role="status">{readback}</Typography.Paragraph>}</>}
+    <Form name={`account-create-${id}`} form={form} layout="vertical" onValuesChange={write.edit} onFinish={values => setDraft({ email: values.email.trim(), display_name: values.display_name?.trim() || undefined })} disabled={write.busy || write.blocked}>
       <Form.Item name="email" label="邮箱" rules={[{ required: true, message: "请输入邮箱" }, { type: "email", message: "请输入有效邮箱" }]}><Input autoComplete="username" maxLength={320} /></Form.Item>
       <Form.Item name="display_name" label="显示名称"><Input maxLength={256} /></Form.Item>
       <Form.Item name="password" label="初始密码" rules={[{ required: true, message: "请输入初始密码" }]}><Input.Password autoComplete="new-password" maxLength={4096} /></Form.Item>
     </Form>
-    <Modal rootClassName="management-overlay" open={!!draft} title="确认创建账号" okText="确认创建" cancelText="返回修改" confirmLoading={busy}
-      okButtonProps={{ disabled: blocked }} cancelButtonProps={{ disabled: busy }} closable={!busy} keyboard={!busy} maskClosable={false}
-      onCancel={() => { if (!busy) { form.resetFields(["password"]); setDraft(undefined); } }} onOk={confirm}>
-      {draft && <><Typography.Paragraph>{tenantEnabled && <>租户：{tenant}<br /></>}邮箱：{draft.email}{draft.display_name ? <><br />显示名称：{draft.display_name}</> : null}</Typography.Paragraph>
-        <Alert type="info" showIcon message={tenantEnabled ? "创建账号并加入当前租户。" : "在本系统创建用户。"} description="不会自动分配业务角色；密码不会显示在确认信息中。" /></>}
-      {error && <Alert type="error" role="alert" message={error} description="请关闭并核对账号列表，不要重复提交。" />}
-    </Modal>
+    <SafeConfirm open={!!draft} title="确认创建账号" okText="确认创建" cancelText="返回修改" confirmLoading={write.busy} okButtonProps={{ disabled: write.blocked }}
+      onCancel={() => { form.resetFields(["password"]); setDraft(undefined); }} onOk={async () => {
+        if (!draft || !form.getFieldValue("password")) return;
+        setOriginalEmail(draft.email);
+        const response = await write.run(() => client.createAccount(tenant, { ...draft, password: form.getFieldValue("password") }), `已确认创建 ${tenant} / ${draft.email}。`);
+        form.resetFields(["password"]);
+        if (mounted.current) setDraft(undefined);
+        if (response.ok) { created?.(response.value); form.resetFields(); close(); }
+      }}>
+      {draft && <Typography.Paragraph>目标域：{tenant}<br />邮箱：{draft.email}<br />显示名称：{draft.display_name || "未填写"}</Typography.Paragraph>}
+      <Alert type="info" showIcon message="创建账号并加入当前域" description="邮箱已存在须使用已有账号关联，不覆盖共享凭证。密码不显示，返回修改后须重输；不会自动分配角色。" />
+    </SafeConfirm>
   </Modal>;
 }

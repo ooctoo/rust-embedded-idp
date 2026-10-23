@@ -107,3 +107,32 @@
 .management-client-editor .ant-descriptions-item-label,
 .management-client-editor .ant-result-subtitle,
 .management-client-confirm .ant-descriptions-item-label { color: #58677c; }
+
+/* UI-D uses the existing management shell; wide data stays inside its table. */
+.management-workflow-page .ant-card-body { padding: 24px; }
+.management-workflow-page .ant-typography,
+.management-workflow-editor .ant-typography { overflow-wrap: anywhere; }
+.management-workflow-page .ant-typography-secondary,
+.management-workflow-editor .ant-typography-secondary,
+.management-workflow-editor .ant-form-item-extra { color: #58677c; }
+.management-workflow-page .ant-alert,
+.management-workflow-editor .ant-alert,
+.embedded-idp-workflow-confirm .ant-alert { margin-bottom: 16px; }
+.management-workflow-loading { display: flex; justify-content: center; min-height: 160px; padding: 24px; }
+.management-workflow-editor .ant-drawer-content-wrapper { max-width: 100vw; }
+.management-workflow-editor .ant-drawer-body,
+.embedded-idp-workflow-confirm .ant-modal-body { overflow-wrap: anywhere; }
+@media (max-width: 767px) {
+  .management-workflow-page .ant-card-body, .management-workflow-editor .ant-drawer-body { padding: 16px; }
+  .management-workflow-page .management-filter,
+  .management-workflow-editor .management-filter { display: flex; flex-wrap: wrap; gap: 12px; max-width: 100%; }
+  .management-workflow-page .management-filter .ant-form-item,
+  .management-workflow-editor .management-filter .ant-form-item { margin-inline-end: 0; max-width: 100%; }
+  .management-workflow-page .management-filter .ant-input,
+  .management-workflow-editor .management-filter .ant-input { max-width: 100%; }
+  .embedded-idp-workflow-confirm .ant-modal-footer { display: flex; flex-direction: column; gap: 8px; }
+  .embedded-idp-workflow-confirm .ant-modal-footer > .ant-btn { margin-inline-start: 0; min-height: 40px; width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .management-workflow-editor *, .embedded-idp-workflow-confirm * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}

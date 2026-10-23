@@ -9,7 +9,7 @@
 | 契约关系 | [M1-02 修订 2](m1-02-configuration-composition-design-r2.md)保留原实施历史；[M1-02 修订 3](m1-02-configuration-composition-design.md)为当前实现契约。本文是独立的管理体验和后续能力提案，不修改已完成的 M1-02 退出条件 |
 | 原设计轮次边界 | 本文修订2产出时仅文档和静态结构草图；后续UI-B实现/验收单独记录，不回写为原设计轮次已验收；M1-03–06、试点和部署待定 |
 
-当前进展（2026-10-21 UI-C提交前核对更新）：UI-B壳层与导航已按UI-A修订2完成本地交付并提交，未推送，见[UI-B实施验收报告](ui-b-implementation-result.md)。UI-C客户端列表与详情样板已完成本地实现、专项补验及提交前核对，本批随UI-C提交归档，未推送，见[UI-C实施验收报告](ui-c-implementation-result.md)和[运行证据](design/ui-c/README.md)。本文§2“现状”保留M1-02提交时的设计输入快照；当前实际导航和页面以实施报告为准。UI-D–F、新增社区能力及M1-03–06未启动，试点和部署待定。
+当前进展（2026-10-23 UI-D提交前核对更新）：UI-B壳层导航与UI-C客户端样板均已完成本地交付及提交、未推送，见[UI-B报告](ui-b-implementation-result.md)与[UI-C报告](ui-c-implementation-result.md)。UI-D租户准备与授权已按UI-A修订2完成本地实施、审查收尾、专项补验及提交前核对，见[UI-D报告](ui-d-implementation-result.md)与[运行证据](design/ui-d/README.md)，本批随UI-D提交归档、未推送。本文§2“现状”保留M1-02提交时的设计输入快照；当前实际页面以实施报告为准。UI-E–F、新增社区能力及M1-03–06未启动，试点与部署待定。
 
 ## 1 设计结论
 
@@ -331,7 +331,7 @@ readiness、入口可用性、业务指标和安全审计分别呈现。需定�
 
 M1-02 已在 `6bed928` 完成配置归一、最小共同装配、可选 browser/UI 和对应管理生命周期验收；[收尾报告](m1-02-closure-result.md)保留测试时源码基线和历史记录，本文不将其改写为本轮新跑的结果。旧参考行为、新模式只读启动、管理/业务隔离继续作为回归基线。
 
-后台体验线只做既有能力的导航与操作体验；社区能力线先做 C05–C13 专题契约。前者不等待 MFA、统计服务、配置控制器或 M1-03–06，也不把这些能力夹带进页面改造。本节顺序是以后获得实施授权时的拆分建议，**修订2产出时均未启动；当前UI-B/UI-C进展见各自实施报告，UI-D–F仍未启动**。
+后台体验线只做既有能力的导航与操作体验；社区能力线先做 C05–C13 专题契约。前者不等待 MFA、统计服务、配置控制器或 M1-03–06，也不把这些能力夹带进页面改造。本节顺序是以后获得实施授权时的拆分建议，**修订2产出时均未启动；当前UI-B/UI-C/UI-D进展见各自实施报告，UI-E–F仍未启动**。
 
 ### 9.2 后台体验实施顺序
 
@@ -346,7 +346,7 @@ M1-02 已在 `6bed928` 完成配置归一、最小共同装配、可选 browser/
 
 各批只引入该批所需改动与检查，不先建立跨页面框架再寻找使用者。UI-B 应先保留全部既有任务入口，不能等 UI-D/E 才恢复被新壳层隐藏的能力。
 
-UI-A 设计交付入口（UI-A修订2再审已更新）：[业务设计稿与交互说明](design/ui-a/README.md)、[自包含静态画板](design/ui-a/ui-a-business-mockups.html)。这是本修订的后续设计产物，使用合成示例完成本地渲染核对；[再审记录](design/ui-a/review-r2.md)澄清绑定操作无角色版本CAS、会话范围不代表管理授权及最后未移除成员关系保护，视觉尚未冻结，UI-A交付当时UI-B–F及M1-03–06未启动；当前UI-B/UI-C本地实现分别见[UI-B报告](ui-b-implementation-result.md)与[UI-C报告](ui-c-implementation-result.md)，UI-D–F及M1-03–06仍未启动，不把UI-A静态稿改称运行验收。
+UI-A 设计交付入口（UI-A修订2再审已更新）：[业务设计稿与交互说明](design/ui-a/README.md)、[自包含静态画板](design/ui-a/ui-a-business-mockups.html)。这是本修订的后续设计产物，使用合成示例完成本地渲染核对；[再审记录](design/ui-a/review-r2.md)澄清绑定操作无角色版本CAS、会话范围不代表管理授权及最后未移除成员关系保护，视觉尚未冻结，UI-A交付当时UI-B–F及M1-03–06未启动；当前UI-B/UI-C本地实现分别见[UI-B报告](ui-b-implementation-result.md)与[UI-C报告](ui-c-implementation-result.md)，UI-D进展见[UI-D报告](ui-d-implementation-result.md)，UI-E–F及M1-03–06仍未启动，不把UI-A静态稿改称运行验收。
 
 ### 9.3 文件、兼容与验证边界
 
