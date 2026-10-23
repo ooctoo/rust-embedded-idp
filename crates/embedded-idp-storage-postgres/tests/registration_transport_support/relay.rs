@@ -272,7 +272,7 @@ fn relay_connection(mut client: TcpStream, mut server: TcpStream, cut: Cut, stat
         .is_err_and(|error| error.kind() == io::ErrorKind::UnexpectedEof)
     {
         state.peer_eof.fetch_add(1, Ordering::AcqRel);
-        if muted.load(Ordering::Acquire) {
+        if muted.load(Ordering::Acquire) && !state.stop.load(Ordering::Acquire) {
             state.hit_peer_eof.fetch_add(1, Ordering::AcqRel);
         }
     }
@@ -319,6 +319,11 @@ fn spawn_receiver(
                         error.kind(),
                         io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
                     ) => {}
+                Err(_) if receive_muted.load(Ordering::Acquire) => {
+                    // A response blackhole survives an upstream reset too.
+                    // Only the actual client EOF may establish driver stop.
+                    thread::sleep(Duration::from_millis(10));
+                }
                 Err(_) => break,
             }
         }

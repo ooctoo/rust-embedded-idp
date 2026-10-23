@@ -20,7 +20,7 @@ Database calls never invoke uncancellable libc DNS. Literal PostgreSQL hosts or 
 
 ## Executable acceptance
 
-Ignored tests require an explicitly confirmed fresh loopback `sut_idp3_test` and random disposable schemas. BEGIN/query blackholes exercise the actual 5-second `is_replay` path. Register/verify COMMIT tests skip the reservation COMMIT and withhold the final A/C acknowledgement. Selected-connection EOF and caller join precede disabling the fault; constructor/idle EOF cannot substitute. Relay teardown is only timeout rescue for a failed test.
+Ignored tests require an explicitly confirmed fresh loopback `sut_idp3_test` and random disposable schemas. BEGIN/query blackholes exercise the actual 5-second `is_replay` path. Register/verify COMMIT tests skip the reservation COMMIT and withhold the final A/C acknowledgement. The response blackhole survives upstream EOF and reset, so upstream termination cannot manufacture client EOF. Selected-connection EOF and caller join precede disabling the fault; constructor/idle EOF cannot substitute. Relay teardown is only timeout rescue for a failed test.
 
 A/C tests independently read authority facts, then replay the original key without adding contexts, intents, accounts, memberships, consumed codes or receipts. Verify must replay its original `Verified` result. Strict TLS tests accept the temporary CA/hostname, reject IP mismatch and untrusted CA, and stop SSL negotiation blackholes before direct TLS recovery. They do not proxy encrypted SQL frames or prove production PKI.
 
