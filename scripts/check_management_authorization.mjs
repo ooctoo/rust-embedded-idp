@@ -160,13 +160,14 @@ async function chooseRole(p, d, name) {
 async function selectOption(p, parent, label, option) {
   const input = parent.getByLabel(label, { exact: true });
   await input.focus(); await input.press('ArrowDown');
-  const element = await input.elementHandle();
+  const inputId = await input.getAttribute('id'); assert.ok(inputId);
   const controls = await input.getAttribute('aria-controls'); assert.ok(controls);
-  await p.waitForFunction(({ element, controls, option }) => {
+  await p.waitForFunction(({ inputId, controls, option }) => {
+    const element = document.getElementById(inputId);
     const popup = document.getElementById(controls)?.closest('.ant-select-dropdown');
-    return element.getAttribute('aria-expanded') === 'true' && popup?.getClientRects().length &&
+    return element?.getAttribute('aria-expanded') === 'true' && popup?.getClientRects().length &&
       [...popup.querySelectorAll('.ant-select-item-option-content')].some(item => item.textContent === option);
-  }, { element, controls, option });
+  }, { inputId, controls, option });
   for (let i = 0; ; i++) {
     const active = await input.evaluate(el => { const item = document.getElementById(el.getAttribute('aria-activedescendant')); return item?.getAttribute('aria-label') ?? item?.textContent; });
     if (active === option) break;
@@ -174,8 +175,12 @@ async function selectOption(p, parent, label, option) {
     await input.press('ArrowDown');
   }
   await input.press('Enter');
-  await p.waitForFunction(({ element, option }) => element.getAttribute('aria-expanded') === 'false' &&
-    element.closest('.ant-select')?.querySelector('.ant-select-selection-item')?.textContent === option, { element, option });
+  // Form updates may replace the combobox node; resolve its stable form ID again.
+  await p.waitForFunction(({ inputId, option }) => {
+    const element = document.getElementById(inputId);
+    return element?.getAttribute('aria-expanded') === 'false' &&
+      element.closest('.ant-select')?.querySelector('.ant-select-selection-item')?.textContent === option;
+  }, { inputId, option });
   await p.waitForFunction(() => !document.querySelector('.ant-select-dropdown:not(.ant-select-dropdown-hidden)'));
   await p.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 }
@@ -1026,7 +1031,11 @@ try {
         const read = page.waitForResponse(r => r.request().method() === 'GET' && r.url().startsWith(`${listPath}?`));
         await button(form, '读取原权限范围首页').click(); assert.equal((await read).status(), status);
         await form.getByText('原权限范围读取失败，可重试当前页。', { exact: true }).waitFor();
-        assert.ok(await button(form, '核对').isDisabled()); assert.equal(await button(form, '结束核对').count(), 0);
+        // The fading Ant loading icon can temporarily prefix the accessible name.
+        // Assert the original submit control itself remains disabled throughout recovery.
+        const submitControl = form.locator('.ant-modal-footer button.ant-btn-primary');
+        assert.equal(await submitControl.count(), 1); assert.ok(await submitControl.isDisabled());
+        assert.equal(await button(form, '结束核对').count(), 0);
       }
       const declined = page.waitForEvent('dialog'); await button(form, '取消').click(); await declined;
       assert.ok(await form.isVisible()); assert.equal(await form.getByLabel('权限说明', { exact: true }).inputValue(), edit.description);
