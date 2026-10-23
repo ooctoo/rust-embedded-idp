@@ -45,6 +45,7 @@ export function ManagementShell({ client, busy, verifiedAt, notices, verify, log
   const route = result.route;
   const fallback = defaultRoute(caps, identity);
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuNavigated = useRef(false);
   const [identityOpen, setIdentityOpen] = useState(false);
   const [target, setTarget] = useState<{ id: string; record?: ManagedTenant; error?: ManagementError }>();
   const [targetRevision, setTargetRevision] = useState(0);
@@ -52,7 +53,11 @@ export function ManagementShell({ client, busy, verifiedAt, notices, verify, log
   useEffect(() => {
     if (["", "#", "#/"].includes(hash)) navigate(routeHash(fallback), true);
   }, [hash, fallback.scope, fallback.tenant, navigate]);
-  useEffect(() => { heading.current?.focus(); setMenuOpen(false); }, [hash]);
+  useEffect(() => {
+    heading.current?.focus();
+    if (menuOpen) menuNavigated.current = true;
+    setMenuOpen(false);
+  }, [hash]);
   useEffect(() => {
     const prevent = (event: BeforeUnloadEvent) => {
       const activity = client.getMutationSnapshot();
@@ -91,8 +96,8 @@ export function ManagementShell({ client, busy, verifiedAt, notices, verify, log
   return <div className="management-shell">
     <a href="#management-content" className="management-skip" onClick={event => { event.preventDefault(); heading.current?.focus(); }}>跳过导航</a>
     <header className="management-shell-header">
-      <div className="management-shell-brand"><Button className="management-menu-toggle" onClick={() => setMenuOpen(true)}>菜单</Button><strong>IDP · 身份管理</strong></div>
-      <Space wrap><span>登录范围：{loginScope}</span><Button onClick={() => setIdentityOpen(true)}>当前会话</Button>
+      <div className="management-shell-brand"><Button className="management-menu-toggle" aria-haspopup="dialog" aria-expanded={menuOpen} aria-controls={menuOpen ? "management-mobile-navigation" : undefined} onClick={() => setMenuOpen(true)}>菜单</Button><strong>IDP · 身份管理</strong></div>
+      <Space wrap><span>登录范围：{loginScope}</span><Button aria-haspopup="dialog" aria-expanded={identityOpen} onClick={() => setIdentityOpen(true)}>当前会话</Button>
         {client.canChoose() && <Button disabled={busy} onClick={() => { if (canLeave()) switchTenant(); }}>切换登录租户</Button>}
         <Button disabled={busy} onClick={() => { if (canLeave()) logout(); }}>退出登录</Button></Space>
     </header>
@@ -119,7 +124,14 @@ export function ManagementShell({ client, busy, verifiedAt, notices, verify, log
         </div>
       </main>
     </div>
-    <Drawer rootClassName="management-navigation-drawer" title="管理任务" placement="left" open={menuOpen} onClose={() => setMenuOpen(false)} width={280}>{menus}</Drawer>
+    <Drawer rootClassName="management-navigation-drawer" title="管理任务" placement="left" open={menuOpen} onClose={() => setMenuOpen(false)} width={280}
+      afterOpenChange={open => {
+        if (!open && menuNavigated.current) {
+          menuNavigated.current = false;
+          // rc-drawer first restores its trigger; navigation then lands on the new page.
+          requestAnimationFrame(() => heading.current?.focus());
+        }
+      }}><div id="management-mobile-navigation">{menus}</div></Drawer>
     <Drawer rootClassName="management-identity-dialog" title="当前管理会话" open={identityOpen} onClose={() => setIdentityOpen(false)} width={480}>
       <Descriptions column={1} items={[
         { key: "scope", label: "登录范围", children: loginScope }, { key: "account", label: "账号 ID", children: identity.account_id },

@@ -1,0 +1,32 @@
+{
+  "stage": "host",
+  "command": "cargo test -p embedded-idp-app --locked --offline -- --include-ignored --test-threads=1",
+  "exitCode": 0,
+  "durationSeconds": 156.1,
+  "postgresVersion": "18.6 (Debian 18.6-1.pgdg13+2)",
+  "groups": [
+    {
+      "passed": 33,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "passed": 2,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "passed": 2,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "passed": 13,
+      "failed": 0,
+      "ignored": 0
+    }
+  ],
+  "passed": 50,
+  "failed": 0,
+  "ignored": 0
+}

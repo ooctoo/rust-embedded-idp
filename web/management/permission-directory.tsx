@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Alert, Button, Card, Form, Input, Modal, Select, Space, Table, Tag, Typography } from "antd";
 import { type ManagementClient, type DirectoryPermission, type PermissionDirectoryFilter, type PermissionKey } from "./client";
 import { useCursorPage } from "./pagination";
@@ -18,6 +18,19 @@ function DirectoryTable({ client, tenant, business, filter, onLocked }: Permissi
   const [editing, setEditing] = useState<DirectoryPermission | null>();
   const [form] = Form.useForm<{ business_id: string; resource_type: string; action: string; description: string }>();
   const write = useWriteFeedback(client);
+  const refreshButton = useRef<HTMLButtonElement>(null);
+  const trigger = useRef<HTMLElement | null>(null);
+  const successFocus = useRef<{ editor: boolean; confirm: boolean; original: HTMLElement | null } | null>(null);
+  const restoreSuccessFocus = (closed: "editor" | "confirm") => {
+    const pending = successFocus.current;
+    if (!pending) return;
+    pending[closed] = false;
+    if (pending.editor || pending.confirm) return;
+    successFocus.current = null;
+    const original = pending.original;
+    const target = original?.isConnected && original.getClientRects().length && !original.matches(":disabled") ? original : refreshButton.current;
+    target?.focus();
+  };
 
   const formName = useId();
   const [dirty, setDirty] = useState(false);
@@ -57,11 +70,14 @@ function DirectoryTable({ client, tenant, business, filter, onLocked }: Permissi
         : client.createPermission(tenant, context.values.business_id, context.values, context.values.description)
       : context.type === "archive" ? client.archivePermission(tenant, context.original.business_id, context.original)
         : client.setPermissionEnabled(tenant, context.original.business_id, context.original, !context.original.enabled), "权限目录写入已确认。");
-    if (resultWrite.ok) { const p = resultWrite.value; setConfirmed(`权限写入已确认：${tenant} / ${p.business_id}，${keyOf(p)}，版本 ${p.version}。`); setReview(undefined); setEditing(undefined); setDirty(false); result.reload(); }
+    if (resultWrite.ok) { const p = resultWrite.value;
+      // Row triggers are replaced by reload; only the create toolbar survives.
+      successFocus.current = { editor: editing !== undefined, confirm: true, original: context.type === "save" && !context.original ? trigger.current : null };
+      setConfirmed(`权限写入已确认：${tenant} / ${p.business_id}，${keyOf(p)}，版本 ${p.version}。`); setReview(undefined); setEditing(undefined); setDirty(false); result.reload(); }
   };
   return <>
-    <div className="management-filter"><Button disabled={write.busy || result.loading || write.blocked} onClick={result.reload}>刷新目录</Button>{" "}
-      {!platformOnly && <Button type="primary" disabled={write.busy || write.blocked || editing !== undefined || !!review} onClick={() => { form.resetFields(); form.setFieldsValue({ business_id: business }); setDirty(false); write.edit(); setEditing(null); }}>创建权限</Button>}</div>
+    <div className="management-filter"><Button ref={refreshButton} disabled={write.busy || write.blocked} aria-disabled={write.busy || write.blocked || result.loading} onClick={() => { if (!result.loading) result.reload(); }}>刷新目录</Button>{" "}
+      {!platformOnly && <Button type="primary" disabled={write.busy || write.blocked || editing !== undefined || !!review} onClick={event => { trigger.current = event.currentTarget; form.resetFields(); form.setFieldsValue({ business_id: business }); setDirty(false); write.edit(); setEditing(null); }}>创建权限</Button>}</div>
     <WriteFeedback state={write} />
     {confirmed && <Alert type="success" role="status" message={confirmed} />}
     {write.blocked && review && <Alert type="info" message={`待核对原权限：${tenant} / ${review.type === "save" ? review.values.business_id : review.original.business_id}，${keyOf(review.type === "save" ? review.values : review.original)}。`} />}
@@ -82,6 +98,7 @@ function DirectoryTable({ client, tenant, business, filter, onLocked }: Permissi
       ]} /></ReadState>
     {!result.loading && !result.error && result.controls}
     <Modal rootClassName="management-overlay" open={editing !== undefined} title={editing ? "编辑权限" : "创建权限"}
+      afterClose={() => restoreSuccessFocus("editor")}
       onCancel={close} onOk={() => void form.submit()} confirmLoading={write.busy} closable={!write.busy} maskClosable={false} keyboard={!write.busy} okText="核对" okButtonProps={{ disabled: write.blocked }}>
       <Form form={form} name={formName} layout="vertical" disabled={write.busy || write.blocked} onValuesChange={() => { setDirty(true); write.edit(); }} onFinish={values => setReview({ type: "save", values, original: editing || undefined })}>
         <Form.Item name="business_id" label="业务标识" rules={[
@@ -96,7 +113,7 @@ function DirectoryTable({ client, tenant, business, filter, onLocked }: Permissi
       {readback && <Alert type="info" role="status" message={readback} />}
       {write.blocked && <Space><Button disabled={reading || recoveryDone} onClick={() => void recover()}>{recoveryStarted ? "读取下一页" : "读取原权限范围首页"}</Button>{recoveryDone && <Button onClick={() => { write.recovered(); setReview(undefined); setEditing(undefined); setDirty(false); result.reload(); }}>结束核对</Button>}</Space>}
     </Modal>
-    <SafeConfirm open={!!review && !write.blocked} title={review?.type === "save" ? review.original ? "确认编辑权限" : "确认创建权限" : review?.type === "archive" ? "确认归档权限" : "确认更改权限状态"} okText="确认" okButtonProps={{ danger: review?.type === "archive" || review?.type === "toggle" && review.original.enabled }} confirmLoading={write.busy} onCancel={() => setReview(undefined)} onOk={() => void submit()}>
+    <SafeConfirm afterClose={() => restoreSuccessFocus("confirm")} open={!!review && !write.blocked} title={review?.type === "save" ? review.original ? "确认编辑权限" : "确认创建权限" : review?.type === "archive" ? "确认归档权限" : "确认更改权限状态"} okText="确认" okButtonProps={{ danger: review?.type === "archive" || review?.type === "toggle" && review.original.enabled }} confirmLoading={write.busy} onCancel={() => setReview(undefined)} onOk={() => void submit()}>
       <WriteFeedback state={write} />
       {review && <><Typography.Paragraph>目标域：{tenant} / {review.type === "save" ? review.values.business_id : review.original.business_id}；权限标识：{keyOf(review.type === "save" ? review.values : review.original)}；{review.type === "save" ? review.original ? `版本 ${review.original.version}` : "新建" : `版本 ${review.original.version}`}。</Typography.Paragraph>
       <Typography.Paragraph>{review.type === "save" ? `权限说明：${review.values.description}。权限标识创建后不可修改。` : review.type === "archive" ? "归档后立即拒绝授权，标识不可重新创建。" : review.original.enabled ? "停用后拒绝此权限授权。" : "启用可能恢复已有角色授权。"}</Typography.Paragraph></>}

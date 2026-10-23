@@ -10,9 +10,9 @@ const bytes = (text: string) => new TextEncoder().encode(text).length;
 interface Fields { client_name: string; client_type: ManagedClient["client_type"]; pkce_required: boolean; redirect_text: string; client_secret?: string }
 
 function ReadFailure({ status, message, retry, saved = false }: { status?: number; message: string; retry: () => void; saved?: boolean }) {
-  return <Result status={status === 403 ? "403" : status === 404 ? "404" : "error"}
+  return <div role="alert"><Result status={status === 403 ? "403" : status === 404 ? "404" : "error"}
     title={saved ? "配置已保存，重新读取失败" : status === 403 ? "无权读取客户端配置" : status === 404 ? "客户端管理入口不可用" : "读取客户端配置失败"}
-    subTitle={message} extra={<Button onClick={retry}>重新读取</Button>} />;
+    subTitle={message} extra={<Button onClick={retry}>重新读取</Button>} /></div>;
 }
 
 function ClientEditor({ client, id, close, changed }: { client: ManagementClient; id: string; close: () => void; changed: () => void }) {

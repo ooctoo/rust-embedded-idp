@@ -30,7 +30,7 @@ function CreateRole({ client, tenant, business, businessAdmin, close, created }:
   const [recoveryStarted, setRecoveryStarted] = useState(false);
   const [recoveryDone, setRecoveryDone] = useState(false);
   const [reading, setReading] = useState(false);
-  return <Modal open title={businessAdmin ? "创建业务管理员" : "新建业务角色"} footer={null} onCancel={() => { if (!write.busy && discardChanges(dirty || write.blocked)) close(); }} closable={!write.busy} maskClosable={false} keyboard={!write.busy}>
+  return <Modal rootClassName="management-overlay" open title={businessAdmin ? "创建业务管理员" : "新建业务角色"} footer={null} onCancel={() => { if (!write.busy && discardChanges(dirty || write.blocked)) close(); }} closable={!write.busy} maskClosable={false} keyboard={!write.busy}>
     <Paragraph type="secondary">目标域：{tenant}。{businessAdmin ? "每个业务只能创建一个。分配给成员后，自动拥有此业务全部有效权限。" : "新角色默认启用，初始权限为空。"}</Paragraph>
     <WriteFeedback state={write} />
     {readback && <Alert type="info" role="status" message={readback} />}

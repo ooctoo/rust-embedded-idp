@@ -63,7 +63,7 @@ export function AccessDiagnostic({ client, tenant }: { client: ManagementClient;
         <br />范围：{result.resource_id === null ? "资源类型下的全部资源" : `具体资源 ${result.resource_id}`}
         <br />审计记录：<Typography.Text code copyable>{result.audit_id}</Typography.Text>
       </Typography.Paragraph>
-      <Typography.Text type="secondary">这是查询时刻的判断结果，不代表永久授权，也不代表用户拥有该资源。</Typography.Text>
+      <Typography.Text type="secondary">这是查询时刻的判断结果，不代表永久授权，也不证明资源存在或用户拥有该资源；资源存在性与归属由宿主校验。</Typography.Text>
     </Card>}
     <Form<Draft> name={`permission-diagnostic-${formId}`} data-management-draft form={form} disabled={write.busy || write.blocked} layout="vertical" onValuesChange={() => { setResult(undefined); write.edit(); }} onFinish={submit}>
       <Form.Item name="business_id" label="业务标识" rules={[

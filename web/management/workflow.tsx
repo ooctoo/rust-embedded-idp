@@ -55,9 +55,9 @@ export function ReadState({ loading, error, status, empty, emptyText, retry, sav
   if (loading) return <Space role="status" className="management-workflow-loading"><Spin />正在读取…</Space>;
   if (error) {
     const code = status ?? (error instanceof ManagementError ? error.status : undefined);
-    return <Result status={code === 403 ? "403" : code === 404 ? "404" : "error"}
+    return <div role="alert"><Result status={code === 403 ? "403" : code === 404 ? "404" : "error"}
       title={saved ? "写入已确认，重新读取失败" : code === 403 ? "无权读取此管理范围" : code === 404 ? "对象不存在或不可见" : "读取失败"}
-      subTitle={typeof error === "string" ? error : failureMessage(error)} extra={retry && <Button onClick={retry}>重新读取</Button>} />;
+      subTitle={typeof error === "string" ? error : failureMessage(error)} extra={retry && <Button onClick={retry}>重新读取</Button>} /></div>;
   }
   if (empty) return <Empty description={emptyText ?? "暂无符合条件的数据，请调整筛选。"} />;
   return <>{children}</>;
@@ -68,7 +68,7 @@ export function SafeConfirm({ children, rootClassName = "", afterOpenChange, ...
   return <Modal width={560} style={{ top: 24 }} {...props}
     rootClassName={`management-overlay embedded-idp-workflow-confirm workflow-confirm-${id} ${rootClassName}`}
     maskClosable={false} closable={!props.confirmLoading} keyboard={!props.confirmLoading}
-    cancelButtonProps={{ ...props.cancelButtonProps, disabled: !!props.confirmLoading, autoFocus: true }}
+    cancelButtonProps={{ ...props.cancelButtonProps, disabled: !!props.confirmLoading }}
     afterOpenChange={open => {
       if (open) document.querySelector<HTMLButtonElement>(`.workflow-confirm-${id} .ant-modal-footer .ant-btn-default`)?.focus();
       afterOpenChange?.(open);

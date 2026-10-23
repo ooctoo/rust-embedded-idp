@@ -31,7 +31,7 @@
 
 3.0.0 两种模式均使用 `tenant_v6`；2.0.0 的历史基线为 `tenant_v3`。已接通注册与邮箱验证、登录与选租户、会话/refresh、OIDC、租户设备、角色与资源授权，以及租户/成员/角色/权限目录/设备/会话/客户端/审计管理。业务权限定义可按租户和业务标识创建、读取、修改、启停和归档，并与同租户同业务角色关联。React 管理后台接入真实 API；本地 `@embedded-idp/react` 主入口提供登录、租户选择和本人角色列表，`/admin` 子入口提供权限目录组件，React 19 由宿主提供。
 
-仓库提供[无租户嵌入宿主示例](examples/no-tenant-host/README.md)：另起 Axum 业务进程，复用 IdP 业务路由和 React 登录组件，并在宿主报告接口中检查 `report::read::<id>`。该示例的配置模板和启动命令均在 `examples/no-tenant-host` 内，不依赖根目录的开发环境脚本；带租户的嵌入体验留待后续。`web/embedded/demo.html` 仍只使用模拟响应。设备自助界面、部分管理页面浏览器补验和性能验收仍未完成。
+仓库提供[无租户嵌入宿主示例](examples/no-tenant-host/README.md)：另起 Axum 业务进程，复用 IdP 业务路由和 React 登录组件，并在宿主报告接口中检查 `report::read::<id>`。该示例的配置模板和启动命令均在 `examples/no-tenant-host` 内，不依赖根目录的开发环境脚本；带租户的嵌入体验留待后续。`web/embedded/demo.html` 仍只使用模拟响应。设备自助界面和性能验收仍未完成；管理后台本地整体验收及未覆盖环境见[UI-F报告](docs/ui-f-implementation-result.md)。
 
 业务权限目录已按租户隔离；内置管理权限受保护。宿主可调用 Core 服务或选装 Axum 管理路由。独立管理应用提供完整页面；本地 `@embedded-idp/react/admin` 入口提供可嵌入的权限目录组件，尚未发布到 npm。组件使用独立的管理会话与管理 API，不使用业务登录令牌；接入方式见 [React 集成说明](docs/react-ui-integration-design.md)。
 
@@ -117,11 +117,12 @@ cargo test --workspace --locked
 - [M1-02 修订 3 收尾与验收回传](docs/m1-02-closure-result.md)（可选 browser/UI、完整管理生命周期及归一偏差修复；保留旧参考行为；M1-03–06、试点与部署待定）
 - [M1-02 实现审查调整交接说明](docs/m1-02-implementation-adjustments-handoff.md) / [A01–A05 静态核对与调整计划回传](docs/m1-02-implementation-adjustments-result.md)（实施前计划；后续处置与运行证据见收尾回传）
 - [M1-02 实际代码完整审查](docs/m1-02-code-review.md) / [原设计修订 2 固定快照](docs/m1-02-configuration-composition-design-r2.md)（修复前审查与固定基线；问题处置与运行证据见收尾回传）
-- [管理后台与社区能力补齐详细设计](docs/management-console-capability-design.md)（修订2设计基线；UI-A至UI-E进展另见交付记录，新增社区能力未实施）
+- [管理后台与社区能力补齐详细设计](docs/management-console-capability-design.md)（修订2设计基线；UI-A至UI-F进展另见交付记录，新增社区能力未实施）
 - [UI-B 后台壳层与导航实施验收](docs/ui-b-implementation-result.md) / [运行截图](docs/design/ui-b/README.md)（已完成本地实现、审查收尾与提交前核对，未推送；后续进展见UI-C报告）
 - [UI-C 列表与详情样板实施验收](docs/ui-c-implementation-result.md) / [运行截图](docs/design/ui-c/README.md)（客户端列表、ID定位、配置确认与异常恢复；本地实现、专项补验及提交前核对完成，本批随UI-C提交归档，未推送；后续进展见UI-D报告）
 - [UI-D 租户准备与授权实施验收](docs/ui-d-implementation-result.md) / [运行证据](docs/design/ui-d/README.md)（复用既有租户、成员、权限及授权能力；审查收尾、专项补验及提交前核对完成，随UI-D提交归档、未推送；后续进展见UI-E报告）
-- [UI-E 账号与安全处置实施验收](docs/ui-e-implementation-result.md) / [运行证据](docs/design/ui-e/README.md)（全局账号、设备与绑定、目标域会话、诊断及审计；实现、审查补验与提交前核对完成，随本批提交归档、未推送；UI-F、M1-03–06未启动，试点与部署待定）
+- [UI-E 账号与安全处置实施验收](docs/ui-e-implementation-result.md) / [运行证据](docs/design/ui-e/README.md)（全局账号、设备与绑定、目标域会话、诊断及审计；实现、审查补验与提交前核对完成，随UI-E提交归档、未推送；后续进展见UI-F报告）
+- [UI-F 整体核对与实施验收](docs/ui-f-implementation-result.md) / [运行证据](docs/design/ui-f/README.md)（既有任务整体验收与键盘、异常呈现收尾；修订2审查及提交前核对完成，随本批UI-F提交归档、未推送；M1-03–06未启动，试点与部署待定）
 - [开发与嵌入指南](docs/developer-and-integration-guide.md)
 - [宿主集成边界](docs/host-integration-v1.md)
 - [租户/角色/权限设计](docs/tenant-role-permission-design-v1.md)

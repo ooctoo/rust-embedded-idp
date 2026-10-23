@@ -1,0 +1,85 @@
+[
+  {
+    "stage": "host",
+    "command": "cargo test -p embedded-idp-app --locked --offline -- --include-ignored --test-threads=1",
+    "exitCode": 0,
+    "durationSeconds": 122.7,
+    "postgresVersion": "18.6 (Debian 18.6-1.pgdg13+2)",
+    "groups": [
+      {
+        "passed": 33,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 13,
+        "failed": 0,
+        "ignored": 0
+      }
+    ],
+    "passed": 50,
+    "failed": 0,
+    "ignored": 0
+  },
+  {
+    "stage": "pg-device",
+    "command": "cargo test -p embedded-idp-storage-postgres --test live_tenant_registration http_device_ --locked --offline -- --include-ignored --test-threads=1",
+    "exitCode": 0,
+    "durationSeconds": 24.1,
+    "postgresVersion": "18.6 (Debian 18.6-1.pgdg13+2)",
+    "groups": [
+      {
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0
+      }
+    ],
+    "passed": 6,
+    "failed": 0,
+    "ignored": 0
+  },
+  {
+    "stage": "pg-account",
+    "command": "cargo test -p embedded-idp-storage-postgres --test live_access_admin account_security:: --locked --offline -- --include-ignored --test-threads=1",
+    "exitCode": 0,
+    "durationSeconds": 12.2,
+    "postgresVersion": "18.6 (Debian 18.6-1.pgdg13+2)",
+    "groups": [
+      {
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0
+      }
+    ],
+    "passed": 3,
+    "failed": 0,
+    "ignored": 0
+  },
+  {
+    "stage": "pg-session",
+    "command": "cargo test -p embedded-idp-storage-postgres --test live_access_admin sessions:: --locked --offline -- --include-ignored --test-threads=1",
+    "exitCode": 0,
+    "durationSeconds": 1.7,
+    "postgresVersion": "18.6 (Debian 18.6-1.pgdg13+2)",
+    "groups": [
+      {
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0
+      }
+    ],
+    "passed": 3,
+    "failed": 0,
+    "ignored": 0
+  }
+]

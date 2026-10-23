@@ -69,11 +69,12 @@ function PlatformAccountTable({ client, email }: { client: ManagementClient; ema
   const [subject, setSubject] = useState<string>();
   const trigger = useRef<HTMLElement | null>(null);
   return <>
-    {result.error && <Alert type="error" role="alert" message={result.error} action={<Button onClick={result.reload}>重试</Button>} />}
+    <ReadState loading={result.loading} error={result.error} status={result.errorStatus} retry={result.reload}
+      empty={!result.page?.items.length} emptyText="没有符合条件的用户">
     <Table<Account> rowKey="account_id" dataSource={result.page?.items ?? []} loading={result.loading} pagination={false} scroll={{ x: 520 }} columns={[
       { title: "用户", render: (_, a) => <>{a.display_name || a.email}<br />{a.email}<br /><Typography.Text type="secondary">{a.account_id}</Typography.Text></> },
       { title: "操作", render: (_, a) => <Button aria-label={`管理系统管理员 ${a.email}`} onClick={event => { trigger.current = event.currentTarget; setSubject(a.account_id); }}>管理员授权</Button> },
-    ]} />{result.controls}
+    ]} /></ReadState>{!result.loading && !result.error && result.controls}
     {subject && <AdministratorDrawer client={client} tenant="0" subject={subject} close={() => { setSubject(undefined); requestAnimationFrame(() => trigger.current?.focus()); }} />}
   </>;
 }

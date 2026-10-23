@@ -136,3 +136,22 @@
 @media (prefers-reduced-motion: reduce) {
   .management-workflow-editor *, .embedded-idp-workflow-confirm * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+/* UI-F: keyboard and motion treatment stays inside the standalone console. */
+.management-root :focus-visible,
+.management-overlay :focus-visible,
+.management-workflow-editor :focus-visible,
+.management-navigation-drawer :focus-visible,
+.management-identity-dialog :focus-visible {
+  outline: 2px solid #245cca !important;
+  outline-offset: 2px;
+}
+.management-content > h1:focus { outline: 2px solid #245cca; outline-offset: 4px; }
+@media (prefers-reduced-motion: reduce) {
+  .management-root *, .management-overlay *, .management-workflow-editor *,
+  .management-navigation-drawer *, .management-identity-dialog * {
+    animation-duration: .01ms !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

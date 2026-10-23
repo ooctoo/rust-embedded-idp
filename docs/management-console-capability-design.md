@@ -9,7 +9,7 @@
 | 契约关系 | [M1-02 修订 2](m1-02-configuration-composition-design-r2.md)保留原实施历史；[M1-02 修订 3](m1-02-configuration-composition-design.md)为当前实现契约。本文是独立的管理体验和后续能力提案，不修改已完成的 M1-02 退出条件 |
 | 原设计轮次边界 | 本文修订2产出时仅文档和静态结构草图；后续UI-B实现/验收单独记录，不回写为原设计轮次已验收；M1-03–06、试点和部署待定 |
 
-当前进展（2026-10-23 UI-E实施更新）：UI-B壳层导航、UI-C客户端样板与UI-D租户准备/授权均已完成本地交付及提交、未推送，见[UI-B报告](ui-b-implementation-result.md)、[UI-C报告](ui-c-implementation-result.md)和[UI-D报告](ui-d-implementation-result.md)。UI-E账号与安全处置已按UI-A修订2完成本地实现，相关验收及边界见[UI-E报告](ui-e-implementation-result.md)与[运行证据](design/ui-e/README.md)，审查补验与提交前核对已完成，随本批UI-E提交归档、未推送。本文§2“现状”保留M1-02提交时的设计输入快照；当前实际页面以实施报告为准。UI-F、新增社区能力及M1-03–06未启动，试点与部署待定。
+当前进展（2026-10-23 UI-F实施更新）：UI-B壳层导航、UI-C客户端样板、UI-D租户准备/授权及UI-E账号与安全处置均已完成本地交付及提交、未推送，见[UI-B报告](ui-b-implementation-result.md)、[UI-C报告](ui-c-implementation-result.md)、[UI-D报告](ui-d-implementation-result.md)和[UI-E报告](ui-e-implementation-result.md)。UI-F按本文§9.2开展整体核对与必要体验收尾，并按审查修正成功回焦、过滤排除及标签验收（报告修订2），本地运行、未覆盖项及清理见[UI-F报告](ui-f-implementation-result.md)与[运行证据](design/ui-f/README.md)，修订2审查及提交前核对完成，随本批UI-F提交归档、未推送。本文§2“现状”保留M1-02提交时的设计输入快照；当前实际页面以实施报告为准。新增社区能力及M1-03–06未启动，试点与部署待定。
 
 ## 1 设计结论
 
@@ -331,7 +331,7 @@ readiness、入口可用性、业务指标和安全审计分别呈现。需定�
 
 M1-02 已在 `6bed928` 完成配置归一、最小共同装配、可选 browser/UI 和对应管理生命周期验收；[收尾报告](m1-02-closure-result.md)保留测试时源码基线和历史记录，本文不将其改写为本轮新跑的结果。旧参考行为、新模式只读启动、管理/业务隔离继续作为回归基线。
 
-后台体验线只做既有能力的导航与操作体验；社区能力线先做 C05–C13 专题契约。前者不等待 MFA、统计服务、配置控制器或 M1-03–06，也不把这些能力夹带进页面改造。本节顺序是以后获得实施授权时的拆分建议，**修订2产出时均未启动；当前UI-B/UI-C/UI-D/UI-E进展见各自实施报告，UI-F仍未启动**。
+后台体验线只做既有能力的导航与操作体验；社区能力线先做 C05–C13 专题契约。前者不等待 MFA、统计服务、配置控制器或 M1-03–06，也不把这些能力夹带进页面改造。本节顺序是以后获得实施授权时的拆分建议，**修订2产出时均未启动；当前UI-B–F进展见各自实施报告；UI-F仅既有能力核对与体验收尾**。
 
 ### 9.2 后台体验实施顺序
 
@@ -346,7 +346,7 @@ M1-02 已在 `6bed928` 完成配置归一、最小共同装配、可选 browser/
 
 各批只引入该批所需改动与检查，不先建立跨页面框架再寻找使用者。UI-B 应先保留全部既有任务入口，不能等 UI-D/E 才恢复被新壳层隐藏的能力。
 
-UI-A 设计交付入口（UI-A修订2再审已更新）：[业务设计稿与交互说明](design/ui-a/README.md)、[自包含静态画板](design/ui-a/ui-a-business-mockups.html)。这是本修订的后续设计产物，使用合成示例完成本地渲染核对；[再审记录](design/ui-a/review-r2.md)澄清绑定操作无角色版本CAS、会话范围不代表管理授权及最后未移除成员关系保护，视觉尚未冻结，UI-A交付当时UI-B–F及M1-03–06未启动；当前UI-B/UI-C本地实现分别见[UI-B报告](ui-b-implementation-result.md)与[UI-C报告](ui-c-implementation-result.md)，UI-D进展见[UI-D报告](ui-d-implementation-result.md)，UI-E进展见[UI-E报告](ui-e-implementation-result.md)，UI-F及M1-03–06仍未启动，不把UI-A静态稿改称运行验收。
+UI-A 设计交付入口（UI-A修订2再审已更新）：[业务设计稿与交互说明](design/ui-a/README.md)、[自包含静态画板](design/ui-a/ui-a-business-mockups.html)。这是本修订的后续设计产物，使用合成示例完成本地渲染核对；[再审记录](design/ui-a/review-r2.md)澄清绑定操作无角色版本CAS、会话范围不代表管理授权及最后未移除成员关系保护，视觉尚未冻结，UI-A交付当时UI-B–F及M1-03–06未启动；当前UI-B/UI-C本地实现分别见[UI-B报告](ui-b-implementation-result.md)与[UI-C报告](ui-c-implementation-result.md)，UI-D进展见[UI-D报告](ui-d-implementation-result.md)，UI-E进展见[UI-E报告](ui-e-implementation-result.md)，UI-F整体核对见[UI-F报告](ui-f-implementation-result.md)，M1-03–06仍未启动，不把UI-A静态稿改称运行验收。
 
 ### 9.3 文件、兼容与验证边界
 
@@ -368,9 +368,9 @@ Enabled/Disabled 用隔离 schema 和合成身份。真实浏览器覆盖客户�
 
 统计、client CAS、导出、在线配置快照等只是已识别的可选产品缺口，不默认与任一专题绑定；不以社区菜单数量替代需求优先级。试点、部署、拓扑和生产就绪结论继续待定。
 
-## 10 后续验收断言（本轮未运行）
+## 10 验收断言（修订2设计轮次未运行）
 
-下表是未来改造的验收要求，不代表本轮执行结果。UX06 等复用的 M1-02 底层行为已有历史证据；新界面及其集成仍需按变更范围验证。CAP01–04 仅在对应专题获准实施后启用，不作为 UI 批次的完成条件。
+下表保留修订2设计轮次的验收要求，不代表该设计轮次已执行；后续UI-F逐项实际证据及未覆盖项见[整体报告](ui-f-implementation-result.md)§5–7。UX06 等复用的 M1-02 底层行为已有历史证据；新界面及其集成仍需按变更范围验证。CAP01–04 仅在对应专题获准实施后启用，不作为 UI 批次的完成条件。
 
 | 编号 | 断言 |
 | --- | --- |
