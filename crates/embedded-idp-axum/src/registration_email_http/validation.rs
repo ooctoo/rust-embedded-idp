@@ -215,6 +215,7 @@ pub(super) fn validate_context(value: &str) -> Result<(), Response> {
                 | b'k'
                 | b'o'
                 | b's'
+                | b'w'
                 | b'0'
                 | b'4'
                 | b'8'

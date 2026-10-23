@@ -89,3 +89,16 @@ consumer cutover and old-route isolation remain I3; comprehensive fault/timing
 acceptance is I4; protected operator recovery, keys, permissions and rollout
 are I5. Full counts and artifact fingerprints are recorded in SUT's
 `docs/engineering/evidence/online-registration-i2-2026-10-21.json`.
+
+## I4 HTTP canonical-context correction (2026-10-23)
+
+SUT isolated investigation found that the HTTP validator omitted the canonical
+Base64URL tail `w`, although the IDP crypto and store accept it. Registration
+could commit successfully and then fail the HTTP acceptance check with 503;
+resend/verify requests containing the same valid token were rejected as input.
+The adapter now accepts all sixteen canonical tails and still rejects nonzero
+unused bits, padding and wrong lengths. A deterministic regression checks all
+256 final-byte values for generated 32-byte contexts and all 64 possible tail
+characters. The test failed before this correction. No profile, policy,
+schema, fixture or manifest definition changed. This establishes one concrete
+register failure, not the root cause of the historical unclassified resend 503.

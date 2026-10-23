@@ -171,3 +171,35 @@ fn verification_context_requires_exact_unpadded_length() {
     assert!(validate_context(&format!("{}=", "A".repeat(42))).is_err());
     assert!(validate_context(&"A".repeat(42)).is_err());
 }
+
+#[test]
+fn every_generated_32_byte_context_is_accepted_by_http() {
+    use base64ct::{Base64UrlUnpadded, Encoding};
+    for last in 0..=u8::MAX {
+        let mut bytes = [0u8; 32];
+        bytes[31] = last;
+        let token = Base64UrlUnpadded::encode_string(&bytes);
+        assert!(
+            validate_context(&token).is_ok(),
+            "canonical generated context rejected"
+        );
+        let response = accepted_response(RegistrationEmailAccepted {
+            verification_context: SecretString::new(token),
+            accepted_at_unix_secs: 1,
+            context_lifetime_secs: 900,
+            resend_after_secs: 60,
+        });
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+    }
+}
+
+#[test]
+fn all_noncanonical_context_tail_bits_are_rejected() {
+    for tail in b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_" {
+        let token = format!("{}{}", "A".repeat(42), *tail as char);
+        assert_eq!(
+            validate_context(&token).is_ok(),
+            b"AEIMQUYcgkosw048".contains(tail)
+        );
+    }
+}
