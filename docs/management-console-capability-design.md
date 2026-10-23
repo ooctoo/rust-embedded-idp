@@ -11,6 +11,8 @@
 
 当前进展（2026-10-23 UI-F实施更新）：UI-B壳层导航、UI-C客户端样板、UI-D租户准备/授权及UI-E账号与安全处置均已完成本地交付及提交、未推送，见[UI-B报告](ui-b-implementation-result.md)、[UI-C报告](ui-c-implementation-result.md)、[UI-D报告](ui-d-implementation-result.md)和[UI-E报告](ui-e-implementation-result.md)。UI-F按本文§9.2开展整体核对与必要体验收尾，并按审查修正成功回焦、过滤排除及标签验收（报告修订2），本地运行、未覆盖项及清理见[UI-F报告](ui-f-implementation-result.md)与[运行证据](design/ui-f/README.md)，修订2审查及提交前核对完成，随本批UI-F提交归档、未推送。本文§2“现状”保留M1-02提交时的设计输入快照；当前实际页面以实施报告为准。新增社区能力及M1-03–06未启动，试点与部署待定。
 
+UI-A–F完成后的交付与计划统一入口：[管理后台交付总结与后续实施计划](management-console-delivery-summary-and-plan.md)。该汇总修订2已完成复审及提交前核对，随本批文档本地归档、未推送；区分当前交付、已知兼容限制、未覆盖项及候选任务的前置/退出条件，保留本文修订2及各阶段历史证据，不启动新增能力或M1-03–06。
+
 ## 1 设计结论
 
 建议把独立应用组织为**平台管理与租户管理两类工作区**，采用稳定侧栏、紧凑顶栏、明确管理目标、列表—详情—变更确认的后台结构。第一批改造复用现有 Ant Design、ManagementClient、BrowserSessionCoordinator 和真实管理 API。
