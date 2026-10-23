@@ -3,7 +3,7 @@ use crate::{
     tenant_auth::{call, no_store},
 };
 use axum::{
-    extract::{DefaultBodyLimit, Path, Query, State},
+    extract::{DefaultBodyLimit, Path, Query, RawQuery, State},
     http::{HeaderMap, StatusCode},
     middleware,
     response::{IntoResponse, Response},
@@ -27,7 +27,10 @@ pub fn tenant_management_admin_router(
         return Router::new();
     }
     Router::new()
-        .route("/admin/tenants", get(list).post(create))
+        .route(
+            "/admin/tenants",
+            get(list).post(create).patch(update_collection),
+        )
         .route("/admin/tenants/:tenant_id", get(detail).patch(update))
         .with_state(TenantAdminState { service, creation })
         .layer(DefaultBodyLimit::max(16384))
@@ -129,6 +132,15 @@ impl Administrator {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Update {
+    name: String,
+    status: Status,
+    allow_registration: bool,
+    expected_version: u64,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CollectionUpdate {
+    tenant_id: String,
     name: String,
     status: Status,
     allow_registration: bool,
@@ -281,6 +293,39 @@ async fn update(
     Path(tenant_id): Path<String>,
     Json(body): Json<Update>,
 ) -> Response {
+    update_tenant(state, context, headers, tenant_id, body).await
+}
+async fn update_collection(
+    State(state): State<TenantAdminState>,
+    context: Option<Extension<AccessAdminContext>>,
+    headers: HeaderMap,
+    RawQuery(query): RawQuery,
+    Json(body): Json<CollectionUpdate>,
+) -> Response {
+    if query.as_deref().is_some_and(|q| !q.is_empty()) {
+        return error(AccessError::InvalidInput("query"));
+    }
+    update_tenant(
+        state,
+        context,
+        headers,
+        body.tenant_id,
+        Update {
+            name: body.name,
+            status: body.status,
+            allow_registration: body.allow_registration,
+            expected_version: body.expected_version,
+        },
+    )
+    .await
+}
+async fn update_tenant(
+    state: TenantAdminState,
+    context: Option<Extension<AccessAdminContext>>,
+    headers: HeaderMap,
+    tenant_id: String,
+    body: Update,
+) -> Response {
     let context = match platform_context(context, &headers) {
         Ok(c) => c,
         Err(e) => return e,
@@ -306,6 +351,112 @@ async fn update(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::{body::Body, http::Request};
+    use std::sync::Mutex;
+    use tower::ServiceExt;
+    #[derive(Default)]
+    struct TenantService(Mutex<Vec<AccessAdminCommand>>);
+    impl AccessAdminService for TenantService {
+        fn execute(
+            &self,
+            _: AccessAdminContext,
+            command: AccessAdminCommand,
+        ) -> Result<AccessAuditEvent, AccessError> {
+            self.0.lock().unwrap().push(command);
+            Err(AccessError::Conflict("version"))
+        }
+    }
+    impl TenantAdminService for TenantService {
+        fn list_tenants(
+            &self,
+            _: AccessAdminContext,
+            _: AdminTenantFilter,
+            _: AccessPageRequest,
+        ) -> Result<AccessPage<AccessTenantRecord>, AccessError> {
+            unreachable!()
+        }
+        fn get_tenant(
+            &self,
+            _: AccessAdminContext,
+            _: String,
+        ) -> Result<AccessTenantRecord, AccessError> {
+            unreachable!()
+        }
+    }
+    impl TenantCreationService for TenantService {
+        fn create_tenant(
+            &self,
+            _: AccessAdminContext,
+            _: AdminCreateTenant,
+        ) -> Result<AccessAuditEvent, AccessError> {
+            unreachable!()
+        }
+    }
+    #[tokio::test]
+    async fn collection_update_routes_body_id_and_preserves_old_path_and_mode() {
+        let service = Arc::new(TenantService::default());
+        let context = AccessAdminContext {
+            actor: AccessActor {
+                tenant_id: "0".into(),
+                subject_id: "admin".into(),
+                session_id: "session".into(),
+            },
+            authentication_source: "test".into(),
+            request_id: "request".into(),
+        };
+        let enabled =
+            tenant_management_admin_router(TenancyMode::Enabled, service.clone(), service.clone())
+                .layer(Extension(context.clone()));
+        let disabled =
+            tenant_management_admin_router(TenancyMode::Disabled, service.clone(), service.clone())
+                .layer(Extension(context));
+        let body = r#"{"tenant_id":"..","name":"Tenant","status":"active","allow_registration":false,"expected_version":1}"#;
+        for (app, uri, payload, expected) in [
+            (
+                enabled.clone(),
+                "/admin/tenants",
+                body,
+                StatusCode::CONFLICT,
+            ),
+            (
+                enabled.clone(),
+                "/admin/tenants?tenant_id=other",
+                body,
+                StatusCode::BAD_REQUEST,
+            ),
+            (
+                enabled.clone(),
+                "/admin/tenants/ordinary",
+                body,
+                StatusCode::UNPROCESSABLE_ENTITY,
+            ),
+            (
+                enabled.clone(),
+                "/admin/tenants",
+                r#"{"name":"Tenant","status":"active","allow_registration":false,"expected_version":1}"#,
+                StatusCode::UNPROCESSABLE_ENTITY,
+            ),
+            (
+                enabled,
+                "/admin/tenants/ordinary",
+                r#"{"name":"Tenant","status":"active","allow_registration":false,"expected_version":1}"#,
+                StatusCode::CONFLICT,
+            ),
+            (disabled, "/admin/tenants", body, StatusCode::NOT_FOUND),
+        ] {
+            let req = Request::builder()
+                .method("PATCH")
+                .uri(uri)
+                .header("content-type", "application/json")
+                .body(Body::from(payload))
+                .unwrap();
+            assert_eq!(app.oneshot(req).await.unwrap().status(), expected, "{uri}");
+        }
+        let commands = service.0.lock().unwrap();
+        assert_eq!(commands.len(), 2);
+        assert_eq!(commands[0].tenant_id, "..");
+        assert_eq!(commands[1].tenant_id, "ordinary");
+    }
     #[test]
     fn administrator_source_is_explicit_and_rejects_mixed_or_missing_credentials() {
         for administrator in [
@@ -338,5 +489,18 @@ mod tests {
         .is_err());
         assert!(serde_json::from_str::<Update>(r#"{"name":"Tenant","status":"active","allow_registration":false,"expected_version":1,"tenant_id":"elsewhere"}"#).is_err());
         assert!(serde_json::from_str::<Update>(r#"{"name":"Tenant","status":"disabled","allow_registration":false,"expected_version":1}"#).is_err());
+    }
+    #[test]
+    fn collection_update_requires_one_id_and_rejects_ambiguous_fields() {
+        let valid = r#"{"tenant_id":"..","name":"Tenant","status":"active","allow_registration":false,"expected_version":1}"#;
+        assert!(serde_json::from_str::<CollectionUpdate>(valid).is_ok());
+        for body in [
+            r#"{"name":"Tenant","status":"active","allow_registration":false,"expected_version":1}"#,
+            r#"{"tenant_id":".","tenant_id":"..","name":"Tenant","status":"active","allow_registration":false,"expected_version":1}"#,
+            r#"{"tenant_id":".","name":"Tenant","status":"active","allow_registration":false,"expected_version":1,"actor_id":"admin"}"#,
+        ] {
+            assert!(serde_json::from_str::<CollectionUpdate>(body).is_err());
+        }
+        assert!(serde_json::from_str::<Update>(valid).is_err());
     }
 }

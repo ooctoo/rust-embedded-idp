@@ -106,7 +106,8 @@ export async function runTenantChecks({ open, goto, settle, button, pass, accept
   let compensatingDeletes = 0;
   const onRequest = request => {
     const url = new URL(request.url());
-    if (url.pathname === tenantPathname && ["DELETE", "PATCH"].includes(request.method())) compensatingDeletes += 1;
+    if ((url.pathname === tenantPathname && request.method() === "DELETE") ||
+        (url.pathname === new URL(createPath).pathname && request.method() === "PATCH" && request.postDataJSON()?.tenant_id === tenant)) compensatingDeletes += 1;
   };
   page.on("request", onRequest);
   try {

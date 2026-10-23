@@ -117,7 +117,8 @@ cargo test --workspace --locked
 - [M1-02 修订 3 收尾与验收回传](docs/m1-02-closure-result.md)（可选 browser/UI、完整管理生命周期及归一偏差修复；保留旧参考行为；M1-03–06、试点与部署待定）
 - [M1-02 实现审查调整交接说明](docs/m1-02-implementation-adjustments-handoff.md) / [A01–A05 静态核对与调整计划回传](docs/m1-02-implementation-adjustments-result.md)（实施前计划；后续处置与运行证据见收尾回传）
 - [M1-02 实际代码完整审查](docs/m1-02-code-review.md) / [原设计修订 2 固定快照](docs/m1-02-configuration-composition-design-r2.md)（修复前审查与固定基线；问题处置与运行证据见收尾回传）
-- [N1 既有 ID 兼容专项设计](docs/management-console-n1-id-compatibility-design.md)（修订2复审及提交前核对完成，本地归档、未推送：dot-only寻址、响应/错误语义、分阶段回读与29项待执行断言；尚未实现或验收，D02–D07待决；N2–N5与M1-03–06未启动）
+- [N1 最小实现与验收回传](docs/n1-implementation-result.md) / [本地证据](docs/design/n1/README.md)（报告修订2及提交前核对完成，随本批本地提交归档、未推送：dot-only寻址、误登记防护、分阶段回读及专项补验；D02–D07待决，N2–N5与M1-03–06未启动）
+- [N1 既有 ID 兼容专项设计](docs/management-console-n1-id-compatibility-design.md)（修订2复审及提交前核对完成，本地归档、未推送：dot-only寻址、响应/错误语义、分阶段回读与29项待执行断言；作为设计归档基线保留，当前实现与边界见N1回传；D02–D07待决；N2–N5与M1-03–06未启动）
 - [N0 支持范围与交付基线设计](docs/management-console-n0-support-baseline-design.md)（修订2复审及提交前核对完成，本地归档、未推送：支持矩阵与验收分级，补齐客户端/服务端环境和Cookie入口隔离；首批桌面家族已确认，其余范围待决；归档时N1–N5与M1-03–06未启动，当前N1设计见上）
 - [管理后台交付总结与后续实施计划](docs/management-console-delivery-summary-and-plan.md)（修订2，UI-A–F交付、兼容限制、未覆盖项及后续门槛；复审与提交前核对完成，随本批文档本地归档、未推送；原归档时候选任务未启动，后续文档进展见汇总，试点与部署待定）
 - [管理后台与社区能力补齐详细设计](docs/management-console-capability-design.md)（修订2设计基线；UI-A至UI-F进展另见交付记录，新增社区能力未实施）

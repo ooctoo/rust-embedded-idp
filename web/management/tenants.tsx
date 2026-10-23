@@ -104,7 +104,6 @@ function TenantEditor({ client, tenantId, close, changed, select }: {
     <SafeConfirm rootClassName="management-overlay" open={!!draft} title={tenantId ? "确认租户变更" : "确认创建租户"} okText="确认提交" cancelText="取消" confirmLoading={busy}
       okButtonProps={{ disabled: blocked }} cancelButtonProps={{ disabled: busy }} closable={!busy} keyboard={!busy} maskClosable={false} onCancel={() => { form.setFieldValue("password", undefined); setDraft(undefined); }} onOk={async () => {
         if (!draft || (!record && administratorKind === "existing" && !administrator)) return;
-        if (record && (record.tenant_id === "." || record.tenant_id === "..")) { setReadError("当前入口无法安全更新此租户 ID，请使用其他管理入口。"); setDraft(undefined); return; }
         const id = draft.tenant_id;
         const before = client.getMutationSnapshot().revision;
         const result = await write.run(() => record ? client.updateTenant(record, draft.name, draft.status, draft.allow_registration)

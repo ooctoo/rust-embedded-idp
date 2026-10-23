@@ -63,9 +63,16 @@ async function actualSession(test) {
   const drawer = page.getByRole("dialog", { name: "当前管理会话", exact: true });
   const id = (await drawer.locator(".ant-descriptions-item").filter({ hasText: "会话 ID" }).locator(".ant-descriptions-item-content").innerText()).trim();
   await page.waitForFunction(el => !el.closest(".ant-drawer-content-wrapper")?.getAnimations().some(animation => animation.playState === "running"), await drawer.elementHandle());
+  await page.waitForFunction(el => {
+    const wrapper = el.closest(".ant-drawer-content-wrapper");
+    return wrapper && getComputedStyle(wrapper).transform === "none" && getComputedStyle(el).opacity === "1";
+  }, await drawer.elementHandle());
+  // Ant's loading icon contributes to the accessible name while busy.
+  const verify = drawer.getByRole("button", { name: /校验当前会话$/ });
+  await page.waitForFunction(button => !button.disabled && !button.classList.contains("ant-btn-loading"), await verify.elementHandle());
   const [verified] = await Promise.all([
     page.waitForResponse(r => r.url() === host.origin + host.mount + "/admin/auth/session" && r.request().method() === "GET"),
-    drawer.getByRole("button", { name: "校验当前会话", exact: true }).click(),
+    verify.click(),
   ]);
   assert.equal(verified.status(), 200);
   const identity = await verified.json();

@@ -31,6 +31,7 @@ function ClientEditor({ client, id, close, changed }: { client: ManagementClient
   const [form] = Form.useForm<Fields>();
   const kind = Form.useWatch("client_type", form) ?? "public_desktop";
   const mounted = useRef(true);
+  const written = useRef(false);
   const nameInput = useRef<InputRef>(null);
   const reloadButton = useRef<HTMLButtonElement>(null);
   const reviewButton = useRef<HTMLButtonElement>(null);
@@ -40,24 +41,21 @@ function ClientEditor({ client, id, close, changed }: { client: ManagementClient
     setLoading(true); setSnapshot(undefined); setReadError(undefined); setDraft(undefined); form.resetFields();
     void (async () => {
       try {
-        if (id === "." || id === "..") throw new ManagementError("当前管理入口暂不支持读取这个客户端 ID。请通过宿主受信接口核对，勿按未登记处理。", 400);
-        let value: ManagedClient | null;
-        try { value = await client.getClient(id); }
-        catch (reason) {
-          if (!(reason instanceof ManagementError && reason.status === 404)) throw reason;
-          if (!active) return;
-          // A resource 404 is the existing registration branch. First verify the
-          // client module is readable; a missing/broken mount must never create it.
-          await client.listClients();
-          value = null;
-        }
+        const value = await client.lookupClient(id);
+        if (!active) return;
+        // Only an initial exact lookup can establish the registration branch.
+        // A missing record after a dispatched write cannot explain its outcome.
+        if (value === null && written.current) throw new ManagementError("当前未能确认原客户端配置。请重新读取核对；不会自动转为登记或重复保存。");
         if (active) {
           setSnapshot(value); setBlocked(false); setDirty(false);
           form.setFieldsValue(value ? { ...value, redirect_text: value.redirect_uris.join("\n") }
             : { client_name: "", client_type: "public_desktop", pkce_required: true, redirect_text: "" });
         }
       } catch (reason) {
-        if (active) setReadError({ message: failure(reason), status: reason instanceof ManagementError ? reason.status : undefined });
+        if (active) {
+          if (written.current) setBlocked(true);
+          setReadError({ message: failure(reason), status: reason instanceof ManagementError ? reason.status : undefined });
+        }
       } finally { if (active) setLoading(false); }
     })();
     return () => { active = false; };
@@ -83,6 +81,7 @@ function ClientEditor({ client, id, close, changed }: { client: ManagementClient
     try {
       const secret = form.getFieldValue("client_secret");
       await client.upsertClient({ ...draft, ...(rotating ? { client_secret: secret } : {}) });
+      written.current = true;
       if (mounted.current) {
         setSavedChanges(snapshot === null ? "登记客户端配置" : changedFields?.join("、") || "重新保存当前可见配置");
         setDraft(undefined); setOutcome("saved"); setDirty(false); setAttempt(value => value + 1); changed();
@@ -91,6 +90,7 @@ function ClientEditor({ client, id, close, changed }: { client: ManagementClient
       if (mounted.current) {
         setDraft(undefined); setError(failure(reason));
         const sent = client.getMutationSnapshot().revision !== revision;
+        if (sent) written.current = true;
         setBlocked(sent);
         setOutcome(!sent ? undefined : reason instanceof ManagementError && reason.status && reason.status < 500 ? "rejected" : "unknown");
       }

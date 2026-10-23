@@ -631,7 +631,7 @@ test("tenant creation and settings use platform scope, explicit initial admin an
     if (path === "/capabilities") return json(platformCapabilities);
     if (path === "/login") return json(authenticated());
     if (init.method === "GET") return json(managedTenant());
-    return json({ tenant: managedTenant(), audit_id: "audit" });
+    return json({ tenant: managedTenant({ name: "New A", status: "suspended", allow_registration: true, version: 5 }), audit_id: "audit" });
   });
   await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
   const tenant = await client.getManagedTenant("a");
@@ -639,7 +639,7 @@ test("tenant creation and settings use platform scope, explicit initial admin an
   assert.deepEqual(JSON.parse(calls.at(-1).body), { tenant_id: "a", name: "A", allow_registration: false, administrator: { kind: "existing", subject_id: "member-1" } });
   await client.updateTenant(tenant, "New A", "suspended", true);
   assert.equal(calls.at(-1).method, "PATCH");
-  assert.deepEqual(JSON.parse(calls.at(-1).body), { name: "New A", status: "suspended", allow_registration: true, expected_version: 4 });
+  assert.deepEqual(JSON.parse(calls.at(-1).body), { tenant_id: "a", name: "New A", status: "suspended", allow_registration: true, expected_version: 4 });
   assert.ok(calls.slice(2).every(c => c.headers["X-Embedded-Idp-Tenant-Id"] === undefined));
   const count = calls.length;
   for (const id of ["0", "", "../a", "a b", "a".repeat(129)]) await assert.rejects(client.createTenant(id, "A", false, { kind: "existing", subject_id: "member-1" }));
@@ -1150,7 +1150,7 @@ test("client reads use platform session 0 in both modes and encode filters and c
       if (path === "/login") return json(authenticated("0"));
       const confidential = managedClient({ client_type: "confidential_web", pkce_required: false, client_secret_configured: true });
       if (path.startsWith("/clients?")) return json(page([confidential]));
-      return json(confidential);
+      return json(path.includes("/-/lookup") ? { client_id: "desktop-client", client: confidential } : confidential);
     });
     await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
     const result = await client.listClients({ client_type: "confidential_web", pkce_required: false }, "cursor+/=");
@@ -1163,7 +1163,135 @@ test("client reads use platform session 0 in both modes and encode filters and c
     assert.equal(url.searchParams.get("cursor"), "cursor+/=");
     assert.equal(calls.at(-1).headers["X-Embedded-Idp-Tenant-Id"], undefined);
     assert.deepEqual(await client.getClient("desktop-client"), managedClient({ client_type: "confidential_web", pkce_required: false, client_secret_configured: true }));
-    assert.equal(calls.at(-1).path, "/clients/desktop-client");
+    assert.equal(calls.at(-1).path, "/clients/-/lookup?client_id=desktop-client");
+  }
+});
+
+test("client lookup uses the fixed query address for every valid ID and distinguishes null from an unconfirmed route", async t => {
+  let mode = "present";
+  const seen = [];
+  const { client } = setup(t, (path, init) => {
+    if (path === "/capabilities") return json(platformCapabilities);
+    if (path === "/login") return json(authenticated("0"));
+    seen.push(path);
+    if (mode === "missing") return json({ client_id: new URL(path, "http://test").searchParams.get("client_id"), client: null });
+    if (mode === "route") return json({ error: "not mounted" }, 404);
+    if (mode === "method") return json({ error: "method" }, 405);
+    return json({ client_id: new URL(path, "http://test").searchParams.get("client_id"), client: managedClient({ client_id: new URL(path, "http://test").searchParams.get("client_id") }) });
+  });
+  await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
+  for (const id of [".", "..", "...", ".a", "a..", "-", "lookup", "upsert", "A".repeat(128)]) {
+    const result = await client.lookupClient(id);
+    assert.equal(result?.client_id, id);
+    assert.match(seen.at(-1), /^\/clients\/-\/lookup\?client_id=/);
+  }
+  mode = "missing";
+  assert.equal(await client.lookupClient("."), null);
+  await assert.rejects(client.getClient("."), error => error.status === 404 && error.code === "client_not_found");
+  mode = "route";
+  await assert.rejects(client.lookupClient("."), error => error.status === 0 && error.code === "client_lookup_unconfirmed");
+  await assert.rejects(client.getClient("."), error => error.status === 0 && error.code === "client_lookup_unconfirmed");
+  mode = "method";
+  await assert.rejects(client.lookupClient("."), error => error.status === 0 && error.code === "client_lookup_unconfirmed");
+});
+
+test("new lookup and tenant collection patch require confirmed 200 JSON projections", async t => {
+  let mode = "ok", status = 200;
+  const updated = { tenant: managedTenant({ name: "New", status: "suspended", allow_registration: true, version: 5 }), audit_id: "audit" };
+  const { client, calls } = setup(t, (path, init) => {
+    if (path === "/capabilities") return json(platformCapabilities);
+    if (path === "/login") return json(authenticated("0"));
+    if (mode === "read") return json(managedTenant());
+    const body = path.includes("/-/lookup") ? { client_id: "desktop-client", client: managedClient() } : updated;
+    if (mode === "status") return status === 204 ? new Response(null, { status }) : json(body, status);
+    if (mode === "type") return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "text/plain" } });
+    if (mode === "invalid") return new Response("{", { status: 200, headers: { "Content-Type": "application/json" } });
+    return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json; charset=utf-8" } });
+  });
+  await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
+  mode = "read";
+  const tenant = await client.getManagedTenant("a");
+  for (const operation of [() => client.lookupClient("desktop-client"), () => client.updateTenant(tenant, "New", "suspended", true)]) {
+    for (const invalidStatus of [201, 202, 206, 204]) {
+      mode = "status"; status = invalidStatus;
+      const before = calls.length;
+      await assert.rejects(operation(), error => error.status === 0);
+      assert.equal(calls.length, before + 1); // No retry of an unconfirmed write.
+      assert.equal(client.getMutationSnapshot().pending, 0);
+    }
+    for (const invalid of ["type", "invalid"]) {
+      mode = invalid; await assert.rejects(operation(), error => error.status === 0);
+    }
+    mode = "ok"; assert.ok(await operation());
+  }
+});
+
+test("lookup rejects every non-200 or malformed success while accepting charset JSON", async t => {
+  let response = new Response(JSON.stringify({ client_id: "desktop-client", client: managedClient() }), { status: 200, headers: { "Content-Type": "application/json; charset=utf-8" } });
+  const { client } = setup(t, path => {
+    if (path === "/capabilities") return json(platformCapabilities);
+    if (path === "/login") return json(authenticated("0"));
+    return response;
+  });
+  await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
+  assert.equal((await client.lookupClient("desktop-client"))?.client_id, "desktop-client");
+  for (const status of [201, 202, 206, 204]) {
+    response = status === 204 ? new Response(null, { status }) : new Response(JSON.stringify({ client_id: "desktop-client", client: managedClient() }), { status, headers: { "Content-Type": "application/json" } });
+    await assert.rejects(client.lookupClient("desktop-client"), error => error.status === 0);
+  }
+  for (const body of ["{", JSON.stringify({ client: managedClient() }), JSON.stringify({ client_id: "other-client", client: managedClient() })]) {
+    response = new Response(body, { status: 200, headers: { "Content-Type": "application/json" } });
+    await assert.rejects(client.lookupClient("desktop-client"), error => error.status === 0);
+  }
+  response = new Response(JSON.stringify({ client_id: "desktop-client", client: managedClient() }), { status: 200, headers: { "Content-Type": "text/plain" } });
+  await assert.rejects(client.lookupClient("desktop-client"), error => error.status === 0);
+});
+
+test("lookup preserves authentication and maps transport failures without returning null", async t => {
+  let mode = "forbidden";
+  const { client } = setup(t, path => {
+    if (path === "/capabilities") return json(platformCapabilities);
+    if (path === "/login") return json(authenticated("0"));
+    if (mode === "network") throw new Error("offline");
+    return json({ error: mode }, mode === "unauthorized" ? 401 : mode === "forbidden" ? 403 : mode === "method" ? 405 : 500);
+  });
+  await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
+  await assert.rejects(client.lookupClient("desktop-client"), error => error.status === 403);
+  assert.ok(client.getSnapshot().session);
+  mode = "unauthorized";
+  await assert.rejects(client.lookupClient("desktop-client"), error => error.status === 401);
+  assert.equal(client.getSnapshot().session, undefined);
+  await client.login("admin@example.test", "synthetic-password");
+  for (const next of ["network", "server"]) {
+    mode = next;
+    await assert.rejects(client.lookupClient("desktop-client"), error => error.status === 0 || error.status === 500);
+    assert.notEqual(client.getSnapshot().session, undefined);
+  }
+  mode = "method";
+  await assert.rejects(client.getClient("desktop-client"), error => error.status === 0 && error.code === "client_lookup_unconfirmed");
+});
+
+test("tenant collection patch rejects unsafe versions and mismatched confirmed results", async t => {
+  let mode = "ok";
+  const { client, calls } = setup(t, (path, init) => {
+    if (path === "/capabilities") return json(platformCapabilities);
+    if (path === "/login") return json(authenticated("0"));
+    if (init.method === "PATCH") {
+      const tenant = managedTenant({ name: mode === "bad-name" ? "Other" : "New A", status: mode === "bad-status" ? "active" : "suspended", allow_registration: mode === "bad-registration" ? false : true, version: mode === "bad-version" ? 7 : 5 });
+      return json({ tenant, ...(mode === "missing-audit" ? {} : { audit_id: "audit" }) });
+    }
+    return json(managedTenant());
+  });
+  await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
+  const tenant = await client.getManagedTenant("a");
+  const before = calls.length;
+  for (const version of [0, Number.MAX_SAFE_INTEGER + 1]) {
+    await assert.rejects(client.updateTenant({ ...tenant, version }, "New A", "suspended", true), error => error.status === 400);
+  }
+  assert.equal(calls.length, before);
+  for (const bad of ["bad-name", "bad-status", "bad-registration", "bad-version", "missing-audit"]) {
+    mode = bad;
+    await assert.rejects(client.updateTenant(tenant, "New A", "suspended", true), error => error.status === 0);
   }
 });
 
@@ -1207,7 +1335,7 @@ test("client upsert sends only the versionless contract and preserves omitted se
 test("client projections strip metadata and never expose returned secrets or hashes", async t => {
   const payload = { ...managedClient({ client_type: "confidential_web", pkce_required: false, client_secret_configured: true }),
     client_secret: "server-secret", client_secret_hash: "server-hash", tenant_id: "0", status: "active", version: 9, unknown: true };
-  const { client } = setup(t, path => json(path === "/capabilities" ? platformCapabilities : path === "/login" ? authenticated("0") : path.startsWith("/clients?") ? page([payload]) : payload));
+  const { client } = setup(t, path => json(path === "/capabilities" ? platformCapabilities : path === "/login" ? authenticated("0") : path.startsWith("/clients?") ? page([payload]) : { client_id: "desktop-client", client: payload }));
   await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
   assert.deepEqual((await client.listClients()).items[0], managedClient({ client_type: "confidential_web", pkce_required: false, client_secret_configured: true }));
   assert.deepEqual(await client.getClient("desktop-client"), managedClient({ client_type: "confidential_web", pkce_required: false, client_secret_configured: true }));
@@ -1218,7 +1346,7 @@ test("client responses reject mismatched IDs, filters, metadata and write result
   const { client } = setup(t, path => {
     if (path === "/capabilities") return json(platformCapabilities);
     if (path === "/login") return json(authenticated("0"));
-    if (mode === "wrong-id") return json(managedClient({ client_id: "other-client" }));
+    if (mode === "wrong-id") return json({ client_id: "desktop-client", client: managedClient({ client_id: "other-client" }) });
     if (mode === "filter-mismatch") return json(page([managedClient({ client_type: "confidential_web", pkce_required: false, client_secret_configured: true })]));
     if (mode === "bad-metadata") return json(page([{ ...managedClient(), pkce_required: "true", redirect_uris: [null] }]));
     if (mode === "missing-audit") return json({ client: managedClient() });

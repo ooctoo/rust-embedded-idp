@@ -955,7 +955,7 @@ try {
   const oldRegistration = beforeTenant.allow_registration ? '是' : '否';
   assert.ok(summary.includes(`允许注册：${oldRegistration} → ${oldRegistration}`));
   let patchCount = 0;
-  const tenantPath = `${tenantCase.host.origin}${tenantCase.host.mount}/admin/tenants/${encodeURIComponent(tenant2)}`;
+  const tenantPath = `${tenantCase.host.origin}${tenantCase.host.mount}/admin/tenants`;
   const countPatch = request => { if (request.method() === 'PATCH' && request.url() === tenantPath) patchCount++; };
   tp.on('request', countPatch);
   await button(settingsReview, '取消').click(); assert.equal(patchCount, 0);

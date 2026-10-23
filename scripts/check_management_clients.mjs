@@ -18,6 +18,8 @@ const heldResponses = new Set();
 const pass = name => { cases.push(name); console.log(`PASS ${name}`); };
 const runId = randomBytes(6).toString('hex');
 const idFor = value => `${value}-${runId}`;
+const lookupUrl = (base, id) => `${base}/-/lookup?client_id=${encodeURIComponent(id)}`;
+const isLookup = (url, id) => url.pathname.endsWith('/clients/-/lookup') && url.searchParams.get('client_id') === id;
 const secret = 'synthetic-ui-c-secret-one';
 const secret2 = 'synthetic-ui-c-secret-two';
 const button = (parent, name) => parent.getByRole('button', { name: name === '查询' ? /^查\s*询$/ : name, exact: true });
@@ -72,7 +74,7 @@ async function review(page) {
 }
 async function save(page) {
   const id = await drawer(page).locator('.management-client-summary code').innerText();
-  const reread = page.waitForResponse(r => new URL(r.url()).pathname.endsWith(`/clients/${encodeURIComponent(id)}`) && r.request().method() === 'GET');
+  const reread = page.waitForResponse(r => isLookup(new URL(r.url()), id) && r.request().method() === 'GET');
   const [response] = await Promise.all([reread, button(confirm(page), '确认保存').click()]);
   assert.ok(response.ok()); await page.getByText(/配置已保存/).first().waitFor();
   await page.waitForFunction(() => !document.querySelector('.management-client-editor .management-client-loading') &&
@@ -81,7 +83,7 @@ async function save(page) {
 async function close(page) { await button(drawer(page), '关闭配置').click(); await drawer(page).waitFor({ state: 'hidden' }); }
 async function rereadConfiguration(page) {
   const id = await drawer(page).locator('.management-client-summary code').innerText();
-  const response = page.waitForResponse(r => new URL(r.url()).pathname.endsWith(`/clients/${encodeURIComponent(id)}`) && r.request().method() === 'GET');
+  const response = page.waitForResponse(r => isLookup(new URL(r.url()), id) && r.request().method() === 'GET');
   await Promise.all([response, button(drawer(page), '重新读取配置').click()]);
   await page.waitForFunction(() => {
     const submit = document.querySelector('.management-client-editor button[type="submit"]');
@@ -168,12 +170,15 @@ try {
       client_id: id, client_name: 'UI C dot ID fixture', client_type: 'public_desktop', pkce_required: true, redirect_uris: ['http://127.0.0.1/callback'],
     } }); assert.ok(seed.ok());
     await locate(page, id);
-    await drawer(page).getByText('当前管理入口暂不支持读取这个客户端 ID。请通过宿主受信接口核对，勿按未登记处理。', { exact: true }).waitFor();
-    assert.equal(await drawer(page).getByLabel('名称', { exact: true }).count(), 0);
+    await drawer(page).getByText('正在编辑已有配置', { exact: false }).waitFor();
+    assert.equal(await drawer(page).getByLabel('名称', { exact: true }).inputValue(), 'UI C dot ID fixture');
     assert.equal(await drawer(page).getByText('此 ID 尚未登记', { exact: false }).count(), 0);
+    await drawer(page).getByLabel('名称', { exact: true }).fill(`UI C dot ID ${id}`);
+    await review(page); await save(page);
+    assert.equal(await drawer(page).getByLabel('名称', { exact: true }).inputValue(), `UI C dot ID ${id}`);
     await close(page);
   }
-  pass('dot-only client IDs fail closed without treating a normalized detail path as missing');
+  pass('dot-only client IDs read, edit and reread the same existing configuration');
   for (let i = 0; i < 52; i++) {
     const response = await page.request.post(base + '/upsert', { headers: { authorization }, data: {
       client_id: idFor(`uic-seed-${String(i).padStart(2, '0')}`), client_name: `UI C seed ${i}`,
@@ -259,7 +264,7 @@ try {
   await close(page);
   pass('16 KiB local request limit prevents POST');
 
-  const detail = base + '/' + idFor('uic-enabled-public');
+  const detail = lookupUrl(base, idFor('uic-enabled-public'));
   await locate(page, idFor('uic-enabled-public'));
   await drawer(page).getByLabel('名称', { exact: true }).fill('UI C confirmed read failure');
   let posted = false;
@@ -283,7 +288,7 @@ try {
     intercepted++;
     const response = await route.fetch(); assert.ok(response.ok(), `real POST HTTP ${response.status()}`);
     const reread = await page.request.get(detail, { headers: { authorization } }); assert.ok(reread.ok());
-    const body = await reread.json(); assert.equal(body.client_id, idFor('uic-enabled-public')); assert.equal(body.client_name, 'UI C uncertain response'); verified = true;
+    const body = await reread.json(); assert.equal(body.client_id, idFor('uic-enabled-public')); assert.equal(body.client.client_id, body.client_id); assert.equal(body.client.client_name, 'UI C uncertain response'); verified = true;
     await route.abort('failed');
   });
   await review(page); await button(confirm(page), '确认保存').click();
@@ -406,8 +411,8 @@ try {
         const writePath = apiPath + '/upsert';
         await p.route(writePath, async route => {
           const response = await route.fetch(); assert.ok(response.ok());
-          const read = await p.request.get(apiPath + '/' + id, { headers: { authorization: t.getBearer() } });
-          assert.ok(read.ok()); const value = await read.json(); assert.equal(value.client_id, id); assert.equal(value.client_name, edited);
+          const read = await p.request.get(lookupUrl(apiPath, id), { headers: { authorization: t.getBearer() } });
+          assert.ok(read.ok()); const value = await read.json(); assert.equal(value.client_id, id); assert.equal(value.client.client_id, id); assert.equal(value.client.client_name, edited);
           await route.abort('failed');
         });
         await button(confirm(p), '确认保存').click();
@@ -445,7 +450,7 @@ try {
       heldResponses.add(release);
       let seen; const observed = new Promise(resolve => { seen = resolve; });
       let finished; const delivered = new Promise(resolve => { finished = resolve; });
-      let posts = 0; const writePath = apiPath + '/upsert'; const detailPath = apiPath + '/' + id;
+      let posts = 0; const writePath = apiPath + '/upsert'; const detailPath = lookupUrl(apiPath, id);
       p.on('request', request => {
         const url = new URL(request.url()); if (!url.pathname.startsWith(`${t.host.mount}/admin/clients`)) return;
         const headers = request.headers(); assert.ok(!headers['x-embedded-idp-tenant-id'] && !headers['x-embedded-idp-business-id']);
@@ -458,7 +463,7 @@ try {
           const response = await route.fetch(); assert.ok(response.ok());
           if (kind === 'post') {
             const read = await p.request.get(detailPath, { headers: { authorization: t.getBearer() } });
-            assert.ok(read.ok()); const value = await read.json(); assert.equal(value.client_id, id); assert.equal(value.client_name, `UI C late ${mode}`);
+            assert.ok(read.ok()); const value = await read.json(); assert.equal(value.client_id, id); assert.equal(value.client.client_id, id); assert.equal(value.client.client_name, `UI C late ${mode}`);
           }
           seen(); await gate;
           await route.fulfill({ response });

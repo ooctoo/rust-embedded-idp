@@ -2272,3 +2272,449 @@ fn explicit_management_rejects_invalid_key_and_client_without_writes() {
     db.explicit_rejected(TenancyMode::Disabled);
     assert_eq!(db.snapshot(), before);
 }
+
+// Raw bytes are required to exercise repeated JSON keys and HTTP headers.
+fn n1_request(
+    port: u16,
+    method: &str,
+    path: &str,
+    headers: &[(&str, &str)],
+    body: &str,
+) -> (u16, Value) {
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .unwrap();
+    let mut request = format!("{method} {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: {}\r\n", body.len());
+    for (name, value) in headers {
+        request.push_str(&format!("{name}: {value}\r\n"));
+    }
+    request.push_str("\r\n");
+    request.push_str(body);
+    stream.write_all(request.as_bytes()).unwrap();
+    let mut response = String::new();
+    stream.read_to_string(&mut response).unwrap();
+    let (headers, body) = response.split_once("\r\n\r\n").unwrap();
+    (
+        headers.split_whitespace().nth(1).unwrap().parse().unwrap(),
+        serde_json::from_str(body).unwrap_or(Value::Null),
+    )
+}
+
+#[test]
+#[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
+fn n1_reference_lookup_and_authentication_boundaries_in_both_modes() {
+    for mode in [TenancyMode::Enabled, TenancyMode::Disabled] {
+        let db = Db::new(mode);
+        db.bootstrap();
+        let host = db.start();
+        let admin = login(&host, true, "admin@example.test", "Runtime-Admin123");
+        let bearer = token(&admin);
+        for id in [".", "..", "...", ".a", "a..", "-", "lookup", "upsert"] {
+            let missing = host.json(
+                "GET",
+                &format!("/api/admin/clients/-/lookup?client_id={id}"),
+                Some(bearer),
+                None,
+                None,
+                200,
+            );
+            assert_eq!(missing["client_id"], id);
+            assert!(missing["client"].is_null());
+            let result = host.json("POST", "/api/admin/clients/upsert", Some(bearer), None, Some(json!({"client_id":id,"client_name":"N1 client","redirect_uris":["http://127.0.0.1/callback"],"client_type":"public_desktop","pkce_required":true})), 200);
+            assert_eq!(result["client"]["client_id"], id);
+            let found = host.json(
+                "GET",
+                &format!("/api/admin/clients/-/lookup?client_id={id}"),
+                Some(bearer),
+                None,
+                None,
+                200,
+            );
+            assert_eq!(found["client"]["client_id"], id);
+            assert!(found["client"].get("client_secret").is_none());
+            assert!(found["client"].get("client_secret_hash").is_none());
+        }
+        for query in [
+            "client_id=.&client_id=.",
+            "client_id=.&client_id=..",
+            "client_id=.&unknown=x",
+            "client_id=%252e",
+            "client_id=%",
+            "client_id=",
+        ] {
+            assert_eq!(
+                host.raw(
+                    "GET",
+                    &format!("/api/admin/clients/-/lookup?{query}"),
+                    Some(bearer),
+                    None,
+                    None
+                )
+                .0,
+                400,
+                "{query}"
+            );
+        }
+        assert_eq!(
+            host.json(
+                "GET",
+                "/api/admin/clients/-/lookup?client_id=%2E",
+                Some(bearer),
+                None,
+                None,
+                200
+            )["client_id"],
+            "."
+        );
+        for id in ["-", "lookup"] {
+            assert_eq!(
+                host.raw(
+                    "GET",
+                    &format!("/api/admin/clients/{id}"),
+                    Some(bearer),
+                    None,
+                    None
+                )
+                .0,
+                200
+            );
+        }
+        assert_eq!(
+            host.raw("GET", "/api/admin/clients/upsert", Some(bearer), None, None)
+                .0,
+            405
+        );
+        let lookup = "/api/admin/clients/-/lookup?client_id=.";
+        assert_eq!(host.raw("GET", lookup, None, None, None).0, 401);
+        assert_eq!(
+            host.raw("GET", lookup, Some(bearer), Some("0"), None).0,
+            200
+        );
+        assert_eq!(
+            host.raw("GET", lookup, Some(bearer), Some("other"), None).0,
+            400
+        );
+        assert_eq!(
+            host.raw_business("GET", lookup, Some(bearer), None, None, Some("runtime"))
+                .0,
+            400
+        );
+        let authorization = format!("Bearer {bearer}");
+        assert_eq!(
+            n1_request(
+                host.port,
+                "GET",
+                lookup,
+                &[
+                    ("Authorization", &authorization),
+                    ("x-embedded-idp-tenant-id", "0"),
+                    ("x-embedded-idp-tenant-id", "0")
+                ],
+                ""
+            )
+            .0,
+            400
+        );
+        assert_eq!(
+            n1_request(
+                host.port,
+                "GET",
+                lookup,
+                &[
+                    ("Cookie", "idp_management=fake"),
+                    ("x-embedded-idp-subject", "admin")
+                ],
+                ""
+            )
+            .0,
+            401
+        );
+        let business = if mode == TenancyMode::Enabled {
+            host.json("POST", "/api/admin/tenants", Some(bearer), None, Some(json!({"tenant_id":"business-test","name":"Business","allow_registration":false,"administrator":{"kind":"new","email":"n1-member@example.test","password":"Runtime-Member123"}})), 201);
+            login(&host, false, "n1-member@example.test", "Runtime-Member123")
+        } else {
+            login(&host, false, "admin@example.test", "Runtime-Admin123")
+        };
+        if mode == TenancyMode::Disabled {
+            assert!(business["tokens"]["access_token"].is_string());
+            assert_eq!(
+                host.raw("GET", lookup, Some(token(&business)), None, None)
+                    .0,
+                401
+            );
+        } else {
+            assert_eq!(business["status"], "tenant_selection_required");
+            let selection = business["selection_ticket"].as_str().unwrap();
+            let ticket = format!("TenantSelection {selection}");
+            assert_eq!(
+                n1_request(host.port, "GET", lookup, &[("Authorization", &ticket)], "").0,
+                401
+            );
+            let selected = host.json(
+                "POST",
+                "/auth/tenant-selection/complete",
+                Some(selection),
+                None,
+                Some(json!({"tenant_id":"business-test"})),
+                200,
+            );
+            assert_eq!(
+                host.raw("GET", lookup, Some(token(&selected)), None, None)
+                    .0,
+                401
+            );
+        }
+        if mode == TenancyMode::Disabled {
+            assert_eq!(host.raw("PATCH", "/api/admin/tenants", Some(bearer), None, Some(json!({"tenant_id":".","name":"X","status":"active","allow_registration":false,"expected_version":1}))).0, 404);
+        }
+    }
+}
+
+#[test]
+#[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
+fn n1_reference_tenant_body_path_and_concurrent_version_share_transaction() {
+    let db = Db::new(TenancyMode::Enabled);
+    db.bootstrap();
+    let host = db.start();
+    let admin = login(&host, true, "admin@example.test", "Runtime-Admin123");
+    let bearer = token(&admin);
+    for (id, email) in [
+        (".", "dot@example.test"),
+        ("..", "dots@example.test"),
+        ("ordinary", "ordinary@example.test"),
+    ] {
+        host.json("POST", "/api/admin/tenants", Some(bearer), None, Some(json!({"tenant_id":id,"name":"Before","allow_registration":false,"administrator":{"kind":"new","email":email,"password":"Runtime-Member123"}})), 201);
+    }
+    let auth = format!("Bearer {bearer}");
+    let original = r#"{"tenant_id":".","name":"Changed","status":"active","allow_registration":false,"expected_version":1}"#;
+    let audit_count = || -> i64 {
+        db.adapter
+            .connect()
+            .unwrap()
+            .query_one(
+                &format!(
+                    "select count(*) from {}.access_audit_events where operation='tenant.update'",
+                    db.adapter.schema_name()
+                ),
+                &[],
+            )
+            .unwrap()
+            .get(0)
+    };
+    let tenant_host = db.start_with(&[("EMBEDDED_IDP_APP_MANAGEMENT_TENANT_ID", "ordinary")]);
+    let tenant_admin = login(
+        &tenant_host,
+        true,
+        "ordinary@example.test",
+        "Runtime-Member123",
+    );
+    assert_eq!(tenant_admin["session"]["tenant_id"], "ordinary");
+    let tenant_bearer = token(&tenant_admin);
+    let state_before = host.json(
+        "GET",
+        "/api/admin/tenants/ordinary",
+        Some(bearer),
+        None,
+        None,
+        200,
+    );
+    let audit_before = audit_count();
+    for target in [None, Some("0")] {
+        assert_eq!(
+            tenant_host
+                .raw(
+                    "GET",
+                    "/api/admin/clients/-/lookup?client_id=.",
+                    Some(tenant_bearer),
+                    target,
+                    None
+                )
+                .0,
+            403
+        );
+        assert_eq!(tenant_host.raw("PATCH", "/api/admin/tenants", Some(tenant_bearer), target, Some(json!({"tenant_id":"ordinary","name":"Forbidden","status":"active","allow_registration":false,"expected_version":1}))).0, 403);
+    }
+    assert_eq!(
+        host.json(
+            "GET",
+            "/api/admin/tenants/ordinary",
+            Some(bearer),
+            None,
+            None,
+            200
+        ),
+        state_before
+    );
+    assert_eq!(audit_count(), audit_before);
+    drop(tenant_host);
+    assert_eq!(
+        n1_request(host.port, "PATCH", "/api/admin/tenants", &[], original).0,
+        401
+    );
+    assert_eq!(
+        n1_request(
+            host.port,
+            "PATCH",
+            "/api/admin/tenants",
+            &[("Authorization", &auth), ("x-embedded-idp-tenant-id", "0")],
+            original
+        )
+        .0,
+        200
+    );
+    let before = audit_count();
+    assert_eq!(
+        n1_request(
+            host.port,
+            "PATCH",
+            "/api/admin/tenants",
+            &[
+                ("Authorization", &auth),
+                ("x-embedded-idp-tenant-id", "other")
+            ],
+            original
+        )
+        .0,
+        400
+    );
+    assert_eq!(
+        n1_request(
+            host.port,
+            "PATCH",
+            "/api/admin/tenants",
+            &[
+                ("Authorization", &auth),
+                ("x-embedded-idp-tenant-id", "0"),
+                ("x-embedded-idp-tenant-id", "0")
+            ],
+            original
+        )
+        .0,
+        400
+    );
+    assert_eq!(
+        n1_request(
+            host.port,
+            "PATCH",
+            "/api/admin/tenants",
+            &[
+                ("Authorization", &auth),
+                ("x-embedded-idp-business-id", "runtime")
+            ],
+            original
+        )
+        .0,
+        400
+    );
+    for (path, body) in [
+        ("/api/admin/tenants?tenant_id=other", original),
+        (
+            "/api/admin/tenants",
+            r#"{"tenant_id":".","tenant_id":"..","name":"Changed","status":"active","allow_registration":false,"expected_version":1}"#,
+        ),
+        (
+            "/api/admin/tenants",
+            r#"{"tenant_id":".","name":"Changed","status":"active","allow_registration":false,"expected_version":1,"actor_id":"admin"}"#,
+        ),
+        ("/api/admin/tenants/ordinary", original),
+        (
+            "/api/admin/tenants",
+            r#"{"name":"Changed","status":"active","allow_registration":false,"expected_version":1}"#,
+        ),
+        (
+            "/api/admin/tenants",
+            r#"{"tenant_id":"%2e","name":"Changed","status":"active","allow_registration":false,"expected_version":1}"#,
+        ),
+        (
+            "/api/admin/tenants",
+            r#"{"tenant_id":"0","name":"Changed","status":"active","allow_registration":false,"expected_version":1}"#,
+        ),
+    ] {
+        let status = n1_request(host.port, "PATCH", path, &[("Authorization", &auth)], body).0;
+        assert!((400..500).contains(&status), "{path}: {status}");
+    }
+    assert_eq!(audit_count(), before);
+    let result = host.json("PATCH", "/api/admin/tenants", Some(bearer), None, Some(json!({"tenant_id":"..","name":"Changed","status":"suspended","allow_registration":false,"expected_version":1})), 200);
+    assert_eq!(result["tenant"]["tenant_id"], "..");
+    assert_eq!(result["tenant"]["version"], 2);
+    assert!(result["audit_id"].is_string());
+    let reread = host.json(
+        "GET",
+        "/api/admin/tenants?tenant_id=..&limit=2",
+        Some(bearer),
+        None,
+        None,
+        200,
+    );
+    assert_eq!(reread["items"][0]["name"], "Changed");
+    assert_eq!(reread["items"][0]["status"], "suspended");
+    assert_eq!(audit_count(), before + 1);
+    let concurrent_before = audit_count();
+    let port = host.port;
+    let barrier = std::sync::Barrier::new(2);
+    let (a, b) = thread::scope(|scope| {
+        let a = scope.spawn(|| { barrier.wait(); n1_request(port, "PATCH", "/api/admin/tenants", &[("Authorization", &auth)], r#"{"tenant_id":"ordinary","name":"Collection","status":"active","allow_registration":false,"expected_version":1}"#).0 });
+        let b = scope.spawn(|| { barrier.wait(); n1_request(port, "PATCH", "/api/admin/tenants/ordinary", &[("Authorization", &auth)], r#"{"name":"Path","status":"active","allow_registration":false,"expected_version":1}"#).0 });
+        (a.join().unwrap(), b.join().unwrap())
+    });
+    assert!((a == 200 && b == 409) || (a == 409 && b == 200), "{a}, {b}");
+    let final_tenant = host.json(
+        "GET",
+        "/api/admin/tenants/ordinary",
+        Some(bearer),
+        None,
+        None,
+        200,
+    );
+    assert_eq!(final_tenant["version"], 2);
+    assert_eq!(
+        final_tenant["name"],
+        if a == 200 { "Collection" } else { "Path" }
+    );
+    assert_eq!(audit_count(), concurrent_before + 1);
+    let schema = db.adapter.schema_name();
+    db.adapter.connect().unwrap().batch_execute(&format!(
+        "create function {schema}.n1_reject_tenant_audit() returns trigger language plpgsql as $$ begin if new.operation = 'tenant.update' then raise exception 'n1 audit fault' using errcode = 'P0001'; end if; return new; end $$; create trigger n1_reject_tenant_audit before insert on {schema}.access_audit_events for each row execute function {schema}.n1_reject_tenant_audit()"
+    )).unwrap();
+    let failing_update = json!({"tenant_id":"ordinary","name":"Injected failure","status":"active","allow_registration":false,"expected_version":2});
+    assert_eq!(
+        host.raw(
+            "PATCH",
+            "/api/admin/tenants",
+            Some(bearer),
+            None,
+            Some(failing_update.clone())
+        )
+        .0,
+        500
+    );
+    assert_eq!(
+        host.json(
+            "GET",
+            "/api/admin/tenants/ordinary",
+            Some(bearer),
+            None,
+            None,
+            200
+        ),
+        final_tenant
+    );
+    assert_eq!(audit_count(), concurrent_before + 1);
+    db.adapter.connect().unwrap().batch_execute(&format!(
+        "drop trigger n1_reject_tenant_audit on {schema}.access_audit_events; drop function {schema}.n1_reject_tenant_audit()"
+    )).unwrap();
+    let recovered = host.json(
+        "PATCH",
+        "/api/admin/tenants",
+        Some(bearer),
+        None,
+        Some(failing_update),
+        200,
+    );
+    assert_eq!(recovered["tenant"]["version"], 3);
+    assert_eq!(recovered["tenant"]["name"], "Injected failure");
+    assert_eq!(audit_count(), concurrent_before + 2);
+    assert_eq!(host.raw("PATCH", "/api/admin/tenants", Some(bearer), None, Some(json!({"tenant_id":"ordinary","name":"stale","status":"active","allow_registration":false,"expected_version":1}))).0, 409);
+    assert_eq!(audit_count(), concurrent_before + 2);
+}
