@@ -1,5 +1,7 @@
 # Registration email v1: I2 runtime candidate
 
+Later storage acceptance: [physical deadlines and remaining boundaries](registration-email-physical-deadline-2026-10-23.md).
+
 Date: 2026-10-21. This is owning IDP work; no production host or consumer has
 been promoted. D0/I1 was signed as `60274ea`; I2 remains a reviewable local
 change. See `registration-email-v1-foundation.md` for the identity rules and

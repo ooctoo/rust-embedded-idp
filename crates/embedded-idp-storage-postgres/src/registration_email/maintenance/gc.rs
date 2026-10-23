@@ -2,10 +2,7 @@ use super::super::{support::*, *};
 
 impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
     pub(super) fn phase_gc_contexts(&self, limit: i64) -> Result<u64, RegistrationEmailError> {
-        let mut client = self
-            .adapter
-            .connect()
-            .map_err(RegistrationEmailError::Store)?;
+        let mut client = self.connect()?;
         let mut tx = client.transaction().map_err(db)?;
         self.tx_begin_maintenance(&mut tx)?;
         let at = now(&mut tx)?;
@@ -114,10 +111,7 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
     }
 
     pub(super) fn phase_gc_scope_state(&self, limit: i64) -> Result<(), RegistrationEmailError> {
-        let mut client = self
-            .adapter
-            .connect()
-            .map_err(RegistrationEmailError::Store)?;
+        let mut client = self.connect()?;
         let mut tx = client.transaction().map_err(db)?;
         self.tx_begin_maintenance(&mut tx)?;
         let at = now(&mut tx)?;
@@ -190,7 +184,7 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
 
     fn gc_bucket(
         &self,
-        tx: &mut postgres::Transaction<'_>,
+        tx: &mut transport::Transaction<'_>,
         subject: &[u8],
         at: i64,
     ) -> Result<(), RegistrationEmailError> {
@@ -240,7 +234,7 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
 
     fn delete_subject_if_unreferenced(
         &self,
-        tx: &mut postgres::Transaction<'_>,
+        tx: &mut transport::Transaction<'_>,
         subject: &[u8],
         at: i64,
     ) -> Result<(), RegistrationEmailError> {

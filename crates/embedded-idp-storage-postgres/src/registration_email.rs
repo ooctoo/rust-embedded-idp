@@ -7,6 +7,7 @@ mod processing;
 mod runtime;
 mod runtime_guard;
 mod support;
+pub(crate) mod transport;
 mod types;
 mod verification;
 use crate::PostgresStorageAdapter;
@@ -17,6 +18,7 @@ pub use types::*;
 #[derive(Clone)]
 pub struct PostgresRegistrationEmailStore<C: RegistrationEmailCrypto> {
     adapter: PostgresStorageAdapter,
+    transport: transport::Transport,
     scope: RegistrationEmailScope,
     policy: RegistrationEmailPolicy,
     crypto: Arc<C>,
@@ -47,21 +49,27 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
         {
             return Err(RegistrationEmailError::Unavailable);
         }
-        let mut connection = adapter.connect().map_err(RegistrationEmailError::Store)?;
-        let version: i32 = connection
-            .query_one("select current_setting('server_version_num')::int", &[])
-            .map_err(support::db)?
-            .get(0);
-        if version < 170000 {
-            return Err(RegistrationEmailError::Unavailable);
-        }
+        let transport = adapter.registration_transport()?;
         Ok(Self {
             adapter,
+            transport,
             scope,
             policy,
             crypto,
             password_budget: embedded_idp_core::PasswordWorkBudget::default(),
         })
+    }
+    fn connect(&self) -> Result<transport::Client, RegistrationEmailError> {
+        self.transport
+            .connect(std::time::Duration::from_secs(
+                self.policy.db_transaction_deadline_secs as u64,
+            ))
+            .map_err(support::db)
+    }
+    fn connect_readonly(&self) -> Result<transport::Client, RegistrationEmailError> {
+        self.transport
+            .connect(std::time::Duration::from_secs(5))
+            .map_err(support::db)
     }
     pub fn with_password_work_budget(
         mut self,

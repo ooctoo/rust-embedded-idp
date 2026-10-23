@@ -1,5 +1,5 @@
 use super::super::{support::*, *};
-use postgres::{Row, Transaction};
+use postgres::Row;
 
 impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
     /// No network effect: only the IDP delivery adapter can consume this claim.
@@ -7,10 +7,7 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
         &self,
         effect: Uuid,
     ) -> Result<Option<RegistrationEmailDeliveryClaim>, RegistrationEmailError> {
-        let mut client = self
-            .adapter
-            .connect()
-            .map_err(RegistrationEmailError::Store)?;
+        let mut client = self.connect()?;
         let mut tx = client.transaction().map_err(db)?;
         self.tx_begin(&mut tx)?;
         self.require_runtime_open(&mut tx)?;
@@ -136,10 +133,7 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
         claim: &RegistrationEmailDeliveryClaim,
         result: RegistrationEmailDeliveryResult,
     ) -> Result<(), RegistrationEmailError> {
-        let mut client = self
-            .adapter
-            .connect()
-            .map_err(RegistrationEmailError::Store)?;
+        let mut client = self.connect()?;
         let mut tx = client.transaction().map_err(db)?;
         self.tx_begin_maintenance(&mut tx)?;
         let runtime_installed = self.runtime_lock(&mut tx, true)?.is_some();
@@ -197,10 +191,7 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
         &self,
         claim: &RegistrationEmailDeliveryClaim,
     ) -> Result<(), RegistrationEmailError> {
-        let mut client = self
-            .adapter
-            .connect()
-            .map_err(RegistrationEmailError::Store)?;
+        let mut client = self.connect()?;
         let mut tx = client.transaction().map_err(db)?;
         self.tx_begin_maintenance(&mut tx)?;
         let row = self.locked_delivery(&mut tx, claim.effect_id, "unknown")?;
@@ -238,7 +229,7 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
 
     fn locked_delivery(
         &self,
-        tx: &mut Transaction<'_>,
+        tx: &mut transport::Transaction<'_>,
         effect: Uuid,
         status: &str,
     ) -> Result<Option<Row>, RegistrationEmailError> {

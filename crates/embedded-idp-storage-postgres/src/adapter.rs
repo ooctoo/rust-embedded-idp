@@ -32,6 +32,7 @@ type PgPool = Pool<PostgresConnectionManager<MakeTlsConnector>>;
 pub struct PostgresStorageAdapter {
     config: PgStorageConfig,
     pool: Arc<Mutex<Option<PgPool>>>,
+    registration_transport: Arc<Mutex<Option<crate::registration_email::transport::Transport>>>,
 }
 
 impl fmt::Debug for PostgresStorageAdapter {
@@ -59,7 +60,28 @@ impl PostgresStorageAdapter {
         Ok(Self {
             config,
             pool: Arc::new(Mutex::new(None)),
+            registration_transport: Arc::new(Mutex::new(None)),
         })
+    }
+
+    pub(crate) fn registration_transport(
+        &self,
+    ) -> Result<
+        crate::registration_email::transport::Transport,
+        embedded_idp_core::access::RegistrationEmailError,
+    > {
+        use embedded_idp_core::access::RegistrationEmailError;
+        let mut slot = self
+            .registration_transport
+            .lock()
+            .map_err(|_| RegistrationEmailError::Unavailable)?;
+        if let Some(transport) = slot.as_ref() {
+            return Ok(transport.clone());
+        }
+        let transport = crate::registration_email::transport::Transport::new(&self.config)
+            .map_err(|_| RegistrationEmailError::Unavailable)?;
+        *slot = Some(transport.clone());
+        Ok(transport)
     }
 
     pub fn config(&self) -> &PgStorageConfig {

@@ -1,10 +1,9 @@
 use super::{support::*, *};
-use postgres::Transaction;
 impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
     /// Optional only for I1's internal foundation ports. The new profile requires installation.
     pub(super) fn runtime_lock(
         &self,
-        tx: &mut Transaction<'_>,
+        tx: &mut transport::Transaction<'_>,
         exclusive: bool,
     ) -> Result<Option<bool>, RegistrationEmailError> {
         let exists: Option<String> = tx
@@ -23,7 +22,7 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
     }
     pub(super) fn require_runtime_open(
         &self,
-        tx: &mut Transaction<'_>,
+        tx: &mut transport::Transaction<'_>,
     ) -> Result<(), RegistrationEmailError> {
         if self.runtime_lock(tx, false)? == Some(true) {
             return Err(RegistrationEmailError::RegistrationClosed);
@@ -32,7 +31,7 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
     }
     pub(super) fn pause_runtime_locked(
         &self,
-        tx: &mut Transaction<'_>,
+        tx: &mut transport::Transaction<'_>,
     ) -> Result<(), RegistrationEmailError> {
         tx.execute(&format!("update {} set paused=true,updated_at=floor(extract(epoch from clock_timestamp()))::bigint where authority=$1 and not paused",self.table("runtime_state")),&[&self.scope.authority]).map_err(db)?;
         Ok(())

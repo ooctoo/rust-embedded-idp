@@ -20,10 +20,7 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
         if !ready {
             return Ok(RegistrationEmailRuntimeFacts::default());
         }
-        let mut c = self
-            .adapter
-            .connect()
-            .map_err(RegistrationEmailError::Store)?;
+        let mut c = self.connect()?;
         let mut tx = c.transaction().map_err(db)?;
         self.tx_begin_maintenance(&mut tx)?;
         let present: Option<String> = tx
@@ -58,10 +55,7 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
                 return Err(RegistrationEmailError::Unavailable);
             }
         }
-        let mut c = self
-            .adapter
-            .connect()
-            .map_err(RegistrationEmailError::Store)?;
+        let mut c = self.connect()?;
         let mut tx = c.transaction().map_err(db)?;
         self.tx_begin_maintenance(&mut tx)?;
         let at = now(&mut tx)?;
@@ -96,10 +90,7 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
         tx.commit().map_err(db)
     }
     pub(super) fn maintain_runtime_inner(&self) -> Result<(), RegistrationEmailError> {
-        let mut c = self
-            .adapter
-            .connect()
-            .map_err(RegistrationEmailError::Store)?;
+        let mut c = self.connect()?;
         let mut tx = c.transaction().map_err(db)?;
         self.tx_begin_maintenance(&mut tx)?;
         let at = now(&mut tx)?;

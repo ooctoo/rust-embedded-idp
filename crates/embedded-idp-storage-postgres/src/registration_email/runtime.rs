@@ -23,10 +23,7 @@ impl<C: RegistrationEmailCrypto + 'static> RegistrationEmailService
         kind: RegistrationEmailOperationKind,
         operation: Uuid,
     ) -> Result<bool, RegistrationEmailError> {
-        let mut c = self
-            .adapter
-            .connect()
-            .map_err(RegistrationEmailError::Store)?;
+        let mut c = self.connect_readonly()?;
         let mut tx = c.transaction().map_err(db)?;
         tx.batch_execute("set transaction read only; set local transaction_timeout='5s'; set local statement_timeout='5s'; set local lock_timeout='1s'").map_err(db)?;
         check_registration_operation_freshness(&operation, now(&mut tx)?)?;
@@ -63,10 +60,7 @@ impl<C: RegistrationEmailCrypto + 'static> RegistrationEmailService
             cmd.operation,
             &digest,
         )? {
-            let mut c = self
-                .adapter
-                .connect()
-                .map_err(RegistrationEmailError::Store)?;
+            let mut c = self.connect_readonly()?;
             let mut tx = c.transaction().map_err(db)?;
             tx.batch_execute("set transaction read only; set local transaction_timeout='5s'; set local statement_timeout='5s'; set local lock_timeout='1s'").map_err(db)?;
             let accepted = self.acceptance(&mut tx, &row)?;

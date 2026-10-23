@@ -136,6 +136,11 @@ pub(crate) fn validate_scope(scope: &RegistrationEmailScope) -> Result<(), Store
         .map_err(|_| StoreError::Conflict("registration_email.tenant"))
 }
 
+pub(crate) const BOUNDED_TRANSACTION_SQL: &str = "set local transaction_timeout='10s'; \
+             set local statement_timeout='10s'; \
+             set local lock_timeout='10s'; \
+             set local idle_in_transaction_session_timeout='10s'";
+
 pub(crate) fn configure_bounded_transaction<C: GenericClient>(
     client: &mut C,
     backend_error: &'static str,
@@ -150,11 +155,6 @@ pub(crate) fn configure_bounded_transaction<C: GenericClient>(
         ));
     }
     client
-        .batch_execute(
-            "set local transaction_timeout='10s'; \
-             set local statement_timeout='10s'; \
-             set local lock_timeout='10s'; \
-             set local idle_in_transaction_session_timeout='10s'",
-        )
+        .batch_execute(BOUNDED_TRANSACTION_SQL)
         .map_err(|_| StoreError::Backend(backend_error.to_string()))
 }

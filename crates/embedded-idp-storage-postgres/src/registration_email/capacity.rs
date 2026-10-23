@@ -1,5 +1,5 @@
 use super::{support::*, *};
-use postgres::{Row, Transaction};
+use postgres::Row;
 
 impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
     /// P owns only global admission and an operation reservation; never an account lock.
@@ -10,10 +10,7 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
         digest: &[u8],
         rows: i64,
     ) -> Result<i64, RegistrationEmailError> {
-        let mut client = self
-            .adapter
-            .connect()
-            .map_err(RegistrationEmailError::Store)?;
+        let mut client = self.connect()?;
         let mut tx = client.transaction().map_err(db)?;
         self.tx_begin(&mut tx)?;
         if kind == RegistrationEmailOperationKind::Register {
@@ -132,7 +129,7 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
     }
     pub(super) fn lock_operation(
         &self,
-        tx: &mut Transaction<'_>,
+        tx: &mut transport::Transaction<'_>,
         kind: RegistrationEmailOperationKind,
         operation: Uuid,
         digest: &[u8],
@@ -156,10 +153,7 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
         operation: Uuid,
         digest: &[u8],
     ) -> Result<Option<Row>, RegistrationEmailError> {
-        let mut client = self
-            .adapter
-            .connect()
-            .map_err(RegistrationEmailError::Store)?;
+        let mut client = self.connect_readonly()?;
         let mut tx = client.transaction().map_err(db)?;
         tx.batch_execute("set transaction read only; set local transaction_timeout='5s'; set local statement_timeout='5s'; set local lock_timeout='1s'").map_err(db)?;
         check_registration_operation_freshness(&operation, now(&mut tx)?)?;

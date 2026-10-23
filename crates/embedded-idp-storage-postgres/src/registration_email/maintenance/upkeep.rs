@@ -18,10 +18,7 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
         &self,
         limit: i64,
     ) -> Result<(), RegistrationEmailError> {
-        let mut client = self
-            .adapter
-            .connect()
-            .map_err(RegistrationEmailError::Store)?;
+        let mut client = self.connect()?;
         let mut tx = client.transaction().map_err(db)?;
         self.tx_begin_maintenance(&mut tx)?;
         let installed = self.runtime_lock(&mut tx, true)?.is_some();
@@ -100,10 +97,7 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
     }
 
     fn phase_reap_work(&self, limit: i64) -> Result<(), RegistrationEmailError> {
-        let mut client = self
-            .adapter
-            .connect()
-            .map_err(RegistrationEmailError::Store)?;
+        let mut client = self.connect()?;
         let mut tx = client.transaction().map_err(db)?;
         self.tx_begin_maintenance(&mut tx)?;
         let at = now(&mut tx)?;

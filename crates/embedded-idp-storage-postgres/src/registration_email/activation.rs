@@ -1,9 +1,9 @@
 use super::{support::*, *};
-use postgres::{Row, Transaction};
+use postgres::Row;
 impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
     pub(super) fn activate(
         &self,
-        tx: &mut Transaction<'_>,
+        tx: &mut transport::Transaction<'_>,
         ctx: &Row,
         id: Uuid,
         _at: i64,

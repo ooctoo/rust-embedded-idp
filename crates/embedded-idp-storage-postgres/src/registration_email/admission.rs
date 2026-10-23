@@ -1,5 +1,5 @@
 use super::{support::*, *};
-use postgres::{Row, Transaction};
+use postgres::Row;
 impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
     pub fn register(
         &self,
@@ -11,10 +11,7 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
         let op = prepared.operation();
         let kind = RegistrationEmailOperationKind::Register;
         if let Some(row) = self.early_operation(kind, op, prepared.request())? {
-            let mut c = self
-                .adapter
-                .connect()
-                .map_err(RegistrationEmailError::Store)?;
+            let mut c = self.connect_readonly()?;
             let mut tx = c.transaction().map_err(db)?;
             tx.batch_execute("set transaction read only; set local transaction_timeout='5s'; set local statement_timeout='5s'; set local lock_timeout='1s'").map_err(db)?;
             let accepted = self.acceptance(&mut tx, &row)?;
@@ -22,10 +19,7 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
             return Ok(accepted);
         }
         let fence = self.reserve(kind, op, prepared.request(), 2)?;
-        let mut c = self
-            .adapter
-            .connect()
-            .map_err(RegistrationEmailError::Store)?;
+        let mut c = self.connect()?;
         let mut tx = c.transaction().map_err(db)?;
         self.tx_begin(&mut tx)?;
         self.ensure_registration_open(&mut tx)?;
@@ -78,10 +72,7 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
             return Ok(());
         }
         let fence = self.reserve(kind, operation, &digest, 1)?;
-        let mut c = self
-            .adapter
-            .connect()
-            .map_err(RegistrationEmailError::Store)?;
+        let mut c = self.connect()?;
         let mut tx = c.transaction().map_err(db)?;
         self.tx_begin(&mut tx)?;
         self.require_runtime_open(&mut tx)?;
@@ -163,7 +154,7 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
     }
     pub(super) fn try_context(
         &self,
-        tx: &mut Transaction<'_>,
+        tx: &mut transport::Transaction<'_>,
         id: Uuid,
     ) -> Result<Option<Row>, RegistrationEmailError> {
         tx.batch_execute("savepoint registration_context_try")
@@ -189,7 +180,7 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
     }
     fn intent(
         &self,
-        tx: &mut Transaction<'_>,
+        tx: &mut transport::Transaction<'_>,
         id: Uuid,
         seq: i64,
         kind: RegistrationEmailOperationKind,
@@ -201,7 +192,7 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
     }
     pub(super) fn send_permit(
         &self,
-        tx: &mut Transaction<'_>,
+        tx: &mut transport::Transaction<'_>,
         subject: &[u8],
         at: i64,
         new_context: bool,

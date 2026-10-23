@@ -18,10 +18,7 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
     ) -> Result<RegistrationEmailPreparation, RegistrationEmailError> {
         let context = claim.context_id;
         let sequence = claim.sequence;
-        let mut c = self
-            .adapter
-            .connect()
-            .map_err(RegistrationEmailError::Store)?;
+        let mut c = self.connect()?;
         let mut tx = c.transaction().map_err(db)?;
         self.tx_begin(&mut tx)?;
         let mut slot = false;

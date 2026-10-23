@@ -3,10 +3,7 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
     pub(super) fn claim_next_preparation(
         &self,
     ) -> Result<Option<RegistrationEmailPreparationClaim>, RegistrationEmailError> {
-        let mut c = self
-            .adapter
-            .connect()
-            .map_err(RegistrationEmailError::Store)?;
+        let mut c = self.connect()?;
         let mut tx = c.transaction().map_err(db)?;
         self.tx_begin(&mut tx)?;
         let rows=tx.query(&format!("select i.context_id,i.seq from {} i join {} x on x.id=i.context_id where x.authority=$1 and x.product=$2 and x.tenant_id=$3 and i.status='reserved' and i.claim_token is null order by i.created_at,i.context_id,i.seq limit 32",self.table("intents"),self.table("contexts")),&[&self.scope.authority,&self.scope.product,&self.scope.tenant]).map_err(db)?;
@@ -23,10 +20,7 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
         context: Uuid,
         sequence: i64,
     ) -> Result<Option<RegistrationEmailPreparationClaim>, RegistrationEmailError> {
-        let mut c = self
-            .adapter
-            .connect()
-            .map_err(RegistrationEmailError::Store)?;
+        let mut c = self.connect()?;
         let mut tx = c.transaction().map_err(db)?;
         self.tx_begin(&mut tx)?;
         self.require_runtime_open(&mut tx)?;

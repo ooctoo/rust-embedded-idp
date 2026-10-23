@@ -1,16 +1,19 @@
 use super::*;
 use embedded_idp_core::StoreError;
-use postgres::{GenericClient, Row, Transaction};
+use postgres::Row;
 impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
     pub(super) fn table(&self, name: &str) -> String {
         format!("{}.registration_email_{name}", self.adapter.schema_name())
     }
-    pub(super) fn tx_begin(&self, tx: &mut Transaction<'_>) -> Result<(), RegistrationEmailError> {
+    pub(super) fn tx_begin(
+        &self,
+        tx: &mut transport::Transaction<'_>,
+    ) -> Result<(), RegistrationEmailError> {
         self.begin(tx, true)
     }
     pub(super) fn ensure_registration_open(
         &self,
-        tx: &mut Transaction<'_>,
+        tx: &mut transport::Transaction<'_>,
     ) -> Result<(), RegistrationEmailError> {
         self.require_runtime_open(tx)?;
         let open: bool = tx
@@ -30,11 +33,15 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
     }
     pub(super) fn tx_begin_maintenance(
         &self,
-        tx: &mut Transaction<'_>,
+        tx: &mut transport::Transaction<'_>,
     ) -> Result<(), RegistrationEmailError> {
         self.begin(tx, false)
     }
-    fn begin(&self, tx: &mut Transaction<'_>, active: bool) -> Result<(), RegistrationEmailError> {
+    fn begin(
+        &self,
+        tx: &mut transport::Transaction<'_>,
+        active: bool,
+    ) -> Result<(), RegistrationEmailError> {
         tx.batch_execute(&format!("set local transaction_timeout='{}s'; set local statement_timeout='{}s'; set local lock_timeout='1s'; set local idle_in_transaction_session_timeout='{}s'",self.policy.db_transaction_deadline_secs,self.policy.db_transaction_deadline_secs,self.policy.db_transaction_deadline_secs)).map_err(db)?;
         let s = self.adapter.schema_name();
         tx.query_one(
@@ -72,7 +79,7 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
     }
     pub(super) fn subject_lock(
         &self,
-        tx: &mut Transaction<'_>,
+        tx: &mut transport::Transaction<'_>,
         subject: &[u8],
     ) -> Result<bool, RegistrationEmailError> {
         let key = i64::from_be_bytes(
@@ -87,7 +94,7 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
     }
     pub(super) fn event(
         &self,
-        tx: &mut Transaction<'_>,
+        tx: &mut transport::Transaction<'_>,
         operation: Uuid,
         kind: RegistrationEmailOperationKind,
         subject: Option<&[u8]>,
@@ -100,7 +107,7 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
     }
     pub(super) fn operation(
         &self,
-        tx: &mut impl GenericClient,
+        tx: &mut transport::Transaction<'_>,
         kind: RegistrationEmailOperationKind,
         operation: Uuid,
     ) -> Result<Option<Row>, RegistrationEmailError> {
@@ -121,7 +128,7 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
     }
     pub(super) fn acceptance(
         &self,
-        tx: &mut impl GenericClient,
+        tx: &mut transport::Transaction<'_>,
         row: &Row,
     ) -> Result<RegistrationEmailAccepted, RegistrationEmailError> {
         let id: Uuid = row.get("context_id");
@@ -147,7 +154,7 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
     }
     pub(super) fn finish_operation(
         &self,
-        tx: &mut Transaction<'_>,
+        tx: &mut transport::Transaction<'_>,
         kind: RegistrationEmailOperationKind,
         operation: Uuid,
         context: Option<Uuid>,
@@ -162,12 +169,12 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
         Ok(())
     }
 }
-pub(super) fn db(_: postgres::Error) -> RegistrationEmailError {
+pub(super) fn db(_: transport::Error) -> RegistrationEmailError {
     RegistrationEmailError::Store(StoreError::Backend(
         "registration storage unavailable".into(),
     ))
 }
-pub(super) fn now(tx: &mut impl GenericClient) -> Result<i64, RegistrationEmailError> {
+pub(super) fn now(tx: &mut transport::Transaction<'_>) -> Result<i64, RegistrationEmailError> {
     Ok(tx
         .query_one(
             "select floor(extract(epoch from clock_timestamp()))::bigint",

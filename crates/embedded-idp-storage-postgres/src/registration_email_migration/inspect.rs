@@ -1,10 +1,13 @@
 use embedded_idp_core::StoreError;
 
 use super::{
-    configure_bounded_transaction, parse_mode, validate_scope, RegistrationEmailFoundationFacts,
-    RegistrationEmailScope, REGISTRATION_EMAIL_BACKEND_ERROR,
+    parse_mode, validate_scope, RegistrationEmailFoundationFacts, RegistrationEmailScope,
+    REGISTRATION_EMAIL_BACKEND_ERROR,
 };
-use crate::PostgresStorageAdapter;
+use crate::{
+    registration_email::transport::{Error, Transaction},
+    PostgresStorageAdapter,
+};
 
 use super::catalog::{COLUMNS, CONSTRAINTS, INDEXES, TABLES, TRIGGERS};
 
@@ -15,14 +18,28 @@ pub(crate) fn foundation(
     scope: &RegistrationEmailScope,
 ) -> Result<RegistrationEmailFoundationFacts, StoreError> {
     validate_scope(scope)?;
-    let mut client = adapter.connect()?;
+    let mut client = adapter
+        .registration_transport()
+        .map_err(|_| StoreError::Backend(BACKEND_ERROR.into()))?
+        .connect(std::time::Duration::from_secs(10))
+        .map_err(db_error)?;
     let mut tx = client.transaction().map_err(|error| {
         let _ = error;
         StoreError::Backend(BACKEND_ERROR.to_string())
     })?;
     tx.batch_execute("set transaction read only")
         .map_err(db_error)?;
-    configure_bounded_transaction(&mut tx, BACKEND_ERROR)?;
+    let version: i32 = tx
+        .query_one("select current_setting('server_version_num')::int", &[])
+        .map_err(db_error)?
+        .get(0);
+    if version < super::REGISTRATION_EMAIL_MIN_POSTGRES_VERSION {
+        return Err(StoreError::Conflict(
+            "registration_email.unsupported_postgres",
+        ));
+    }
+    tx.batch_execute(super::BOUNDED_TRANSACTION_SQL)
+        .map_err(db_error)?;
     let schema = adapter.schema_name();
     let state_relation = tx
         .query_one(
@@ -131,8 +148,8 @@ fn empty_facts(schema: &str) -> RegistrationEmailFoundationFacts {
     }
 }
 
-fn relation_count<C: postgres::GenericClient>(
-    client: &mut C,
+fn relation_count(
+    client: &mut Transaction<'_>,
     schema: &str,
     names: &[&str],
 ) -> Result<i64, StoreError> {
@@ -152,8 +169,8 @@ fn relation_count<C: postgres::GenericClient>(
         .map(|row| row.get(0))
 }
 
-fn relation_exists<C: postgres::GenericClient>(
-    client: &mut C,
+fn relation_exists(
+    client: &mut Transaction<'_>,
     schema: &str,
     table: &str,
 ) -> Result<bool, StoreError> {
@@ -166,10 +183,7 @@ fn relation_exists<C: postgres::GenericClient>(
         .map(|row| row.get(0))
 }
 
-fn column_count<C: postgres::GenericClient>(
-    client: &mut C,
-    schema: &str,
-) -> Result<i64, StoreError> {
+fn column_count(client: &mut Transaction<'_>, schema: &str) -> Result<i64, StoreError> {
     let mut count = 0_i64;
     for (table, column) in COLUMNS {
         if client
@@ -186,10 +200,7 @@ fn column_count<C: postgres::GenericClient>(
     Ok(count)
 }
 
-fn index_count<C: postgres::GenericClient>(
-    client: &mut C,
-    schema: &str,
-) -> Result<i64, StoreError> {
+fn index_count(client: &mut Transaction<'_>, schema: &str) -> Result<i64, StoreError> {
     let in_list = INDEXES
         .iter()
         .map(|name| format!("'{name}'"))
@@ -206,10 +217,7 @@ fn index_count<C: postgres::GenericClient>(
         .map(|row| row.get(0))
 }
 
-fn trigger_count<C: postgres::GenericClient>(
-    client: &mut C,
-    schema: &str,
-) -> Result<i64, StoreError> {
+fn trigger_count(client: &mut Transaction<'_>, schema: &str) -> Result<i64, StoreError> {
     let clauses = TRIGGERS
         .iter()
         .map(|(table, trigger)| format!("(c.relname='{table}' and t.tgname='{trigger}')"))
@@ -224,10 +232,7 @@ fn trigger_count<C: postgres::GenericClient>(
         .map(|row| row.get(0))
 }
 
-fn constraint_count<C: postgres::GenericClient>(
-    client: &mut C,
-    schema: &str,
-) -> Result<i64, StoreError> {
+fn constraint_count(client: &mut Transaction<'_>, schema: &str) -> Result<i64, StoreError> {
     let clauses = CONSTRAINTS
         .iter()
         .map(|(table, constraint)| format!("(r.relname='{table}' and c.conname='{constraint}')"))
@@ -244,6 +249,6 @@ fn constraint_count<C: postgres::GenericClient>(
         .map(|row| row.get(0))
 }
 
-fn db_error(_error: postgres::Error) -> StoreError {
+fn db_error(_error: Error) -> StoreError {
     StoreError::Backend(BACKEND_ERROR.to_string())
 }

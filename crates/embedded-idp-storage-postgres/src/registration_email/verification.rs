@@ -1,5 +1,5 @@
 use super::{support::*, *};
-use postgres::{Row, Transaction};
+use postgres::Row;
 impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
     pub fn verify(
         &self,
@@ -28,10 +28,7 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
             );
         }
         let lookup = self.crypto.context_digest(token);
-        let mut c = self
-            .adapter
-            .connect()
-            .map_err(RegistrationEmailError::Store)?;
+        let mut c = self.connect()?;
         let initial=c.query_opt(&format!("select id,subject from {} where authority=$1 and product=$2 and lookup_digest=$3",self.table("contexts")),&[&self.scope.authority,&self.scope.product,&lookup.as_slice()]).map_err(db)?;
         let Some(initial) = initial else {
             return Ok(RegistrationEmailVerification::Unavailable);
@@ -168,7 +165,7 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
     }
     fn charge_wrong(
         &self,
-        tx: &mut Transaction<'_>,
+        tx: &mut transport::Transaction<'_>,
         a: &Row,
         p: &Row,
         id: Uuid,

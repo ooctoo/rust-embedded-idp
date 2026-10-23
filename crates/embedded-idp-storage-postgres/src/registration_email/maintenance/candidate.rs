@@ -3,10 +3,7 @@ use super::super::{support::*, *};
 impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
     /// Clear the encrypted candidate while retaining the context receipt history.
     pub(super) fn phase_clear_candidates(&self, limit: i64) -> Result<(), RegistrationEmailError> {
-        let mut client = self
-            .adapter
-            .connect()
-            .map_err(RegistrationEmailError::Store)?;
+        let mut client = self.connect()?;
         let mut tx = client.transaction().map_err(db)?;
         self.tx_begin_maintenance(&mut tx)?;
         let at = now(&mut tx)?;

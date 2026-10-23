@@ -1,10 +1,7 @@
 use super::*;
 impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
     pub(super) fn next_delivery_inner(&self) -> Result<Option<Uuid>, RegistrationEmailError> {
-        let mut c = self
-            .adapter
-            .connect()
-            .map_err(RegistrationEmailError::Store)?;
+        let mut c = self.connect()?;
         let mut tx = c.transaction().map_err(db)?;
         self.tx_begin(&mut tx)?;
         self.require_runtime_open(&mut tx)?;
@@ -16,10 +13,7 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
         &self,
         claim: &RegistrationEmailDeliveryClaim,
     ) -> Result<Option<RegistrationEmailMessage>, RegistrationEmailError> {
-        let mut c = self
-            .adapter
-            .connect()
-            .map_err(RegistrationEmailError::Store)?;
+        let mut c = self.connect()?;
         let mut tx = c.transaction().map_err(db)?;
         self.tx_begin(&mut tx)?;
         self.require_runtime_open(&mut tx)?;
