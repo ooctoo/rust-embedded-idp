@@ -1,5 +1,5 @@
 use super::super::{support::*, *};
-use postgres::Row;
+use tokio_postgres::Row;
 
 impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
     /// No network effect: only the IDP delivery adapter can consume this claim.

@@ -7,7 +7,7 @@ mod processing;
 mod runtime;
 mod runtime_guard;
 mod support;
-pub(crate) mod transport;
+use crate::transport;
 mod types;
 mod verification;
 use crate::PostgresStorageAdapter;
@@ -49,7 +49,7 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
         {
             return Err(RegistrationEmailError::Unavailable);
         }
-        let transport = adapter.registration_transport()?;
+        let transport = adapter.transport().map_err(support::db)?;
         Ok(Self {
             adapter,
             transport,
@@ -61,14 +61,14 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
     }
     fn connect(&self) -> Result<transport::Client, RegistrationEmailError> {
         self.transport
-            .connect(std::time::Duration::from_secs(
+            .connect_registration(std::time::Duration::from_secs(
                 self.policy.db_transaction_deadline_secs as u64,
             ))
             .map_err(support::db)
     }
     fn connect_readonly(&self) -> Result<transport::Client, RegistrationEmailError> {
         self.transport
-            .connect(std::time::Duration::from_secs(5))
+            .connect_registration(std::time::Duration::from_secs(5))
             .map_err(support::db)
     }
     pub fn with_password_work_budget(

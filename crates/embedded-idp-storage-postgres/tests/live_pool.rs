@@ -27,7 +27,7 @@ fn adapter(schema_name: String) -> PostgresStorageAdapter {
 
 #[test]
 #[ignore = "requires EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
-fn cloned_adapters_share_a_bounded_pool_and_reuse_released_connections() {
+fn cloned_adapters_share_bounded_capacity_and_open_fresh_connections() {
     let adapter = adapter("embedded_idp_pool_test".to_string());
     let clone = adapter.clone();
     let mut first = adapter
@@ -40,7 +40,8 @@ fn cloned_adapters_share_a_bounded_pool_and_reuse_released_connections() {
 
     let started = Instant::now();
     let exhaustion = clone.connect();
-    assert!(started.elapsed().as_secs() >= 1);
+    assert!(started.elapsed() >= std::time::Duration::from_millis(9500));
+    assert!(started.elapsed() < std::time::Duration::from_secs(11));
     assert!(matches!(exhaustion, Err(StoreError::Backend(_))));
 
     drop(first);
@@ -54,7 +55,7 @@ fn cloned_adapters_share_a_bounded_pool_and_reuse_released_connections() {
         .query_one("select pg_backend_pid()", &[])
         .expect("read reused backend id")
         .get(0);
-    assert_eq!(reused_backend_pid, first_backend_pid);
+    assert_ne!(reused_backend_pid, first_backend_pid);
 }
 
 #[test]
@@ -83,7 +84,7 @@ fn failed_legacy_cutover_releases_transaction_and_advisory_locks() {
         .query_one("select pg_backend_pid()", &[])
         .expect("read reused backend id")
         .get(0);
-    assert_eq!(reused_backend_pid, first_backend_pid);
+    assert_ne!(reused_backend_pid, first_backend_pid);
     let no_advisory_locks: bool = reused
         .query_one(
             "select not exists (select 1 from pg_locks where locktype = 'advisory' and pid = pg_backend_pid())",

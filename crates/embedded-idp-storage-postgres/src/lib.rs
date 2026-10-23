@@ -1,3 +1,5 @@
+mod transport;
+pub use transport::{Error as PgError, Executor as PgExecutor, Transaction as PgTransaction, TransactionBuilder as PgTransactionBuilder};
 mod registration_email_runtime_migration;
 pub use registration_email_runtime_migration::*;
 mod registration_email;

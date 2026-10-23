@@ -2,9 +2,9 @@ use embedded_idp_core::access::{PermissionCatalog, TenancyMode};
 use std::env;
 
 use embedded_idp_storage_postgres::{
-    DbPoolConfig, PgConnectionConfig, PgStorageConfig, PgTlsMode, PostgresStorageAdapter,
+    DbPoolConfig, PgConnectionConfig, PgPooledConnection, PgStorageConfig, PgTlsMode,
+    PostgresStorageAdapter,
 };
-use postgres::Client;
 
 fn main() {
     if let Err(error) = run() {
@@ -96,7 +96,7 @@ fn run() -> Result<(), String> {
 }
 
 fn seed_default_desktop_client(
-    client: &mut Client,
+    client: &mut PgPooledConnection,
     schema_name: &str,
     client_id: &str,
 ) -> Result<(), String> {

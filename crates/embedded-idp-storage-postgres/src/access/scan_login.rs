@@ -1,7 +1,7 @@
 use super::{access_db_error, epoch, invalid, time, PostgresTenantAuthTransaction};
 use embedded_idp_core::{access::*, AccountDeviceBindingStatus, StoreError};
-use postgres::Row;
 use std::time::SystemTime;
+use tokio_postgres::Row;
 use uuid::Uuid;
 
 fn uuid(value: &str) -> Result<Uuid, StoreError> {

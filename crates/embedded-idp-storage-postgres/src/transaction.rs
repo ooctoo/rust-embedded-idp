@@ -11,27 +11,29 @@ use embedded_idp_core::{
     ProofBoundRefreshTransaction, RefreshTokenRecord, RefreshTokenRevocationReason,
     RefreshTokenStore, SessionListQuery, SessionStatus, SessionStore, StoreError,
 };
-use postgres::{Row, Transaction};
+use tokio_postgres::Row;
 use uuid::Uuid;
+
+use crate::{PgError, PgTransaction};
 
 pub struct PostgresStoreTransaction<'a> {
     schema_name: &'a str,
-    tx: Option<Transaction<'a>>,
+    tx: Option<PgTransaction<'a>>,
 }
 
 impl<'a> PostgresStoreTransaction<'a> {
-    pub fn new(schema_name: &'a str, tx: Transaction<'a>) -> Self {
+    pub fn new(schema_name: &'a str, tx: PgTransaction<'a>) -> Self {
         Self {
             schema_name,
             tx: Some(tx),
         }
     }
 
-    pub fn into_inner(mut self) -> Option<Transaction<'a>> {
+    pub fn into_inner(mut self) -> Option<PgTransaction<'a>> {
         self.tx.take()
     }
 
-    fn tx_mut(&mut self) -> &mut Transaction<'a> {
+    fn tx_mut(&mut self) -> &mut PgTransaction<'a> {
         self.tx
             .as_mut()
             .expect("postgres transaction should still be active")
@@ -1794,7 +1796,7 @@ fn encode_device_proof_key_status(status: DeviceProofKeyStatus) -> &'static str 
 fn map_write_error(
     operation: &'static str,
     conflict_key: Option<&'static str>,
-) -> impl FnOnce(postgres::Error) -> StoreError {
+) -> impl FnOnce(PgError) -> StoreError {
     move |error| {
         if let Some(db_error) = error.as_db_error() {
             if db_error.code().code() == "23505" {

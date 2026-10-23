@@ -19,10 +19,10 @@ use embedded_idp_core::access::{
     TenantRegistration, TenantRegistrationStore, TenantStatus,
 };
 use embedded_idp_core::StoreError;
-use postgres::{GenericClient, Row};
+use tokio_postgres::Row;
 use uuid::Uuid;
 
-use crate::PostgresStorageAdapter;
+use crate::{PgError, PgExecutor, PostgresStorageAdapter};
 
 pub const ACCESS_SCHEMA_VERSION: &str = "tenant_v6";
 const DDL: &str = include_str!("sql/tenant_v6.sql");
@@ -54,7 +54,7 @@ const ACCESS_TABLES: &[&str] = &[
     "scan_login_audit_events",
 ];
 
-fn validate_layout(client: &mut impl GenericClient, schema: &str) -> Result<(), StoreError> {
+fn validate_layout(client: &mut impl PgExecutor, schema: &str) -> Result<(), StoreError> {
     let triggers = [
         "account_requires_membership",
         "account_status_requires_membership",
@@ -149,7 +149,7 @@ pub struct AccessSchemaFacts {
     pub bootstrap_completed: bool,
 }
 
-pub(crate) fn access_db_error(error: postgres::Error) -> StoreError {
+pub(crate) fn access_db_error(error: PgError) -> StoreError {
     match error.code().map(|c| c.code()) {
         Some("23505") => StoreError::Conflict("access.unique"),
         Some("23503" | "23514" | "23502") => StoreError::Conflict("access.constraint"),
@@ -192,7 +192,7 @@ fn time(value: i64) -> Result<SystemTime, StoreError> {
 }
 
 fn schema_facts(
-    client: &mut impl GenericClient,
+    client: &mut impl PgExecutor,
     schema: &str,
     mode: TenancyMode,
 ) -> Result<AccessSchemaFacts, StoreError> {
@@ -216,7 +216,7 @@ impl PostgresStorageAdapter {
         mode: TenancyMode,
         catalog: &PermissionCatalog,
     ) -> Result<AccessSchemaFacts, StoreError> {
-        let mut client = self.connect()?;
+        let mut client = self.connect_for_setup()?;
         let mut tx = client.transaction().map_err(access_db_error)?;
         let schema = self.schema_name();
         tx.query_one(
@@ -265,8 +265,8 @@ impl PostgresStorageAdapter {
         mode: TenancyMode,
     ) -> Result<AccessSchemaFacts, StoreError> {
         let mut client = self.connect()?;
-        validate_layout(&mut *client, self.schema_name())?;
-        schema_facts(&mut *client, self.schema_name(), mode)
+        validate_layout(&mut client, self.schema_name())?;
+        schema_facts(&mut client, self.schema_name(), mode)
     }
 }
 
@@ -291,7 +291,7 @@ impl PostgresAccessStore {
         admin::check_readiness(self, catalog)
     }
 
-    fn verify(&self, client: &mut impl GenericClient) -> Result<(), StoreError> {
+    fn verify(&self, client: &mut impl PgExecutor) -> Result<(), StoreError> {
         if !schema_facts(client, self.adapter.schema_name(), self.mode)?.bootstrap_completed {
             return Err(StoreError::Conflict("access.bootstrap_required"));
         }
@@ -301,12 +301,8 @@ impl PostgresAccessStore {
 
 impl AccessReadStore for PostgresAccessStore {
     fn check_active_grants(&self, queries: &[AccessQuery]) -> Result<Vec<bool>, StoreError> {
-        check_grants(
-            &mut *self.adapter.connect()?,
-            self.adapter.schema_name(),
-            self.mode,
-            queries,
-        )
+        let mut client = self.adapter.connect()?;
+        check_grants(&mut client, self.adapter.schema_name(), self.mode, queries)
     }
 
     fn list_subject_roles(
@@ -332,7 +328,7 @@ impl AccessReadStore for PostgresAccessStore {
             .transpose()
             .map_err(|_| StoreError::Conflict("access.cursor"))?;
         let mut client = self.adapter.connect()?;
-        self.verify(&mut *client)?;
+        self.verify(&mut client)?;
         let s = self.adapter.schema_name();
         client.query(&format!("select r.* from {s}.access_roles r where r.tenant_id=$1 and r.business_id=$2 and ($4::uuid is null or r.id>$4) and exists(select 1 from {s}.access_role_bindings b where b.tenant_id=r.tenant_id and b.business_id=r.business_id and b.role_id=r.id and b.account_id=$3) order by r.id limit $5"), &[&tenant,&business_id,&subject,&after,&(page.fetch_limit() as i64)]).map_err(access_db_error)?.iter().map(decode_role).collect()
     }
@@ -355,7 +351,7 @@ impl AccessReadStore for PostgresAccessStore {
         let resource = page.cursor.as_ref().map(|c| c.after[0].as_str());
         let action = page.cursor.as_ref().map(|c| c.after[1].as_str());
         let mut client = self.adapter.connect()?;
-        self.verify(&mut *client)?;
+        self.verify(&mut client)?;
         let s = self.adapter.schema_name();
         client.query(&format!("select p.* from {s}.access_role_permissions rp join {s}.access_permissions p using(tenant_id,business_id,resource_type,action) where rp.tenant_id=$1 and rp.business_id=$2 and rp.role_id=$3 and ($4::text is null or (p.resource_type,p.action)>($4 collate \"C\",$5 collate \"C\")) order by p.resource_type,p.action limit $6"), &[&tenant,&business_id,&role,&resource,&action,&(page.fetch_limit() as i64)]).map_err(access_db_error)?.iter().map(decode_permission).collect()
     }
@@ -376,7 +372,7 @@ impl AccessReadStore for PostgresAccessStore {
         };
         let after = page.cursor.as_ref().map(|c| c.after[0].as_str());
         let mut client = self.adapter.connect()?;
-        self.verify(&mut *client)?;
+        self.verify(&mut client)?;
         let s = self.adapter.schema_name();
         client.query(&format!("select t.*,m.account_id,m.status as member_status,m.version as member_version,m.joined_at_epoch from {s}.access_memberships m join {s}.access_tenants t on t.id=m.tenant_id where m.account_id=$1 and m.status<>'removed' and t.id<>'0' and ($2::text is null or t.id>$2 collate \"C\") order by t.id limit $3"), &[&subject,&after,&(page.fetch_limit() as i64)]).map_err(access_db_error)?.iter().map(|row| {
             let tenant = decode_tenant(row)?;
@@ -482,7 +478,7 @@ fn decode_tenant(row: &Row) -> Result<Tenant, StoreError> {
 }
 
 fn check_grants(
-    client: &mut impl GenericClient,
+    client: &mut impl PgExecutor,
     schema: &str,
     mode: TenancyMode,
     queries: &[AccessQuery],

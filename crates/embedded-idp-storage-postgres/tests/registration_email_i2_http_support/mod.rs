@@ -7,7 +7,9 @@ use embedded_idp_core::PasswordWorkBudget;
 use std::sync::mpsc::{self, Sender};
 use std::thread::{self, JoinHandle};
 
-pub use http::{post_json, post_without_profile, start_harness, HttpResponse};
+pub use http::{
+    post_json, post_without_profile, start_harness, worker_diagnostic_snapshot, HttpResponse,
+};
 pub use smtp::SmtpSink;
 
 pub use super::registration_email_support::Fixture;

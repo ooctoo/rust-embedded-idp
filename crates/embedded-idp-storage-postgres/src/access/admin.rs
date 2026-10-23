@@ -1,11 +1,13 @@
 use super::*;
 use embedded_idp_core::access::*;
-use postgres::{IsolationLevel, Transaction};
 use serde_json::{json, Value};
+use tokio_postgres::{IsolationLevel, Row};
+
+use crate::PgTransaction;
 
 /// Created only by the store runner; every operation stays on one pooled connection.
 pub struct PostgresAccessAdminTransaction<'a> {
-    tx: Transaction<'a>,
+    tx: PgTransaction<'a>,
     schema: &'a str,
     mode: TenancyMode,
     actor: Option<Uuid>,
@@ -103,7 +105,7 @@ fn uuid(value: &str) -> Result<Uuid, StoreError> {
 fn version(value: u64) -> Result<i64, StoreError> {
     i64::try_from(value).map_err(|_| StoreError::Conflict("access.version"))
 }
-fn decode_admin_tenant(row: &postgres::Row) -> Result<AccessTenantRecord, StoreError> {
+fn decode_admin_tenant(row: &Row) -> Result<AccessTenantRecord, StoreError> {
     Ok(AccessTenantRecord {
         created_at: time(row.get("created_at_epoch"))?,
         tenant: decode_tenant(row)?,
@@ -1516,7 +1518,7 @@ impl AccessBootstrapStore for PostgresStorageAdapter {
         &self,
         plan: &AccessBootstrap,
     ) -> Result<AccessBootstrapResult, StoreError> {
-        let mut client = self.connect()?;
+        let mut client = self.connect_for_setup()?;
         let tx = client
             .build_transaction()
             .isolation_level(IsolationLevel::ReadCommitted)
@@ -1689,7 +1691,7 @@ fn identity_status(status: AccountIdentityStatus) -> &'static str {
     }
 }
 
-fn decode_audit(row: &postgres::Row) -> Result<AdminAuditRecord, StoreError> {
+fn decode_audit(row: &Row) -> Result<AdminAuditRecord, StoreError> {
     Ok(AdminAuditRecord {
         id: row.get::<_, Uuid>("id").to_string(),
         occurred_at: time(row.get("occurred_at_epoch"))?,

@@ -49,13 +49,14 @@ fn migration_do(sql: &str) -> String {
     sql[start..end].to_owned()
 }
 fn apply(
-    c: &mut postgres::Client,
+    c: &mut PgPooledConnection,
     schema: &str,
     body: &str,
     setting: &str,
-) -> Result<(), postgres::Error> {
+) -> Result<(), PgError> {
     let mut tx = c.transaction()?;
-    tx.execute("select set_config($1,$2,true)", &[&setting, &schema])?;
+    let params: &[&(dyn tokio_postgres::types::ToSql + Sync)] = &[&setting, &schema];
+    tx.execute("select set_config($1,$2,true)", params)?;
     tx.batch_execute(body)?;
     tx.commit()
 }

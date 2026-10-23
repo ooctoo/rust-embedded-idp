@@ -1,9 +1,11 @@
 use super::{access_db_error, epoch, invalid, time, PostgresTenantAuthTransaction};
 use embedded_idp_core::{access::*, AccountDeviceBindingStatus, DeviceStatus, StoreError};
-use postgres::{Row, Transaction};
 use serde_json::{json, Value};
 use std::time::SystemTime;
+use tokio_postgres::Row;
 use uuid::Uuid;
+
+use crate::PgTransaction;
 
 impl TenantDeviceManagementTransaction for PostgresTenantAuthTransaction<'_> {
     fn self_device_operation(
@@ -118,7 +120,7 @@ impl TenantDeviceManagementTransaction for PostgresTenantAuthTransaction<'_> {
 /// The tenant and account locks are held by both callers. Keep credential
 /// cleanup in the same transaction as the exact binding update.
 pub(super) fn revoke_device_account_credentials(
-    tx: &mut Transaction<'_>,
+    tx: &mut PgTransaction<'_>,
     s: &str,
     tenant: &str,
     account: &Uuid,

@@ -2,7 +2,8 @@ use std::env;
 
 use embedded_idp_core::access::{RegistrationEmailScope, TenancyMode};
 use embedded_idp_storage_postgres::{
-    DbPoolConfig, PgConnectionConfig, PgStorageConfig, PgTlsMode, PostgresStorageAdapter,
+    DbPoolConfig, PgConnectionConfig, PgPooledConnection, PgStorageConfig, PgTlsMode,
+    PostgresStorageAdapter,
 };
 use postgres::{config::Host, Client, Config, NoTls};
 use uuid::Uuid;
@@ -138,13 +139,14 @@ impl Drop for Fixture {
     }
 }
 
-fn seed_account(client: &mut postgres::Client, schema: &str, id: Uuid, email: &str) {
+fn seed_account(client: &mut PgPooledConnection, schema: &str, id: Uuid, email: &str) {
     let mut tx = client.transaction().expect("seed transaction");
+    let params: &[&(dyn tokio_postgres::types::ToSql + Sync)] = &[&id, &email];
     tx.execute(
         &format!(
             "insert into {schema}.accounts(id,registration_tenant_id,email,password_hash,display_name,status,created_at_epoch) values($1,'t1',$2,'$argon2id$v=19$test','Test','pending_verification',1700000000)"
         ),
-        &[&id, &email],
+        params,
     )
     .expect("seed account");
     tx.execute(

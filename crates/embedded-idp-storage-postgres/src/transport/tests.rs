@@ -63,7 +63,7 @@ fn dns_requires_literal_hostaddr_and_keeps_certificate_name() {
 #[test]
 fn adapter_clones_share_one_registration_capacity() {
     let adapter = crate::PostgresStorageAdapter::new(settings()).unwrap();
-    let first = adapter.registration_transport().unwrap();
-    let second = adapter.clone().registration_transport().unwrap();
+    let first = adapter.transport().unwrap();
+    let second = adapter.clone().transport().unwrap();
     assert!(Arc::ptr_eq(&first.slots, &second.slots));
 }

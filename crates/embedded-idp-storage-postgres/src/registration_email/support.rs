@@ -1,6 +1,6 @@
 use super::*;
 use embedded_idp_core::StoreError;
-use postgres::Row;
+use tokio_postgres::Row;
 impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
     pub(super) fn table(&self, name: &str) -> String {
         format!("{}.registration_email_{name}", self.adapter.schema_name())

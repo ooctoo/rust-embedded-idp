@@ -1,8 +1,8 @@
 use super::{access_db_error, epoch, invalid, time, PostgresTenantAuthTransaction};
 use crate::transaction::decode_client;
 use embedded_idp_core::{access::*, OidcClient, PkceChallengeMethod, StoreError};
-use postgres::Row;
 use std::time::SystemTime;
+use tokio_postgres::Row;
 use uuid::Uuid;
 
 impl TenantOidcTransaction for PostgresTenantAuthTransaction<'_> {

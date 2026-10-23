@@ -11,22 +11,27 @@ impl RegistrationEmailRuntime {
         let s = self.service.clone();
         let c = claim.clone();
         let hold = physical.clone();
-        let message = tokio::task::spawn_blocking(move || {
-            let _hold = hold;
-            s.delivery_message(&c)
-        })
-        .await;
+        let message = self
+            .storage_call(move || {
+                let _hold = hold;
+                s.delivery_message(&c)
+            })
+            .await;
         let message = match message {
-            Ok(Ok(Some(m))) => m,
-            Ok(Ok(None)) => return true,
+            Ok(Some(m)) => m,
+            Ok(None) => return true,
             _ => {
                 self.finish_unknown(&claim, true).await;
                 return false;
             }
         };
-        let deadline =
+        let lease_deadline =
             message_started + Duration::from_millis(message.lease_remaining_millis.min(15000));
-        if deadline <= std::time::Instant::now() || self.stopping.load(Ordering::Acquire) {
+        let deadline = self
+            .shutdown_deadline()
+            .map(|shutdown| lease_deadline.min(shutdown.into_std()))
+            .unwrap_or(lease_deadline);
+        if deadline <= std::time::Instant::now() {
             self.finish_unknown(&claim, true).await;
             return true;
         }
@@ -52,11 +57,10 @@ impl RegistrationEmailRuntime {
                 };
                 let s = self.service.clone();
                 let c = claim.clone();
-                let done =
-                    tokio::task::spawn_blocking(move || s.finish_delivery(&c, outcome)).await;
-                if outcome == RegistrationEmailDeliveryResult::Unknown
-                    || !matches!(done, Ok(Ok(())))
-                {
+                let done = self
+                    .storage_call(move || s.finish_delivery(&c, outcome))
+                    .await;
+                if outcome == RegistrationEmailDeliveryResult::Unknown || !matches!(done, Ok(())) {
                     self.finish_unknown(&claim, true).await;
                     return false;
                 }
@@ -64,12 +68,17 @@ impl RegistrationEmailRuntime {
             }
             Err(_) => {
                 self.finish_unknown(&claim, false).await;
+                if self.shutdown_expired() {
+                    return false;
+                }
                 self.pause().await;
                 // No release/re-dispatch merely because a lease or async wait ended.
                 let _ = send.await;
                 let s = self.service.clone();
                 let c = claim.clone();
-                let _ = tokio::task::spawn_blocking(move || s.confirm_delivery_stopped(&c)).await;
+                let _ = self
+                    .storage_call(move || s.confirm_delivery_stopped(&c))
+                    .await;
                 false
             }
         }
@@ -77,14 +86,15 @@ impl RegistrationEmailRuntime {
     async fn finish_unknown(&self, claim: &RegistrationEmailDeliveryClaim, stopped: bool) {
         let s = self.service.clone();
         let c = claim.clone();
-        let _ = tokio::task::spawn_blocking(move || {
-            s.finish_delivery(&c, RegistrationEmailDeliveryResult::Unknown)
-        })
-        .await;
+        let _ = self
+            .storage_call(move || s.finish_delivery(&c, RegistrationEmailDeliveryResult::Unknown))
+            .await;
         if stopped {
             let s = self.service.clone();
             let c = claim.clone();
-            let _ = tokio::task::spawn_blocking(move || s.confirm_delivery_stopped(&c)).await;
+            let _ = self
+                .storage_call(move || s.confirm_delivery_stopped(&c))
+                .await;
         }
     }
 }

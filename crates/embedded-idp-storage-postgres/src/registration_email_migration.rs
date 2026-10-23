@@ -10,9 +10,8 @@ mod inspect;
 mod inventory;
 
 use embedded_idp_core::{access::TenancyMode, StoreError};
-use postgres::GenericClient;
 
-use crate::PostgresStorageAdapter;
+use crate::{PgExecutor, PostgresStorageAdapter};
 
 pub use embedded_idp_core::access::RegistrationEmailScope;
 
@@ -141,7 +140,7 @@ pub(crate) const BOUNDED_TRANSACTION_SQL: &str = "set local transaction_timeout=
              set local lock_timeout='10s'; \
              set local idle_in_transaction_session_timeout='10s'";
 
-pub(crate) fn configure_bounded_transaction<C: GenericClient>(
+pub(crate) fn configure_bounded_transaction<C: PgExecutor>(
     client: &mut C,
     backend_error: &'static str,
 ) -> Result<(), StoreError> {

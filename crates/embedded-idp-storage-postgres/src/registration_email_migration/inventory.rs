@@ -4,13 +4,13 @@ use embedded_idp_core::{
     access::{CanonicalRegistrationEmail, TenancyMode},
     StoreError,
 };
-use postgres::{GenericClient, Row};
+use tokio_postgres::Row;
 
 use super::{
     configure_bounded_transaction, parse_mode, RegistrationEmailMigrationPlan,
     REGISTRATION_EMAIL_BACKEND_ERROR, REGISTRATION_EMAIL_SCHEMA_VERSION,
 };
-use crate::PostgresStorageAdapter;
+use crate::{PgError, PgExecutor, PostgresStorageAdapter};
 
 const BACKEND_ERROR: &str = REGISTRATION_EMAIL_BACKEND_ERROR;
 
@@ -73,7 +73,7 @@ pub(crate) fn plan(
     Ok(plan)
 }
 
-pub(crate) fn snapshot<C: GenericClient>(
+pub(crate) fn snapshot<C: PgExecutor>(
     client: &mut C,
     schema: &str,
 ) -> Result<Snapshot, StoreError> {
@@ -164,7 +164,7 @@ pub(crate) fn fingerprint_sql(schema: &str) -> String {
     )
 }
 
-pub(crate) fn db_error(_error: postgres::Error) -> StoreError {
+pub(crate) fn db_error(_error: PgError) -> StoreError {
     StoreError::Backend(BACKEND_ERROR.to_string())
 }
 

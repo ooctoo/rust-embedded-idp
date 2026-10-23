@@ -6,9 +6,14 @@ use embedded_idp_email::{
     RegistrationEmailDeliveryRequest, RegistrationEmailDeliveryService,
     RegistrationEmailSendOutcome,
 };
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{
+    atomic::{AtomicUsize, Ordering as AtomicOrdering},
+    mpsc, Arc, Mutex,
+};
 use std::time::{Duration, Instant as StdInstant};
 use tokio::sync::Notify;
+
+mod shutdown;
 
 #[derive(Clone)]
 struct FakeService {
@@ -16,7 +21,41 @@ struct FakeService {
     policy: RegistrationEmailPolicy,
     budget: PasswordWorkBudget,
     facts: Arc<Mutex<Result<RegistrationEmailRuntimeFacts, RegistrationEmailError>>>,
+    facts_block: Arc<Mutex<Option<BlockingGate>>>,
+    maintenance_block: Arc<Mutex<Option<BlockingGate>>>,
+    claim_block: Arc<Mutex<Option<BlockingGate>>>,
+    delivery_claim_block: Arc<Mutex<Option<BlockingGate>>>,
+    pause_block: Arc<Mutex<Option<BlockingGate>>>,
+    pause_calls: Arc<AtomicUsize>,
+    preparation_claim: Arc<Mutex<Option<RegistrationEmailPreparationClaim>>>,
+    preparation_claim_calls: Arc<AtomicUsize>,
+    prepare_calls: Arc<AtomicUsize>,
+    preparation_result: Arc<Mutex<Result<RegistrationEmailPreparation, RegistrationEmailError>>>,
+    delivery_claim_calls: Arc<AtomicUsize>,
     state: Arc<Mutex<FakeState>>,
+}
+
+struct BlockingGate {
+    entered: Arc<Notify>,
+    release: mpsc::Receiver<()>,
+}
+
+fn install_block(slot: &Arc<Mutex<Option<BlockingGate>>>) -> (mpsc::Sender<()>, Arc<Notify>) {
+    let (release_tx, release_rx) = mpsc::channel();
+    let entered = Arc::new(Notify::new());
+    *slot.lock().unwrap() = Some(BlockingGate {
+        entered: entered.clone(),
+        release: release_rx,
+    });
+    (release_tx, entered)
+}
+
+fn wait_for_block(slot: &Arc<Mutex<Option<BlockingGate>>>) {
+    let Some(gate) = slot.lock().unwrap().take() else {
+        return;
+    };
+    gate.entered.notify_one();
+    let _ = gate.release.recv();
 }
 
 struct FakeState {
@@ -51,6 +90,17 @@ impl FakeService {
             policy: RegistrationEmailPolicy::default(),
             budget: PasswordWorkBudget::default(),
             facts: Arc::new(Mutex::new(facts)),
+            facts_block: Arc::new(Mutex::new(None)),
+            maintenance_block: Arc::new(Mutex::new(None)),
+            claim_block: Arc::new(Mutex::new(None)),
+            delivery_claim_block: Arc::new(Mutex::new(None)),
+            pause_block: Arc::new(Mutex::new(None)),
+            pause_calls: Arc::new(AtomicUsize::new(0)),
+            preparation_claim: Arc::new(Mutex::new(None)),
+            preparation_claim_calls: Arc::new(AtomicUsize::new(0)),
+            prepare_calls: Arc::new(AtomicUsize::new(0)),
+            preparation_result: Arc::new(Mutex::new(Ok(RegistrationEmailPreparation::Prepared))),
+            delivery_claim_calls: Arc::new(AtomicUsize::new(0)),
             state: Arc::new(Mutex::new(FakeState {
                 next_delivery: None,
                 message_available: false,
@@ -91,6 +141,57 @@ impl FakeService {
     fn is_paused(&self) -> bool {
         self.state.lock().unwrap().paused
     }
+
+    fn block_facts(&self) -> (mpsc::Sender<()>, Arc<Notify>) {
+        install_block(&self.facts_block)
+    }
+
+    fn block_maintenance(&self) -> (mpsc::Sender<()>, Arc<Notify>) {
+        install_block(&self.maintenance_block)
+    }
+
+    fn block_claim(&self) -> (mpsc::Sender<()>, Arc<Notify>) {
+        install_block(&self.claim_block)
+    }
+
+    fn block_delivery_claim(&self) -> (mpsc::Sender<()>, Arc<Notify>) {
+        install_block(&self.delivery_claim_block)
+    }
+
+    fn block_pause(&self) -> (mpsc::Sender<()>, Arc<Notify>) {
+        install_block(&self.pause_block)
+    }
+
+    fn set_facts(&self, facts: Result<RegistrationEmailRuntimeFacts, RegistrationEmailError>) {
+        *self.facts.lock().unwrap() = facts;
+    }
+
+    fn set_preparation_claim(&self, claim: RegistrationEmailPreparationClaim) {
+        *self.preparation_claim.lock().unwrap() = Some(claim);
+    }
+
+    fn set_preparation_result(
+        &self,
+        result: Result<RegistrationEmailPreparation, RegistrationEmailError>,
+    ) {
+        *self.preparation_result.lock().unwrap() = result;
+    }
+
+    fn preparation_claim_calls(&self) -> usize {
+        self.preparation_claim_calls.load(AtomicOrdering::Acquire)
+    }
+
+    fn prepare_calls(&self) -> usize {
+        self.prepare_calls.load(AtomicOrdering::Acquire)
+    }
+
+    fn delivery_claim_calls(&self) -> usize {
+        self.delivery_claim_calls.load(AtomicOrdering::Acquire)
+    }
+
+    fn pause_calls(&self) -> usize {
+        self.pause_calls.load(AtomicOrdering::Acquire)
+    }
 }
 
 impl RegistrationEmailService for FakeService {
@@ -107,6 +208,7 @@ impl RegistrationEmailService for FakeService {
     }
 
     fn runtime_facts(&self) -> Result<RegistrationEmailRuntimeFacts, RegistrationEmailError> {
+        wait_for_block(&self.facts_block);
         self.facts.lock().unwrap().clone()
     }
 
@@ -146,14 +248,18 @@ impl RegistrationEmailService for FakeService {
     fn claim_preparation(
         &self,
     ) -> Result<Option<RegistrationEmailPreparationClaim>, RegistrationEmailError> {
-        Ok(None)
+        self.preparation_claim_calls
+            .fetch_add(1, AtomicOrdering::AcqRel);
+        wait_for_block(&self.claim_block);
+        Ok(self.preparation_claim.lock().unwrap().take())
     }
 
     fn prepare_claimed(
         &self,
         _: &RegistrationEmailPreparationClaim,
     ) -> Result<RegistrationEmailPreparation, RegistrationEmailError> {
-        Ok(RegistrationEmailPreparation::Prepared)
+        self.prepare_calls.fetch_add(1, AtomicOrdering::AcqRel);
+        self.preparation_result.lock().unwrap().clone()
     }
 
     fn next_delivery(&self) -> Result<Option<Uuid>, RegistrationEmailError> {
@@ -164,6 +270,9 @@ impl RegistrationEmailService for FakeService {
         &self,
         effect_id: Uuid,
     ) -> Result<Option<RegistrationEmailDeliveryClaim>, RegistrationEmailError> {
+        self.delivery_claim_calls
+            .fetch_add(1, AtomicOrdering::AcqRel);
+        wait_for_block(&self.delivery_claim_block);
         Ok(Some(RegistrationEmailDeliveryClaim {
             effect_id,
             context_id: Uuid::from_u128(2),
@@ -215,6 +324,8 @@ impl RegistrationEmailService for FakeService {
     }
 
     fn pause_registration(&self) -> Result<(), RegistrationEmailError> {
+        self.pause_calls.fetch_add(1, AtomicOrdering::AcqRel);
+        wait_for_block(&self.pause_block);
         let signal = {
             let mut state = self.state.lock().unwrap();
             state.paused = true;
@@ -229,6 +340,7 @@ impl RegistrationEmailService for FakeService {
     }
 
     fn maintain_runtime(&self) -> Result<(), RegistrationEmailError> {
+        wait_for_block(&self.maintenance_block);
         Ok(())
     }
 }
@@ -241,38 +353,6 @@ impl RegistrationEmailDeliveryService for ImmediateMailer {
         _: RegistrationEmailDeliveryRequest,
         _: StdInstant,
     ) -> RegistrationEmailSendOutcome {
-        RegistrationEmailSendOutcome::Sent
-    }
-}
-
-struct BlockingMailer {
-    started: Arc<Notify>,
-    release: Mutex<mpsc::Receiver<()>>,
-}
-
-impl BlockingMailer {
-    fn new() -> (Arc<Self>, mpsc::Sender<()>, Arc<Notify>) {
-        let (release_tx, release_rx) = mpsc::channel();
-        let started = Arc::new(Notify::new());
-        (
-            Arc::new(Self {
-                started: started.clone(),
-                release: Mutex::new(release_rx),
-            }),
-            release_tx,
-            started,
-        )
-    }
-}
-
-impl RegistrationEmailDeliveryService for BlockingMailer {
-    fn send_registration_email(
-        &self,
-        _: RegistrationEmailDeliveryRequest,
-        _: StdInstant,
-    ) -> RegistrationEmailSendOutcome {
-        self.started.notify_one();
-        let _ = self.release.lock().unwrap().recv();
         RegistrationEmailSendOutcome::Sent
     }
 }
@@ -308,10 +388,18 @@ async fn readiness_is_closed_until_the_worker_starts_and_after_shutdown() {
 
     let workers = runtime.start().await.unwrap();
     assert!(runtime.worker_running());
-    let shutdown = workers.shutdown(Duration::from_secs(1)).await;
+    let shutdown = tokio::time::timeout(
+        Duration::from_secs(1),
+        workers.shutdown(Duration::from_secs(1)),
+    )
+    .await
+    .expect("bounded shutdown");
     assert!(shutdown.drained);
     assert_eq!(shutdown.unresolved_processing, 0);
     assert_eq!(shutdown.unresolved_delivery, 0);
+    assert_eq!(shutdown.unresolved_storage, 0);
+    assert_eq!(shutdown.unresolved_requests, 0);
+    assert!(!shutdown.failed);
     assert!(!runtime.worker_running());
     assert!(runtime
         .try_request(RegistrationEmailOperationKind::Register, false)
@@ -391,50 +479,4 @@ async fn cancellation_keeps_the_physical_request_permit_until_blocking_work_ends
         tokio::time::sleep(Duration::from_millis(1)).await;
     }
     assert!(released.is_some());
-}
-
-#[tokio::test]
-async fn worker_shutdown_drains_when_no_physical_work_is_claimed() {
-    let service = Arc::new(FakeService::new());
-    let runtime = runtime(service);
-    let workers = runtime.start().await.unwrap();
-    let shutdown = workers.shutdown(Duration::from_secs(1)).await;
-    assert!(shutdown.drained);
-    assert_eq!(shutdown.unresolved_processing, 0);
-    assert_eq!(shutdown.unresolved_delivery, 0);
-}
-
-#[tokio::test]
-async fn blocking_mail_finishes_unknown_and_quarantines_the_worker() {
-    let service = Arc::new(FakeService::with_delivery());
-    let (mailer, release_tx, mail_started) = BlockingMailer::new();
-    let runtime =
-        RegistrationEmailRuntime::new(service.clone(), mailer, service.budget.clone()).unwrap();
-    let workers = runtime.start().await.unwrap();
-
-    tokio::time::timeout(Duration::from_secs(1), mail_started.notified())
-        .await
-        .expect("mail call started");
-    let unknown = service.unknown_signal();
-    tokio::time::timeout(Duration::from_secs(1), unknown.notified())
-        .await
-        .expect("unknown delivery recorded");
-    let paused = service.paused_signal();
-    tokio::time::timeout(Duration::from_secs(1), paused.notified())
-        .await
-        .expect("runtime paused");
-    assert_eq!(
-        service.results(),
-        vec![RegistrationEmailDeliveryResult::Unknown]
-    );
-    assert!(service.is_paused());
-    assert!(!runtime.worker_running());
-
-    release_tx.send(()).unwrap();
-    let stopped = service.stopped_signal();
-    tokio::time::timeout(Duration::from_secs(1), stopped.notified())
-        .await
-        .expect("blocking mail stopped");
-    let shutdown = workers.shutdown(Duration::from_secs(1)).await;
-    assert!(shutdown.drained);
 }

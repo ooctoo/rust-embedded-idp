@@ -4,8 +4,8 @@ use super::{
 };
 use crate::transaction::{decode_refresh_revocation_reason, encode_refresh_revocation_reason};
 use embedded_idp_core::{access::*, StoreError};
-use postgres::Row;
 use std::time::SystemTime;
+use tokio_postgres::Row;
 use uuid::Uuid;
 
 impl TenantRefreshTransaction for PostgresTenantAuthTransaction<'_> {

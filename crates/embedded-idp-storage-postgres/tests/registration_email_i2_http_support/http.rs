@@ -22,6 +22,25 @@ pub struct HttpResponse {
     pub body: String,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct WorkerDiagnosticSnapshot {
+    pub status: u16,
+    pub worker_running: bool,
+    pub store_ready: bool,
+    pub accepting: bool,
+    pub overdue_processing: i64,
+    pub unresolved_delivery: i64,
+    pub snapshot_available: bool,
+    pub intent_reserved: i64,
+    pub delivery_reserved: i64,
+    pub delivery_claimed: i64,
+    pub delivery_unknown: i64,
+    pub paused: bool,
+    pub event_register: i64,
+    pub event_resend: i64,
+    pub event_verify: i64,
+}
+
 pub struct ServerHandle {
     pub addr: SocketAddr,
     stop: Option<oneshot::Sender<()>>,
@@ -34,6 +53,97 @@ pub struct Harness {
     pub runtime: Arc<RegistrationEmailRuntime>,
     pub workers: Option<RegistrationEmailWorkers>,
     pub server: ServerHandle,
+}
+
+pub async fn worker_diagnostic_snapshot(
+    harness: &Harness,
+    status: u16,
+) -> WorkerDiagnosticSnapshot {
+    let runtime = harness.runtime.clone();
+    let worker_running = runtime.worker_running();
+    let service = runtime.service();
+    let adapter = harness.fixture.get().adapter.clone();
+    let schema = harness.fixture.get().schema.clone();
+    let authority = harness.fixture.get().scope.authority.clone();
+    let product = harness.fixture.get().scope.product.clone();
+    tokio::task::spawn_blocking(move || {
+        let facts = RegistrationEmailService::runtime_facts(&*service).ok();
+        let Some(facts) = facts else {
+            return WorkerDiagnosticSnapshot {
+                status,
+                worker_running,
+                ..WorkerDiagnosticSnapshot::unavailable(status, worker_running)
+            };
+        };
+        let Ok(mut client) = adapter.connect() else {
+            return WorkerDiagnosticSnapshot {
+                status,
+                worker_running,
+                ..WorkerDiagnosticSnapshot::unavailable(status, worker_running)
+            };
+        };
+        let Ok(row) = client.query_one(
+            &format!(
+                "select \
+                    (select count(*) from {schema}.registration_email_intents where status='reserved'), \
+                    (select count(*) from {schema}.registration_email_deliveries where status='reserved'), \
+                    (select count(*) from {schema}.registration_email_deliveries where status='claimed'), \
+                    (select count(*) from {schema}.registration_email_deliveries where status='unknown'), \
+                    (select paused from {schema}.registration_email_runtime_state where authority=$1), \
+                    (select count(*) filter (where kind='register') from {schema}.registration_email_events where authority=$1 and product=$2), \
+                    (select count(*) filter (where kind='resend') from {schema}.registration_email_events where authority=$1 and product=$2), \
+                    (select count(*) filter (where kind='verify') from {schema}.registration_email_events where authority=$1 and product=$2)"
+            ),
+            &[&authority, &product],
+        ) else {
+            return WorkerDiagnosticSnapshot {
+                status,
+                worker_running,
+                ..WorkerDiagnosticSnapshot::unavailable(status, worker_running)
+            };
+        };
+        WorkerDiagnosticSnapshot {
+            status,
+            worker_running,
+            store_ready: facts.store_ready,
+            accepting: facts.accepting,
+            overdue_processing: facts.overdue_processing as i64,
+            unresolved_delivery: facts.unresolved_delivery as i64,
+            snapshot_available: true,
+            intent_reserved: row.get(0),
+            delivery_reserved: row.get(1),
+            delivery_claimed: row.get(2),
+            delivery_unknown: row.get(3),
+            paused: row.get(4),
+            event_register: row.get(5),
+            event_resend: row.get(6),
+            event_verify: row.get(7),
+        }
+    })
+    .await
+    .unwrap_or_else(|_| WorkerDiagnosticSnapshot::unavailable(status, worker_running))
+}
+
+impl WorkerDiagnosticSnapshot {
+    fn unavailable(status: u16, worker_running: bool) -> Self {
+        Self {
+            status,
+            worker_running,
+            store_ready: false,
+            accepting: false,
+            overdue_processing: 0,
+            unresolved_delivery: 0,
+            snapshot_available: false,
+            intent_reserved: 0,
+            delivery_reserved: 0,
+            delivery_claimed: 0,
+            delivery_unknown: 0,
+            paused: false,
+            event_register: 0,
+            event_resend: 0,
+            event_verify: 0,
+        }
+    }
 }
 
 pub async fn start_harness(fixture: Fixture, start_workers: bool, resume: bool) -> Harness {
@@ -130,6 +240,9 @@ impl Harness {
                 drained: true,
                 unresolved_processing: 0,
                 unresolved_delivery: 0,
+                unresolved_storage: 0,
+                unresolved_requests: 0,
+                failed: false,
             },
         };
         drop(self.runtime);

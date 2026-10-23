@@ -8,8 +8,9 @@ use embedded_idp_axum::*;
 use embedded_idp_core::{access::*, *};
 use embedded_idp_email::{DefaultVerificationEmailService, VerificationEmailConfig};
 use embedded_idp_security::*;
-use embedded_idp_storage_postgres::{PostgresAccessStore, PostgresStorageAdapter};
-use postgres::Client;
+use embedded_idp_storage_postgres::{
+    PgPooledConnection, PostgresAccessStore, PostgresStorageAdapter,
+};
 use serde_json::json;
 use std::io::Read;
 use std::sync::Arc;
@@ -682,7 +683,7 @@ fn seed_confidential_client(
 
 #[allow(clippy::too_many_arguments)]
 fn insert_client_if_missing(
-    connection: &mut Client,
+    connection: &mut PgPooledConnection,
     schema_name: &str,
     client_id: &str,
     client_name: &str,

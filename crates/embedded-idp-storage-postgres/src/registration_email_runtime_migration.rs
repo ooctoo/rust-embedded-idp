@@ -3,10 +3,9 @@ use crate::{
     registration_email_migration::{
         configure_bounded_transaction, validate_scope, REGISTRATION_EMAIL_BACKEND_ERROR,
     },
-    PostgresStorageAdapter,
+    PgError, PgExecutor, PostgresStorageAdapter,
 };
 use embedded_idp_core::{access::RegistrationEmailScope, StoreError};
-use postgres::GenericClient;
 
 pub const REGISTRATION_EMAIL_RUNTIME_VERSION: &str = "registration_email_runtime_v1";
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -14,11 +13,11 @@ pub struct RegistrationEmailRuntimeMigrationPlan {
     pub fingerprint: String,
     pub schema_name: String,
 }
-fn db(_: postgres::Error) -> StoreError {
+fn db(_: PgError) -> StoreError {
     StoreError::Backend(REGISTRATION_EMAIL_BACKEND_ERROR.into())
 }
 fn snapshot(
-    c: &mut impl GenericClient,
+    c: &mut impl PgExecutor,
     schema: &str,
     scope: &RegistrationEmailScope,
 ) -> Result<RegistrationEmailRuntimeMigrationPlan, StoreError> {
@@ -81,7 +80,7 @@ impl PostgresStorageAdapter {
                 "registration_email.runtime_plan_drift",
             ));
         }
-        let mut c = self.connect()?;
+        let mut c = self.connect_for_setup()?;
         let mut tx = c.transaction().map_err(db)?;
         configure_bounded_transaction(&mut tx, REGISTRATION_EMAIL_BACKEND_ERROR)?;
         let s = self.schema_name();

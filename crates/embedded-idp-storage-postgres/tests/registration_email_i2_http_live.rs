@@ -8,7 +8,8 @@ mod registration_email_i2_http_support;
 mod registration_email_support;
 
 use registration_email_i2_http_support::{
-    post_json, post_without_profile, seed_registration_states, start_harness, HttpResponse,
+    post_json, post_without_profile, seed_registration_states, start_harness,
+    worker_diagnostic_snapshot, HttpResponse,
 };
 use registration_email_support::{Fixture, EXISTING_EMAIL};
 use serde_json::Value;
@@ -203,6 +204,27 @@ async fn loopback_register_delivery_verify_replay_and_independent_login() {
             true,
         )
         .await;
+        if response.status != 202 {
+            let snapshot = worker_diagnostic_snapshot(&harness, response.status).await;
+            println!(
+                "SUT_IDP_I2_DIAGNOSTIC {{\"status\":{},\"worker_running\":{},\"store_ready\":{},\"accepting\":{},\"overdue_processing\":{},\"unresolved_delivery\":{},\"snapshot_available\":{},\"intent_reserved\":{},\"delivery_reserved\":{},\"delivery_claimed\":{},\"delivery_unknown\":{},\"paused\":{},\"event_register\":{},\"event_resend\":{},\"event_verify\":{}}}",
+                snapshot.status,
+                snapshot.worker_running,
+                snapshot.store_ready,
+                snapshot.accepting,
+                snapshot.overdue_processing,
+                snapshot.unresolved_delivery,
+                snapshot.snapshot_available,
+                snapshot.intent_reserved,
+                snapshot.delivery_reserved,
+                snapshot.delivery_claimed,
+                snapshot.delivery_unknown,
+                snapshot.paused,
+                snapshot.event_register,
+                snapshot.event_resend,
+                snapshot.event_verify,
+            );
+        }
         assert_eq!(response.status, 202, "registration response for {email}");
         assert_no_store(&response);
         assert_eq!(json(&response)["status"], "verification_requested");

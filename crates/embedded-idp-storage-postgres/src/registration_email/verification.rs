@@ -1,5 +1,5 @@
 use super::{support::*, *};
-use postgres::Row;
+use tokio_postgres::Row;
 impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
     pub fn verify(
         &self,

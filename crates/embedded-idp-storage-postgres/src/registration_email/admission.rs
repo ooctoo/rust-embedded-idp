@@ -1,5 +1,5 @@
 use super::{support::*, *};
-use postgres::Row;
+use tokio_postgres::Row;
 impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
     pub fn register(
         &self,
@@ -171,7 +171,7 @@ impl<C: RegistrationEmailCrypto> PostgresRegistrationEmailStore<C> {
                     .map_err(db)?;
                 Ok(row)
             }
-            Err(e) if e.code() == Some(&postgres::error::SqlState::LOCK_NOT_AVAILABLE) => {
+            Err(e) if e.code() == Some(&tokio_postgres::error::SqlState::LOCK_NOT_AVAILABLE) => {
                 tx.batch_execute("rollback to savepoint registration_context_try; release savepoint registration_context_try").map_err(db)?;
                 Ok(None)
             }

@@ -1,5 +1,4 @@
 use embedded_idp_core::{access::TenancyMode, StoreError};
-use postgres::Transaction;
 
 use super::{
     configure_bounded_transaction, mode_name, validate_namespace, validate_scope,
@@ -7,7 +6,7 @@ use super::{
     REGISTRATION_EMAIL_SCHEMA_VERSION,
 };
 use crate::registration_email_migration::inventory;
-use crate::PostgresStorageAdapter;
+use crate::{PgError, PgTransaction, PostgresStorageAdapter};
 
 const FOUNDATION_SQL: &str = include_str!("../sql/registration_email_v1.sql");
 const BACKEND_ERROR: &str = REGISTRATION_EMAIL_BACKEND_ERROR;
@@ -22,7 +21,7 @@ pub(crate) fn foundation(
     if plan.mode != mode || plan.schema_name != adapter.schema_name() {
         return Err(StoreError::Conflict("registration_email.plan_scope"));
     }
-    let mut client = adapter.connect()?;
+    let mut client = adapter.connect_for_setup()?;
     let tx = client.transaction().map_err(|error| {
         let _ = error;
         StoreError::Backend(BACKEND_ERROR.to_string())
@@ -98,7 +97,7 @@ pub(crate) fn bind_product(
     scope: &RegistrationEmailScope,
 ) -> Result<(), StoreError> {
     validate_scope(scope)?;
-    let mut client = adapter.connect()?;
+    let mut client = adapter.connect_for_setup()?;
     let tx = client.transaction().map_err(|error| {
         let _ = error;
         StoreError::Backend(BACKEND_ERROR.to_string())
@@ -192,12 +191,12 @@ pub(crate) fn bind_product(
     })
 }
 
-fn rollback<T>(tx: Transaction<'_>, error: StoreError) -> Result<T, StoreError> {
+fn rollback<T>(tx: PgTransaction<'_>, error: StoreError) -> Result<T, StoreError> {
     tx.rollback()
         .map_err(|_| StoreError::Backend(BACKEND_ERROR.to_string()))?;
     Err(error)
 }
 
-fn db_error(_error: postgres::Error) -> StoreError {
+fn db_error(_error: PgError) -> StoreError {
     StoreError::Backend(BACKEND_ERROR.to_string())
 }

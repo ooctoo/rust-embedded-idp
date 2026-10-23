@@ -217,7 +217,7 @@ impl TenantDeviceLifecycleTransaction for PostgresTenantAuthTransaction<'_> {
         Ok(())
     }
 }
-fn decode_registration(r: &postgres::Row) -> Result<TenantDeviceRegistration, StoreError> {
+fn decode_registration(r: &tokio_postgres::Row) -> Result<TenantDeviceRegistration, StoreError> {
     Ok(TenantDeviceRegistration {
         tenant_id: r.get("tenant_id"),
         client_id: r.get("client_id"),

@@ -5,7 +5,7 @@ use super::{
     REGISTRATION_EMAIL_BACKEND_ERROR,
 };
 use crate::{
-    registration_email::transport::{Error, Transaction},
+    transport::{Error, Transaction},
     PostgresStorageAdapter,
 };
 
@@ -19,9 +19,9 @@ pub(crate) fn foundation(
 ) -> Result<RegistrationEmailFoundationFacts, StoreError> {
     validate_scope(scope)?;
     let mut client = adapter
-        .registration_transport()
+        .transport()
         .map_err(|_| StoreError::Backend(BACKEND_ERROR.into()))?
-        .connect(std::time::Duration::from_secs(10))
+        .connect_registration(std::time::Duration::from_secs(10))
         .map_err(db_error)?;
     let mut tx = client.transaction().map_err(|error| {
         let _ = error;

@@ -7,12 +7,14 @@ use embedded_idp_core::{
     },
     EmailVerificationCode, StoreError,
 };
-use postgres::{IsolationLevel, Transaction};
+use tokio_postgres::IsolationLevel;
 use uuid::Uuid;
+
+use crate::PgTransaction;
 
 /// Created only by `verification_transaction`; it owns one pooled transaction.
 pub struct PostgresTenantEmailVerificationTransaction<'a> {
-    tx: Transaction<'a>,
+    tx: PgTransaction<'a>,
     schema: &'a str,
     tenant_id: &'a str,
     tenant: Option<Tenant>,

@@ -55,7 +55,7 @@ fn migration_do() -> String {
     let end = sql[start..].find("end $$;").unwrap() + start + "end $$;".len();
     sql[start..end].to_owned()
 }
-fn apply(client: &mut postgres::Client, schema: &str, body: &str) -> Result<(), postgres::Error> {
+fn apply(client: &mut PgPooledConnection, schema: &str, body: &str) -> Result<(), PgError> {
     let mut transaction = client.transaction()?;
     transaction.execute(
         "select set_config('embedded_idp.scan_origin_closure_schema',$1,true)",

@@ -8,12 +8,14 @@ use embedded_idp_core::{
     },
     SecretString, SessionStatus, StoreError,
 };
-use postgres::{IsolationLevel, Row, Transaction};
+use tokio_postgres::{IsolationLevel, Row};
 use uuid::Uuid;
+
+use crate::PgTransaction;
 
 /// Created only by `auth_transaction`; it owns one pooled transaction.
 pub struct PostgresTenantAuthTransaction<'a> {
-    pub(super) tx: Transaction<'a>,
+    pub(super) tx: PgTransaction<'a>,
     pub(super) schema: &'a str,
 }
 
