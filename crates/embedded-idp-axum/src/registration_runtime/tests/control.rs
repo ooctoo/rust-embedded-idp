@@ -158,3 +158,35 @@ async fn queued_operator_resume_is_bounded_and_cannot_dispatch_after_stop() {
     assert!(report.drained);
     assert!(report.failed);
 }
+
+#[tokio::test]
+async fn queued_pause_does_not_add_a_write_after_stop() {
+    let service = Arc::new(FakeService::new());
+    let runtime = runtime(service.clone());
+    let workers = runtime.start().await.unwrap();
+    runtime.pause().await;
+    let (release, entered) = install_block(&service.resume_block);
+    let pending = {
+        let runtime = runtime.clone();
+        tokio::spawn(async move { runtime.resume_after_operator_check().await })
+    };
+    tokio::time::timeout(Duration::from_secs(1), entered.notified())
+        .await
+        .unwrap();
+    let pause = runtime.pause();
+    tokio::pin!(pause);
+    std::future::poll_fn(|cx| {
+        assert!(std::future::Future::poll(pause.as_mut(), cx).is_pending());
+        std::task::Poll::Ready(())
+    })
+    .await;
+    workers.begin_shutdown(Duration::from_secs(1));
+    release.send(()).unwrap();
+    let (resumed, ()) = tokio::join!(pending, &mut pause);
+    assert!(resumed.unwrap().is_err());
+    assert_eq!(service.pause_calls(), 1);
+    assert_eq!(service.resume_calls.load(AtomicOrdering::Acquire), 1);
+    let report = workers.shutdown(Duration::from_secs(1)).await;
+    assert!(report.drained);
+    assert!(report.failed);
+}

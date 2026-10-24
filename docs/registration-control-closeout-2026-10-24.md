@@ -27,7 +27,11 @@ Four regression tests were first run against unchanged d588d48 production:
 one success passed and three race/accounting assertions failed. After the fix,
 all four pass. A fifth test fills all four control slots, rejects a fifth,
 stops admission and proves only the already dispatched effect executes.
-The complete Axum library now passes 145 tests.
+The initial complete Axum library passes 145 tests. A final dispatch-fence
+follow-up passes 146: stop/revision checking, physical counter registration
+and spawn now happen inside one admission critical section. A queued pause
+after stop performs no database write. The admission lock is released before
+awaiting the JoinHandle; budgets and SQL remain unchanged.
 
 Two opt-in wire tests exercise real inspect_schema_health (5s) and
 initialize_access_schema BEGIN (60s). They observe driver EOF and call-thread

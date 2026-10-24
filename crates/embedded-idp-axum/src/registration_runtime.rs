@@ -200,18 +200,24 @@ impl RegistrationEmailRuntime {
         &self,
         f: impl FnOnce() -> Result<T, RegistrationEmailError> + Send + 'static,
     ) -> Result<T, RegistrationEmailError> {
+        self.spawn_storage(f)?
+            .await
+            .map_err(|_| RegistrationEmailError::Unavailable)?
+    }
+    pub(super) fn spawn_storage<T: Send + 'static>(
+        &self,
+        f: impl FnOnce() -> Result<T, RegistrationEmailError> + Send + 'static,
+    ) -> Result<JoinHandle<Result<T, RegistrationEmailError>>, RegistrationEmailError> {
         if self.shutdown_expired() {
             return Err(RegistrationEmailError::Unavailable);
         }
         let tracker = self.storage_calls.clone();
         tracker.fetch_add(1, Ordering::AcqRel);
         let guard = StorageCallGuard(tracker);
-        tokio::task::spawn_blocking(move || {
+        Ok(tokio::task::spawn_blocking(move || {
             let _guard = guard;
             f()
-        })
-        .await
-        .map_err(|_| RegistrationEmailError::Unavailable)?
+        }))
     }
     pub async fn start(
         self: &Arc<Self>,

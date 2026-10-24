@@ -23,18 +23,20 @@ impl RegistrationEmailRuntime {
         // calls. Serialize pause/resume effects until their actual closure ends;
         // cancellation must not release this lock or its admission early.
         let control = self.control.clone().lock_owned().await;
-        {
+        let task = {
             let _admission = self.admission.lock().unwrap_or_else(|e| e.into_inner());
             if !self.can_finish_resume(revision) {
                 return Err(RegistrationEmailError::Unavailable);
             }
-        }
-        let service = self.service.clone();
-        self.storage_call(move || {
-            let _physical = (physical, control);
-            service.resume_registration()
-        })
-        .await?;
+            let service = self.service.clone();
+            self.spawn_storage(move || {
+                let _physical = (physical, control);
+                service.resume_registration()
+            })
+        };
+        task?
+            .await
+            .map_err(|_| RegistrationEmailError::Unavailable)??;
         let _admission = self.admission.lock().unwrap_or_else(|e| e.into_inner());
         if !self.can_finish_resume(revision) {
             // A pre-stop effect may already have committed. Do not undo it or
@@ -57,15 +59,19 @@ impl RegistrationEmailRuntime {
             return;
         }
         let control = self.control.clone().lock_owned().await;
-        if self.stopping.load(Ordering::Acquire) {
-            return;
-        }
-        let service = self.service.clone();
-        let _ = self
-            .storage_call(move || {
+        let task = {
+            let _admission = self.admission.lock().unwrap_or_else(|e| e.into_inner());
+            if self.stopping.load(Ordering::Acquire) {
+                return;
+            }
+            let service = self.service.clone();
+            self.spawn_storage(move || {
                 let _control = control;
                 service.pause_registration()
             })
-            .await;
+        };
+        if let Ok(task) = task {
+            let _ = task.await;
+        }
     }
 }
