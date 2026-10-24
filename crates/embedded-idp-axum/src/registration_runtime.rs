@@ -1,3 +1,4 @@
+mod control;
 mod delivery;
 #[cfg(test)]
 mod tests;
@@ -27,6 +28,8 @@ pub struct RegistrationEmailRuntime {
     started: AtomicBool,
     running: AtomicBool,
     failed: AtomicBool,
+    failure_revision: AtomicUsize,
+    control: Arc<tokio::sync::Mutex<()>>,
     stopping: AtomicBool,
     stop: Notify,
     admission: Mutex<()>,
@@ -78,6 +81,8 @@ impl RegistrationEmailRuntime {
             started: AtomicBool::new(false),
             running: AtomicBool::new(false),
             failed: AtomicBool::new(false),
+            failure_revision: AtomicUsize::new(0),
+            control: Arc::new(tokio::sync::Mutex::new(())),
             stopping: AtomicBool::new(false),
             stop: Notify::new(),
             admission: Mutex::new(()),
@@ -243,24 +248,6 @@ impl RegistrationEmailRuntime {
             .map_err(|_| RegistrationEmailError::Unavailable)?;
         Ok(workers)
     }
-    /// Trusted operator only. This never appears in the anonymous router.
-    pub async fn resume_after_operator_check(&self) -> Result<(), RegistrationEmailError> {
-        if !self.running.load(Ordering::Acquire) || self.stopping.load(Ordering::Acquire) {
-            return Err(RegistrationEmailError::Unavailable);
-        }
-        let s = self.service.clone();
-        self.storage_call(move || s.resume_registration()).await?;
-        self.failed.store(false, Ordering::Release);
-        Ok(())
-    }
-    async fn pause(&self) {
-        self.failed.store(true, Ordering::Release);
-        if self.stopping.load(Ordering::Acquire) {
-            return;
-        }
-        let s = self.service.clone();
-        let _ = self.storage_call(move || s.pause_registration()).await;
-    }
 }
 fn permit(s: &Arc<Semaphore>) -> Result<RegistrationEmailRequestPermit, RegistrationEmailError> {
     s.clone()
@@ -293,7 +280,7 @@ impl Drop for WorkerStateGuard {
     fn drop(&mut self) {
         self.0.running.store(false, Ordering::Release);
         if !self.0.stopping.load(Ordering::Acquire) {
-            self.0.failed.store(true, Ordering::Release);
+            self.0.mark_failed();
         }
     }
 }

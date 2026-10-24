@@ -13,6 +13,7 @@ use std::sync::{
 use std::time::{Duration, Instant as StdInstant};
 use tokio::sync::Notify;
 
+mod control;
 mod fault;
 mod shutdown;
 
@@ -27,7 +28,9 @@ struct FakeService {
     claim_block: Arc<Mutex<Option<BlockingGate>>>,
     delivery_claim_block: Arc<Mutex<Option<BlockingGate>>>,
     pause_block: Arc<Mutex<Option<BlockingGate>>>,
+    resume_block: Arc<Mutex<Option<BlockingGate>>>,
     pause_calls: Arc<AtomicUsize>,
+    resume_calls: Arc<AtomicUsize>,
     preparation_claim: Arc<Mutex<Option<RegistrationEmailPreparationClaim>>>,
     preparation_claim_calls: Arc<AtomicUsize>,
     prepare_calls: Arc<AtomicUsize>,
@@ -96,7 +99,9 @@ impl FakeService {
             claim_block: Arc::new(Mutex::new(None)),
             delivery_claim_block: Arc::new(Mutex::new(None)),
             pause_block: Arc::new(Mutex::new(None)),
+            resume_block: Arc::new(Mutex::new(None)),
             pause_calls: Arc::new(AtomicUsize::new(0)),
+            resume_calls: Arc::new(AtomicUsize::new(0)),
             preparation_claim: Arc::new(Mutex::new(None)),
             preparation_claim_calls: Arc::new(AtomicUsize::new(0)),
             prepare_calls: Arc::new(AtomicUsize::new(0)),
@@ -337,6 +342,9 @@ impl RegistrationEmailService for FakeService {
     }
 
     fn resume_registration(&self) -> Result<(), RegistrationEmailError> {
+        self.resume_calls.fetch_add(1, AtomicOrdering::AcqRel);
+        wait_for_block(&self.resume_block);
+        self.state.lock().unwrap().paused = false;
         Ok(())
     }
 

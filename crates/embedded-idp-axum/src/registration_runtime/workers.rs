@@ -151,17 +151,17 @@ impl RegistrationEmailWorkers {
             match task_result {
                 Ok(Ok(())) => task_joined = true,
                 Ok(Err(_)) => {
-                    runtime.failed.store(true, Ordering::Release);
+                    runtime.mark_failed();
                 }
                 Err(_) => {
-                    runtime.failed.store(true, Ordering::Release);
+                    runtime.mark_failed();
                     task.abort();
                     let _ = task.await;
                 }
             }
         }
         if !task_joined {
-            runtime.failed.store(true, Ordering::Release);
+            runtime.mark_failed();
         }
         if task_joined {
             if let Some(deadline) = runtime.shutdown_deadline() {
@@ -194,7 +194,7 @@ impl Drop for RegistrationEmailWorkers {
     fn drop(&mut self) {
         if let Some(task) = self.task.take() {
             self.runtime.begin_shutdown(Duration::ZERO);
-            self.runtime.failed.store(true, Ordering::Release);
+            self.runtime.mark_failed();
             self.runtime.running.store(false, Ordering::Release);
             task.abort();
         }
