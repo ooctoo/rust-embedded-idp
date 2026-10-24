@@ -1,5 +1,7 @@
 # N0 支持范围与交付基线设计
 
+2026-10-24更新：[R02运行拓扑](validation-runtime-topology.md)已明确当前工具/浏览器及Rust开发服务在Mac、未来自动化进入GitHub Actions、生产Rust目标为Linux Docker，生产浏览器范围待定。以下修订2及R01保持历史记录；不把其Windows准备条件当作当前Mac批次前提，也不将历史浏览器目标直接当成已冻结生产支持清单。Mac已完成结果见[执行报告](n2-mac-execution-result.md)。
+
 | 项目 | 内容 |
 | --- | --- |
 | 标识 / 版本 | IDP-CONSOLE-N0，修订2，2026-10-23；按实际合同完成完整复审及提交前核对 |

@@ -1,5 +1,7 @@
 # N2 目标环境、无障碍与宿主嵌入补验设计
 
+2026-10-24更新：当前执行位置与范围以[R02运行拓扑](validation-runtime-topology.md)及[Mac执行报告](n2-mac-execution-result.md)为准：当前自动化、Rust开发服务和被测浏览器在Mac；未来N2自动化进入GitHub Actions，具体runner待定；生产Rust目标为Linux Docker，生产浏览器范围待定。以下修订2保留设计归档时语境；Windows执行器/Windows Rust服务不是当前必备条件，CI与Linux容器验证另列，不从Mac结果继承。
+
 | 项目 | 内容 |
 | --- | --- |
 | 标识 / 版本 | IDP-CONSOLE-N2，修订2，2026-10-23；实际合同复审及提交前核对完成 |

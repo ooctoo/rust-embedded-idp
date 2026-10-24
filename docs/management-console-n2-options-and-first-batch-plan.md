@@ -1,5 +1,7 @@
 # N2 推荐选项与首批补验执行计划
 
+2026-10-24更新：需求方已通过[R02运行拓扑](validation-runtime-topology.md)明确当前Mac执行、未来GitHub Actions自动化及生产Linux Docker方向，生产浏览器范围尚未确定。以下修订2推荐和环境缺口是历史记录；当前不要求先补Windows自动化、Windows Rust服务或跨机入口，生产浏览器是否必验Windows/Edge后续按支持范围明确。Mac已完成结果见[执行报告](n2-mac-execution-result.md)，原生IME及视觉、旁白移出等执行决定以该报告为准。
+
 | 项目 | 内容 |
 | --- | --- |
 | 版本 / 日期 | 修订2，2026-10-23；完整复审后完善，供需求方确认，尚非已批准执行矩阵 |
