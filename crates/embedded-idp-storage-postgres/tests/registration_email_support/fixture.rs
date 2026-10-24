@@ -4,7 +4,6 @@ use embedded_idp_core::{
 };
 use embedded_idp_security::RingRegistrationEmailCrypto;
 use embedded_idp_storage_postgres::*;
-use postgres::{Client, NoTls};
 use std::{
     env,
     sync::Arc,
@@ -255,8 +254,36 @@ impl Fixture {
 impl Drop for Fixture {
     fn drop(&mut self) {
         assert!(self.schema.starts_with("reg_email_foundation_i1_"));
-        if let Ok(mut client) = Client::connect(&self.uri, NoTls) {
-            let _ = client.batch_execute(&format!("drop schema {} cascade", self.schema));
+        let started = std::time::Instant::now();
+        let result = self
+            .adapter
+            .connect()
+            .map_err(|_| "connect_error".to_owned())
+            .and_then(|mut client| {
+                client
+                    .batch_execute(&format!("drop schema {} cascade", self.schema))
+                    .map_err(|e| {
+                        e.code()
+                            .map(|c| c.code())
+                            .unwrap_or("unavailable")
+                            .to_owned()
+                    })
+            });
+        eprintln!(
+            "SUT_IDP_FIXTURE_CLEANUP {}",
+            serde_json::json!({
+                "fixture":self.schema.trim_start_matches("reg_email_foundation_i1_"),
+                "test":std::thread::current().name().unwrap_or("unnamed"),
+                "elapsed_ms":started.elapsed().as_millis(),
+                "sqlstate":result.as_ref().err().map(String::as_str).unwrap_or("00000")
+            })
+        );
+        if !std::thread::panicking() {
+            assert!(
+                result.is_ok(),
+                "owning fixture cleanup failed; sqlstate={}",
+                result.unwrap_err()
+            );
         }
     }
 }

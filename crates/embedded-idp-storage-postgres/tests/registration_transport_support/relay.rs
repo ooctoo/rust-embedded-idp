@@ -22,6 +22,8 @@ pub enum Cut {
     Configure,
     Query,
     Commit,
+    CommitBeforeForward,
+    BeginGate,
 }
 
 struct State {
@@ -29,6 +31,8 @@ struct State {
     armed: AtomicBool,
     skip_selected: AtomicUsize,
     hits: AtomicUsize,
+    selected_commit_forwarded: AtomicUsize,
+    gate_released: AtomicBool,
     peer_eof: AtomicUsize,
     hit_peer_eof: AtomicUsize,
     sockets: Mutex<Vec<TcpStream>>,
@@ -53,6 +57,8 @@ impl Relay {
             armed: AtomicBool::new(false),
             skip_selected: AtomicUsize::new(0),
             hits: AtomicUsize::new(0),
+            selected_commit_forwarded: AtomicUsize::new(0),
+            gate_released: AtomicBool::new(false),
             peer_eof: AtomicUsize::new(0),
             hit_peer_eof: AtomicUsize::new(0),
             sockets: Mutex::new(Vec::new()),
@@ -111,7 +117,16 @@ impl Relay {
         self.shared
             .skip_selected
             .store(skip_selected, Ordering::Release);
+        self.shared.gate_released.store(false, Ordering::Release);
         self.shared.armed.store(true, Ordering::Release);
+    }
+
+    pub fn release_gate(&self) {
+        self.shared.gate_released.store(true, Ordering::Release);
+    }
+
+    pub fn gate_released(&self) -> bool {
+        self.shared.gate_released.load(Ordering::Acquire)
     }
 
     pub fn disarm(&self) {
@@ -124,6 +139,12 @@ impl Relay {
 
     pub fn hits(&self) -> usize {
         self.shared.hits.load(Ordering::Acquire)
+    }
+
+    pub fn selected_commit_forwarded(&self) -> usize {
+        self.shared
+            .selected_commit_forwarded
+            .load(Ordering::Acquire)
     }
 
     pub fn peer_eof(&self) -> usize {
@@ -245,6 +266,7 @@ fn relay_connection(mut client: TcpStream, mut server: TcpStream, cut: Cut, stat
             let mut payload = vec![0; length - 4];
             read_exact(&mut client, &mut payload, &state)?;
             let selected = match cut {
+                Cut::BeginGate if state.gate_released.load(Ordering::Acquire) => false,
                 Cut::Startup => false,
                 Cut::Query => header[0] == b'P',
                 _ => {
@@ -253,17 +275,34 @@ fn relay_connection(mut client: TcpStream, mut server: TcpStream, cut: Cut, stat
                             Cut::Begin => {
                                 payload == b"BEGIN\0" || payload.starts_with(b"START TRANSACTION")
                             }
-                            Cut::Commit => payload == b"COMMIT\0",
+                            Cut::Commit | Cut::CommitBeforeForward => payload == b"COMMIT\0",
+                            Cut::BeginGate => {
+                                payload == b"BEGIN\0" || payload.starts_with(b"START TRANSACTION")
+                            }
                             Cut::Configure => payload.starts_with(b"SET LOCAL"),
                             _ => false,
                         }
                 }
             };
-            if selected && state.armed.load(Ordering::Acquire) {
-                consume_skip_or_mute(&muted, &state);
+            let blackholed = selected
+                && state.armed.load(Ordering::Acquire)
+                && consume_skip_or_mute(&muted, &state);
+            if blackholed && matches!(cut, Cut::CommitBeforeForward) {
+                // Keep the server side untouched: the driver's own timeout
+                // must expire while this relay waits for the actual client
+                // EOF. Do not synthesize an EOF by closing the socket here.
+                return discard_client_until_eof(&mut client, &state);
+            }
+            if blackholed && matches!(cut, Cut::BeginGate) {
+                wait_for_gate(&client, &state, &muted)?;
             }
             server.write_all(&header)?;
             server.write_all(&payload)?;
+            if blackholed && matches!(cut, Cut::Commit) {
+                state
+                    .selected_commit_forwarded
+                    .fetch_add(1, Ordering::AcqRel);
+            }
         }
     })();
 
@@ -363,6 +402,27 @@ fn discard_client_until_eof(client: &mut TcpStream, state: &State) -> io::Result
         }
     }
     Err(io::ErrorKind::Interrupted.into())
+}
+
+fn wait_for_gate(client: &TcpStream, state: &State, muted: &AtomicBool) -> io::Result<()> {
+    let mut probe = [0u8; 1];
+    while !state.stop.load(Ordering::Acquire) && !state.gate_released.load(Ordering::Acquire) {
+        match client.peek(&mut probe) {
+            Ok(0) => return Err(io::ErrorKind::UnexpectedEof.into()),
+            Ok(_) => thread::sleep(Duration::from_millis(5)),
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                ) => {}
+            Err(error) => return Err(error),
+        }
+    }
+    if state.stop.load(Ordering::Acquire) {
+        return Err(io::ErrorKind::Interrupted.into());
+    }
+    muted.store(false, Ordering::Release);
+    Ok(())
 }
 
 /// Returns true when this frame becomes the blackholed frame.
