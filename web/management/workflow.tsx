@@ -73,6 +73,6 @@ export function SafeConfirm({ children, rootClassName = "", afterOpenChange, ...
       if (open) document.querySelector<HTMLButtonElement>(`.workflow-confirm-${id} .ant-modal-footer .ant-btn-default`)?.focus();
       afterOpenChange?.(open);
     }}>
-    <div role="region" aria-label="操作范围与后果" tabIndex={0} style={{ maxHeight: "calc(100dvh - 260px)", overflowY: "auto" }}>{children}</div>
+    <div role="region" aria-label="操作范围与后果" tabIndex={0} style={{ maxHeight: "max(120px, calc(100dvh - 260px))", overflowY: "auto" }}>{children}</div>
   </Modal>;
 }

@@ -1,0 +1,40 @@
+{
+  "date": "2026-10-24",
+  "records": [
+    {
+      "step": "100-percent-baseline",
+      "cssZoom": "1",
+      "documentWidth": 1280,
+      "dpr": 1,
+      "height": 600,
+      "width": 1280
+    },
+    {
+      "step": "native-menu-200-percent",
+      "cssZoom": "1",
+      "documentWidth": 640,
+      "dpr": 2,
+      "height": 300,
+      "width": 640
+    },
+    {
+      "step": "native-menu-400-percent",
+      "cssZoom": "1",
+      "documentWidth": 320,
+      "dpr": 4,
+      "height": 150,
+      "width": 320
+    },
+    {
+      "step": "client-confirm-400-before-fix",
+      "body": {
+        "height": 0,
+        "scrollHeight": 912,
+        "scrollWidth": 256,
+        "width": 256
+      },
+      "result": "failed-content-height-zero"
+    }
+  ],
+  "voiceOver": "removed from scope by user; system switch observed off"
+}

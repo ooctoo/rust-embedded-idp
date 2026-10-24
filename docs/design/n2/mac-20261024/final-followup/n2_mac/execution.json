@@ -1,0 +1,32 @@
+{
+  "suite": "n2_mac",
+  "startedUtc": "2026-10-24T05:20:29.411334+00:00",
+  "command": "node scripts/check_management_n2_mac.mjs",
+  "headed": true,
+  "browserExecutable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  "freshFixture": true,
+  "postgresVersion": "18.6 (Debian 18.6-1.pgdg13+2)",
+  "origins": {
+    "enabled": "http://127.0.0.1:65250/console/",
+    "disabled": "http://127.0.0.1:65269/manage/",
+    "fixed": "http://127.0.0.1:65299/console/",
+    "choose": "http://127.0.0.1:65304/console/"
+  },
+  "exitCode": 0,
+  "passLines": [
+    "PASS four ports coexist in one Cookie jar and restore their exact sessions",
+    "PASS forged subject without a credential and forged platform target cannot grant authority",
+    "PASS logout at one port does not replace or revoke the three other entry sessions",
+    "PASS no-locks injection fails closed before Cookie login and clears password",
+    "PASS storage-get injection fails closed before Cookie login and clears password",
+    "PASS storage-set injection fails closed before Cookie login and clears password",
+    "PASS storage-discard injection fails closed before Cookie login and clears password",
+    "PASS two real tabs serialize actual refresh rotations under Web Locks"
+  ],
+  "diagnostic": "",
+  "cleanup": {
+    "exitCode": 0,
+    "privateDirectoryRemoved": true
+  },
+  "durationSeconds": 42.25
+}

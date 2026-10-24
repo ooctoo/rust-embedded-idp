@@ -1,0 +1,6 @@
+{
+  "command": "node scripts/check_management_n2_mac.mjs",
+  "exitCode": 1,
+  "failure": "Acceptance helper expected English Close on a Chinese current-session drawer. No product failure inferred. Corrected helper to use the supported Escape path.",
+  "completedGroups": 0
+}

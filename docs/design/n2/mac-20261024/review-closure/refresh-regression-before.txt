@@ -1,0 +1,28 @@
+✖ business queued refresh rechecks storage and recovers after a preflight failure (31.928834ms)
+✖ management queued refresh rechecks storage and recovers after a preflight failure (16.727959ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 0
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 428.828166
+
+✖ failing tests:
+
+test at web/embedded/client.test.mjs:114:1
+✖ business queued refresh rechecks storage and recovers after a preflight failure (31.928834ms)
+  SecurityError: Denied while queued
+      at new DOMException (node:internal/per_context/domexception:76:18)
+      at localStorage.getItem (file://<repo>/web/embedded/client.test.mjs:131:40)
+      at data:text/javascript;base64,[source omitted]:73:29
+      at request (file://<repo>/web/embedded/client.test.mjs:53:24)
+
+test at web/management/client.test.mjs:107:1
+✖ management queued refresh rechecks storage and recovers after a preflight failure (16.727959ms)
+  SecurityError: Denied while queued
+      at new DOMException (node:internal/per_context/domexception:76:18)
+      at localStorage.getItem (file://<repo>/web/management/client.test.mjs:123:40)
+      at data:text/javascript;base64,[source omitted]:73:29
+      at request (file://<repo>/web/management/client.test.mjs:53:24)

@@ -14,6 +14,7 @@ import shutil
 import signal
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 import urllib.request
@@ -23,6 +24,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 BINARY = ROOT / "target/debug/embedded-idp-app"
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--image", help="explicit installed PostgreSQL 18 image")
+parser.add_argument("--isolated-cookies", action="store_true", help="distinct existing Cookie names for same-browser multi-port coexistence")
 parser.add_argument("--cleanup", type=pathlib.Path, help="private state.json returned by this script")
 args = parser.parse_args()
 
@@ -36,10 +38,19 @@ def cleanup(file):
             pathlib.Path(state["dir"]).resolve() != directory or
             not re.fullmatch(r"idp-ui-b-[a-f0-9]+", state["container"])):
         raise ValueError("Not an owned disposable UI-B fixture")
-    label = subprocess.check_output([
+    inspected = subprocess.run([
         "docker", "inspect", "--format", '{{index .Config.Labels "idp.ui-b.fixture"}}', state["container"]
-    ], text=True).strip()
-    if label != str(directory):
+    ], capture_output=True, text=True)
+    container_missing = inspected.returncode != 0
+    if container_missing:
+        # Distinguish a confirmed absent container from a Docker outage. A
+        # daemon failure here raises and retains the private recovery files.
+        remaining = subprocess.check_output([
+            "docker", "ps", "-aq", "--filter", "name=^/" + state["container"] + "$"
+        ], text=True).strip()
+        if remaining:
+            raise ValueError("Could not verify the existing container ownership label")
+    elif inspected.stdout.strip() != str(directory):
         raise ValueError("Container fixture ownership label does not match")
     for host in state["hosts"].values():
         config = pathlib.Path(host["config"]).resolve()
@@ -51,7 +62,19 @@ def cleanup(file):
         if str(BINARY) not in command or str(config) not in command:
             raise ValueError("Host PID has been reused; refusing to terminate it")
         os.kill(host["pid"], signal.SIGTERM)
-    subprocess.run(["docker", "rm", "-f", "-v", state["container"]], check=True, stdout=subprocess.DEVNULL)
+    deadline = time.monotonic() + 10
+    for host in state["hosts"].values():
+        while True:
+            command = subprocess.run(["ps", "-p", str(host["pid"]), "-o", "command="], capture_output=True, text=True).stdout
+            if not command:
+                break
+            if str(BINARY) not in command or host["config"] not in command:
+                raise ValueError("Host PID changed while waiting; fixture retained")
+            if time.monotonic() >= deadline:
+                raise TimeoutError("Host has not exited; fixture retained for inspection")
+            time.sleep(.1)
+    if not container_missing:
+        subprocess.run(["docker", "rm", "-f", "-v", state["container"]], check=True, stdout=subprocess.DEVNULL)
     shutil.rmtree(directory)
     print("Removed disposable UI-B hosts, container and private fixture files")
 
@@ -90,7 +113,7 @@ def start(mode, schema, label, policy, mount="/identity", ui="/console"):
                         "uri_ref": {"env": "UI_B_DATABASE_URI"}, "schema_name": schema, "tls_mode": "disable"}},
                     "http": {"browser_origin": origin}},
         "management": {"login_entry": label, "client_id": "management-ui-b", "tenant_policy": policy,
-                       "mount_prefix": mount, "browser": {"cookie_name": "idp_ui_b"}, "ui": {"base_path": ui}},
+                       "mount_prefix": mount, "browser": {"cookie_name": "idp_ui_b_" + label if args.isolated_cookies else "idp_ui_b"}, "ui": {"base_path": ui}},
         "business_entries": [],
     }
     file = directory / (label + ".json")
@@ -106,6 +129,7 @@ def start(mode, schema, label, policy, mount="/identity", ui="/console"):
         try:
             with urllib.request.urlopen(origin + "/readyz", timeout=.5):
                 return {"mode": mode, "label": label, "origin": origin, "mount": mount, "ui": ui,
+                        "cookie_name": config["management"]["browser"]["cookie_name"],
                         "pid": child.pid, "config": str(file)}
         except (OSError, urllib.error.URLError):
             time.sleep(.1)
@@ -174,9 +198,29 @@ try:
     print(json.dumps({"fixture_file": str(directory / "state.json"), "postgres_version": version,
                       "hosts": {key: host["origin"] + host["ui"] + "/" for key, host in hosts.items()}}))
 except BaseException:
+    # Persist even partially started hosts so the normal ownership-checked
+    # --cleanup command can recover a failed preparation later.
+    (directory / "state.json").write_text(json.dumps({
+        "dir": str(directory), "container": container,
+        "hosts": {str(index): {"pid": child.pid, "config": str(child.args[-1])}
+                  for index, child in enumerate(children)},
+    }))
+    children_stopped = True
     for child in children:
-        child.terminate()
-        child.wait(timeout=10)
-    subprocess.run(["docker", "rm", "-f", "-v", container], capture_output=True)
-    shutil.rmtree(directory)
+        try:
+            if child.poll() is None:
+                child.terminate()
+            child.wait(timeout=10)
+        except (OSError, subprocess.TimeoutExpired):
+            children_stopped = False
+    # Keep ownership/configuration/logs when cleanup cannot be confirmed. Never
+    # delete the database files while a fixture host may still be running.
+    if children_stopped:
+        removed = subprocess.run(["docker", "rm", "-f", "-v", container], capture_output=True)
+        if removed.returncode == 0:
+            shutil.rmtree(directory)
+        else:
+            print("Fixture cleanup failed; private files retained at " + str(directory), file=sys.stderr)
+    else:
+        print("Fixture host did not exit; container and private files retained at " + str(directory), file=sys.stderr)
     raise

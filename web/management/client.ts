@@ -599,10 +599,11 @@ export class ManagementClient {
         } catch (error) {
           this.browserFailure(error, revision);
           throw error;
-        } finally { if (revision === this.revision) this.refreshing = undefined; }
+        }
       });
       this.refreshing = pending;
-      return pending;
+      try { return await pending; }
+      finally { if (this.refreshing === pending) this.refreshing = undefined; }
     }
     if (this.refreshing) return this.refreshing;
     if (credentials.tokens.access_expires_at_unix_secs > Date.now() / 1000 + 30) return credentials;

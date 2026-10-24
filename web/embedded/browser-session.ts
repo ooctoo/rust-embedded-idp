@@ -62,11 +62,19 @@ export class BrowserSessionCoordinator {
   }
 
   async run<T>(operation: () => Promise<T>) {
-    // Probe writability before an operation can change the server's cookie.
+    // Probe both writing and reading before an operation can change the cookie.
+    // Some policies/adapters accept writes but deny reads or discard the value.
     const storage = this.storage();
-    const probe = `${this.key}:probe`;
-    storage.setItem(probe, "1"); storage.removeItem(probe);
-    return navigator.locks.request(`${this.key}:lock`, { mode: "exclusive" }, operation);
+    return navigator.locks.request(`${this.key}:lock`, { mode: "exclusive" }, () => {
+      // Keep the shared probe under the same lock so tabs cannot remove each
+      // other's value, and check again when a queued operation actually starts.
+      const probe = `${this.key}:probe`;
+      try {
+        storage.setItem(probe, "1");
+        if (storage.getItem(probe) !== "1") throw new Error("当前浏览器不支持可靠的 Cookie 会话协调。");
+      } finally { storage.removeItem(probe); }
+      return operation();
+    });
   }
 }
 

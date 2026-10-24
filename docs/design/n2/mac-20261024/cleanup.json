@@ -1,0 +1,14 @@
+{
+  "automatedOwnedFixtures": 16,
+  "manualOwnedFixtures": 4,
+  "totalOwnedFixtures": 20,
+  "allRecordedCleanupCommandsExitZero": true,
+  "allRecordedPrivateDirectoriesRemoved": true,
+  "labeledContainerQueryAfterCleanup": "docker ps -a --filter label=idp.ui-b.fixture returned no entries",
+  "postgresImage": "postgres@sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336",
+  "persistentProfilesRemoved": 6,
+  "nativeBrowser": "verified synthetic session logout, created tab/group closed; zoom100 and viewport override reset",
+  "voiceOver": "system switch observed off after scope change",
+  "temporaryPreferenceWindows": "settings and VoiceOver Utility windows closed",
+  "scope": "Only ownership-verified test containers/processes/files removed; no existing project environment configuration was read"
+}

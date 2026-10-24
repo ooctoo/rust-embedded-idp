@@ -57,6 +57,25 @@ function cookieEnvironment(t) {
   return { values, events, emitStorage() { while (events.length) { const event = events.shift(); listeners.forEach(listener => listener(event)); } } };
 }
 
+test("business Cookie login refuses unreadable or silently discarded coordination storage before HTTP", async t => {
+  const environment = cookieEnvironment(t);
+  let logins = 0;
+  const transport = async url => {
+    if (String(url).endsWith("/capabilities")) return json(fixed);
+    logins++;
+    const value = authenticated(); delete value.tokens.refresh_token; return json(value);
+  };
+  for (const read of [() => { throw new DOMException("Denied", "SecurityError"); }, () => null]) {
+    const client = new EmbeddedIdentityClient("/idp", transport, { mode: "cookie" });
+    await client.loadCapabilities();
+    globalThis.localStorage.getItem = read;
+    await assert.rejects(client.login("user@example.test", "synthetic-password"));
+    assert.equal(logins, 0);
+    assert.equal(client.getSnapshot().session, undefined);
+    assert.equal(environment.values.size, 0);
+  }
+});
+
 test("cookie mode restores without page refresh tokens and serializes shared session operations", async t => {
   const environment = cookieEnvironment(t);
   const calls = [];
@@ -90,6 +109,32 @@ test("cookie mode restores without page refresh tokens and serializes shared ses
   assert.equal(calls.filter(call => call.path === "/auth/browser/refresh").length, 0);
   await second.logout();
   assert.equal(second.getSnapshot().session, undefined);
+});
+
+test("business queued refresh rechecks storage and recovers after a preflight failure", async t => {
+  cookieEnvironment(t);
+  let refreshes = 0;
+  const client = new EmbeddedIdentityClient("/idp", async url => {
+    if (String(url).endsWith("/capabilities")) return json(fixed);
+    if (String(url).endsWith("/refresh")) refreshes++;
+    const value = authenticated("0", refreshes ? 3600 : 10); delete value.tokens.refresh_token; return json(value);
+  }, { mode: "cookie" });
+  await client.loadCapabilities(); await client.login("user@example.test", "synthetic-password");
+  let signalQueued, releaseQueue;
+  const queued = new Promise(resolve => { signalQueued = resolve; });
+  const gate = new Promise(resolve => { releaseQueue = resolve; });
+  const request = navigator.locks.request;
+  t.mock.method(navigator.locks, "request", async (...args) => { signalQueued(); await gate; return request(...args); });
+  const pending = client.accessToken();
+  await queued;
+  const read = localStorage.getItem;
+  localStorage.getItem = () => { throw new DOMException("Denied while queued", "SecurityError"); };
+  releaseQueue();
+  await assert.rejects(pending, /Denied while queued/);
+  assert.equal(refreshes, 0);
+  localStorage.getItem = read;
+  assert.equal(await client.accessToken(), "synthetic-access");
+  assert.equal(refreshes, 1);
 });
 
 test("expired Cookie access tokens refresh under one shared Web Lock", async t => {

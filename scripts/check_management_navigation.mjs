@@ -9,7 +9,7 @@ assert.match(fixture.container, /^idp-ui-b-[a-f0-9]+$/);
 for (const schema of Object.values(fixture.schemas)) assert.match(schema, /^uib_(enabled|disabled)_[a-f0-9]+$/);
 for (const host of Object.values(fixture.hosts)) assert.equal(new URL(host.origin).hostname, "127.0.0.1");
 const { chromium } = await import(process.env.IDP_UI_PLAYWRIGHT_PATH ? pathToFileURL(process.env.IDP_UI_PLAYWRIGHT_PATH).href : "playwright");
-const browser = await chromium.launch({ headless: true, ...(process.env.IDP_UI_BROWSER_EXECUTABLE ? { executablePath: process.env.IDP_UI_BROWSER_EXECUTABLE } : {}) });
+const browser = await chromium.launch({ headless: process.env.IDP_UI_HEADED !== "1", ...(process.env.IDP_UI_BROWSER_EXECUTABLE ? { executablePath: process.env.IDP_UI_BROWSER_EXECUTABLE } : {}) });
 const output = process.env.IDP_UI_OUTPUT_DIR ?? fixture.dir;
 await mkdir(output, { recursive: true });
 const results = [], errors = [];

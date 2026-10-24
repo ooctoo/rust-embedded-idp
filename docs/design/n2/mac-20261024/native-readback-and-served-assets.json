@@ -1,0 +1,46 @@
+{
+  "syntheticClientUnchangedAfterNativeDrafts": true,
+  "servedAssets": {
+    "enabled": {
+      "origin": "http://127.0.0.1:50314",
+      "mount": "/identity",
+      "ui": "/console",
+      "servedAssets": {
+        "index-DhHOHMrx.js": "6c8e62f177ec646e8461e182b9eeb5c438fe484ac4e725af9b6e266d267bf36e",
+        "index-LRLCzfuy.css": "86848da4d8fe74e2405ffe8dc9a29d0c397b7369b2bd4556d3f4b27b2771be7c"
+      }
+    },
+    "disabled": {
+      "origin": "http://127.0.0.1:50341",
+      "mount": "/gateway",
+      "ui": "/manage",
+      "servedAssets": {
+        "index-DhHOHMrx.js": "6c8e62f177ec646e8461e182b9eeb5c438fe484ac4e725af9b6e266d267bf36e",
+        "index-LRLCzfuy.css": "86848da4d8fe74e2405ffe8dc9a29d0c397b7369b2bd4556d3f4b27b2771be7c"
+      }
+    },
+    "fixed": {
+      "origin": "http://127.0.0.1:50454",
+      "mount": "/identity",
+      "ui": "/console",
+      "servedAssets": {
+        "index-DhHOHMrx.js": "6c8e62f177ec646e8461e182b9eeb5c438fe484ac4e725af9b6e266d267bf36e",
+        "index-LRLCzfuy.css": "86848da4d8fe74e2405ffe8dc9a29d0c397b7369b2bd4556d3f4b27b2771be7c"
+      }
+    },
+    "choose": {
+      "origin": "http://127.0.0.1:50461",
+      "mount": "/identity",
+      "ui": "/console",
+      "servedAssets": {
+        "index-DhHOHMrx.js": "6c8e62f177ec646e8461e182b9eeb5c438fe484ac4e725af9b6e266d267bf36e",
+        "index-LRLCzfuy.css": "86848da4d8fe74e2405ffe8dc9a29d0c397b7369b2bd4556d3f4b27b2771be7c"
+      }
+    }
+  },
+  "browserZoomRestored": true,
+  "viewportOverrideReset": true,
+  "voiceOverOff": true,
+  "nativeTabLoggedOutAndClosed": true,
+  "privateStateNotPublished": true
+}

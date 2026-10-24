@@ -84,7 +84,7 @@
 .management-client-editor .ant-drawer-body, .management-client-confirm .ant-modal-body { overflow-wrap: anywhere; }
 .management-client-confirm .ant-descriptions { margin: 16px 0; }
 .management-client-confirm ul { padding-inline-start: 20px; }
-.management-client-confirm-content { max-height: calc(100dvh - 260px); overflow-y: auto; }
+.management-client-confirm-content { max-height: max(120px, calc(100dvh - 260px)); overflow-y: auto; }
 .management-client-confirm .ant-alert + .ant-alert { margin-top: 16px; }
 @media (max-width: 767px) {
   .management-client-page .ant-card-body { padding: 16px; }

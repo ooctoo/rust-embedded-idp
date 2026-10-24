@@ -1,0 +1,12 @@
+{
+  "command": "node --test --test-name-pattern='unreadable or silently' web/management/client.test.mjs web/embedded/client.test.mjs",
+  "expectedExitCode": 1,
+  "failureCount": 2,
+  "expectedFailure": "Both management and business login reached HTTP instead of rejecting unusable read capability.",
+  "rawLogPrivate": true,
+  "tests": 2,
+  "passed": 0,
+  "failed": 2,
+  "observedFailure": "AssertionError: Missing expected rejection (management and business clients)",
+  "safeLog": "storage-regression-before.txt"
+}

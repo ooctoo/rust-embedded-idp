@@ -1,0 +1,132 @@
+{
+  "date": "2026-10-24",
+  "driver": "CUA native Chrome UI plus read-only DOM geometry",
+  "voiceOver": "excluded by user; observed system setting off",
+  "records": [
+    {
+      "step": "unmodified-native-window",
+      "metrics": {
+        "cssZoom": "1",
+        "dpr": 2,
+        "height": 936,
+        "width": 960
+      }
+    },
+    {
+      "step": "100-percent-controlled-baseline",
+      "metrics": {
+        "cssZoom": "1",
+        "documentWidth": 1280,
+        "dpr": 1,
+        "height": 600,
+        "width": 1280
+      }
+    },
+    {
+      "step": "native-Chrome-menu-200-percent",
+      "metrics": {
+        "cssZoom": "1",
+        "documentWidth": 640,
+        "dpr": 2,
+        "height": 300,
+        "width": 640
+      }
+    },
+    {
+      "step": "client-confirm-200-after",
+      "body": {
+        "height": 120,
+        "scrollHeight": 667,
+        "scrollWidth": 472,
+        "width": 472
+      }
+    },
+    {
+      "step": "native-Chrome-menu-400-percent-after",
+      "metrics": {
+        "cssZoom": "1",
+        "documentWidth": 320,
+        "dpr": 4,
+        "height": 150,
+        "width": 320
+      },
+      "body": {
+        "height": 120,
+        "scrollHeight": 912,
+        "scrollWidth": 256,
+        "width": 256
+      }
+    },
+    {
+      "step": "stable-400-percent-keyboard-PageDown-consequences",
+      "height": 120,
+      "scrollHeight": 912,
+      "scrollTop": 792.25,
+      "scrollWidth": 256,
+      "width": 256
+    },
+    {
+      "step": "400-percent-consequences-visible",
+      "bottom": 135,
+      "height": 120,
+      "scrollTop": 792.25,
+      "top": 15,
+      "viewportHeight": 150
+    },
+    {
+      "step": "400-percent-Tab-return-action",
+      "focus": {
+        "bottom": 150,
+        "text": "返回修改",
+        "top": 110,
+        "viewportHeight": 150
+      }
+    },
+    {
+      "step": "400-percent-Tab-save-action-without-activation",
+      "focus": {
+        "bottom": 106,
+        "text": "确认保存",
+        "top": 66,
+        "viewportHeight": 150
+      }
+    },
+    {
+      "step": "browser-API-reload-probe",
+      "observation": "reload completed and Cookie session restored; API did not expose a beforeunload dialog, so no native-prompt claim"
+    },
+    {
+      "step": "native-toolbar-reload-unsaved-draft",
+      "dialog": "Chrome warning: reload site; changes may not be saved",
+      "choice": "cancel"
+    },
+    {
+      "step": "cancelled-native-reload-retains-draft",
+      "draftRetained": true
+    },
+    {
+      "step": "second-native-toolbar-reload",
+      "observation": "reload completed without a second prompt; workspace restored. Browser prompts remain best effort and no universal prompt guarantee is claimed."
+    },
+    {
+      "step": "browser-settings-restored",
+      "metrics": {
+        "cssZoom": "1",
+        "dpr": 2,
+        "height": 727,
+        "width": 960
+      },
+      "zoom": "native Chrome reset 100 percent",
+      "viewportOverride": false
+    },
+    {
+      "step": "Chinese-IME-probe",
+      "installedSources": [
+        "ABC",
+        "Simplified Pinyin"
+      ],
+      "observation": "native key paths produced literal ceshi; no candidate/composition event evidence. Programmatic Chinese text is not an IME result.",
+      "result": "not verified; manual input-method check remains"
+    }
+  ]
+}

@@ -14,7 +14,7 @@ for (const key of ['enabled', 'disabled', 'fixed', 'choose']) {
   assert.ok(host.mount.startsWith('/') && host.ui.startsWith('/'));
 }
 const { chromium } = await import(process.env.IDP_UI_PLAYWRIGHT_PATH ? pathToFileURL(process.env.IDP_UI_PLAYWRIGHT_PATH).href : 'playwright');
-const browser = await chromium.launch({ headless: true, ...(process.env.IDP_UI_BROWSER_EXECUTABLE ? { executablePath: process.env.IDP_UI_BROWSER_EXECUTABLE } : {}) });
+const browser = await chromium.launch({ headless: process.env.IDP_UI_HEADED !== "1", ...(process.env.IDP_UI_BROWSER_EXECUTABLE ? { executablePath: process.env.IDP_UI_BROWSER_EXECUTABLE } : {}) });
 const output = process.env.IDP_UI_OUTPUT_DIR ?? fixture.dir;
 await mkdir(output, { recursive: true });
 const contexts = [], cases = [], pageErrors = [], held = new Set(), dialogAnswers = new WeakMap();

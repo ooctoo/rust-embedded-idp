@@ -1,0 +1,5 @@
+{
+  "webBuildExitCode": 0,
+  "rustBuildExitCode": 101,
+  "failure": "bootstrap_local_postgres belongs to storage-postgres, not app. Corrected command scopes; no product compilation failure."
+}

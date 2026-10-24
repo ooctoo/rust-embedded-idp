@@ -1,0 +1,22 @@
+{
+  "date": "2026-10-24",
+  "ownedFixtureCount": 1,
+  "hostsTerminated": 4,
+  "cleanupExitCode": 0,
+  "containerAndAnonymousVolumesRemoved": true,
+  "privateDirectoryRemoved": true,
+  "finalLabeledContainerQueryEmpty": true,
+  "nativeSessionLoggedOut": true,
+  "passwordFieldClearedObserved": true,
+  "nativeTestTabAndGroupClosed": true,
+  "viewportOverrideReset": true,
+  "finalViewport": {
+    "width": 960,
+    "height": 727,
+    "dpr": 2
+  },
+  "nativeZoomChangedThisFollowup": false,
+  "systemKeyboardSettingsModified": false,
+  "inputSource": "User manually selected Simplified Pinyin; left at user-selected source",
+  "voiceOver": "Not tested or changed; excluded by user"
+}

@@ -1,0 +1,7 @@
+{
+  "exitCode": 1,
+  "command": "node scripts/check_management_n2_mac.mjs",
+  "failure": "storage-get injection observed one Cookie login HTTP request despite unusable coordinator read. Fixed by read/write round-trip preflight in shared BrowserSessionCoordinator.",
+  "completedGroups": 3,
+  "productIssue": "N2-MAC-01"
+}

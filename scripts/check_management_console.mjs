@@ -22,10 +22,11 @@ assert.equal(execFileSync('docker', ['inspect', '--format', '{{index .Config.Lab
 for (const [mode, schema] of Object.entries(fixture.schemas)) assert.match(schema, new RegExp(`^uib_${mode}_[a-f0-9]+$`));
 for (const host of Object.values(fixture.hosts)) { assert.equal(new URL(host.origin).hostname, '127.0.0.1'); assert.ok(host.mount.startsWith('/') && host.ui.startsWith('/')); }
 const { chromium } = await import(pathToFileURL(process.env.IDP_UI_PLAYWRIGHT_PATH).href);
-const browser = await chromium.launch({ headless: true, executablePath: process.env.IDP_UI_BROWSER_EXECUTABLE });
+const browser = await chromium.launch({ headless: process.env.IDP_UI_HEADED !== "1", executablePath: process.env.IDP_UI_BROWSER_EXECUTABLE });
 const output = process.env.IDP_UI_OUTPUT_DIR ?? fixtureDir;
 await mkdir(output, { recursive: true });
 const cases = [], pageErrors = [], contexts = [], contrast = [], layouts = [], labels = [], accepted = new WeakSet();
+const layoutWidths = process.env.IDP_UI_N2_LAYOUT === '1' ? [320, 390, 767, 768, 1023, 1024, 1440] : [320, 390, 768, 1024, 1440];
 const pass = name => { cases.push(name); console.log(`PASS ${name}`); };
 const button = (p, name) => p.getByRole('button', { name: new RegExp('^' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/([\u3400-\u9fff])(?=[\u3400-\u9fff])/g, '$1\\s*') + '$') });
 const settle = p => p.waitForFunction(() => !document.querySelector('.ant-spin-spinning, .ant-spin-blur'));
@@ -98,15 +99,34 @@ async function colorRatio(locator, label, minimum = 4.5, property = 'color', bac
   assert.ok(ratio >= minimum, `${label}: ${ratio.toFixed(2)} < ${minimum}`);
 }
 async function layout(p, label, width) {
-  await p.setViewportSize({ width, height: 1000 });
+  await p.setViewportSize({ width, height: process.env.IDP_UI_N2_LAYOUT === '1' ? 600 : 1000 });
   const result = await p.evaluate(() => {
     const ids = [...document.querySelectorAll('input[id],select[id],textarea[id]')].map(el => el.id);
-    return { viewport: innerWidth, document: document.documentElement.scrollWidth, uniqueInputs: new Set(ids).size === ids.length,
+    return { viewport: innerWidth, height: innerHeight, dpr: devicePixelRatio, document: document.documentElement.scrollWidth, uniqueInputs: new Set(ids).size === ids.length,
       headings: document.querySelectorAll('h1').length };
   });
   assert.ok(result.document <= result.viewport + 1, `${label} at ${width}: document overflow`);
   assert.ok(result.uniqueInputs); assert.equal(result.headings, 1);
   layouts.push({ label, width, ...result });
+}
+async function shortConfirmation(p, modal, regionName, cancelName, confirmName) {
+  await p.setViewportSize({ width: 320, height: 150 });
+  const region = modal.getByRole('region', { name: regionName, exact: true });
+  const dimensions = await region.evaluate(el => ({ height: el.clientHeight, scrollHeight: el.scrollHeight, width: el.clientWidth, scrollWidth: el.scrollWidth }));
+  assert.ok(dimensions.height > 0, 'short viewport must not collapse the consequences to zero height');
+  assert.ok(dimensions.scrollWidth <= dimensions.width + 1, 'consequence text reflows locally');
+  await region.focus();
+  if (dimensions.scrollHeight > dimensions.height) {
+    await p.keyboard.press('PageDown');
+    await p.waitForFunction(el => el.scrollTop > 0, await region.elementHandle(), { timeout: 3000 });
+  }
+  for (const name of [confirmName, cancelName]) {
+    const action = button(modal, name); await action.focus();
+    const rect = await action.boundingBox();
+    assert.ok(rect && rect.y >= -1 && rect.y + rect.height <= 151, 'focused confirmation action is not clipped');
+  }
+  layouts.push({ label: regionName, viewportWidth: 320, viewportHeight: 150, ...dimensions });
+  await p.setViewportSize({ width: 320, height: 600 });
 }
 try {
   const loginContext = await browser.newContext({ viewport: { width: 320, height: 800 }, reducedMotion: 'reduce' }); contexts.push(loginContext);
@@ -222,6 +242,10 @@ try {
   await button(editor, '核对并保存').focus(); await p.keyboard.press('Enter');
   const review = p.getByRole('dialog', { name: '确认保存客户端配置', exact: true }); await review.waitFor();
   await focused(p, button(review, '返回修改')); await focusCycle(p, review);
+  if (process.env.IDP_UI_N2_LAYOUT === '1') {
+    await shortConfirmation(p, review, '待保存的完整配置', '返回修改', '确认保存');
+    pass('N2 short client confirmation keeps consequences scrollable and both keyboard actions reachable');
+  }
   await layout(p, 'client confirmation', 320);
   await review.locator('.ant-modal-content').screenshot({ path: join(output, 'ui-f-confirm-320.png'), animations: 'disabled' });
   await p.keyboard.press('Escape'); await review.waitFor({ state: 'hidden' }); await focused(p, button(editor, '核对并保存'));
@@ -246,7 +270,7 @@ try {
     ...['home', 'members', 'roles', 'directory', 'diagnostic', 'devices', 'sessions', 'audit'].map(x => '#/tenants/tenant-a/' + x)];
   for (const hash of pages) {
     await goto(p, hash);
-    for (const width of [320, 390, 768, 1024, 1440]) await layout(p, hash, width);
+    for (const width of layoutWidths) await layout(p, hash, width);
     const reading = await p.evaluate(() => {
       const main = document.querySelector('main'), title = main.querySelector('h1');
       return { lang: document.documentElement.lang, titleBeforePage: !!(title.compareDocumentPosition(main.querySelector('.management-page')) & Node.DOCUMENT_POSITION_FOLLOWING) };
@@ -259,7 +283,7 @@ try {
     assert.ok(zoom.document <= zoom.viewport + 1, `${hash}: 200% CSS zoom overflow`);
     await p.evaluate(() => { document.body.style.zoom = ''; });
   }
-  pass('15 platform and tenant pages: five widths, 200-percent CSS zoom, one title, labels and DOM reading order');
+  pass(`15 platform and tenant pages: ${layoutWidths.length} widths, 200-percent CSS zoom, one title, labels and DOM reading order`);
   await goto(p, '#/platform/accounts');
   const email = 'no-match-uif@example.test';
   await p.getByLabel('邮箱', { exact: true }).fill(email); await button(p, '查询').click(); await settle(p);
@@ -290,6 +314,10 @@ try {
   const preview = button(permission, '核对'); await preview.focus(); await p.keyboard.press('Enter');
   const permissionReview = p.getByRole('dialog', { name: '确认创建权限', exact: true }); await permissionReview.waitFor();
   await focused(p, button(permissionReview, '取消')); await focusCycle(p, permissionReview);
+  if (process.env.IDP_UI_N2_LAYOUT === '1') {
+    await shortConfirmation(p, permissionReview, '操作范围与后果', '取消', '确认');
+    pass('N2 short SafeConfirm keeps scope and consequences scrollable and both keyboard actions reachable');
+  }
   await p.keyboard.press('Escape'); await permissionReview.waitFor({ state: 'hidden' }); await focused(p, preview);
   accepted.add(p); try { await p.keyboard.press('Escape'); await permission.waitFor({ state: 'hidden' }); } finally { accepted.delete(p); }
   await focused(p, createPermission);
@@ -301,12 +329,12 @@ try {
   for (const key of ['home', 'members', 'roles', 'directory', 'diagnostic', 'devices', 'sessions', 'audit', 'accounts', 'clients', 'administrators']) {
     await goto(system.page, '#/system/' + key);
     labels.push({ scope: '#/system/' + key, ...await assertControlLabels(system.page.locator('main')) });
-    for (const width of [320, 390, 768, 1024, 1440]) await layout(system.page, '#/system/' + key, width);
+    for (const width of layoutWidths) await layout(system.page, '#/system/' + key, width);
     await system.page.evaluate(() => { document.body.style.zoom = '2'; });
     assert.ok(await system.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
     await system.page.evaluate(() => { document.body.style.zoom = ''; });
   }
-  pass('11 Disabled system pages: five widths, 200-percent CSS zoom and unique headings and form IDs');
+  pass(`11 Disabled system pages: ${layoutWidths.length} widths, 200-percent CSS zoom and unique headings and form IDs`);
   await system.context.close();
   const fixed = await open('fixed', '#/tenants/tenant-a/sessions');
   await fixed.page.getByRole('button', { name: /^查看会话 / }).first().click();

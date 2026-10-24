@@ -57,6 +57,25 @@ function cookieEnvironment(t) {
   return { values, events, emitStorage() { while (events.length) { const event = events.shift(); listeners.forEach(listener => listener(event)); } } };
 }
 
+test("management Cookie login refuses unreadable or silently discarded coordination storage before HTTP", async t => {
+  const environment = cookieEnvironment(t);
+  let logins = 0;
+  t.mock.method(globalThis, "fetch", async url => {
+    if (String(url).endsWith("/capabilities")) return json(fixed);
+    logins++;
+    const value = authenticated(); delete value.tokens.refresh_token; return json(value);
+  });
+  for (const read of [() => { throw new DOMException("Denied", "SecurityError"); }, () => null]) {
+    const client = new ManagementClient("/host/idp", { mode: "cookie" });
+    await client.loadCapabilities();
+    globalThis.localStorage.getItem = read;
+    await assert.rejects(client.login("admin@example.test", "synthetic-password"));
+    assert.equal(logins, 0);
+    assert.equal(client.getSnapshot().session, undefined);
+    assert.equal(environment.values.size, 0);
+  }
+});
+
 test("management cookie mode restores without refresh tokens and keeps path namespaces isolated", async t => {
   const environment = cookieEnvironment(t);
   const calls = [];
@@ -83,6 +102,31 @@ test("management cookie mode restores without refresh tokens and keeps path name
   assert.equal(first.getSnapshot().session, undefined);
   await otherPath.loadCapabilities(); await otherPath.login("admin@example.test", "password");
   assert.equal(environment.values.size, 2);
+});
+
+test("management queued refresh rechecks storage and recovers after a preflight failure", async t => {
+  cookieEnvironment(t);
+  let refreshes = 0;
+  t.mock.method(globalThis, "fetch", async url => {
+    if (String(url).endsWith("/capabilities")) return json(fixed);
+    if (String(url).endsWith("/session")) return json(identity());
+    if (String(url).endsWith("/refresh")) refreshes++;
+    const value = authenticated("0", refreshes ? 3600 : 10); delete value.tokens.refresh_token; return json(value);
+  });
+  const client = new ManagementClient("/host/idp", { mode: "cookie" });
+  await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
+  const queued = deferred(), release = deferred(), request = navigator.locks.request;
+  t.mock.method(navigator.locks, "request", async (...args) => { queued.resolve(); await release.promise; return request(...args); });
+  const pending = client.verifySession();
+  await queued.promise;
+  const read = localStorage.getItem;
+  localStorage.getItem = () => { throw new DOMException("Denied while queued", "SecurityError"); };
+  release.resolve();
+  await assert.rejects(pending, /Denied while queued/);
+  assert.equal(refreshes, 0);
+  localStorage.getItem = read;
+  await client.verifySession();
+  assert.equal(refreshes, 1);
 });
 
 test("disabled and fixed login obey server capabilities, keep credentials out of snapshots", async t => {

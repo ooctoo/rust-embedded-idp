@@ -1,0 +1,32 @@
+{
+  "suite": "console",
+  "startedUtc": "2026-10-24T05:19:35.123074+00:00",
+  "command": "node scripts/check_management_console.mjs",
+  "headed": true,
+  "browserExecutable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  "freshFixture": true,
+  "postgresVersion": "18.6 (Debian 18.6-1.pgdg13+2)",
+  "origins": {
+    "enabled": "http://127.0.0.1:64802/console/",
+    "disabled": "http://127.0.0.1:64809/manage/",
+    "fixed": "http://127.0.0.1:64854/console/",
+    "choose": "http://127.0.0.1:64859/console/"
+  },
+  "exitCode": 1,
+  "passLines": [
+    "PASS capability failure reconnect and keyboard login rejection keep email, clear password and expose no old workspace",
+    "PASS enabled: compiled meta assets mount Cookie Path and purpose marker; old paths are absent",
+    "PASS disabled: compiled meta assets mount Cookie Path and purpose marker; old paths are absent",
+    "PASS fixed: compiled meta assets mount Cookie Path and purpose marker; old paths are absent",
+    "PASS choose: compiled meta assets mount Cookie Path and purpose marker; old paths are absent",
+    "PASS mobile menu: keyboard trap Escape trigger return and page selection title focus with unchanged identity",
+    "PASS read-only current-session drawer: named keyboard trap and trigger return",
+    "PASS actual Select labels are checked and a severed label association is rejected"
+  ],
+  "diagnostic": "node:internal/modules/run_main:107\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: focused consequences remain keyboard-scrollable\n    at shortConfirmation (file://<repo>/scripts/check_management_console.mjs:121:12)\n    at runNextTicks (node:internal/process/task_queues:65:5)\n    at process.processImmediate (node:internal/timers:502:9)\n    at async file://<repo>/scripts/check_management_console.mjs:246:5 {\n  generatedMessage: false,\n  code: 'ERR_ASSERTION',\n  actual: false,\n  expected: true,\n  operator: '==',\n  diff: 'simple'\n}\n\nNode.js v24.19.0\n",
+  "cleanup": {
+    "exitCode": 0,
+    "privateDirectoryRemoved": true
+  },
+  "durationSeconds": 25.7
+}
