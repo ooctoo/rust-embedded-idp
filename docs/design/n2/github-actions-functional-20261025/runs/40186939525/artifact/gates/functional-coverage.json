@@ -1,0 +1,201 @@
+{
+  "suite": "gates",
+  "profile": "ci-functional",
+  "status": "passed",
+  "selected": [
+    {
+      "id": "N2-GATES-l01-actual-runtime-artifact-is-linux-elf64-aarch64",
+      "case": "L01 actual runtime artifact is Linux ELF64 AArch64",
+      "source": {
+        "path": "scripts/check_management_n2_linux.py",
+        "line": 39
+      },
+      "resultFile": "runtime/results.json"
+    },
+    {
+      "id": "N2-GATES-l02-nonroot-readonly-minimal-runtime-and-private-pg-network",
+      "case": "L02 nonroot, readonly, minimal runtime and private PG network",
+      "source": {
+        "path": "scripts/check_management_n2_linux.py",
+        "line": 62
+      },
+      "resultFile": "runtime/results.json"
+    },
+    {
+      "id": "N2-GATES-l03-default-and-nondefault-compiled-resources-and-unique-trusted-metadata",
+      "case": "L03 default and nondefault compiled resources and unique trusted metadata",
+      "source": {
+        "path": "scripts/check_management_n2_linux.py",
+        "line": 84
+      },
+      "resultFile": "runtime/results.json"
+    },
+    {
+      "id": "N2-GATES-l04-startup-refusals-preserve-sampled-database-facts",
+      "case": "L04 startup refusals preserve sampled database facts",
+      "source": {
+        "path": "scripts/check_management_n2_linux.py",
+        "line": 129
+      },
+      "resultFile": "runtime/results.json"
+    },
+    {
+      "id": "N2-GATES-separate-browser-cookie-and-explicit-token-sessions-established",
+      "case": "separate browser Cookie and explicit-token sessions established",
+      "source": {
+        "path": "scripts/check_management_n2_linux_restart.mjs",
+        "line": 142
+      },
+      "resultFile": "l05-restart-results.json"
+    },
+    {
+      "id": "N2-GATES-owned-app-stopped-and-rebuilt-at-the-same-origin-and-paths",
+      "case": "owned app stopped and rebuilt at the same origin and paths",
+      "source": {
+        "path": "scripts/check_management_n2_linux_restart.mjs",
+        "line": 158
+      },
+      "resultFile": "l05-restart-results.json"
+    },
+    {
+      "id": "N2-GATES-explicit-bearer-token-still-authenticates-the-same-session-after-restart",
+      "case": "explicit Bearer token still authenticates the same session after restart",
+      "source": {
+        "path": "scripts/check_management_n2_linux_restart.mjs",
+        "line": 167
+      },
+      "resultFile": "l05-restart-results.json"
+    },
+    {
+      "id": "N2-GATES-existing-persistent-profile-cookie-restores-the-same-session-and-expiry",
+      "case": "existing persistent-profile Cookie restores the same session and expiry",
+      "source": {
+        "path": "scripts/check_management_n2_linux_restart.mjs",
+        "line": 193
+      },
+      "resultFile": "l05-restart-results.json"
+    },
+    {
+      "id": "N2-GATES-explicit-token-logout-revokes-only-its-session",
+      "case": "explicit-token logout revokes only its session",
+      "source": {
+        "path": "scripts/check_management_n2_linux_restart.mjs",
+        "line": 206
+      },
+      "resultFile": "l05-restart-results.json"
+    },
+    {
+      "id": "N2-GATES-browser-ui-logout-revokes-its-session-and-rejects-replay-of-the-old-cookie",
+      "case": "browser UI logout revokes its session and rejects replay of the old Cookie",
+      "source": {
+        "path": "scripts/check_management_n2_linux_restart.mjs",
+        "line": 237
+      },
+      "resultFile": "l05-restart-results.json"
+    }
+  ],
+  "executed": [
+    {
+      "id": "N2-GATES-l01-actual-runtime-artifact-is-linux-elf64-aarch64",
+      "case": "L01 actual runtime artifact is Linux ELF64 AArch64",
+      "source": {
+        "path": "scripts/check_management_n2_linux.py",
+        "line": 39
+      },
+      "resultFile": "runtime/results.json",
+      "status": "passed"
+    },
+    {
+      "id": "N2-GATES-l02-nonroot-readonly-minimal-runtime-and-private-pg-network",
+      "case": "L02 nonroot, readonly, minimal runtime and private PG network",
+      "source": {
+        "path": "scripts/check_management_n2_linux.py",
+        "line": 62
+      },
+      "resultFile": "runtime/results.json",
+      "status": "passed"
+    },
+    {
+      "id": "N2-GATES-l03-default-and-nondefault-compiled-resources-and-unique-trusted-metadata",
+      "case": "L03 default and nondefault compiled resources and unique trusted metadata",
+      "source": {
+        "path": "scripts/check_management_n2_linux.py",
+        "line": 84
+      },
+      "resultFile": "runtime/results.json",
+      "status": "passed"
+    },
+    {
+      "id": "N2-GATES-l04-startup-refusals-preserve-sampled-database-facts",
+      "case": "L04 startup refusals preserve sampled database facts",
+      "source": {
+        "path": "scripts/check_management_n2_linux.py",
+        "line": 129
+      },
+      "resultFile": "runtime/results.json",
+      "status": "passed"
+    },
+    {
+      "id": "N2-GATES-separate-browser-cookie-and-explicit-token-sessions-established",
+      "case": "separate browser Cookie and explicit-token sessions established",
+      "source": {
+        "path": "scripts/check_management_n2_linux_restart.mjs",
+        "line": 142
+      },
+      "resultFile": "l05-restart-results.json",
+      "status": "passed"
+    },
+    {
+      "id": "N2-GATES-owned-app-stopped-and-rebuilt-at-the-same-origin-and-paths",
+      "case": "owned app stopped and rebuilt at the same origin and paths",
+      "source": {
+        "path": "scripts/check_management_n2_linux_restart.mjs",
+        "line": 158
+      },
+      "resultFile": "l05-restart-results.json",
+      "status": "passed"
+    },
+    {
+      "id": "N2-GATES-explicit-bearer-token-still-authenticates-the-same-session-after-restart",
+      "case": "explicit Bearer token still authenticates the same session after restart",
+      "source": {
+        "path": "scripts/check_management_n2_linux_restart.mjs",
+        "line": 167
+      },
+      "resultFile": "l05-restart-results.json",
+      "status": "passed"
+    },
+    {
+      "id": "N2-GATES-existing-persistent-profile-cookie-restores-the-same-session-and-expiry",
+      "case": "existing persistent-profile Cookie restores the same session and expiry",
+      "source": {
+        "path": "scripts/check_management_n2_linux_restart.mjs",
+        "line": 193
+      },
+      "resultFile": "l05-restart-results.json",
+      "status": "passed"
+    },
+    {
+      "id": "N2-GATES-explicit-token-logout-revokes-only-its-session",
+      "case": "explicit-token logout revokes only its session",
+      "source": {
+        "path": "scripts/check_management_n2_linux_restart.mjs",
+        "line": 206
+      },
+      "resultFile": "l05-restart-results.json",
+      "status": "passed"
+    },
+    {
+      "id": "N2-GATES-browser-ui-logout-revokes-its-session-and-rejects-replay-of-the-old-cookie",
+      "case": "browser UI logout revokes its session and rejects replay of the old Cookie",
+      "source": {
+        "path": "scripts/check_management_n2_linux_restart.mjs",
+        "line": 237
+      },
+      "resultFile": "l05-restart-results.json",
+      "status": "passed"
+    }
+  ],
+  "excluded": [],
+  "missing": []
+}

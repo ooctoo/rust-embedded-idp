@@ -1,0 +1,49 @@
+{
+  "scope": "CI-FUNC-ARM64-01",
+  "source": {
+    "run_id": "40186939525",
+    "run_attempt": "1",
+    "job": "functional-arm64",
+    "source_sha": "64425832dfb59f5469f530cbf42f030a21314a8a"
+  },
+  "checkoutSha": "64425832dfb59f5469f530cbf42f030a21314a8a",
+  "checkoutTree": "91e8de0289c8220d12a8dfbb4521f0a1e395055a",
+  "node": "v22.23.4",
+  "pnpm": "10.30.1",
+  "python": "3.12.3",
+  "os": "Linux-6.17.0-1022-azure-aarch64-with-glibc2.39",
+  "arch": "aarch64",
+  "runnerArch": "ARM64",
+  "imageVersion": "20261023.149.3",
+  "runnerVersion": null,
+  "browser": {
+    "version": "1.64.1",
+    "browser": {
+      "name": "chromium",
+      "revision": "1248",
+      "installByDefault": true,
+      "browserVersion": "156.0.8078.4",
+      "title": "Chrome for Testing"
+    },
+    "executable": "<home>/work/_temp/idp-n2-ci-40186939525-1/browsers/chromium-1248/chrome-linux-arm64/chrome",
+    "binarySha256": "2b3a2bb9c4308ce74cb680dcd50305cfae1f79589305dc92b993f876b5a94f65",
+    "channel": "chromium",
+    "headless": true,
+    "actualVersion": "Google Chrome for Testing 156.0.8078.4"
+  },
+  "tools": {
+    "docker": "Docker version 28.0.4, build b8034c0",
+    "buildx": "github.com/docker/buildx v0.38.0 0dbe87f36ed472fe36b6796c3f70b4210a731fc5",
+    "buildkit": "Name:   default\nDriver: docker\n\nNodes:\nName:             default\nEndpoint:         default\nStatus:           running\nBuildKit version: v0.20.2\nPlatforms:        linux/arm64, linux/arm/v7, linux/arm/v6\nLabels:\n org.mobyproject.buildkit.worker.moby.host-gateway-ip: 172.17.0.1",
+    "kernel": "Linux runnervm4yw5a 6.17.0-1022-azure #22-Ubuntu SMP Mon Jul 27 17:12:01 UTC 2026 aarch64 aarch64 aarch64 GNU/Linux"
+  },
+  "cpuCount": 4,
+  "diskFreeBytes": 114174562304,
+  "memory": "MemTotal:       16330088 kB\nMemFree:        12135960 kB\nMemAvailable:   14848812 kB\nBuffers:           96208 kB\nCached:          2797000 kB\nSwapCached:            0 kB\nActive:          1111000 kB\nInactive:        2337188 kB\nActive(anon):     613268 kB\nInactive(anon):        0 kB\nActive(file):     497732 kB\nInactive(file):  2337188 kB\nUnevictable:       45724 kB\nMlocked:           42652 kB\nSwapTotal:       3145724 kB\nSwapFree:        3145724 kB\nZswap:                 0 kB\nZswapped:              0 kB\nDirty:            978836 kB\nWriteback:          1264 kB\nAnonPages:        601072 kB\nMapped:           338424 kB\nShmem:             50732 kB\nKReclaimable:     138580 kB\nSlab:             220624 kB\nSReclaimable:     138580 kB\nSUnreclaim:        82044 kB\nKernelStack:        4156 kB\nShadowCallStack:    1056 kB\nPageTables:         7068 kB\nSecPageTables:         0 kB\nNFS_Unstable:          0 kB\nBounce:                0 kB\nWritebackTmp:          0 kB\nCommitLimit:    11310768 kB\nCommitted_AS:    2542688 kB\nVmallocTotal:   135288315904 kB\nVmallocUsed:       38320 kB\nVmallocChunk:          0 kB\nPercpu:             1888 kB\nHardwareCorrupted:     0 kB\nAnonHugePages:         0 kB\nShmemHugePages:        0 kB\nShmemPmdMapped:        0 kB\nFileHugePages:    202752 kB\nFilePmdMapped:         0 kB\nCmaTotal:          32768 kB\nCmaFree:           26624 kB\nBalloon:               0 kB\nHugePages_Total:       0\nHugePages_Free:        0\nHugePages_Rsvd:        0\nHugePages_Surp:        0\nHugepagesize:       2048 kB\nHugetlb:               0 kB\n",
+  "baseImages": {
+    "node": "node@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d",
+    "rust": "rust@sha256:d0a4aa3ca2e1088ac0c81690914a0d810f2eee188197034edf366ed010a2b382",
+    "runtime": "debian@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8",
+    "postgres": "postgres@sha256:bbf83594798e144bff365a9c191c5d779f181fb3135902064ab8ff11918020fc"
+  }
+}

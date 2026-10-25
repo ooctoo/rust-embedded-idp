@@ -1,0 +1,42 @@
+{
+  "scope": "CI-FUNC-ARM64-01 L05 Linux headless Chromium",
+  "browserVersion": "156.0.8078.4",
+  "headed": false,
+  "profileMode": "new ordinary persistent profile owned by this run",
+  "restart": {
+    "stopExitCode": 143,
+    "oomKilled": false,
+    "sameOrigin": "http://127.0.0.1:35515",
+    "sameMount": "/identity",
+    "sameUiPath": "/console"
+  },
+  "sessions": {
+    "clientConfigurationAndSentinelUnchanged": true,
+    "separateBeforeRestart": true,
+    "cookieSessionIdSameAcrossRestart": true,
+    "explicitSessionIdSameAcrossRestart": true,
+    "cookieExpiryBefore": 1793531101,
+    "cookieExpiryAfter": 1793531101,
+    "cookieExpiryUnchanged": true,
+    "explicitExpiryBefore": 1793531102,
+    "explicitExpiryAfter": 1793531102,
+    "explicitExpiryUnchanged": true
+  },
+  "responses": {
+    "restoreStatus": 200,
+    "explicitLogoutStatus": 204,
+    "cookieLogoutStatus": 204,
+    "staleRestoreStatus": 401
+  },
+  "profileRemoved": true,
+  "cleanupErrors": [],
+  "cases": [
+    "separate browser Cookie and explicit-token sessions established",
+    "owned app stopped and rebuilt at the same origin and paths",
+    "explicit Bearer token still authenticates the same session after restart",
+    "existing persistent-profile Cookie restores the same session and expiry",
+    "explicit-token logout revokes only its session",
+    "browser UI logout revokes its session and rejects replay of the old Cookie"
+  ],
+  "complete": true
+}

@@ -1,0 +1,106 @@
+{
+  "suite": "authorization",
+  "profile": "ci-functional",
+  "status": "failed",
+  "exitCode": 1,
+  "headed": false,
+  "channel": "chromium",
+  "viewport": [
+    1440,
+    1000
+  ],
+  "freshFixture": true,
+  "n2Layout": false,
+  "commands": [
+    {
+      "tool": "scripts/check_management_authorization.mjs",
+      "exitCode": 1,
+      "diagnostic": {
+        "sourceFrames": [
+          "scripts/check_management_authorization.mjs:636:33"
+        ]
+      }
+    }
+  ],
+  "error": "RuntimeError",
+  "cleanup": {
+    "objects": [
+      {
+        "name": "idp-n2-linux-439a8a979eb4-prepare-896f00",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-439a8a979eb4-prepare-cd14ed",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-439a8a979eb4-prepare-ab3945",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-439a8a979eb4-prepare-69b423",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-439a8a979eb4-enabled",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-439a8a979eb4-prepare-20d5c3",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-439a8a979eb4-prepare-43feaa",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-439a8a979eb4-prepare-9c311a",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-439a8a979eb4-disabled",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-439a8a979eb4-prepare-298d59",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-439a8a979eb4-fixed",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-439a8a979eb4-prepare-dd39b7",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-439a8a979eb4-choose",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-ui-b-439a8a979eb4",
+        "exitCode": 0,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-439a8a979eb4-data",
+        "removedOrAbsent": true
+      },
+      {
+        "name": "idp-n2-linux-439a8a979eb4-secrets",
+        "removedOrAbsent": true
+      },
+      {
+        "name": "idp-n2-linux-439a8a979eb4",
+        "removedOrAbsent": true
+      }
+    ],
+    "errors": [],
+    "privateDirectoryRemoved": true
+  },
+  "durationSeconds": 71.3
+}

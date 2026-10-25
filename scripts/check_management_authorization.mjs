@@ -1172,7 +1172,10 @@ try {
   failureDiagnostics = {
     disabled: /element is not enabled/.test(detail), hidden: /element is not visible/.test(detail),
     moving: /element is not stable/.test(detail), intercepted: /intercepts pointer events/.test(detail),
-    outsideViewport: /outside of the viewport/.test(detail), pages: [],
+    outsideViewport: /outside of the viewport/.test(detail),
+    locatorResolved: /locator resolved to/.test(detail), waitingForLocator: /waiting for getByRole/.test(detail),
+    clickPerformed: /click action done/.test(detail), navigationWait: /scheduled navigations/.test(detail),
+    detached: /detached|not attached/.test(detail), pages: [],
   };
   for (const release of held) release();
   console.error(`UI-D failed after: ${cases.at(-1) ?? 'startup'}`);
@@ -1184,12 +1187,20 @@ try {
       return {
         name: ['核对', '确认', '取消', '关闭', '保存'].includes(name) ? name : 'other',
         disabled: button.disabled, visible: !!rect.width && !!rect.height && getComputedStyle(button).visibility === 'visible',
+        ariaHiddenAncestor: !!button.closest('[aria-hidden="true"]'), inertAncestor: !!button.closest('[inert]'),
+        loading: button.classList.contains('ant-btn-loading'), loadingIcon: !!button.querySelector('[aria-label="loading"]'),
         top: Math.round(rect.top), bottom: Math.round(rect.bottom), viewportHeight: innerHeight,
         ownsCenter: !!hit && (hit === button || button.contains(hit)),
         anotherModalAtCenter: !!hit?.closest('.ant-modal-wrap') && hit.closest('.ant-modal-wrap') !== button.closest('.ant-modal-wrap'),
       };
     })).catch(() => null);
-    failureDiagnostics.pages.push({ context: index, controls });
+    const roleMatches = {
+      createDialog: await dialog(page, '创建权限').count(),
+      createDialogIncludingHidden: await page.getByRole('dialog', { name: '创建权限', exact: true, includeHidden: true }).count(),
+      checkButton: await button(page, '核对').count(),
+      checkButtonInCreateDialog: await button(dialog(page, '创建权限'), '核对').count(),
+    };
+    failureDiagnostics.pages.push({ context: index, controls, roleMatches });
     if (!functionalOnly) await page.screenshot({ path: `${output}/ui-d-failure-${index}.png`, animations: 'disabled', mask: [page.locator('input, textarea, [contenteditable=true]')] }).catch(() => {});
   }
   throw error;

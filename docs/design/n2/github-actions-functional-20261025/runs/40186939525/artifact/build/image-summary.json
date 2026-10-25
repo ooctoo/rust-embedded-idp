@@ -1,0 +1,29 @@
+{
+  "base_images": {
+    "node": "node@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d",
+    "runtime": "debian@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8",
+    "rust": "rust@sha256:d0a4aa3ca2e1088ac0c81690914a0d810f2eee188197034edf366ed010a2b382"
+  },
+  "cargo_build_jobs": 2,
+  "images": {
+    "prepare": {
+      "architecture": "arm64",
+      "id": "sha256:ea24beeeebc5e9badb590d94be1d0e73044b402c140ea612c43fb4102dea2072",
+      "name": "idp-n2-linux:0b03c5220af9-prepare",
+      "os": "linux",
+      "repo_digests": [],
+      "size_bytes": 125724211
+    },
+    "runtime": {
+      "architecture": "arm64",
+      "id": "sha256:bf824e617cae87988a447016429f0bc3936c5d11c43a027edd460082ab54a436",
+      "name": "idp-n2-linux:0b03c5220af9-runtime",
+      "os": "linux",
+      "repo_digests": [],
+      "size_bytes": 123063134
+    }
+  },
+  "platform": "linux/arm64",
+  "registry_digest_note": "An empty RepoDigests list means no registry digest is available for this local build.",
+  "status": "built-locally"
+}

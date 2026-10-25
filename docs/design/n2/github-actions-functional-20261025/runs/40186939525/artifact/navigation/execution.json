@@ -1,0 +1,103 @@
+{
+  "suite": "navigation",
+  "profile": "ci-functional",
+  "status": "passed",
+  "exitCode": 0,
+  "headed": false,
+  "channel": "chromium",
+  "viewport": [
+    1440,
+    1000
+  ],
+  "freshFixture": true,
+  "n2Layout": false,
+  "commands": [
+    {
+      "tool": "scripts/check_management_navigation.mjs",
+      "exitCode": 0,
+      "diagnostic": {
+        "sourceFrames": []
+      }
+    }
+  ],
+  "cleanup": {
+    "objects": [
+      {
+        "name": "idp-n2-linux-cddb94b154da-prepare-3d7048",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-cddb94b154da-prepare-4d3c06",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-cddb94b154da-prepare-074063",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-cddb94b154da-prepare-28f85b",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-cddb94b154da-enabled",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-cddb94b154da-prepare-9a67fc",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-cddb94b154da-prepare-a974f4",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-cddb94b154da-prepare-9ee11a",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-cddb94b154da-disabled",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-cddb94b154da-prepare-2fe732",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-cddb94b154da-fixed",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-cddb94b154da-prepare-71f112",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-cddb94b154da-choose",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-ui-b-cddb94b154da",
+        "exitCode": 0,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-cddb94b154da-data",
+        "removedOrAbsent": true
+      },
+      {
+        "name": "idp-n2-linux-cddb94b154da-secrets",
+        "removedOrAbsent": true
+      },
+      {
+        "name": "idp-n2-linux-cddb94b154da",
+        "removedOrAbsent": true
+      }
+    ],
+    "errors": [],
+    "privateDirectoryRemoved": true
+  },
+  "durationSeconds": 44.09
+}

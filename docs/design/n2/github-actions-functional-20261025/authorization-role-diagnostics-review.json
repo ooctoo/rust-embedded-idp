@@ -1,0 +1,19 @@
+{
+  "parentSha": "64425832dfb59f5469f530cbf42f030a21314a8a",
+  "predecessorRun": 40186939525,
+  "purpose": "distinguish locator/accessibility state from actionability; fourth run reproduced same timeout and geometry was actionable",
+  "productChanged": false,
+  "selectionAssertionsTimeoutsWorkflowChanged": false,
+  "sourceSha256": "bba52389bcdfcd9bcecc3d3fbc8e3ed6b0c5d648c48a641d5bba607f7aaf11f8",
+  "offlineChecks": {
+    "functionalTooling": 33,
+    "ciDriver": 39,
+    "extractedPrivacy": 2,
+    "nodeSyntax": "passed",
+    "sourceWhitespace": "passed"
+  },
+  "privacyProof": "authorization-role-diagnostics-privacy.json",
+  "rawMessagesAndInputValuesPublished": false,
+  "fourthRunCleanup": "confirmed",
+  "fourthRunArtifactDigest": "sha256:3d5629fb63ca4bab800b9a224123cec9ce0b7113b9b7e5c853cdac7ea3321789"
+}
