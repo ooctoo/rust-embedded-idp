@@ -1,0 +1,21 @@
+{
+  "scope": "synthetic DOM only; no server, fixture, database or actual AntD transition; not root-cause proof",
+  "browser": "155.0.8059.85",
+  "observations": [
+    {
+      "mode": "collapsed-decorative-icon",
+      "exactReviewRoleMatches": 0,
+      "visibleButtonCount": 1
+    },
+    {
+      "mode": "explicit-button-label",
+      "exactReviewRoleMatches": 1,
+      "visibleButtonCount": 1
+    },
+    {
+      "mode": "hidden-decorative-icon",
+      "exactReviewRoleMatches": 1,
+      "visibleButtonCount": 1
+    }
+  ]
+}

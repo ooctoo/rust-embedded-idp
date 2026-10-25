@@ -1,0 +1,27 @@
+{
+  "scope": "actual PermissionDirectory component with synthetic client; unknown-write/readback/reopen flow; no Rust server/database",
+  "browser": "155.0.8059.85",
+  "observations": [
+    {
+      "repeat": 0,
+      "createDialogMatches": 1,
+      "exactReviewRoleMatches": 0,
+      "loadingIcons": 2,
+      "loadingButtonClasses": 1
+    },
+    {
+      "repeat": 1,
+      "createDialogMatches": 1,
+      "exactReviewRoleMatches": 0,
+      "loadingIcons": 2,
+      "loadingButtonClasses": 1
+    },
+    {
+      "repeat": 2,
+      "createDialogMatches": 1,
+      "exactReviewRoleMatches": 0,
+      "loadingIcons": 2,
+      "loadingButtonClasses": 1
+    }
+  ]
+}

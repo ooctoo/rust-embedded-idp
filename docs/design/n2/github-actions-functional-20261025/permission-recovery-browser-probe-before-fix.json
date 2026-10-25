@@ -1,0 +1,31 @@
+{
+  "productSourceSha256": "c16045268d261bc0a8e7db44addc6965df6ee6d0f37294ce9045ea867acee483",
+  "scope": "actual PermissionDirectory component with synthetic client; unknown-write/readback/reopen flow; no Rust server/database",
+  "browser": "155.0.8059.85",
+  "observations": [
+    {
+      "repeat": 0,
+      "createDialogMatches": 1,
+      "exactReviewRoleMatches": 1,
+      "reviewWithLoadingNameMatches": 0,
+      "loadingIcons": 1,
+      "loadingButtonClasses": 1
+    },
+    {
+      "repeat": 1,
+      "createDialogMatches": 1,
+      "exactReviewRoleMatches": 0,
+      "reviewWithLoadingNameMatches": 1,
+      "loadingIcons": 2,
+      "loadingButtonClasses": 1
+    },
+    {
+      "repeat": 2,
+      "createDialogMatches": 1,
+      "exactReviewRoleMatches": 0,
+      "reviewWithLoadingNameMatches": 1,
+      "loadingIcons": 2,
+      "loadingButtonClasses": 1
+    }
+  ]
+}

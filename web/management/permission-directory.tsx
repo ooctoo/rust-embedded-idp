@@ -99,7 +99,7 @@ function DirectoryTable({ client, tenant, business, filter, onLocked }: Permissi
     {!result.loading && !result.error && result.controls}
     <Modal rootClassName="management-overlay" open={editing !== undefined} title={editing ? "编辑权限" : "创建权限"}
       afterClose={() => restoreSuccessFocus("editor")}
-      onCancel={close} onOk={() => void form.submit()} confirmLoading={write.busy} closable={!write.busy} maskClosable={false} keyboard={!write.busy} okText="核对" okButtonProps={{ disabled: write.blocked }}>
+      onCancel={close} onOk={() => void form.submit()} confirmLoading={write.busy} closable={!write.busy} maskClosable={false} keyboard={!write.busy} okText="核对" okButtonProps={{ disabled: write.blocked, "aria-label": "核对" }}>
       <Form form={form} name={formName} layout="vertical" disabled={write.busy || write.blocked} onValuesChange={() => { setDirty(true); write.edit(); }} onFinish={values => setReview({ type: "save", values, original: editing || undefined })}>
         <Form.Item name="business_id" label="业务标识" rules={[
           { required: true, message: "请输入所属业务标识" }, { pattern: nameRule, message: "请输入有效业务标识" },

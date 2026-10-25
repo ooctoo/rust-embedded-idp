@@ -1,0 +1,153 @@
+{
+  "total_count": 1,
+  "jobs": [
+    {
+      "id": 121153543703,
+      "run_id": 40188254095,
+      "workflow_name": "N2 functional regression",
+      "head_branch": "codex/management-console-ui-b",
+      "run_url": "https://api.github.com/repos/ooctoo/rust-embedded-idp/actions/runs/40188254095",
+      "run_attempt": 1,
+      "node_id": "CR_kwDOTg7XJ88AAAAcNVBeFw",
+      "head_sha": "da88ba78eef94c77207a8b82fded8a7455927ae9",
+      "url": "https://api.github.com/repos/ooctoo/rust-embedded-idp/actions/jobs/121153543703",
+      "html_url": "https://github.com/ooctoo/rust-embedded-idp/actions/runs/40188254095/job/121153543703",
+      "status": "completed",
+      "conclusion": "failure",
+      "created_at": "2026-10-25T11:17:40Z",
+      "started_at": "2026-10-25T11:17:45Z",
+      "completed_at": "2026-10-25T11:29:09Z",
+      "name": "CI-FUNC-ARM64-01",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-10-25T11:17:46Z",
+          "completed_at": "2026-10-25T11:17:47Z"
+        },
+        {
+          "name": "Initialize private work and public evidence roots",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-10-25T11:17:47Z",
+          "completed_at": "2026-10-25T11:17:47Z"
+        },
+        {
+          "name": "Checkout reviewed ref",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-10-25T11:17:47Z",
+          "completed_at": "2026-10-25T11:17:49Z"
+        },
+        {
+          "name": "Select frozen Node tool runtime",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-10-25T11:17:49Z",
+          "completed_at": "2026-10-25T11:17:53Z"
+        },
+        {
+          "name": "Activate frozen pnpm",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-10-25T11:17:53Z",
+          "completed_at": "2026-10-25T11:17:54Z"
+        },
+        {
+          "name": "Validate tooling offline",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-10-25T11:17:54Z",
+          "completed_at": "2026-10-25T11:17:57Z"
+        },
+        {
+          "name": "Install locked tools and paired full Chromium",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-10-25T11:17:57Z",
+          "completed_at": "2026-10-25T11:18:21Z"
+        },
+        {
+          "name": "Preflight and build isolated arm64 images",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-10-25T11:18:21Z",
+          "completed_at": "2026-10-25T11:23:10Z"
+        },
+        {
+          "name": "Run eight isolated functional suites",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 9,
+          "started_at": "2026-10-25T11:23:10Z",
+          "completed_at": "2026-10-25T11:29:06Z"
+        },
+        {
+          "name": "Finalize cleanup and sanitized evidence",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 10,
+          "started_at": "2026-10-25T11:29:06Z",
+          "completed_at": "2026-10-25T11:29:06Z"
+        },
+        {
+          "name": "Upload public evidence whitelist",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-10-25T11:29:06Z",
+          "completed_at": "2026-10-25T11:29:07Z"
+        },
+        {
+          "name": "Verify functional and delivery gates",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 12,
+          "started_at": "2026-10-25T11:29:07Z",
+          "completed_at": "2026-10-25T11:29:07Z"
+        },
+        {
+          "name": "Post Select frozen Node tool runtime",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 23,
+          "started_at": "2026-10-25T11:29:07Z",
+          "completed_at": "2026-10-25T11:29:07Z"
+        },
+        {
+          "name": "Post Checkout reviewed ref",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 24,
+          "started_at": "2026-10-25T11:29:07Z",
+          "completed_at": "2026-10-25T11:29:08Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 25,
+          "started_at": "2026-10-25T11:29:08Z",
+          "completed_at": "2026-10-25T11:29:08Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/ooctoo/rust-embedded-idp/check-runs/121153543703",
+      "labels": [
+        "ubuntu-24.04-arm"
+      ],
+      "runner_id": 1000000083,
+      "runner_name": "GitHub Actions 1000000083",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    }
+  ]
+}

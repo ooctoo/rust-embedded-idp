@@ -1,0 +1,103 @@
+{
+  "suite": "navigation",
+  "profile": "ci-functional",
+  "status": "passed",
+  "exitCode": 0,
+  "headed": false,
+  "channel": "chromium",
+  "viewport": [
+    1440,
+    1000
+  ],
+  "freshFixture": true,
+  "n2Layout": false,
+  "commands": [
+    {
+      "tool": "scripts/check_management_navigation.mjs",
+      "exitCode": 0,
+      "diagnostic": {
+        "sourceFrames": []
+      }
+    }
+  ],
+  "cleanup": {
+    "objects": [
+      {
+        "name": "idp-n2-linux-032beade9068-prepare-63fb85",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-032beade9068-prepare-f123a1",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-032beade9068-prepare-d30e50",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-032beade9068-prepare-f420c6",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-032beade9068-enabled",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-032beade9068-prepare-147b2d",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-032beade9068-prepare-21aee4",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-032beade9068-prepare-f9acd9",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-032beade9068-disabled",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-032beade9068-prepare-c55779",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-032beade9068-fixed",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-032beade9068-prepare-7f3c64",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-032beade9068-choose",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-ui-b-032beade9068",
+        "exitCode": 0,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-032beade9068-data",
+        "removedOrAbsent": true
+      },
+      {
+        "name": "idp-n2-linux-032beade9068-secrets",
+        "removedOrAbsent": true
+      },
+      {
+        "name": "idp-n2-linux-032beade9068",
+        "removedOrAbsent": true
+      }
+    ],
+    "errors": [],
+    "privateDirectoryRemoved": true
+  },
+  "durationSeconds": 45.33
+}

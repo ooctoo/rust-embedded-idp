@@ -1,0 +1,20 @@
+[
+  {
+    "probe": "loading-name",
+    "originalSourceSha256": "0bf558b94b562be707a30cb198a74d2ea28ce1dfae722510d1d78935ff7e92b7",
+    "redactedSource": "probes/loading-name-source-sanitized.txt",
+    "redactedSourceSha256": "25960a9346ae5983777b37e35f17751c387500515574570fa1fc403e98a31ada"
+  },
+  {
+    "probe": "antd-loading",
+    "originalSourceSha256": "89297e11e646435b80d62564f966fcbf5f998f8904bb90da81d066ad64bb1b6d",
+    "redactedSource": "probes/antd-loading-source-sanitized.txt",
+    "redactedSourceSha256": "35e257b965252344bbb0688d1508ea9c949389d6e9861f70ba66cc9cd58b58a7"
+  },
+  {
+    "probe": "permission-recovery",
+    "originalSourceSha256": "7ba93869bbf122348b227b1b974d7b5033887147e247d5441856b7a03a6be0ec",
+    "redactedSource": "probes/permission-recovery-source-sanitized.txt",
+    "redactedSourceSha256": "3c87f05f37be591af06cfb6c267775efcaebcdefb36acfb3f7976c0ff24c0268"
+  }
+]

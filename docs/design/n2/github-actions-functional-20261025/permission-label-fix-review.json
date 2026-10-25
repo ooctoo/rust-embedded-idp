@@ -1,0 +1,48 @@
+{
+  "parentSha": "da88ba78eef94c77207a8b82fded8a7455927ae9",
+  "predecessorRun": 40188254095,
+  "rootCause": "collapsed leftover AntD loading icon changes accessible name of reopened permission review button; exact role matching cannot find it",
+  "ciConfirmation": {
+    "dialogMatches": 1,
+    "reviewButtonMatches": 0,
+    "loading": false,
+    "loadingIcon": true,
+    "geometryActionable": true,
+    "clickPerformed": false
+  },
+  "localActualComponentBefore": {
+    "initialFailures": 3,
+    "nameChecksFailed": 2,
+    "nameChecksTotal": 3,
+    "syntheticClient": true,
+    "realRustOrDatabase": false
+  },
+  "fix": "explicit aria-label equal to visible review text on permission editor primary button",
+  "localActualComponentAfter": {
+    "checks": 3,
+    "exactReviewRoleMatches": 1,
+    "loadingNameMatches": 0
+  },
+  "productSourceSha256": "0a90e55a551bfd71b59d8ff113f702ca575dd73b35e62bca098152d32a3f23af",
+  "checkerSourceSha256": "0174b6f75fb05a3d9b2561f4540ed774698b6818d0ab351dd1d8d1ac7d94f760",
+  "toolHardening": "closed-page role count diagnostics return null and cannot replace original failure",
+  "offlineChecks": {
+    "webTests": 115,
+    "webBuild": "passed, all four outputs",
+    "functionalTooling": 33,
+    "ciDriver": 39,
+    "diagnosticPrivacyAndClosedPage": 3,
+    "nodeSyntax": "passed",
+    "sourceWhitespace": "passed"
+  },
+  "unchanged": [
+    "security contracts",
+    "unknown-write lock/recovery",
+    "assertions",
+    "timeouts",
+    "functional selection",
+    "workflow",
+    "dependencies"
+  ],
+  "next": "fresh full eight-suite run after signed scoped commit and push"
+}

@@ -1195,10 +1195,10 @@ try {
       };
     })).catch(() => null);
     const roleMatches = {
-      createDialog: await dialog(page, '创建权限').count(),
-      createDialogIncludingHidden: await page.getByRole('dialog', { name: '创建权限', exact: true, includeHidden: true }).count(),
-      checkButton: await button(page, '核对').count(),
-      checkButtonInCreateDialog: await button(dialog(page, '创建权限'), '核对').count(),
+      createDialog: await dialog(page, '创建权限').count().catch(() => null),
+      createDialogIncludingHidden: await page.getByRole('dialog', { name: '创建权限', exact: true, includeHidden: true }).count().catch(() => null),
+      checkButton: await button(page, '核对').count().catch(() => null),
+      checkButtonInCreateDialog: await button(dialog(page, '创建权限'), '核对').count().catch(() => null),
     };
     failureDiagnostics.pages.push({ context: index, controls, roleMatches });
     if (!functionalOnly) await page.screenshot({ path: `${output}/ui-d-failure-${index}.png`, animations: 'disabled', mask: [page.locator('input, textarea, [contenteditable=true]')] }).catch(() => {});
