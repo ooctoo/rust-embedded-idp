@@ -1,5 +1,9 @@
 # 管理后台交付总结与后续实施计划
 
+开源交付边界澄清（2026-10-25）：本仓库负责模块、适配器、接入契约和参考应用自洽；参考单体用于查看/理解配置与验证装配，生产配置、集成和部署由下游仓库承担。[CI边界复审与提速最小方案](ci-speed-minimal-implementation-plan.md)将N2保留为手动专项，`release/x.y.z`仅作为未来上游版本质量入口，不默认绑定H01全套或生产CD。本轮仅文档与既有N2收尾本地归档；CI/CD随后暂停，未实现新触发/缓存、未执行补验或部署。以下历史拓扑中的Linux生产方向不表示本仓库负责生产部署。
+
+N2 GitHub Actions实际补验进展（2026-10-25）：[执行报告](n2-github-actions-functional-execution-result.md)及[独立证据](design/n2/github-actions-functional-20261025/README.md)记录从原冻结SHA的失败、修复与完整复验。最终SHA `14dd9199094464a1f7368e9c95f5c29e7a5354c7`、run `40191248439`在Ubuntu arm64＋Debian/glibc release默认features＋headless Chromium的H01组合，八套264组通过，清理及artifact保全完成独立核对；127项离线工具检查通过。修复提交已签名推送验收分支，收尾报告/最终证据随本轮本地提交归档，未新增推送；不部署，不测试缩放/旁白，不启动M1-03–06，不扩大为整体N2、生产或真实消费者通过。以下为各阶段历史记录。
+
 N2远端就绪与workflow同步进展（2026-10-25）：截至`8fd9f46`的验收内容已按前序授权推送；main仅纳入N2 workflow并修正上下文。本轮将main `4ce8adec`的workflow精确同步到验收分支，完整复审及124项离线工具检查通过；[同步报告](n2-ci-workflow-sync-result.md)记录证据和新执行SHA的冻结规则。本轮仅相关同步、测试和文档/证据提交并推送，264项功能断言组尚未在CI实际执行。下文原阶段记录保留；本轮不触发实际补验、不部署，不测缩放/旁白，M1-03–06未启动。
 
 N2 CI工具实施进展（2026-10-25）：按后续授权完成[功能选集、CI驱动与workflow适配](n2-functional-ci-tooling-result.md)，冻结八套264项计划功能断言，122项离线工具检查通过；初败、修正与最终结果见[独立证据](design/n2/ci-functional-tooling-20261025/README.md)。本轮仅相关工具和文档随本地提交归档，实际SHA以包含本文的Git记录为准，未改产品、未启动浏览器/Docker/PG或实际CI补验，仅本地提交归档、未推送/部署。缩放与旁白不测，真实消费者与生产支持范围继续单列，M1-03–06未启动。

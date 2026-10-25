@@ -1,8 +1,9 @@
 {
-  "reviewedExecutionSha": "4afc9724ba757a22e8cbf4558c7c66a8666e7e96",
+  "reviewedExecutionSha": "14dd9199094464a1f7368e9c95f5c29e7a5354c7",
   "originalFrozenSha": "c304310d146ae916cbd89bad6168b96d3052db53",
   "sourceFiles": [
     "scripts/check_management_authorization.mjs",
+    "scripts/check_management_console.mjs",
     "scripts/check_management_n2_mac.mjs",
     "scripts/n2-ci/runtime-cases.json",
     "scripts/run_management_n2_ci.py",
@@ -15,8 +16,10 @@
   "functionalSelection": "264 selected, 13 excluded; unchanged case identities; refresh case source line corrected",
   "failureDiagnosticPrivacy": "fixed booleans, counts, geometry, allowlisted labels only; closed-page errors retain original failure",
   "regressions": "nonhoisted resolution and delayed two-tab completion both reproduce old failure without live services; real component before/after label probe retained",
-  "simplicityReview": "no new abstraction, dependency, retries, force clicks, timeouts or compatibility branch",
+  "simplicityReview": "one product aria-label, three surgical tooling repairs and failure-only diagnostics; no new abstraction, dependency, retries, force clicks, timeouts or compatibility branch",
   "sourceWhitespace": "passed",
   "machineLogWhitespace": "original bytes preserved separately",
-  "scope": "H01 CI-FUNC-ARM64-01 only; whole N2 and production not accepted by this source review"
+  "scope": "H01 CI-FUNC-ARM64-01 only; whole N2 and production not accepted by this source review",
+  "consoleFinalization": "shared target scope; undefined target counters are zero; startup/partial failures keep original identity and cleanup",
+  "offlineToolChecks": 127
 }

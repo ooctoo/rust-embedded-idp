@@ -1,0 +1,14 @@
+{
+  "requestedAt": "2026-10-25T12:00:35.822202+00:00",
+  "method": "POST",
+  "body": {
+    "ref": "codex/management-console-ui-b"
+  },
+  "expectedHeadSha": "14dd9199094464a1f7368e9c95f5c29e7a5354c7",
+  "predecessorFailureRun": 40189371589,
+  "scope": "fresh full eight-suite revalidation after reviewed repair",
+  "transportAttempt": 1,
+  "automaticDispatchRetries": 0,
+  "acknowledged": true,
+  "response": null
+}

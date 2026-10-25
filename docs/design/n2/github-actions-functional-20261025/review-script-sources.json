@@ -34,5 +34,19 @@
     "originalSha256": "05aa203f8488fe259c9dbb532ef13d033931ff687766925618d1fe0da8c84946",
     "redactedSource": "review-scripts/n2-independent-acceptance.py.sanitized.txt",
     "redactedSha256": "de5963b6c053a268ee60dd98d3b84aedf11d03722ac5b4729fe0c393b40fb263"
+  },
+  {
+    "source": "n2-actions-collect.py v2",
+    "originalSha256": "4a9d40cd8de6e25162aee819e887735286c7077849bafe64b70df85390bdd10d",
+    "redactedSource": "review-scripts/n2-actions-collect-v2.py.sanitized.txt",
+    "redactedSha256": "e0ac3845bafb675cc9762c7a3dd134fb6d75c54807bec2f8e1758eab8949c7a6",
+    "change": "download failure stderr stays private, no signed redirect URL can enter public terminal output"
+  },
+  {
+    "source": "n2-independent-acceptance.py v2",
+    "originalSha256": "4c95f0b7aa203af5b517ae9f1ba5d1d2ace9f92a9b90325d335205e77ada2b4b",
+    "redactedSource": "review-scripts/n2-independent-acceptance-v2.py.sanitized.txt",
+    "redactedSha256": "c8c163c51d7649e9808c028ae6078dd9a6fe80e7a58160525f8c932443595280",
+    "change": "verify successful console finalizer retains actual zero keyboard/danger write counters"
   }
 ]

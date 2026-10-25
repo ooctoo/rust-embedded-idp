@@ -1,0 +1,234 @@
+[
+  {
+    "observedAt": "2026-10-25T12:03:57.859167+00:00",
+    "state": {
+      "runId": 40191248439,
+      "headSha": "14dd9199094464a1f7368e9c95f5c29e7a5354c7",
+      "event": "workflow_dispatch",
+      "status": "in_progress",
+      "conclusion": null,
+      "attempt": 1,
+      "jobs": [
+        {
+          "id": 121162534687,
+          "status": "in_progress",
+          "conclusion": null,
+          "labels": [
+            "ubuntu-24.04-arm"
+          ],
+          "runner": "GitHub Actions 1000000085",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Initialize private work and public evidence roots",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Checkout reviewed ref",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Select frozen Node tool runtime",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Activate frozen pnpm",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Validate tooling offline",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install locked tools and paired full Chromium",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Preflight and build isolated arm64 images",
+              "status": "in_progress",
+              "conclusion": null
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "observedAt": "2026-10-25T12:06:45.701567+00:00",
+    "state": {
+      "runId": 40191248439,
+      "headSha": "14dd9199094464a1f7368e9c95f5c29e7a5354c7",
+      "event": "workflow_dispatch",
+      "status": "in_progress",
+      "conclusion": null,
+      "attempt": 1,
+      "jobs": [
+        {
+          "id": 121162534687,
+          "status": "in_progress",
+          "conclusion": null,
+          "labels": [
+            "ubuntu-24.04-arm"
+          ],
+          "runner": "GitHub Actions 1000000085",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Initialize private work and public evidence roots",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Checkout reviewed ref",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Select frozen Node tool runtime",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Activate frozen pnpm",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Validate tooling offline",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install locked tools and paired full Chromium",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Preflight and build isolated arm64 images",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run eight isolated functional suites",
+              "status": "in_progress",
+              "conclusion": null
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "observedAt": "2026-10-25T12:20:33.410525+00:00",
+    "state": {
+      "runId": 40191248439,
+      "headSha": "14dd9199094464a1f7368e9c95f5c29e7a5354c7",
+      "event": "workflow_dispatch",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "jobs": [
+        {
+          "id": 121162534687,
+          "status": "completed",
+          "conclusion": "success",
+          "labels": [
+            "ubuntu-24.04-arm"
+          ],
+          "runner": "GitHub Actions 1000000085",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Initialize private work and public evidence roots",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Checkout reviewed ref",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Select frozen Node tool runtime",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Activate frozen pnpm",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Validate tooling offline",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install locked tools and paired full Chromium",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Preflight and build isolated arm64 images",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run eight isolated functional suites",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Finalize cleanup and sanitized evidence",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Upload public evidence whitelist",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Verify functional and delivery gates",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Select frozen Node tool runtime",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Checkout reviewed ref",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success"
+            }
+          ]
+        }
+      ]
+    }
+  }
+]

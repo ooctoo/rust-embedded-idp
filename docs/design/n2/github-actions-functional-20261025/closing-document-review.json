@@ -1,0 +1,14 @@
+{
+  "READMEBeforeSha256": "5cb875dfa24980e247ddcc55856c8a368944e8d61527c13cf1a8f1a1d1f047b5",
+  "READMEInsertionOnly": true,
+  "otherREADMEEditsPreserved": true,
+  "documents": [
+    "README.md",
+    "docs/validation-runtime-topology.md",
+    "docs/management-console-delivery-summary-and-plan.md",
+    "docs/management-console-n2-github-actions-functional-plan.md",
+    "docs/n2-github-actions-functional-execution-result.md"
+  ],
+  "productCodeOrWorkflowChangedDuringClosing": false,
+  "closingCommitOrPush": false
+}

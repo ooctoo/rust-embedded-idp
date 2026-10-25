@@ -1,0 +1,79 @@
+{
+  "reviewedAt": "2026-10-25T13:00:58.616025+00:00",
+  "sourceHeadAtReview": "241672beb9341a335a783e23d5cc687a8a3e7fc9",
+  "actualN2ExecutionSha": "14dd9199094464a1f7368e9c95f5c29e7a5354c7",
+  "scope": "existing N2 closure evidence and open-source CI responsibility/minimal-plan documents only",
+  "currentDecision": {
+    "upstream": "module, adapter, API/UI contracts and reference app correctness",
+    "downstream": "production configuration, composition, integration and CD",
+    "N2": "manual specialist regression, not mandatory for every PR or version",
+    "releaseTag": "proposed upstream version quality trigger only; not implemented",
+    "DockerCache": "low priority, deferred",
+    "pauseCICDAfterLocalArchival": true
+  },
+  "sealedArchiveReviews": [
+    {
+      "runId": 40183166070,
+      "originalZipSha256": "7a54f31f161c5819d95cc8a5f54002723ee783bfe658fd4ac5579425f3c58320",
+      "payloadFiles": 3,
+      "apiDigestAndPayloadSeal": "passed"
+    },
+    {
+      "runId": 40183858494,
+      "originalZipSha256": "2520d81c8474a00b795bd2384b28a5749941777847e387c23fdfb006b770815a",
+      "payloadFiles": 28,
+      "apiDigestAndPayloadSeal": "passed"
+    },
+    {
+      "runId": 40185099189,
+      "originalZipSha256": "79c522e41599168844b61e9b898a2a91fef271b33777ea8b30bb8b7161701278",
+      "payloadFiles": 37,
+      "apiDigestAndPayloadSeal": "passed"
+    },
+    {
+      "runId": 40186939525,
+      "originalZipSha256": "3d5629fb63ca4bab800b9a224123cec9ce0b7113b9b7e5c853cdac7ea3321789",
+      "payloadFiles": 37,
+      "apiDigestAndPayloadSeal": "passed"
+    },
+    {
+      "runId": 40188254095,
+      "originalZipSha256": "83d6e84773eda945e2c078bf6cc17d68c3bcf5a4f13f62e3f1d71fa3ff1582e3",
+      "payloadFiles": 37,
+      "apiDigestAndPayloadSeal": "passed"
+    },
+    {
+      "runId": 40189371589,
+      "originalZipSha256": "f62e55fa566cff559baeb35e741d1750a9497388810fe3651b628d86484682db",
+      "payloadFiles": 45,
+      "apiDigestAndPayloadSeal": "passed"
+    },
+    {
+      "runId": 40191248439,
+      "originalZipSha256": "279bb5b5ae7f3e559f0b0b98810512cd38a5bc109a00524782b48ffc734e3ef4",
+      "payloadFiles": 46,
+      "apiDigestAndPayloadSeal": "passed"
+    }
+  ],
+  "frozenValidatorReplay": {
+    "executionSha": "14dd9199094464a1f7368e9c95f5c29e7a5354c7",
+    "toolInputs": 43,
+    "eightSuites": "passed",
+    "actualProductAcceptanceRerun": false
+  },
+  "publicEvidenceFileCount": 400,
+  "allPublicTextSecretPatternScan": "passed",
+  "documentFileLinksAndWhitespace": "passed",
+  "privateRawDirectoryAbsent": true,
+  "existingOfflineChecks": 127,
+  "offlineChecksRerunThisRound": false,
+  "productOrWorkflowChangesThisRound": false,
+  "newPushOrDeployment": false,
+  "excluded": [
+    "zoom",
+    "VoiceOver",
+    "M1-03–06"
+  ],
+  "commitScope": "explicit file manifest; README only owned entries; unrelated changes preserved",
+  "validationBoundary": "static evidence/document/Git review only; existing success applies only to original N2 execution SHA"
+}

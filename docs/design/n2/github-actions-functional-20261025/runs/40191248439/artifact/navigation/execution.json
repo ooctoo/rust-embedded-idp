@@ -1,0 +1,103 @@
+{
+  "suite": "navigation",
+  "profile": "ci-functional",
+  "status": "passed",
+  "exitCode": 0,
+  "headed": false,
+  "channel": "chromium",
+  "viewport": [
+    1440,
+    1000
+  ],
+  "freshFixture": true,
+  "n2Layout": false,
+  "commands": [
+    {
+      "tool": "scripts/check_management_navigation.mjs",
+      "exitCode": 0,
+      "diagnostic": {
+        "sourceFrames": []
+      }
+    }
+  ],
+  "cleanup": {
+    "objects": [
+      {
+        "name": "idp-n2-linux-efbfd16397db-prepare-487da3",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-efbfd16397db-prepare-740967",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-efbfd16397db-prepare-5995c2",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-efbfd16397db-prepare-891caa",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-efbfd16397db-enabled",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-efbfd16397db-prepare-867de5",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-efbfd16397db-prepare-aa0418",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-efbfd16397db-prepare-c73421",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-efbfd16397db-disabled",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-efbfd16397db-prepare-53597c",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-efbfd16397db-fixed",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-efbfd16397db-prepare-1d7fef",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-efbfd16397db-choose",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-ui-b-efbfd16397db",
+        "exitCode": 0,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-efbfd16397db-data",
+        "removedOrAbsent": true
+      },
+      {
+        "name": "idp-n2-linux-efbfd16397db-secrets",
+        "removedOrAbsent": true
+      },
+      {
+        "name": "idp-n2-linux-efbfd16397db",
+        "removedOrAbsent": true
+      }
+    ],
+    "errors": [],
+    "privateDirectoryRemoved": true
+  },
+  "durationSeconds": 47.66
+}

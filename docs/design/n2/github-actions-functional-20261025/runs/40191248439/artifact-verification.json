@@ -1,0 +1,45 @@
+{
+  "observedAt": "2026-10-25T12:22:01.019865+00:00",
+  "id": 12598502265,
+  "url": "https://github.com/ooctoo/rust-embedded-idp/actions/runs/40191248439/artifacts/12598502265",
+  "sha256": "279bb5b5ae7f3e559f0b0b98810512cd38a5bc109a00524782b48ffc734e3ef4",
+  "githubDigest": "sha256:279bb5b5ae7f3e559f0b0b98810512cd38a5bc109a00524782b48ffc734e3ef4",
+  "digestMatches": true,
+  "publicationFileSetAndHashes": "passed",
+  "secretPatternScan": "passed",
+  "expired": false,
+  "createdAt": "2026-10-25T12:19:14Z",
+  "expiresAt": "2026-11-24T12:19:13Z",
+  "rawLogSha256": "a3f56669e745892bd59f87d34e586eda2f000e05f4832584af05c423a6277d73",
+  "logSanitizationChanged": false,
+  "payloadArchived": "all extracted artifact files in artifact/; original archive SHA256 verified",
+  "functionalSummary": {
+    "scope": "CI-FUNC-ARM64-01",
+    "source": {
+      "run_id": "40191248439",
+      "run_attempt": "1",
+      "job": "functional-arm64",
+      "source_sha": "14dd9199094464a1f7368e9c95f5c29e7a5354c7"
+    },
+    "status": "passed",
+    "actualExecution": true,
+    "cleanup": "confirmed",
+    "errors": [],
+    "excluded": [
+      "zoom",
+      "VoiceOver",
+      "visual-acceptance",
+      "M1-03\u201306"
+    ],
+    "artifactRetentionDaysRequested": 30,
+    "artifactEffectiveExpiry": null,
+    "expiryVerification": "pending_first_actual_run_review",
+    "evidenceComplete": true
+  },
+  "eightSuiteEvidence": "passed using validator from execution SHA",
+  "originalArchiveArchived": {
+    "path": "artifact-original.zip",
+    "sha256": "279bb5b5ae7f3e559f0b0b98810512cd38a5bc109a00524782b48ffc734e3ef4",
+    "matchesGitHubDigest": true
+  }
+}

@@ -1,0 +1,103 @@
+{
+  "suite": "n1",
+  "profile": "ci-functional",
+  "status": "passed",
+  "exitCode": 0,
+  "headed": false,
+  "channel": "chromium",
+  "viewport": [
+    1440,
+    1000
+  ],
+  "freshFixture": true,
+  "n2Layout": false,
+  "commands": [
+    {
+      "tool": "scripts/check_management_n1.mjs",
+      "exitCode": 0,
+      "diagnostic": {
+        "sourceFrames": []
+      }
+    }
+  ],
+  "cleanup": {
+    "objects": [
+      {
+        "name": "idp-n2-linux-b0c653a279ff-prepare-39a539",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-b0c653a279ff-prepare-d185a7",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-b0c653a279ff-prepare-f84253",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-b0c653a279ff-prepare-78a978",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-b0c653a279ff-enabled",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-b0c653a279ff-prepare-1a40d5",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-b0c653a279ff-prepare-d4a68c",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-b0c653a279ff-prepare-ccaa61",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-b0c653a279ff-disabled",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-b0c653a279ff-prepare-828d2c",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-b0c653a279ff-fixed",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-b0c653a279ff-prepare-e6a257",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-b0c653a279ff-choose",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-ui-b-b0c653a279ff",
+        "exitCode": 0,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-b0c653a279ff-data",
+        "removedOrAbsent": true
+      },
+      {
+        "name": "idp-n2-linux-b0c653a279ff-secrets",
+        "removedOrAbsent": true
+      },
+      {
+        "name": "idp-n2-linux-b0c653a279ff",
+        "removedOrAbsent": true
+      }
+    ],
+    "errors": [],
+    "privateDirectoryRemoved": true
+  },
+  "durationSeconds": 84.39
+}

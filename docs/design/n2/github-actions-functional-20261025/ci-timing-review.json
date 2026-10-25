@@ -1,0 +1,241 @@
+{
+  "referenceRun": 40189371589,
+  "referenceRunConclusion": "failure in console finalizer after all selected cases; timing still measured",
+  "jobSeconds": 1084.0,
+  "steps": [
+    {
+      "name": "Set up job",
+      "seconds": 2.0
+    },
+    {
+      "name": "Initialize private work and public evidence roots",
+      "seconds": 0.0
+    },
+    {
+      "name": "Checkout reviewed ref",
+      "seconds": 2.0
+    },
+    {
+      "name": "Select frozen Node tool runtime",
+      "seconds": 5.0
+    },
+    {
+      "name": "Activate frozen pnpm",
+      "seconds": 1.0
+    },
+    {
+      "name": "Validate tooling offline",
+      "seconds": 3.0
+    },
+    {
+      "name": "Install locked tools and paired full Chromium",
+      "seconds": 25.0
+    },
+    {
+      "name": "Preflight and build isolated arm64 images",
+      "seconds": 290.0
+    },
+    {
+      "name": "Run eight isolated functional suites",
+      "seconds": 752.0
+    },
+    {
+      "name": "Finalize cleanup and sanitized evidence",
+      "seconds": 0.0
+    },
+    {
+      "name": "Upload public evidence whitelist",
+      "seconds": 2.0
+    },
+    {
+      "name": "Verify functional and delivery gates",
+      "seconds": 0.0
+    },
+    {
+      "name": "Post Select frozen Node tool runtime",
+      "seconds": 0.0
+    },
+    {
+      "name": "Post Checkout reviewed ref",
+      "seconds": 0.0
+    },
+    {
+      "name": "Complete job",
+      "seconds": 0.0
+    }
+  ],
+  "suitesIncludingPreparationAndCleanup": [
+    {
+      "suite": "gates",
+      "seconds": 92.83
+    },
+    {
+      "suite": "n2_mac",
+      "seconds": 55.7
+    },
+    {
+      "suite": "navigation",
+      "seconds": 45.46
+    },
+    {
+      "suite": "clients",
+      "seconds": 92.64
+    },
+    {
+      "suite": "authorization",
+      "seconds": 113.09
+    },
+    {
+      "suite": "security",
+      "seconds": 134.28
+    },
+    {
+      "suite": "n1",
+      "seconds": 81.23
+    },
+    {
+      "suite": "console",
+      "seconds": 137.09
+    }
+  ],
+  "suiteTotalSeconds": 752.32,
+  "cacheAcrossRunsConfigured": false,
+  "productImagesBuiltOncePerRunForAllSuites": true,
+  "fixturesAreFreshPerSuite": true,
+  "proposalStatus": "analysis only; no workflow/test selection changes",
+  "ordinaryCISamples": [
+    {
+      "id": 40181095564,
+      "event": "push",
+      "head_sha": "4ce8adec3c5f501be75e31d0c0df779d76016713",
+      "created_at": "2026-10-25T09:32:51Z",
+      "run_started_at": "2026-10-25T09:32:51Z",
+      "updated_at": "2026-10-25T09:36:20Z",
+      "conclusion": "success"
+    },
+    {
+      "id": 40180721827,
+      "event": "pull_request",
+      "head_sha": "1edfc2d4ea446186bbc27c9b7ba67eb94b3cd65f",
+      "created_at": "2026-10-25T09:27:33Z",
+      "run_started_at": "2026-10-25T09:27:33Z",
+      "updated_at": "2026-10-25T09:31:37Z",
+      "conclusion": "success"
+    },
+    {
+      "id": 40180099956,
+      "event": "push",
+      "head_sha": "cfca218045270ccd97747f65d577ea924f62ceaf",
+      "created_at": "2026-10-25T09:18:33Z",
+      "run_started_at": "2026-10-25T09:18:33Z",
+      "updated_at": "2026-10-25T09:23:43Z",
+      "conclusion": "success"
+    },
+    {
+      "id": 40179655626,
+      "event": "pull_request",
+      "head_sha": "c8875fda99f5db77b6d61a3906b1124a72fa1465",
+      "created_at": "2026-10-25T09:12:02Z",
+      "run_started_at": "2026-10-25T09:12:02Z",
+      "updated_at": "2026-10-25T09:17:29Z",
+      "conclusion": "success"
+    },
+    {
+      "id": 37901364157,
+      "event": "push",
+      "head_sha": "1835ec35790568fefb9f6792a120b3041cfe77ae",
+      "created_at": "2026-10-09T07:50:46Z",
+      "run_started_at": "2026-10-09T07:50:46Z",
+      "updated_at": "2026-10-09T07:55:38Z",
+      "conclusion": "success"
+    }
+  ],
+  "ordinaryCISampleBoundary": "workflow run wall time includes scheduling/post-processing; earlier main/PR snapshots, not a forecast for future code",
+  "successfulRun": {
+    "id": 40191248439,
+    "jobSeconds": 1114.0,
+    "steps": [
+      {
+        "name": "Set up job",
+        "seconds": 2.0
+      },
+      {
+        "name": "Initialize private work and public evidence roots",
+        "seconds": 0.0
+      },
+      {
+        "name": "Checkout reviewed ref",
+        "seconds": 1.0
+      },
+      {
+        "name": "Select frozen Node tool runtime",
+        "seconds": 5.0
+      },
+      {
+        "name": "Activate frozen pnpm",
+        "seconds": 1.0
+      },
+      {
+        "name": "Validate tooling offline",
+        "seconds": 3.0
+      },
+      {
+        "name": "Install locked tools and paired full Chromium",
+        "seconds": 36.0
+      },
+      {
+        "name": "Preflight and build isolated arm64 images",
+        "seconds": 298.0
+      },
+      {
+        "name": "Run eight isolated functional suites",
+        "seconds": 763.0
+      },
+      {
+        "name": "Finalize cleanup and sanitized evidence",
+        "seconds": 0.0
+      },
+      {
+        "name": "Upload public evidence whitelist",
+        "seconds": 1.0
+      },
+      {
+        "name": "Verify functional and delivery gates",
+        "seconds": 1.0
+      },
+      {
+        "name": "Post Select frozen Node tool runtime",
+        "seconds": 0.0
+      },
+      {
+        "name": "Post Checkout reviewed ref",
+        "seconds": 0.0
+      },
+      {
+        "name": "Complete job",
+        "seconds": 0.0
+      }
+    ],
+    "suiteSecondsIncludingPreparationAndCleanup": 763.3299999999999
+  },
+  "recommendationOrder": [
+    "retain ordinary CI as baseline; cheap offline tooling checks",
+    "dependency/build layer caching with frozen input provenance; no fixture/profile/secret caching",
+    "affected functional suites for narrow changes; full suites for cross-cutting security/session/core/workflow changes and release/manual acceptance",
+    "only then evaluate isolated parallel jobs and image-transfer tradeoff"
+  ],
+  "proposedReleaseTag": "release/x.y.z (not configured)",
+  "scopeCorrection": {
+    "source": "latest user clarification; open-source modules/reference app, downstream owns production configuration/integration/CD",
+    "currentPlan": "docs/ci-speed-minimal-implementation-plan.md",
+    "previousRecommendationOrder": "historical proposal before scope clarification, not implemented",
+    "currentRecommendationOrder": [
+      "retain ordinary upstream quality baseline",
+      "keep N2 manual/targeted; do not require H01 full acceptance on every PR/release",
+      "when resumed, measure ordinary pnpm/Cargo dependency caching before Docker-specialist caching",
+      "release/x.y.z validates upstream version quality; downstream handles production acceptance and CD"
+    ],
+    "automaticSelectionFramework": "deferred; no universal 64-group baseline",
+    "pauseCICDAfterLocalArchival": true
+  }
+}

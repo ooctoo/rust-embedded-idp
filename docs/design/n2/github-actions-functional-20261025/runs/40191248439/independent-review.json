@@ -1,0 +1,147 @@
+{
+  "reviewedAt": "2026-10-25T12:25:24.721108+00:00",
+  "executionSha": "14dd9199094464a1f7368e9c95f5c29e7a5354c7",
+  "runId": 40191248439,
+  "scope": "CI-FUNC-ARM64-01; H01 reference host only",
+  "fullBatchAccepted": true,
+  "buildInputsHashCheckedAgainstGit": 259,
+  "toolInputsHashCheckedAgainstGit": 43,
+  "sourceIdentityAndTree": "passed",
+  "actualEnvironment": {
+    "node": "v22.23.4",
+    "pnpm": "10.30.1",
+    "python": "3.12.3",
+    "os": "Linux-6.17.0-1022-azure-aarch64-with-glibc2.39",
+    "arch": "aarch64",
+    "runnerArch": "ARM64",
+    "imageVersion": "20261023.149.3",
+    "cpuCount": 4,
+    "diskFreeBytes": 114167836672,
+    "browser": {
+      "version": "1.64.1",
+      "browser": {
+        "name": "chromium",
+        "revision": "1248",
+        "installByDefault": true,
+        "browserVersion": "156.0.8078.4",
+        "title": "Chrome for Testing"
+      },
+      "executable": "<home>/work/_temp/idp-n2-ci-40191248439-1/browsers/chromium-1248/chrome-linux-arm64/chrome",
+      "binarySha256": "2b3a2bb9c4308ce74cb680dcd50305cfae1f79589305dc92b993f876b5a94f65",
+      "channel": "chromium",
+      "headless": true,
+      "actualVersion": "Google Chrome for Testing 156.0.8078.4"
+    },
+    "tools": {
+      "docker": "Docker version 28.0.4, build b8034c0",
+      "buildx": "github.com/docker/buildx v0.38.0 0dbe87f36ed472fe36b6796c3f70b4210a731fc5",
+      "buildkit": "Name:   default\nDriver: docker\n\nNodes:\nName:             default\nEndpoint:         default\nStatus:           running\nBuildKit version: v0.20.2\nPlatforms:        linux/arm64, linux/arm/v7, linux/arm/v6\nLabels:\n org.mobyproject.buildkit.worker.moby.host-gateway-ip: 172.17.0.1",
+      "kernel": "Linux runnervm4yw5a 6.17.0-1022-azure #22-Ubuntu SMP Mon Jul 27 17:12:01 UTC 2026 aarch64 aarch64 aarch64 GNU/Linux"
+    }
+  },
+  "suites": [
+    {
+      "suite": "gates",
+      "status": "passed",
+      "executedGroups": 10,
+      "missingGroups": 0,
+      "excludedGroups": 0,
+      "cleanupErrors": [],
+      "privateDirectoryRemoved": true,
+      "objectsRecorded": 37,
+      "durationSeconds": 94.29
+    },
+    {
+      "suite": "n2_mac",
+      "status": "passed",
+      "executedGroups": 8,
+      "missingGroups": 0,
+      "excludedGroups": 0,
+      "cleanupErrors": [],
+      "privateDirectoryRemoved": true,
+      "objectsRecorded": 17,
+      "durationSeconds": 55.91
+    },
+    {
+      "suite": "navigation",
+      "status": "passed",
+      "executedGroups": 18,
+      "missingGroups": 0,
+      "excludedGroups": 1,
+      "cleanupErrors": [],
+      "privateDirectoryRemoved": true,
+      "objectsRecorded": 17,
+      "durationSeconds": 47.66
+    },
+    {
+      "suite": "clients",
+      "status": "passed",
+      "executedGroups": 24,
+      "missingGroups": 0,
+      "excludedGroups": 3,
+      "cleanupErrors": [],
+      "privateDirectoryRemoved": true,
+      "objectsRecorded": 17,
+      "durationSeconds": 93.66
+    },
+    {
+      "suite": "authorization",
+      "status": "passed",
+      "executedGroups": 41,
+      "missingGroups": 0,
+      "excludedGroups": 1,
+      "cleanupErrors": [],
+      "privateDirectoryRemoved": true,
+      "objectsRecorded": 17,
+      "durationSeconds": 114.47
+    },
+    {
+      "suite": "security",
+      "status": "passed",
+      "executedGroups": 46,
+      "missingGroups": 0,
+      "excludedGroups": 1,
+      "cleanupErrors": [],
+      "privateDirectoryRemoved": true,
+      "objectsRecorded": 17,
+      "durationSeconds": 133.77
+    },
+    {
+      "suite": "n1",
+      "status": "passed",
+      "executedGroups": 26,
+      "missingGroups": 0,
+      "excludedGroups": 0,
+      "cleanupErrors": [],
+      "privateDirectoryRemoved": true,
+      "objectsRecorded": 17,
+      "durationSeconds": 84.39
+    },
+    {
+      "suite": "console",
+      "status": "passed",
+      "executedGroups": 91,
+      "missingGroups": 0,
+      "excludedGroups": 7,
+      "cleanupErrors": [],
+      "privateDirectoryRemoved": true,
+      "objectsRecorded": 17,
+      "durationSeconds": 139.18
+    }
+  ],
+  "executedGroups": 264,
+  "missingGroups": 0,
+  "coverageMissingGroups": 0,
+  "artifactId": 12598502265,
+  "artifactDigest": "sha256:279bb5b5ae7f3e559f0b0b98810512cd38a5bc109a00524782b48ffc734e3ef4",
+  "artifactExpiresAt": "2026-11-24T12:19:13Z",
+  "publicationAndSecretScan": "passed",
+  "cleanup": "confirmed",
+  "productionAndRealConsumerAcceptance": false,
+  "excluded": [
+    "zoom",
+    "VoiceOver",
+    "M1-03\u201306",
+    "visual-acceptance"
+  ]
+}

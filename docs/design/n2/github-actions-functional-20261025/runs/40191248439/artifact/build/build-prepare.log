@@ -1,0 +1,149 @@
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 2.25kB done
+#1 WARN: InvalidDefaultArgInFrom: Default value for ARG ${NODE_IMAGE} results in empty or invalid base image name (line 4)
+#1 WARN: InvalidDefaultArgInFrom: Default value for ARG ${RUST_IMAGE} results in empty or invalid base image name (line 18)
+#1 WARN: InvalidDefaultArgInFrom: Default value for ARG ${RUNTIME_IMAGE} results in empty or invalid base image name (line 33)
+#1 WARN: InvalidDefaultArgInFrom: Default value for ARG ${RUNTIME_IMAGE} results in empty or invalid base image name (line 44)
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/debian@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/node@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d
+#3 DONE 0.0s
+
+#4 [internal] load metadata for docker.io/library/rust@sha256:d0a4aa3ca2e1088ac0c81690914a0d810f2eee188197034edf366ed010a2b382
+#4 DONE 0.0s
+
+#5 [web-build 1/5] FROM docker.io/library/node@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d
+#5 DONE 0.0s
+
+#6 [rust-build 1/6] FROM docker.io/library/rust@sha256:d0a4aa3ca2e1088ac0c81690914a0d810f2eee188197034edf366ed010a2b382
+#6 DONE 0.0s
+
+#7 [prepare 1/4] FROM docker.io/library/debian@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
+#7 CACHED
+
+#8 [internal] load build context
+#8 transferring context: 20.09kB done
+#8 DONE 0.0s
+
+#9 [rust-build 5/6] COPY --from=web-build /workspace/web/dist/ /workspace/web/dist/
+#9 CACHED
+
+#10 [rust-build 4/6] COPY . .
+#10 CACHED
+
+#11 [web-build 3/5] COPY . .
+#11 CACHED
+
+#12 [web-build 2/5] WORKDIR /workspace
+#12 CACHED
+
+#13 [rust-build 2/6] WORKDIR /workspace
+#13 CACHED
+
+#14 [web-build 5/5] RUN corepack enable     && corepack prepare pnpm@10.30.1 --activate     && node --version     && pnpm --version     && pnpm install --frozen-lockfile     && pnpm test     && pnpm build     && pnpm test:embedded-bundle
+#14 CACHED
+
+#15 [rust-build 3/6] RUN apt-get update     && apt-get install -y --no-install-recommends build-essential pkg-config libssl-dev ca-certificates     && rm -rf /var/lib/apt/lists/*
+#15 CACHED
+
+#16 [web-build 4/5] WORKDIR /workspace/web
+#16 CACHED
+
+#17 [rust-build 6/6] RUN rustc --version && cargo --version     && if [ -n "2" ]; then export CARGO_BUILD_JOBS; else unset CARGO_BUILD_JOBS; fi     && cargo build -p embedded-idp-app --release --locked     && cargo build -p embedded-idp-storage-postgres --example bootstrap_local_postgres --release --locked
+#17 CACHED
+
+#18 [prepare 2/4] RUN apt-get update     && apt-get install -y --no-install-recommends libssl3 ca-certificates openssl     && rm -rf /var/lib/apt/lists/*     && groupadd --gid 10001 idp     && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin idp     && mkdir -p /app
+#18 0.116 Get:1 http://deb.debian.org/debian bookworm InRelease [151 kB]
+#18 0.124 Get:2 http://deb.debian.org/debian bookworm-updates InRelease [55.4 kB]
+#18 0.124 Get:3 http://deb.debian.org/debian-security bookworm-security InRelease [34.8 kB]
+#18 0.173 Get:4 http://deb.debian.org/debian bookworm/main arm64 Packages [8689 kB]
+#18 0.219 Get:5 http://deb.debian.org/debian bookworm-updates/main arm64 Packages [6936 B]
+#18 0.258 Get:6 http://deb.debian.org/debian-security bookworm-security/main arm64 Packages [355 kB]
+#18 0.854 Fetched 9293 kB in 1s (12.4 MB/s)
+#18 0.854 Reading package lists...
+#18 1.333 Reading package lists...
+#18 1.790 Building dependency tree...
+#18 1.954 Reading state information...
+#18 2.151 The following NEW packages will be installed:
+#18 2.152   ca-certificates libssl3 openssl
+#18 2.173 0 upgraded, 3 newly installed, 0 to remove and 1 not upgraded.
+#18 2.173 Need to get 3399 kB of archives.
+#18 2.173 After this operation, 8940 kB of additional disk space will be used.
+#18 2.173 Get:1 http://deb.debian.org/debian-security bookworm-security/main arm64 libssl3 arm64 3.0.22-1~deb12u1 [1828 kB]
+#18 2.190 Get:2 http://deb.debian.org/debian-security bookworm-security/main arm64 openssl arm64 3.0.22-1~deb12u1 [1410 kB]
+#18 2.193 Get:3 http://deb.debian.org/debian-security bookworm-security/main arm64 ca-certificates all 20250419~deb12u2 [161 kB]
+#18 2.287 debconf: delaying package configuration, since apt-utils is not installed
+#18 2.317 Fetched 3399 kB in 0s (95.7 MB/s)
+#18 2.329 Selecting previously unselected package libssl3:arm64.
+#18 2.329 (Reading database ... 
+(Reading database ... 5%
+(Reading database ... 10%
+(Reading database ... 15%
+(Reading database ... 20%
+(Reading database ... 25%
+(Reading database ... 30%
+(Reading database ... 35%
+(Reading database ... 40%
+(Reading database ... 45%
+(Reading database ... 50%
+(Reading database ... 55%
+(Reading database ... 60%
+(Reading database ... 65%
+(Reading database ... 70%
+(Reading database ... 75%
+(Reading database ... 80%
+(Reading database ... 85%
+(Reading database ... 90%
+(Reading database ... 95%
+(Reading database ... 100%
+(Reading database ... 6090 files and directories currently installed.)
+#18 2.332 Preparing to unpack .../libssl3_3.0.22-1~deb12u1_arm64.deb ...
+#18 2.334 Unpacking libssl3:arm64 (3.0.22-1~deb12u1) ...
+#18 2.415 Selecting previously unselected package openssl.
+#18 2.416 Preparing to unpack .../openssl_3.0.22-1~deb12u1_arm64.deb ...
+#18 2.417 Unpacking openssl (3.0.22-1~deb12u1) ...
+#18 2.481 Selecting previously unselected package ca-certificates.
+#18 2.482 Preparing to unpack .../ca-certificates_20250419~deb12u2_all.deb ...
+#18 2.483 Unpacking ca-certificates (20250419~deb12u2) ...
+#18 2.509 Setting up libssl3:arm64 (3.0.22-1~deb12u1) ...
+#18 2.511 Setting up openssl (3.0.22-1~deb12u1) ...
+#18 2.515 Setting up ca-certificates (20250419~deb12u2) ...
+#18 2.567 debconf: unable to initialize frontend: Dialog
+#18 2.567 debconf: (TERM is not set, so the dialog frontend is not usable.)
+#18 2.567 debconf: falling back to frontend: Readline
+#18 2.567 debconf: unable to initialize frontend: Readline
+#18 2.567 debconf: (Can't locate Term/ReadLine.pm in @INC (you may need to install the Term::ReadLine module) (@INC contains: /etc/perl /usr/local/lib/aarch64-linux-gnu/perl/5.36.0 /usr/local/share/perl/5.36.0 /usr/lib/aarch64-linux-gnu/perl5/5.36 /usr/share/perl5 /usr/lib/aarch64-linux-gnu/perl-base /usr/lib/aarch64-linux-gnu/perl/5.36 /usr/share/perl/5.36 /usr/local/lib/site_perl) at /usr/share/perl5/Debconf/FrontEnd/Readline.pm line 7.)
+#18 2.567 debconf: falling back to frontend: Teletype
+#18 2.934 Updating certificates in /etc/ssl/certs...
+#18 3.439 148 added, 0 removed; done.
+#18 3.455 Processing triggers for libc-bin (2.36-9+deb12u14) ...
+#18 3.462 Processing triggers for ca-certificates (20250419~deb12u2) ...
+#18 3.465 Updating certificates in /etc/ssl/certs...
+#18 3.861 0 added, 0 removed; done.
+#18 3.861 Running hooks in /etc/ca-certificates/update.d...
+#18 3.862 done.
+#18 DONE 3.9s
+
+#19 [prepare 3/4] COPY --from=rust-build /workspace/target/release/embedded-idp-app /app/embedded-idp-app
+#19 DONE 0.1s
+
+#20 [prepare 4/4] COPY --from=rust-build /workspace/target/release/examples/bootstrap_local_postgres /app/bootstrap_local_postgres
+#20 DONE 0.0s
+
+#21 exporting to image
+#21 exporting layers
+#21 exporting layers 0.8s done
+#21 writing image sha256:760d15aeab63e46c4ab3a3702fb7e05670ea7d4ae643be94a138528e2cdeda85 done
+#21 naming to docker.io/library/idp-n2-linux:0b633e734d5f-prepare done
+#21 DONE 0.9s
+
+ [33m4 warnings found (use docker --debug to expand):
+[0m - InvalidDefaultArgInFrom: Default value for ARG ${NODE_IMAGE} results in empty or invalid base image name (line 4)
+ - InvalidDefaultArgInFrom: Default value for ARG ${RUST_IMAGE} results in empty or invalid base image name (line 18)
+ - InvalidDefaultArgInFrom: Default value for ARG ${RUNTIME_IMAGE} results in empty or invalid base image name (line 33)
+ - InvalidDefaultArgInFrom: Default value for ARG ${RUNTIME_IMAGE} results in empty or invalid base image name (line 44)
