@@ -1,0 +1,103 @@
+{
+  "suite": "clients",
+  "profile": "ci-functional",
+  "status": "passed",
+  "exitCode": 0,
+  "headed": false,
+  "channel": "chromium",
+  "viewport": [
+    1440,
+    1000
+  ],
+  "freshFixture": true,
+  "n2Layout": false,
+  "commands": [
+    {
+      "tool": "scripts/check_management_clients.mjs",
+      "exitCode": 0,
+      "diagnostic": {
+        "sourceFrames": []
+      }
+    }
+  ],
+  "cleanup": {
+    "objects": [
+      {
+        "name": "idp-n2-linux-1c2646a6bd8c-prepare-88b9cc",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-1c2646a6bd8c-prepare-947200",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-1c2646a6bd8c-prepare-e2d01c",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-1c2646a6bd8c-prepare-0e6673",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-1c2646a6bd8c-enabled",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-1c2646a6bd8c-prepare-1e05fe",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-1c2646a6bd8c-prepare-bf4ea2",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-1c2646a6bd8c-prepare-e3ab87",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-1c2646a6bd8c-disabled",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-1c2646a6bd8c-prepare-d5b5f7",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-1c2646a6bd8c-fixed",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-1c2646a6bd8c-prepare-afe218",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-1c2646a6bd8c-choose",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-ui-b-1c2646a6bd8c",
+        "exitCode": 0,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-1c2646a6bd8c-data",
+        "removedOrAbsent": true
+      },
+      {
+        "name": "idp-n2-linux-1c2646a6bd8c-secrets",
+        "removedOrAbsent": true
+      },
+      {
+        "name": "idp-n2-linux-1c2646a6bd8c",
+        "removedOrAbsent": true
+      }
+    ],
+    "errors": [],
+    "privateDirectoryRemoved": true
+  },
+  "durationSeconds": 92.64
+}

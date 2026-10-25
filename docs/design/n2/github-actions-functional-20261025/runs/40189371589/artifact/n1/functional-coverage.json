@@ -1,0 +1,428 @@
+{
+  "schemaVersion": 1,
+  "profile": "ci-functional",
+  "suite": "n1",
+  "status": "passed",
+  "selected": [
+    {
+      "id": "N2-N1-real-dot-only-client-seed-lookup-edit-and-readback-use-query-and-do-not-carry-target-headers",
+      "case": "real dot-only client seed, lookup, edit and readback use query and do not carry target headers",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 92
+      }
+    },
+    {
+      "id": "N2-N1-dot-only-client-opens-from-the-real-list",
+      "case": "dot-only client opens from the real list",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 97
+      }
+    },
+    {
+      "id": "N2-N1-real-authorized-lookup-200-null-permits-initial-registration",
+      "case": "real authorized lookup 200/null permits initial registration",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 99
+      }
+    },
+    {
+      "id": "N2-N1-injected-404-405-204-201-202-206-html-invalid-json-missing-fields-wrong-id-never-opens-registration-or-post",
+      "case": "injected 404/405/204/201/202/206/HTML/invalid JSON/missing fields/wrong ID never opens registration or POST",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 116
+      }
+    },
+    {
+      "id": "N2-N1-saved-injected-200-null-and-404-keep-write-lock-real-nonnull-read-recovers-without-replay",
+      "case": "saved: injected 200/null and 404 keep write lock; real nonnull read recovers without replay",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 147
+      }
+    },
+    {
+      "id": "N2-N1-unknown-injected-200-null-and-404-keep-write-lock-real-nonnull-read-recovers-without-replay",
+      "case": "unknown: injected 200/null and 404 keep write lock; real nonnull read recovers without replay",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 147
+      }
+    },
+    {
+      "id": "N2-N1-rejected-injected-200-null-and-404-keep-write-lock-real-nonnull-read-recovers-without-replay",
+      "case": "rejected: injected 200/null and 404 keep write lock; real nonnull read recovers without replay",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 147
+      }
+    },
+    {
+      "id": "N2-N1-dot-only-draft-survives-cancelled-cross-page-navigation-without-replay",
+      "case": "dot-only draft survives cancelled cross-page navigation without replay",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 165
+      }
+    },
+    {
+      "id": "N2-N1-dot-only-confirmation-survives-cancelled-cross-page-navigation-without-replay",
+      "case": "dot-only confirmation survives cancelled cross-page navigation without replay",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 165
+      }
+    },
+    {
+      "id": "N2-N1-dot-only-unknown-survives-cancelled-cross-page-navigation-without-replay",
+      "case": "dot-only unknown survives cancelled cross-page navigation without replay",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 165
+      }
+    },
+    {
+      "id": "N2-N1-saved-persistent-null-404-503-read-failure-permits-explicit-close-without-registration-or-replay-independent-read-preserves-durable-outcome",
+      "case": "saved: persistent null/404/503 read failure permits explicit close without registration or replay; independent read preserves durable outcome",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 197
+      }
+    },
+    {
+      "id": "N2-N1-unknown-persistent-null-404-503-read-failure-permits-explicit-close-without-registration-or-replay-independent-read-preserves-durable-outcome",
+      "case": "unknown: persistent null/404/503 read failure permits explicit close without registration or replay; independent read preserves durable outcome",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 197
+      }
+    },
+    {
+      "id": "N2-N1-rejected-persistent-null-404-503-read-failure-permits-explicit-close-without-registration-or-replay-independent-read-preserves-durable-outcome",
+      "case": "rejected: persistent null/404/503 read failure permits explicit close without registration or replay; independent read preserves durable outcome",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 197
+      }
+    },
+    {
+      "id": "N2-N1-real-dot-only-tenant-confirmation-cancel-and-collection-patch-preserve-id-version-and-platform-scope",
+      "case": "real dot-only tenant confirmation, cancel and collection PATCH preserve ID, version and platform scope",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 223
+      }
+    },
+    {
+      "id": "N2-N1-tenant-dot-draft-cancelled-hash-back-forward-target-menu-and-close-preserve-scope-unload-handler-and-confirmed-discard-do-not-replay",
+      "case": "tenant . draft: cancelled hash/back/forward/target/menu and close preserve scope; unload handler and confirmed discard do not replay",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 271
+      }
+    },
+    {
+      "id": "N2-N1-tenant-dot-confirmation-cancelled-hash-back-forward-target-menu-and-close-preserve-scope-unload-handler-and-confirmed-discard-do-not-replay",
+      "case": "tenant . confirmation: cancelled hash/back/forward/target/menu and close preserve scope; unload handler and confirmed discard do not replay",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 271
+      }
+    },
+    {
+      "id": "N2-N1-tenant-dot-unknown-cancelled-hash-back-forward-target-menu-and-close-preserve-scope-unload-handler-and-confirmed-discard-do-not-replay",
+      "case": "tenant . unknown: cancelled hash/back/forward/target/menu and close preserve scope; unload handler and confirmed discard do not replay",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 271
+      }
+    },
+    {
+      "id": "N2-N1-tenant-dot-dot-draft-cancelled-hash-back-forward-target-menu-and-close-preserve-scope-unload-handler-and-confirmed-discard-do-not-replay",
+      "case": "tenant .. draft: cancelled hash/back/forward/target/menu and close preserve scope; unload handler and confirmed discard do not replay",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 271
+      }
+    },
+    {
+      "id": "N2-N1-tenant-dot-dot-confirmation-cancelled-hash-back-forward-target-menu-and-close-preserve-scope-unload-handler-and-confirmed-discard-do-not-replay",
+      "case": "tenant .. confirmation: cancelled hash/back/forward/target/menu and close preserve scope; unload handler and confirmed discard do not replay",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 271
+      }
+    },
+    {
+      "id": "N2-N1-tenant-dot-dot-unknown-cancelled-hash-back-forward-target-menu-and-close-preserve-scope-unload-handler-and-confirmed-discard-do-not-replay",
+      "case": "tenant .. unknown: cancelled hash/back/forward/target/menu and close preserve scope; unload handler and confirmed discard do not replay",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 271
+      }
+    },
+    {
+      "id": "N2-N1-tenant-dot-initial-read-held-real-response-after-same-session-cross-tab-logout-cannot-restore-identity-editor-or-success-no-replay",
+      "case": "tenant . initial-read: held real response after same-session cross-tab logout cannot restore identity, editor or success; no replay",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 329
+      }
+    },
+    {
+      "id": "N2-N1-tenant-dot-patch-held-real-response-after-same-session-cross-tab-logout-cannot-restore-identity-editor-or-success-no-replay",
+      "case": "tenant . patch: held real response after same-session cross-tab logout cannot restore identity, editor or success; no replay",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 329
+      }
+    },
+    {
+      "id": "N2-N1-tenant-dot-readback-held-real-response-after-same-session-cross-tab-logout-cannot-restore-identity-editor-or-success-no-replay",
+      "case": "tenant . readback: held real response after same-session cross-tab logout cannot restore identity, editor or success; no replay",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 329
+      }
+    },
+    {
+      "id": "N2-N1-tenant-dot-dot-initial-read-held-real-response-after-same-session-cross-tab-logout-cannot-restore-identity-editor-or-success-no-replay",
+      "case": "tenant .. initial-read: held real response after same-session cross-tab logout cannot restore identity, editor or success; no replay",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 329
+      }
+    },
+    {
+      "id": "N2-N1-tenant-dot-dot-patch-held-real-response-after-same-session-cross-tab-logout-cannot-restore-identity-editor-or-success-no-replay",
+      "case": "tenant .. patch: held real response after same-session cross-tab logout cannot restore identity, editor or success; no replay",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 329
+      }
+    },
+    {
+      "id": "N2-N1-tenant-dot-dot-readback-held-real-response-after-same-session-cross-tab-logout-cannot-restore-identity-editor-or-success-no-replay",
+      "case": "tenant .. readback: held real response after same-session cross-tab logout cannot restore identity, editor or success; no replay",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 329
+      }
+    }
+  ],
+  "executed": [
+    {
+      "id": "N2-N1-real-dot-only-client-seed-lookup-edit-and-readback-use-query-and-do-not-carry-target-headers",
+      "case": "real dot-only client seed, lookup, edit and readback use query and do not carry target headers",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 92
+      }
+    },
+    {
+      "id": "N2-N1-dot-only-client-opens-from-the-real-list",
+      "case": "dot-only client opens from the real list",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 97
+      }
+    },
+    {
+      "id": "N2-N1-real-authorized-lookup-200-null-permits-initial-registration",
+      "case": "real authorized lookup 200/null permits initial registration",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 99
+      }
+    },
+    {
+      "id": "N2-N1-injected-404-405-204-201-202-206-html-invalid-json-missing-fields-wrong-id-never-opens-registration-or-post",
+      "case": "injected 404/405/204/201/202/206/HTML/invalid JSON/missing fields/wrong ID never opens registration or POST",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 116
+      }
+    },
+    {
+      "id": "N2-N1-saved-injected-200-null-and-404-keep-write-lock-real-nonnull-read-recovers-without-replay",
+      "case": "saved: injected 200/null and 404 keep write lock; real nonnull read recovers without replay",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 147
+      }
+    },
+    {
+      "id": "N2-N1-unknown-injected-200-null-and-404-keep-write-lock-real-nonnull-read-recovers-without-replay",
+      "case": "unknown: injected 200/null and 404 keep write lock; real nonnull read recovers without replay",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 147
+      }
+    },
+    {
+      "id": "N2-N1-rejected-injected-200-null-and-404-keep-write-lock-real-nonnull-read-recovers-without-replay",
+      "case": "rejected: injected 200/null and 404 keep write lock; real nonnull read recovers without replay",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 147
+      }
+    },
+    {
+      "id": "N2-N1-dot-only-draft-survives-cancelled-cross-page-navigation-without-replay",
+      "case": "dot-only draft survives cancelled cross-page navigation without replay",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 165
+      }
+    },
+    {
+      "id": "N2-N1-dot-only-confirmation-survives-cancelled-cross-page-navigation-without-replay",
+      "case": "dot-only confirmation survives cancelled cross-page navigation without replay",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 165
+      }
+    },
+    {
+      "id": "N2-N1-dot-only-unknown-survives-cancelled-cross-page-navigation-without-replay",
+      "case": "dot-only unknown survives cancelled cross-page navigation without replay",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 165
+      }
+    },
+    {
+      "id": "N2-N1-saved-persistent-null-404-503-read-failure-permits-explicit-close-without-registration-or-replay-independent-read-preserves-durable-outcome",
+      "case": "saved: persistent null/404/503 read failure permits explicit close without registration or replay; independent read preserves durable outcome",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 197
+      }
+    },
+    {
+      "id": "N2-N1-unknown-persistent-null-404-503-read-failure-permits-explicit-close-without-registration-or-replay-independent-read-preserves-durable-outcome",
+      "case": "unknown: persistent null/404/503 read failure permits explicit close without registration or replay; independent read preserves durable outcome",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 197
+      }
+    },
+    {
+      "id": "N2-N1-rejected-persistent-null-404-503-read-failure-permits-explicit-close-without-registration-or-replay-independent-read-preserves-durable-outcome",
+      "case": "rejected: persistent null/404/503 read failure permits explicit close without registration or replay; independent read preserves durable outcome",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 197
+      }
+    },
+    {
+      "id": "N2-N1-real-dot-only-tenant-confirmation-cancel-and-collection-patch-preserve-id-version-and-platform-scope",
+      "case": "real dot-only tenant confirmation, cancel and collection PATCH preserve ID, version and platform scope",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 223
+      }
+    },
+    {
+      "id": "N2-N1-tenant-dot-draft-cancelled-hash-back-forward-target-menu-and-close-preserve-scope-unload-handler-and-confirmed-discard-do-not-replay",
+      "case": "tenant . draft: cancelled hash/back/forward/target/menu and close preserve scope; unload handler and confirmed discard do not replay",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 271
+      }
+    },
+    {
+      "id": "N2-N1-tenant-dot-confirmation-cancelled-hash-back-forward-target-menu-and-close-preserve-scope-unload-handler-and-confirmed-discard-do-not-replay",
+      "case": "tenant . confirmation: cancelled hash/back/forward/target/menu and close preserve scope; unload handler and confirmed discard do not replay",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 271
+      }
+    },
+    {
+      "id": "N2-N1-tenant-dot-unknown-cancelled-hash-back-forward-target-menu-and-close-preserve-scope-unload-handler-and-confirmed-discard-do-not-replay",
+      "case": "tenant . unknown: cancelled hash/back/forward/target/menu and close preserve scope; unload handler and confirmed discard do not replay",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 271
+      }
+    },
+    {
+      "id": "N2-N1-tenant-dot-dot-draft-cancelled-hash-back-forward-target-menu-and-close-preserve-scope-unload-handler-and-confirmed-discard-do-not-replay",
+      "case": "tenant .. draft: cancelled hash/back/forward/target/menu and close preserve scope; unload handler and confirmed discard do not replay",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 271
+      }
+    },
+    {
+      "id": "N2-N1-tenant-dot-dot-confirmation-cancelled-hash-back-forward-target-menu-and-close-preserve-scope-unload-handler-and-confirmed-discard-do-not-replay",
+      "case": "tenant .. confirmation: cancelled hash/back/forward/target/menu and close preserve scope; unload handler and confirmed discard do not replay",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 271
+      }
+    },
+    {
+      "id": "N2-N1-tenant-dot-dot-unknown-cancelled-hash-back-forward-target-menu-and-close-preserve-scope-unload-handler-and-confirmed-discard-do-not-replay",
+      "case": "tenant .. unknown: cancelled hash/back/forward/target/menu and close preserve scope; unload handler and confirmed discard do not replay",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 271
+      }
+    },
+    {
+      "id": "N2-N1-tenant-dot-initial-read-held-real-response-after-same-session-cross-tab-logout-cannot-restore-identity-editor-or-success-no-replay",
+      "case": "tenant . initial-read: held real response after same-session cross-tab logout cannot restore identity, editor or success; no replay",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 329
+      }
+    },
+    {
+      "id": "N2-N1-tenant-dot-patch-held-real-response-after-same-session-cross-tab-logout-cannot-restore-identity-editor-or-success-no-replay",
+      "case": "tenant . patch: held real response after same-session cross-tab logout cannot restore identity, editor or success; no replay",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 329
+      }
+    },
+    {
+      "id": "N2-N1-tenant-dot-readback-held-real-response-after-same-session-cross-tab-logout-cannot-restore-identity-editor-or-success-no-replay",
+      "case": "tenant . readback: held real response after same-session cross-tab logout cannot restore identity, editor or success; no replay",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 329
+      }
+    },
+    {
+      "id": "N2-N1-tenant-dot-dot-initial-read-held-real-response-after-same-session-cross-tab-logout-cannot-restore-identity-editor-or-success-no-replay",
+      "case": "tenant .. initial-read: held real response after same-session cross-tab logout cannot restore identity, editor or success; no replay",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 329
+      }
+    },
+    {
+      "id": "N2-N1-tenant-dot-dot-patch-held-real-response-after-same-session-cross-tab-logout-cannot-restore-identity-editor-or-success-no-replay",
+      "case": "tenant .. patch: held real response after same-session cross-tab logout cannot restore identity, editor or success; no replay",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 329
+      }
+    },
+    {
+      "id": "N2-N1-tenant-dot-dot-readback-held-real-response-after-same-session-cross-tab-logout-cannot-restore-identity-editor-or-success-no-replay",
+      "case": "tenant .. readback: held real response after same-session cross-tab logout cannot restore identity, editor or success; no replay",
+      "source": {
+        "path": "scripts/check_management_n1.mjs",
+        "line": 329
+      }
+    }
+  ],
+  "excluded": [],
+  "missing": []
+}

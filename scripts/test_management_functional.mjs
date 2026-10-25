@@ -238,5 +238,42 @@ try {
       finally { timers.forEach(clearTimeout); }
     `)(assert);
   });
+  await asyncCheck('console finalizer preserves write counters and original failures across target setup', async () => {
+    const source = await readFile(new URL('./check_management_console.mjs', import.meta.url), 'utf8');
+    const declaration = source.match(/^let failure[^;]*;/m)?.[0];
+    const lines = source.split('\n');
+    const keyboard = lines.find(line => line.includes("t = await open('enabled', functionalOnly"));
+    const danger = lines.find(line => line.includes("fixed = await open('fixed',"));
+    const finalizer = source.slice(source.lastIndexOf('} catch (error) {'));
+    assert.ok(declaration && keyboard && danger && finalizer.includes('finalizeFunctionalRun'));
+    const run = new AsyncFunction('coverage', 'contexts', 'browser', 'output', 'open', 'finalizeFunctionalRun', 'join', 'mode', 'original', `
+      ${declaration}
+      const cases = ['selected'], pageErrors = [], contrast = [], layouts = [], labels = [], confirmationFocus = [], confirmationKeyboard = [];
+      const functionalOnly = true;
+      try {
+        if (mode === 'early') throw original;
+        ${keyboard}
+        if (mode === 'partial') throw original;
+        ${danger}
+      ${finalizer}
+    `);
+    for (const mode of ['success', 'early', 'partial']) {
+      const [reporter, directory] = mock(`console-finalizer-${mode}`); reporter.pass('selected');
+      const closed = [], original = new Error('synthetic original failure');
+      const result = run(reporter, [{ close: async () => { closed.push('context'); } }],
+        { close: async () => { closed.push('browser'); } }, directory,
+        async key => ({ page: {}, writes: Array(key === 'enabled' ? 2 : 3).fill({}) }),
+        finalizeFunctionalRun, join, mode, original);
+      if (mode === 'success') await result;
+      else await assert.rejects(result, error => error === original);
+      const proof = JSON.parse(await readFile(join(directory, 'results.json'), 'utf8'));
+      assert.equal(proof.keyboardWrites, mode === 'early' ? 0 : 2);
+      assert.equal(proof.dangerPreviewWrites, mode === 'success' ? 3 : 0);
+      assert.equal(proof.complete, mode === 'success');
+      assert.deepEqual(closed, ['context', 'browser']);
+      assert.deepEqual(proof.cleanupErrors, []);
+      assert.equal((await readCoverage(directory)).status, mode === 'success' ? 'passed' : 'failed');
+    }
+  });
   console.log(JSON.stringify({ mode: 'offline-mocks-and-source-branches', checks, suites: Object.keys(functionalManifest.suites), actualBrowserRuns: 0 }));
 } finally { await rm(root, { recursive: true, force: true }); }

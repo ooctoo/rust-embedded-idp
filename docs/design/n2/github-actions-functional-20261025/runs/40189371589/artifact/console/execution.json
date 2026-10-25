@@ -1,0 +1,107 @@
+{
+  "suite": "console",
+  "profile": "ci-functional",
+  "status": "failed",
+  "exitCode": 1,
+  "headed": false,
+  "channel": "chromium",
+  "viewport": [
+    1440,
+    1000
+  ],
+  "freshFixture": true,
+  "n2Layout": false,
+  "commands": [
+    {
+      "tool": "scripts/check_management_console.mjs",
+      "exitCode": 1,
+      "diagnostic": {
+        "sourceFrames": [
+          "scripts/check_management_console.mjs:427",
+          "scripts/check_management_console.mjs:427:118"
+        ]
+      }
+    }
+  ],
+  "error": "RuntimeError",
+  "cleanup": {
+    "objects": [
+      {
+        "name": "idp-n2-linux-48b0ee828067-prepare-f10325",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-48b0ee828067-prepare-773ff8",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-48b0ee828067-prepare-f79094",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-48b0ee828067-prepare-41cc69",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-48b0ee828067-enabled",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-48b0ee828067-prepare-310daa",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-48b0ee828067-prepare-72c6de",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-48b0ee828067-prepare-efe8f4",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-48b0ee828067-disabled",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-48b0ee828067-prepare-9367ac",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-48b0ee828067-fixed",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-48b0ee828067-prepare-59f081",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-48b0ee828067-choose",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-ui-b-48b0ee828067",
+        "exitCode": 0,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-48b0ee828067-data",
+        "removedOrAbsent": true
+      },
+      {
+        "name": "idp-n2-linux-48b0ee828067-secrets",
+        "removedOrAbsent": true
+      },
+      {
+        "name": "idp-n2-linux-48b0ee828067",
+        "removedOrAbsent": true
+      }
+    ],
+    "errors": [],
+    "privateDirectoryRemoved": true
+  },
+  "durationSeconds": 137.09
+}

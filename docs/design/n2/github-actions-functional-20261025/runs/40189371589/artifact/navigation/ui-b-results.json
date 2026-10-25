@@ -1,0 +1,27 @@
+{
+  "cases": [
+    "platform and target retain every existing task without changing login session",
+    "hash Back Forward and Cookie reload restore the selected page",
+    "a delayed old-tenant response cannot populate the new target",
+    "unknown and traversal hashes fail locally; missing targets never mount a data page",
+    "dot tenant IDs are managed and restored without normalized detail paths",
+    "draft cancellation restores history; pending writes block target changes without replay",
+    "a committed write with a lost response stays on its original target until explicit departure and is never replayed",
+    "cancelling Back to an unmarked pre-login entry preserves the current page and draft",
+    "duplicate-hash entries retain their position when cancelling a later Forward",
+    "Disabled retains all nine legacy pages and its dedicated administrator entry",
+    "Fixed nonzero sessions cannot request platform or another tenant via URL",
+    "Choose cancellation preserves its source session and completion opens the new login scope",
+    "Choose accepts and restores exact dot tenant identities",
+    "a pending real refresh blocks navigation before one original-target write (time and expiry injected)",
+    "another tab's logout clears the old workspace and reload returns to login",
+    "the existing inline subject-session action draft uses the same navigation guard",
+    "the keyboard skip-navigation link focuses the page heading without altering its hash",
+    "ordinary 403 retains the workspace while ordinary 401 clears authenticated page data"
+  ],
+  "pageErrors": [],
+  "evidence": "real compiled hosts and PostgreSQL; delayed-read/write injections explicitly scoped",
+  "complete": true,
+  "cleanupErrors": [],
+  "failure": null
+}

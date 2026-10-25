@@ -1,0 +1,44 @@
+PASS CI uses the paired full headless Chromium channel
+PASS CI refuses headed and layout conflicts
+PASS default browser options preserve the existing executable and headed flag
+PASS only the exact explicit profile enables CI selection
+PASS default desktop reporter does not write or reject legacy cases
+PASS initial and incremental coverage cannot claim completion
+PASS reject and persist unknown cases
+PASS reject and persist excluded cases
+PASS reject and persist duplicate cases
+PASS reject and persist missing cases
+PASS reject and persist late cases
+PASS reject unknown suite and malformed duplicate manifest
+PASS navigation: every selected concrete case completes; exclusions remain explicit
+PASS clients: every selected concrete case completes; exclusions remain explicit
+PASS authorization: every selected concrete case completes; exclusions remain explicit
+PASS security: every selected concrete case completes; exclusions remain explicit
+PASS n1: every selected concrete case completes; exclusions remain explicit
+PASS console: every selected concrete case completes; exclusions remain explicit
+PASS case mapping rejects a name that only points at a PASS line
+PASS all cases plus a business or page error remain failed after cleanup
+PASS context-close failure does not skip other contexts or browser close and fails the run
+PASS browser-close failure fails coverage and preserves result evidence
+PASS page errors delivered during cleanup cannot finalize passed coverage
+PASS only successful assertions and all cleanup produce passed coverage
+PASS navigation: exact visual blocks are unreachable in CI
+PASS clients: exact visual blocks are unreachable in CI
+PASS authorization: exact visual blocks are unreachable in CI
+PASS security: exact visual blocks are unreachable in CI
+PASS n1: exact visual blocks are unreachable in CI
+PASS console: exact visual blocks are unreachable in CI
+PASS F keeps desktop keyboard main flow plus all four functional modules
+PASS security transmitted modules mask visual calls and retain functional cancellation
+PASS two-tab refresh probe waits for both real reload completions
+<anonymous_script>:18
+    result: { cases, pageErrors, contrast, layouts, labels, confirmationFocus, confirmationKeyboard, keyboardWrites: t.writes.length, dangerPreviewWrites: fixed.writes.length, evidence: functionalOnly ? 'CI functional selection; isolated compiled reference host; explicit response injections; no visual, zoom or screen-reader acceptance' : 'compiled reference host; isolated DB; explicit response injection and CSS zoom labelled' } });
+                                                                                                                     ^
+
+ReferenceError: t is not defined
+    at eval (eval at <anonymous> (file://<repo>/scripts/test_management_functional.mjs:249:17), <anonymous>:18:118)
+    at async file://<repo>/scripts/test_management_functional.mjs:267:31
+    at async asyncCheck (file://<repo>/scripts/test_management_functional.mjs:14:43)
+    at async file://<repo>/scripts/test_management_functional.mjs:241:3
+
+Node.js v24.19.0

@@ -1,0 +1,39 @@
+# Redacted audit source transcript; private machine paths are placeholders.
+import concurrent.futures,datetime,hashlib,json,os,subprocess,time
+from pathlib import Path
+ROOT=Path('<repo>')
+PUBLIC=ROOT/'docs/design/n2/github-actions-functional-20261025'
+PRIVATE=Path('/tmp/n2-first-actions-private-20261025'); PRIVATE.mkdir(mode=0o700,exist_ok=True); PRIVATE.chmod(0o700)
+PUBLIC.mkdir(parents=True,exist_ok=True)
+REPO='repos/ooctoo/rust-embedded-idp'
+SHA='c304310d146ae916cbd89bad6168b96d3052db53'
+def api(endpoint,method='GET',payload=None):
+    args=['gh','api',REPO+'/'+endpoint,'--method',method]
+    if payload is not None: args+=['--input','-']
+    for attempt in range(3 if method=='GET' else 1):
+        p=subprocess.run(args,input=json.dumps(payload) if payload is not None else None,capture_output=True,text=True,timeout=45)
+        if not p.returncode: return json.loads(p.stdout) if p.stdout.strip() else None
+        if method!='GET' or not any(term in p.stderr for term in ['TLS handshake timeout','connection reset','i/o timeout']): break
+        time.sleep(2)
+    raise RuntimeError(endpoint+': '+p.stderr)
+if __name__=='__main__':
+    endpoints={'repository':'','acceptance':'git/ref/heads/codex/management-console-ui-b','main':'git/ref/heads/main','policy':'actions/permissions','tokenPolicy':'actions/permissions/workflow','workflow':'actions/workflows/395805707','runs':'actions/workflows/395805707/runs?per_page=100'}
+    def get(item):
+        k,endpoint=item
+        if not endpoint:
+            p=subprocess.run(['gh','api',REPO],capture_output=True,text=True,timeout=45); assert p.returncode==0,p.stderr; return k,json.loads(p.stdout)
+        value=api(endpoint)
+        (PRIVATE/(k+'-preflight.json')).write_text(json.dumps(value,indent=2)+'\n')
+        return k,value
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool: data=dict(pool.map(get,endpoints.items()))
+    (PRIVATE/'preflight-raw.json').write_text(json.dumps(data,indent=2)+'\n')
+    assert data['acceptance']['object']['sha']==SHA
+    assert data['workflow']['state']=='active'
+    assert data['repository']['default_branch']=='main' and not data['repository']['archived']
+    assert data['policy']['enabled'] is True
+    if data['policy']['allowed_actions']=='selected': data['selectedActions']=api('actions/permissions/selected-actions'); assert data['selectedActions']['github_owned_allowed'] is True
+    assert not [r for r in data['runs']['workflow_runs'] if r['status']!='completed'],'existing nonterminal N2 run'
+    result={'observedAt':datetime.datetime.now(datetime.timezone.utc).isoformat(),'frozenSha':SHA,'branch':'codex/management-console-ui-b','acceptanceRef':data['acceptance']['object']['sha'],'mainRef':data['main']['object']['sha'],'repository':{k:data['repository'].get(k) for k in ['full_name','default_branch','visibility','archived','disabled']},'actionsPolicy':data['policy'],'workflowTokenPolicy':data['tokenPolicy'],'workflow':{k:data['workflow'].get(k) for k in ['id','name','path','state','html_url']},'historicalRuns':[{'id':r['id'],'event':r['event'],'headSha':r['head_sha'],'status':r['status'],'conclusion':r['conclusion']} for r in data['runs']['workflow_runs']],'runnerAvailability':'actual assignment to ubuntu-24.04-arm must be observed; API runner inventory does not prove hosted capacity','deployment':False}
+    if 'selectedActions' in data: result['selectedActions']=data['selectedActions']
+    (PUBLIC/'remote-preflight.json').write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
+    print(json.dumps(result,ensure_ascii=False))

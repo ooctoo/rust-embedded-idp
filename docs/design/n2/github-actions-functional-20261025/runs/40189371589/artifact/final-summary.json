@@ -1,0 +1,23 @@
+{
+  "scope": "CI-FUNC-ARM64-01",
+  "source": {
+    "run_id": "40189371589",
+    "run_attempt": "1",
+    "job": "functional-arm64",
+    "source_sha": "4afc9724ba757a22e8cbf4558c7c66a8666e7e96"
+  },
+  "status": "failed",
+  "actualExecution": false,
+  "cleanup": "confirmed",
+  "errors": [],
+  "excluded": [
+    "zoom",
+    "VoiceOver",
+    "visual-acceptance",
+    "M1-03\u201306"
+  ],
+  "artifactRetentionDaysRequested": 30,
+  "artifactEffectiveExpiry": null,
+  "expiryVerification": "pending_first_actual_run_review",
+  "evidenceComplete": false
+}

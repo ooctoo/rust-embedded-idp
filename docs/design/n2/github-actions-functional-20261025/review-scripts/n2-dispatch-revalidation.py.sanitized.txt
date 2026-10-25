@@ -1,0 +1,32 @@
+# Redacted audit source transcript; private machine paths are placeholders.
+import datetime,json,runpy,subprocess,sys,time
+c=runpy.run_path('/tmp/n2-first-actions-control.py'); api=c['api']; out=c['PUBLIC']; sha,prefix,predecessor=sys.argv[1:]
+assert subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()==sha
+assert not subprocess.check_output(['git','diff','--name-only','--','scripts'],text=True).strip()
+assert api('git/ref/heads/codex/management-console-ui-b')['object']['sha']==sha
+runs=api('actions/workflows/395805707/runs?per_page=100')['workflow_runs']
+matching=[r for r in runs if r['head_sha']==sha and r['event']=='workflow_dispatch']
+if matching:
+    run=matching[0]; (out/(prefix+'-run-initial.json')).write_text(json.dumps(run,indent=2)+'\n'); print('Existing matching run; no new dispatch:',run['id']); sys.exit(0)
+assert not [r for r in runs if r['status']!='completed']
+p=out/(prefix+'-dispatch.json'); attempt=1
+if p.exists():
+    previous=json.loads(p.read_text()); assert not previous.get('acknowledged'),'acknowledged request requires more reconciliation, never duplicate it'
+    assert 'TLS handshake timeout' in previous.get('error',''),'only proven transport handshake failures may be retried'
+    attempt=previous.get('transportAttempt',1)+1
+    previous['reconciliation']={'observedAt':datetime.datetime.now(datetime.timezone.utc).isoformat(),'matchingWorkflowDispatchRecords':0,'activeWorkflowRuns':0}
+    (out/(prefix+'-transport-'+str(attempt-1)+'.json')).write_text(json.dumps(previous,indent=2)+'\n')
+sys.path.insert(0,str(c['ROOT']/'scripts')); import run_management_n2_ci as ci
+(out/(prefix+'-source-inputs.json')).write_text(json.dumps({'executionSha':sha,'predecessorRun':int(predecessor),'originalFrozenSha':c['SHA'],'toolInputs':ci.tool_manifest(),'functionalAssertionGroups':264,'scope':'same eight-suite lane, versions, workflow, isolation and cleanup gates'},indent=2)+'\n')
+request={'requestedAt':datetime.datetime.now(datetime.timezone.utc).isoformat(),'method':'POST','body':{'ref':'codex/management-console-ui-b'},'expectedHeadSha':sha,'predecessorFailureRun':int(predecessor),'scope':'fresh full eight-suite revalidation after reviewed repair','transportAttempt':attempt,'automaticDispatchRetries':0}
+p.write_text(json.dumps(request,indent=2)+'\n')
+try: request.update(acknowledged=True,response=api('actions/workflows/395805707/dispatches',method='POST',payload=request['body']))
+except Exception as error: request.update(acknowledged=False,error=str(error)); print(str(error))
+p.write_text(json.dumps(request,indent=2)+'\n')
+for attempt in range(6):
+    matching=api('actions/workflows/395805707/runs?event=workflow_dispatch&head_sha='+sha+'&per_page=20')['workflow_runs']
+    if matching:
+        run=matching[0]; assert run['head_sha']==sha and run['event']=='workflow_dispatch'
+        (out/(prefix+'-run-initial.json')).write_text(json.dumps(run,indent=2)+'\n'); print(json.dumps({k:run.get(k) for k in ['id','html_url','head_sha','status','conclusion','run_attempt']})); break
+    time.sleep(3)
+else: raise RuntimeError('No matching run; reconcile before any further dispatch')

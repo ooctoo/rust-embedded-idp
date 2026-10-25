@@ -1,0 +1,54 @@
+# Redacted audit source transcript; private machine paths are placeholders.
+import concurrent.futures,datetime,hashlib,json,runpy,shutil,subprocess,sys,time,zipfile
+from pathlib import Path,PurePosixPath
+c=runpy.run_path('/tmp/n2-first-actions-control.py'); api=c['api']; out=c['PUBLIC']; private=c['PRIVATE']; repo=c['REPO']
+sys.path.insert(0,str(c['ROOT']/'scripts')); import run_management_n2_ci as ci
+run_id=int(sys.argv[1]); root=out/'runs'/str(run_id); root.mkdir(parents=True,exist_ok=True)
+def save(name,data): (root/name).write_text(json.dumps(data,indent=2)+'\n')
+with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
+    futures={name:pool.submit(api,'actions/runs/'+str(run_id)+suffix) for name,suffix in [('run-final',''),('jobs-final','/jobs?filter=all&per_page=100'),('artifacts','/artifacts?per_page=100')]}
+    results={name:f.result() for name,f in futures.items()}
+run=results['run-final']; jobs=results['jobs-final']; artifacts=results['artifacts']
+for name,data in results.items(): save(name+'.json',data)
+assert run['status']=='completed' and all(j['status']=='completed' for j in jobs['jobs']),'run has not reached terminal state'
+for attempt in range(3):
+    p=subprocess.run(['gh','run','view',str(run_id),'--repo','ooctoo/rust-embedded-idp','--log'],capture_output=True,text=True,timeout=60)
+    if p.returncode==0: break
+    time.sleep(2)
+assert p.returncode==0,p.stderr
+raw=p.stdout; (private/(str(run_id)+'-log-raw.txt')).write_text(raw)
+safe=ci.safe_text(raw); (root/'job-log-sanitized.txt').write_text(safe)
+for meta in artifacts['artifacts']:
+    archive=private/(str(meta['id'])+'.zip')
+    for attempt in range(3):
+        with archive.open('wb') as stream: p=subprocess.run(['gh','api',repo+'/actions/artifacts/'+str(meta['id'])+'/zip'],stdout=stream,stderr=subprocess.PIPE,timeout=45)
+        if p.returncode==0: break
+        time.sleep(2)
+    assert p.returncode==0,p.stderr.decode()
+    digest=hashlib.sha256(archive.read_bytes()).hexdigest(); assert meta['digest']=='sha256:'+digest
+    extract=private/('artifact-'+str(meta['id'])); extract.mkdir(mode=0o700,exist_ok=True)
+    with zipfile.ZipFile(archive) as z:
+        assert sum(i.file_size for i in z.infolist())<64*1024*1024
+        for i in z.infolist():
+            q=PurePosixPath(i.filename); assert not q.is_absolute() and all(x not in ['.','..'] for x in q.parts)
+            assert (i.external_attr>>16)&0o170000 != 0o120000
+            path=extract.joinpath(*q.parts)
+            if i.is_dir(): path.mkdir(parents=True,exist_ok=True,mode=0o700)
+            else: path.parent.mkdir(parents=True,exist_ok=True,mode=0o700); path.write_bytes(z.read(i)); path.chmod(0o600)
+    for path in extract.rglob('*'):
+        if path.is_file(): ci.safe_text(path.read_text(encoding='utf-8'))
+    publication='not_present'
+    if (extract/'publication.json').exists(): ci.validate_publication(extract); publication='passed'
+    else:
+        assert {p.name for p in extract.iterdir()}=={'bootstrap-failure.json'}
+        assert json.loads((extract/'bootstrap-failure.json').read_text())['evidence_complete'] is False
+    shutil.copytree(extract,root/'artifact',dirs_exist_ok=True)
+    verify={'observedAt':datetime.datetime.now(datetime.timezone.utc).isoformat(),'id':meta['id'],'url':'https://github.com/ooctoo/rust-embedded-idp/actions/runs/'+str(run_id)+'/artifacts/'+str(meta['id']),'sha256':digest,'githubDigest':meta['digest'],'digestMatches':True,'publicationFileSetAndHashes':publication,'secretPatternScan':'passed','expired':meta['expired'],'createdAt':meta['created_at'],'expiresAt':meta['expires_at'],'rawLogSha256':hashlib.sha256(raw.encode()).hexdigest(),'logSanitizationChanged':safe!=raw,'payloadArchived':'all extracted artifact files in artifact/; original archive SHA256 verified'}
+    assert not meta['expired'] and datetime.datetime.fromisoformat(meta['expires_at'].replace('Z','+00:00'))>datetime.datetime.now(datetime.timezone.utc)
+    if (extract/'final-summary.json').exists():
+        summary=json.loads((extract/'final-summary.json').read_text()); verify.update(functionalSummary=summary)
+        if summary.get('status')=='passed':
+            assert run['conclusion']=='success'
+            subprocess.run([sys.executable,'-B','/tmp/n2-audit-frozen.py',str(root)],check=True); verify['eightSuiteEvidence']='passed using validator from execution SHA'
+    save('artifact-verification.json',verify)
+    print(json.dumps({'runId':run_id,'headSha':run['head_sha'],'conclusion':run['conclusion'],'artifactId':meta['id'],'digest':meta['digest'],'expiresAt':meta['expires_at'],'summary':verify.get('functionalSummary'),'failure':json.loads((extract/'failure.json').read_text()) if (extract/'failure.json').exists() else None},ensure_ascii=False))

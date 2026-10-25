@@ -1,0 +1,9 @@
+# Redacted audit source transcript; private machine paths are placeholders.
+import hashlib,json,pathlib,runpy,shutil,sys
+c=runpy.run_path('/tmp/n2-first-actions-control.py')
+r=c['PUBLIC']/'runs'/sys.argv[1]
+m=json.loads((r/'artifacts.json').read_text())['artifacts'];assert len(m)==1
+m=m[0];p=c['PRIVATE']/(str(m['id'])+'.zip');digest=hashlib.sha256(p.read_bytes()).hexdigest();assert m['digest']=='sha256:'+digest
+shutil.copyfile(p,r/'artifact-original.zip')
+v=json.loads((r/'artifact-verification.json').read_text());v['originalArchiveArchived']={'path':'artifact-original.zip','sha256':digest,'matchesGitHubDigest':True};(r/'artifact-verification.json').write_text(json.dumps(v,indent=2)+'\n')
+print(json.dumps({'run':sys.argv[1],'artifact':m['id'],'originalZipArchived':True,'digest':digest}))

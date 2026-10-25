@@ -16,5 +16,11 @@
     "originalSourceSha256": "7ba93869bbf122348b227b1b974d7b5033887147e247d5441856b7a03a6be0ec",
     "redactedSource": "probes/permission-recovery-source-sanitized.txt",
     "redactedSourceSha256": "3c87f05f37be591af06cfb6c267775efcaebcdefb36acfb3f7976c0ff24c0268"
+  },
+  {
+    "probe": "permission-recovery-click",
+    "originalSourceSha256": "e3eff83abb0d073837ee9ab67f0f81e554caad4543f2ab5547a189ab6e7d0c24",
+    "redactedSource": "probes/permission-recovery-click-source-sanitized.txt",
+    "redactedSourceSha256": "e83930d1dadc2d8036987dcb69fb7cfcd993bfaf9bb556a7e10cbbae560a51ba"
   }
 ]

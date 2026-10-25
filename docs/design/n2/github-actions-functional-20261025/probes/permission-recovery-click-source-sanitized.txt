@@ -1,0 +1,33 @@
+// Redacted source transcript; dependency paths are placeholders.
+import {build} from '<repo>/web/node_modules/vite/dist/node/index.js';
+import {chromium} from '<home>/.npm/_npx/31e32ef8478fbf80/node_modules/playwright/index.mjs';
+import {realpathSync,mkdtempSync,writeFileSync,readFileSync,rmSync,chmodSync} from 'node:fs';
+import path from 'node:path';import{createHash}from'node:crypto';
+const dir=realpathSync(mkdtempSync('/tmp/n2-antd-loading-'));chmodSync(dir,0o700);
+const dependencies='<repo>/web/node_modules/';
+let browser;
+try {
+ writeFileSync(path.join(dir,'index.html'),'<div id="root"></div><script type="module" src="/app.js"></script>');
+ writeFileSync(path.join(dir,'app.js'),`import React from 'react';import{createRoot}from'react-dom/client';import{PermissionDirectory}from'<repo>/web/management/permission-directory.tsx';import'@ant-design/v5-patch-for-react-19';import'<repo>/web/management/styles.css';
+let revision=0;const items=[];const client={getSnapshot:()=>({capabilities:{}}),getMutationSnapshot:()=>({revision}),listPermissionDirectory:async()=>({items,has_more:false,next_cursor:null}),createPermission:async(t,b,k,d)=>{revision++;items.push({...k,business_id:b,description:d,version:1,enabled:true,archived:false,category:'business'});throw Error('Synthetic transport failure');}};createRoot(document.getElementById('root')).render(React.createElement(PermissionDirectory,{client,tenant:'probe-tenant'}));`);
+ await build({root:dir,configFile:false,logLevel:'silent',resolve:{alias:Object.fromEntries(['react','react-dom','antd','@ant-design/v5-patch-for-react-19'].map(n=>[n,dependencies+n]))},build:{outDir:path.join(dir,'dist'),minify:false,emptyOutDir:true}});
+ browser=await chromium.launch({executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true});
+ const observations=[];
+ for(let repeat=0;repeat<3;repeat++){
+  const page=await browser.newPage({viewport:{width:1440,height:1000}});
+  await page.route('http://n2-probe.test/**',async route=>{const pathname=new URL(route.request().url()).pathname;const p=path.join(dir,'dist',pathname==='/'?'index.html':pathname);if(!p.startsWith(path.join(dir,'dist')+path.sep))throw Error('outside temporary fixture');await route.fulfill({body:readFileSync(p),contentType:pathname.endsWith('.js')?'application/javascript':pathname.endsWith('.css')?'text/css':'text/html'});});
+  await page.goto('http://n2-probe.test/');
+  const button=(scope,name)=>scope.getByRole('button',{name:new RegExp('^'+name.split('').join('\\s*')+'$')});
+  const form=page.getByRole('dialog',{name:'创建权限',exact:true});
+  async function fill(resource){await form.getByLabel('业务标识',{exact:true}).fill('probe_test');await form.getByLabel('资源类型',{exact:true}).fill(resource);await form.getByLabel('动作',{exact:true}).fill('read');await form.getByLabel('权限说明',{exact:true}).fill('Synthetic description');}
+  await button(page,'创建权限').click();await fill('lost_probe');await button(form,'核对').click();
+  await button(page.getByRole('dialog',{name:'确认创建权限',exact:true}),'确认').click();
+  await page.getByText('写入结果未确认，请先核对原对象，勿重复提交',{exact:true}).first().waitFor();
+  await button(form,'读取原权限范围首页').click();await button(form,'结束核对').click();await form.waitFor({state:'hidden'});
+  await button(page,'创建权限').click();await fill('saved_probe');await page.waitForTimeout(1000);
+  observations.push({repeat,createDialogMatches:await form.count(),exactReviewRoleMatches:await button(form,'核对').count(),reviewWithLoadingNameMatches:await form.getByRole('button',{name:/loading.*核\s*对|核\s*对.*loading/}).count(),loadingIcons:await page.locator('.ant-modal-footer [aria-label="loading"]').count(),loadingButtonClasses:await page.locator('.ant-modal-footer .ant-btn-loading').count()});
+  await button(form,'核对').click();const review=page.getByRole('dialog',{name:'确认创建权限',exact:true});await review.waitFor();await button(review,'确认').click();observations.at(-1).reopenedEditorReviewAndConfirmClicked=true;
+  await page.close();
+ }
+ const result={productSourceSha256:createHash('sha256').update(readFileSync('<repo>/web/management/permission-directory.tsx')).digest('hex'),scope:'actual PermissionDirectory component with synthetic client; unknown-write/readback/reopen flow; no Rust server/database',browser:browser.version(),observations};writeFileSync('docs/design/n2/github-actions-functional-20261025/permission-recovery-click-probe-'+(process.argv[2]||'after-fix')+'.json',JSON.stringify(result,null,2)+'\n');console.log(JSON.stringify(result));
+}finally{if(browser)await browser.close();rmSync(dir,{recursive:true,force:true});}

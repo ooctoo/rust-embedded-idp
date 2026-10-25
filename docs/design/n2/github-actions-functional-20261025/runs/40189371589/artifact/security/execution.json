@@ -1,0 +1,103 @@
+{
+  "suite": "security",
+  "profile": "ci-functional",
+  "status": "passed",
+  "exitCode": 0,
+  "headed": false,
+  "channel": "chromium",
+  "viewport": [
+    1440,
+    1000
+  ],
+  "freshFixture": true,
+  "n2Layout": false,
+  "commands": [
+    {
+      "tool": "scripts/check_management_security.mjs",
+      "exitCode": 0,
+      "diagnostic": {
+        "sourceFrames": []
+      }
+    }
+  ],
+  "cleanup": {
+    "objects": [
+      {
+        "name": "idp-n2-linux-30a8e5aea32b-prepare-a10914",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-30a8e5aea32b-prepare-834557",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-30a8e5aea32b-prepare-623386",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-30a8e5aea32b-prepare-e8f13f",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-30a8e5aea32b-enabled",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-30a8e5aea32b-prepare-999003",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-30a8e5aea32b-prepare-084601",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-30a8e5aea32b-prepare-0172dd",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-30a8e5aea32b-disabled",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-30a8e5aea32b-prepare-37698b",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-30a8e5aea32b-fixed",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-30a8e5aea32b-prepare-ea19c5",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-30a8e5aea32b-choose",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-ui-b-30a8e5aea32b",
+        "exitCode": 0,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-30a8e5aea32b-data",
+        "removedOrAbsent": true
+      },
+      {
+        "name": "idp-n2-linux-30a8e5aea32b-secrets",
+        "removedOrAbsent": true
+      },
+      {
+        "name": "idp-n2-linux-30a8e5aea32b",
+        "removedOrAbsent": true
+      }
+    ],
+    "errors": [],
+    "privateDirectoryRemoved": true
+  },
+  "durationSeconds": 134.28
+}

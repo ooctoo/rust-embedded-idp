@@ -1,0 +1,38 @@
+[
+  {
+    "source": "n2-first-actions-control.py",
+    "originalSha256": "59924fd4b54e0c9800f6c9530b22e4e72126659c87edc5d4160717eab997d619",
+    "redactedSource": "review-scripts/n2-first-actions-control.py.sanitized.txt",
+    "redactedSha256": "5abb41b5030a4b1ceee3478263816070d54daa7dd36ca2f3e7caac1e62a81f06"
+  },
+  {
+    "source": "n2-dispatch-revalidation.py",
+    "originalSha256": "0e6187a36a660b0eed146aed8f4a5675c7734ff533c36f7342b33339d22903a0",
+    "redactedSource": "review-scripts/n2-dispatch-revalidation.py.sanitized.txt",
+    "redactedSha256": "47bea3a8da8df4488008e24ed6a2688c5b80891220d3f1f0ae1caf7789265fd6"
+  },
+  {
+    "source": "n2-actions-snapshot.py",
+    "originalSha256": "8aac5861c19c096693c6246850afbda8f49531708257229bfaa3b57ee48b9682",
+    "redactedSource": "review-scripts/n2-actions-snapshot.py.sanitized.txt",
+    "redactedSha256": "5f7690bc4f168fe9ea9444d9bcd09541e6f767bba08b598f178ed3419f209d56"
+  },
+  {
+    "source": "n2-actions-collect.py",
+    "originalSha256": "afc14984554fa3c750c181317babb5165579e54f6c5ba1bf3b2c3a43e0429215",
+    "redactedSource": "review-scripts/n2-actions-collect.py.sanitized.txt",
+    "redactedSha256": "0a546785c5d9b801100dd4e7677c320132f2b60a5ad97425e5a4db2399d4b4e5"
+  },
+  {
+    "source": "n2-archive-original.py",
+    "originalSha256": "a14c5f33c42d84edc7bc5fd5fccb6c74b66fe782e1d635fa0b4b83b8f42f639b",
+    "redactedSource": "review-scripts/n2-archive-original.py.sanitized.txt",
+    "redactedSha256": "8b5a2155bd57fdfab871be5e17ba2b71e64b9bb04fd0493824969af6e0d515f5"
+  },
+  {
+    "source": "n2-independent-acceptance.py",
+    "originalSha256": "05aa203f8488fe259c9dbb532ef13d033931ff687766925618d1fe0da8c84946",
+    "redactedSource": "review-scripts/n2-independent-acceptance.py.sanitized.txt",
+    "redactedSha256": "de5963b6c053a268ee60dd98d3b84aedf11d03722ac5b4729fe0c393b40fb263"
+  }
+]

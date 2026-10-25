@@ -1,0 +1,28 @@
+{
+  "parentSha": "4afc9724ba757a22e8cbf4558c7c66a8666e7e96",
+  "predecessorRun": 40189371589,
+  "predecessorResult": "all 264 selected groups executed; console final result missing, full batch remains failed",
+  "rootCause": "console finally referenced try-block const t/fixed outside lexical scope; ReferenceError before finalizeFunctionalRun",
+  "repair": "hoist the two target references; zero counters only for targets not created; keep all counters live and preserve original failure",
+  "productChanged": false,
+  "selectionAssertionsTimeoutsWorkflowChanged": false,
+  "sourceLineMappingsChanged": false,
+  "offlineRegression": "execute exact declaration, target setup and catch/finally code with synthetic open; success, startup failure and partial target setup; verify original failure identity, nonzero write counters, result file and cleanup",
+  "oldFailureReproduced": "ReferenceError: t is not defined",
+  "offlineChecks": {
+    "macTools": 5,
+    "linuxTools": 28,
+    "ciDriver": 39,
+    "processes": 21,
+    "functionalTooling": 34,
+    "total": 127,
+    "actualBrowserDockerDatabaseRuns": 0
+  },
+  "sourceHashes": {
+    "scripts/check_management_console.mjs": "8f11d518fc91edf6b66f56a9acae317bb7fbac31685e68e4a71b45f72e234e99",
+    "scripts/test_management_functional.mjs": "372bef73b6a77eb4fe886b6eb196adc39981f11086537ff45a18180954681d0a"
+  },
+  "sourceWhitespace": "passed",
+  "nodeSyntax": "passed",
+  "next": "signed scoped commit, push and fresh full eight-suite run"
+}

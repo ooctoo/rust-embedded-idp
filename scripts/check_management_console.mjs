@@ -35,7 +35,7 @@ const button = (p, name) => p.getByRole('button', { name: new RegExp('^' + name.
 const settle = p => p.waitForFunction(() => !document.querySelector('.ant-spin-spinning, .ant-spin-blur'));
 const confirmationFocus = [];
 const confirmationKeyboard = [];
-let failure;
+let failure, t, fixed;
 async function goto(p, hash) {
   accepted.add(p);
   try {
@@ -236,7 +236,7 @@ try {
     await t.context.close();
   }
 
-  const t = await open('enabled', functionalOnly ? '#/platform/clients' : '#/platform/home', { width: 390, height: 844 }), p = t.page;
+  t = await open('enabled', functionalOnly ? '#/platform/clients' : '#/platform/home', { width: 390, height: 844 }); const p = t.page;
   const identity = await api(t, '/auth/session');
   if (!functionalOnly) {
   const toggle = button(p, '菜单');
@@ -401,7 +401,7 @@ try {
   pass(`11 Disabled system pages: ${layoutWidths.length} widths, 200-percent CSS zoom and unique headings and form IDs`);
   await system.context.close();
   }
-  const fixed = await open('fixed', '#/tenants/tenant-a/sessions');
+  fixed = await open('fixed', '#/tenants/tenant-a/sessions');
   await fixed.page.getByRole('button', { name: /^查看会话 / }).first().click();
   const single = fixed.page.getByRole('dialog', { name: '会话详情', exact: true }); await single.waitFor(); await settle(fixed.page);
   if (!functionalOnly) {
@@ -424,5 +424,5 @@ try {
 } finally {
   await finalizeFunctionalRun({ coverage, contexts, browser, failure,
     resultPath: join(output, 'results.json'),
-    result: { cases, pageErrors, contrast, layouts, labels, confirmationFocus, confirmationKeyboard, keyboardWrites: t.writes.length, dangerPreviewWrites: fixed.writes.length, evidence: functionalOnly ? 'CI functional selection; isolated compiled reference host; explicit response injections; no visual, zoom or screen-reader acceptance' : 'compiled reference host; isolated DB; explicit response injection and CSS zoom labelled' } });
+    result: { cases, pageErrors, contrast, layouts, labels, confirmationFocus, confirmationKeyboard, keyboardWrites: t?.writes.length ?? 0, dangerPreviewWrites: fixed?.writes.length ?? 0, evidence: functionalOnly ? 'CI functional selection; isolated compiled reference host; explicit response injections; no visual, zoom or screen-reader acceptance' : 'compiled reference host; isolated DB; explicit response injection and CSS zoom labelled' } });
 }
