@@ -1,0 +1,21 @@
+test_app_stop_failure_continues_other_app_and_preserves_postgres_and_storage (__main__.FixtureSafetyTests) ... ok
+test_config_uses_fixture_secret_file_references_and_private_mode (__main__.FixtureSafetyTests) ... ok
+test_container_create_port_bind_failure_keeps_partial_resource_record (__main__.FixtureSafetyTests) ... ok
+test_existing_foreign_volume_is_rejected_before_use (__main__.FixtureSafetyTests) ... ok
+test_failed_inspect_and_failed_listing_propagate_daemon_error (__main__.FixtureSafetyTests) ... ok
+test_failed_inspect_with_name_still_listed_is_not_absence (__main__.FixtureSafetyTests) ... ok
+test_forced_app_stop_is_not_reported_as_clean_success (__main__.FixtureSafetyTests) ... ok
+test_label_mismatch_is_rejected (__main__.FixtureSafetyTests) ... ok
+test_once_failure_keeps_log_and_restart_replaces_old_resource_record (__main__.FixtureSafetyTests) ... ok
+test_partial_create_is_saved_before_docker_failure (__main__.FixtureSafetyTests) ... ok
+test_private_directory_delete_failure_is_recorded_and_runner_writes_result (__main__.FixtureSafetyTests) ... ok
+test_profile_cleanup_errors_keep_private_recovery_diagnostics (__main__.FixtureSafetyTests) ... ok
+test_recorded_container_id_mismatch_is_rejected (__main__.FixtureSafetyTests) ... ok
+test_recovery_state_is_atomic_and_owner_only_under_normal_umask (__main__.FixtureSafetyTests) ... ok
+test_sql_refuses_missing_container_and_uses_verified_id (__main__.FixtureSafetyTests) ... ok
+test_unexpected_published_port_fails_readiness_and_keeps_recovery_state (__main__.FixtureSafetyTests) ... ok
+
+----------------------------------------------------------------------
+Ran 16 tests in 0.070s
+
+OK

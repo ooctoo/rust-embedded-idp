@@ -1,0 +1,17 @@
+{
+  "sourceCommit": "71fc6261a4b6362e3e0181c4414a874f33b4cfd1",
+  "platform": "linux/arm64",
+  "rustTarget": "aarch64-unknown-linux-gnu",
+  "features": "default",
+  "buildMode": "release",
+  "browser": "installed Mac Chrome headed",
+  "scope": "H01 Linux engineering validation; no production, CI or real consumer claim",
+  "voiceOver": "excluded by user",
+  "notStarted": [
+    "M1-03",
+    "M1-04",
+    "M1-05",
+    "M1-06"
+  ],
+  "unrelatedFileHash": "4ef4907646970f1cd06ec80cf51a9516497244d6"
+}

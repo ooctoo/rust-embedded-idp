@@ -1,0 +1,34 @@
+{
+  "pythonAstFiles": [
+    "scripts/build_management_n2_linux.py",
+    "scripts/prepare_management_n2_linux.py",
+    "scripts/run_management_n2_linux.py",
+    "scripts/check_management_n2_linux.py",
+    "scripts/test_management_n2_linux_tools.py"
+  ],
+  "nodeSyntaxFiles": [
+    "scripts/check_management_n2_linux_restart.mjs",
+    "scripts/check_management_clients.mjs",
+    "scripts/check_management_console.mjs"
+  ],
+  "gitDiffCheck": "pass",
+  "cachedIndex": "empty",
+  "relativeMarkdownLinks": "pass",
+  "unrelatedFileGitBlob": "4ef4907646970f1cd06ec80cf51a9516497244d6",
+  "publicEvidenceScan": {
+    "textFiles": 113,
+    "patterns": [
+      "privateKey",
+      "databaseUri",
+      "jwt",
+      "homePath",
+      "privateFixturePath"
+    ],
+    "findings": [],
+    "boundary": "Pattern scan plus redacted metadata design; no raw credentials, profiles, HAR or inspect intentionally archived"
+  },
+  "linuxOfflineTests": 14,
+  "macOfflineTests": 5,
+  "rustfmt": "pass earlier this run; no Rust source changes",
+  "fullRustWorkspaceTests": "not run; product Rust sources unchanged"
+}

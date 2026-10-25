@@ -1,0 +1,20 @@
+{
+  "regionName": "操作范围与后果",
+  "action": "确认",
+  "immediate": {
+    "x": 40,
+    "y": 118,
+    "width": 256,
+    "height": 40
+  },
+  "final": {
+    "x": 40,
+    "y": 118,
+    "width": 256,
+    "height": 40
+  },
+  "viewport": {
+    "width": 320,
+    "height": 150
+  }
+}

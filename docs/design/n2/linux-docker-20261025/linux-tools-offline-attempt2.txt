@@ -1,0 +1,13 @@
+......F.......
+======================================================================
+FAIL: test_forced_app_stop_is_not_reported_as_clean_success (__main__.FixtureSafetyTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<repo>/scripts/test_management_n2_linux_tools.py", line 35, in test_forced_app_stop_is_not_reported_as_clean_success
+    self.assertEqual(remove.call_count, 1)
+AssertionError: 2 != 1
+
+----------------------------------------------------------------------
+Ran 14 tests in 0.015s
+
+FAILED (failures=1)

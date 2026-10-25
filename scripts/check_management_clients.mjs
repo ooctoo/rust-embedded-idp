@@ -14,6 +14,7 @@ const browser = await chromium.launch({ headless: process.env.IDP_UI_HEADED !== 
 const output = process.env.IDP_UI_OUTPUT_DIR ?? fixture.dir;
 await mkdir(output, { recursive: true });
 const contexts = [], cases = [], errors = [], contrast = [];
+const writeDiagnostics = [];
 const heldResponses = new Set();
 const pass = name => { cases.push(name); console.log(`PASS ${name}`); };
 const runId = randomBytes(6).toString('hex');
@@ -43,6 +44,21 @@ async function open(key, hash = key === 'disabled' ? '#/system/clients' : '#/pla
   const page = await context.newPage(); page.setDefaultTimeout(15000);
   page.on('pageerror', error => errors.push(error.name));
   page.on('dialog', dialog => dialog.dismiss());
+  page.on('request', request => {
+    const url = new URL(request.url());
+    if (url.pathname.endsWith('/clients/-/lookup')) writeDiagnostics.push({ phase: 'lookup-request', id: url.searchParams.get('client_id') });
+    if (new URL(request.url()).pathname.endsWith('/clients/upsert') && request.method() === 'POST') {
+      const body = request.postDataJSON();
+      writeDiagnostics.push({ phase: 'request', clientType: body.client_type, pkceRequired: body.pkce_required,
+        hasSecret: Object.hasOwn(body, 'client_secret'), redirectSchemes: body.redirect_uris?.map(uri => uri.split(':')[0]) });
+    }
+  });
+  page.on('response', async response => {
+    if (new URL(response.url()).pathname.endsWith('/clients/upsert') && response.request().method() === 'POST') {
+      const body = await response.json().catch(() => ({}));
+      writeDiagnostics.push({ phase: 'response', status: response.status(), code: body.code ?? (typeof body.error === 'string' ? body.error : body.error?.code) });
+    }
+  });
   let bearer;
   page.on('request', request => { if (new URL(request.url()).pathname.startsWith(`${host.mount}/admin/`)) bearer = request.headers().authorization ?? bearer; });
   await page.goto(host.origin + host.ui + '/' + hash);
@@ -56,7 +72,12 @@ async function locate(page, id) {
   await button(page, '按 ID 登记 / 编辑').click();
   const modal = page.getByRole('dialog', { name: '按 ID 登记 / 编辑', exact: true });
   await modal.getByLabel('客户端 ID', { exact: true }).fill(id);
-  await button(modal, '读取配置').click();
+  const actualId = await modal.getByLabel('客户端 ID', { exact: true }).inputValue();
+  writeDiagnostics.push({ phase: 'lookup-submit', expectedId: id, actualId, idMatches: actualId === id });
+  assert.equal(actualId, id);
+  const lookupRequest = page.waitForRequest(r => isLookup(new URL(r.url()), id));
+  await Promise.all([lookupRequest, button(modal, '读取配置').click()]);
+  await modal.waitFor({ state: 'hidden' });
   await drawer(page).waitFor(); await drawer(page).getByRole('button', { name: '重新读取配置', exact: true }).waitFor({ state: 'visible' });
   await page.waitForFunction(() => !document.querySelector('.management-client-editor .management-client-loading'));
 }
@@ -75,7 +96,12 @@ async function review(page) {
 async function save(page) {
   const id = await drawer(page).locator('.management-client-summary code').innerText();
   const reread = page.waitForResponse(r => isLookup(new URL(r.url()), id) && r.request().method() === 'GET');
-  const [response] = await Promise.all([reread, button(confirm(page), '确认保存').click()]);
+  // Rejecting a write must fail the positive case directly, not masquerade as
+  // a missing automatic readback. Keep the pending readback rejection handled.
+  void reread.catch(() => {});
+  const [write] = await Promise.all([page.waitForResponse(r => new URL(r.url()).pathname.endsWith('/clients/upsert') && r.request().method() === 'POST'), button(confirm(page), '确认保存').click()]);
+  assert.ok(write.ok(), `Positive save was rejected: HTTP ${write.status()}`);
+  const response = await reread;
   assert.ok(response.ok()); await page.getByText(/配置已保存/).first().waitFor();
   await page.waitForFunction(() => !document.querySelector('.management-client-editor .management-client-loading') &&
     [...document.querySelectorAll('.management-client-confirm .ant-modal-wrap')].every(el => getComputedStyle(el).display === 'none'));
@@ -241,9 +267,10 @@ try {
 
   // Explicitly injected failed/malformed responses; each must prevent registration.
   for (const [label, status, body] of [['403', 403, {}], ['500', 500, {}], ['malformed', 200, {}], ['missing module', 404, {}]]) {
-    const pattern = `${base}**`;
+    const targetId = idFor(`uic-injected-${label.replace(' ', '-')}`);
+    const pattern = url => url.origin === new URL(base).origin && isLookup(url, targetId);
     await page.route(pattern, route => route.fulfill({ status, json: body }));
-    await locate(page, idFor(`uic-injected-${label.replace(' ', '-')}`));
+    await locate(page, targetId);
     assert.equal(await drawer(page).getByLabel('名称', { exact: true }).count(), 0);
     assert.equal(await button(drawer(page), '核对并保存').count(), 0);
     await close(page); await page.unroute(pattern);
@@ -527,6 +554,19 @@ try {
   }
   assert.deepEqual(errors, []);
 } catch (error) {
+  const surfaces = [];
+  for (const context of contexts) for (const page of context.pages()) {
+    surfaces.push(await page.evaluate(() => ({
+      lookupVisible: !!document.querySelector('.management-client-lookup .ant-modal-wrap:not([style*="display: none"])'),
+      lookupId: document.querySelector('.management-client-lookup input')?.value,
+      fieldErrors: [...document.querySelectorAll('.ant-form-item-explain-error')].map(e => e.textContent),
+      editorType: document.querySelector('.management-client-editor .ant-select-selection-item')?.textContent,
+      pkce: document.querySelector('.management-client-editor button[role="switch"]')?.getAttribute('aria-checked'),
+      alerts: [...document.querySelectorAll('.management-client-editor .ant-alert-message')].map(e => e.textContent),
+    })).catch(() => ({ unavailable: true })));
+  }
+  await writeFile(`${output}/ui-c-failure-surfaces.json`, JSON.stringify(surfaces, null, 2));
+  await writeFile(`${output}/ui-c-write-diagnostics.json`, JSON.stringify(writeDiagnostics, null, 2));
   console.error(`UI-C failed after: ${cases.at(-1) ?? 'startup'}`);
   for (const [index, context] of contexts.entries()) for (const page of context.pages()) {
     await page.screenshot({ path: `${output}/ui-c-failure-${index}.png`, animations: 'disabled',

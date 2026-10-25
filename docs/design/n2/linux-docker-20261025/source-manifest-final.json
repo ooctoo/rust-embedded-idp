@@ -1,0 +1,67 @@
+{
+  "sourceCommit": "71fc6261a4b6362e3e0181c4414a874f33b4cfd1",
+  "tools": [
+    {
+      "path": "scripts/build_management_n2_linux.py",
+      "sha256": "1f2ca253d6a13f80ee6d4d39114879a571146afa3cfd655332fc4b477ec9f4dc"
+    },
+    {
+      "path": "scripts/check_management_clients.mjs",
+      "sha256": "c8663a2fcb04658ad64cbaa711569fa1ca4ff312447ff86cf31c73f376926f7b"
+    },
+    {
+      "path": "scripts/check_management_console.mjs",
+      "sha256": "8ec780e98a15c7e6abd7c18cac129ea88e823722df5758f99c6997f3208571e1"
+    },
+    {
+      "path": "scripts/check_management_n2_linux.py",
+      "sha256": "2c31c12c22aff46667be66dc15feb3068c85a3a74f3e659da6435c568172c6ce"
+    },
+    {
+      "path": "scripts/check_management_n2_linux_restart.mjs",
+      "sha256": "7331ee57660c3bf2ddd6fb66a15dc2faa1dc26cbcc5f9bade19102ad127366f3"
+    },
+    {
+      "path": "scripts/check_management_n2_mac.mjs",
+      "sha256": "9b32f2c001345c7a3395fe7cf5c719abfb9778d325f42e031d721fe91972305e"
+    },
+    {
+      "path": "scripts/n2-linux/Dockerfile",
+      "sha256": "c358fd98ae4876a45e5675096e1d72724e54f2ec63d0e4890099cefa1a65c21a"
+    },
+    {
+      "path": "scripts/n2-linux/Dockerfile.dockerignore",
+      "sha256": "f52dc159e534aa410911525c18984f6ecd834c59f650e3d3abb8dd5a67a3743c"
+    },
+    {
+      "path": "scripts/prepare_management_n2_linux.py",
+      "sha256": "79f25696ae3bc0196cc3cd6828dabee20c7950aeb94d8c2800118cfc390e809c"
+    },
+    {
+      "path": "scripts/run_management_n2_linux.py",
+      "sha256": "12b07e7781b878bc1287497d031d78a739d9e3cb075fc1b1fe365bbd8fb1d66a"
+    },
+    {
+      "path": "scripts/run_management_n2_mac.py",
+      "sha256": "8a8e8fd378a8ed47d09f38f6b7b5efb6e7f86d4c01848d61338c6a9f34af8d28"
+    },
+    {
+      "path": "scripts/test_management_n2_linux_tools.py",
+      "sha256": "6e39e9ad07937922093c51d3ab5be08e60c31152e6d421b5eb6b2b710a2ba89b"
+    },
+    {
+      "path": "scripts/test_management_n2_tools.py",
+      "sha256": "0bd6a73c44402c5aaaa1e76455408ced93b8e2e84076d4107dd1ee894483c5d1"
+    }
+  ],
+  "buildInputCount": 259,
+  "allFrozenBuildInputHashesStillMatch": true,
+  "productDiff": [
+    "web/management/workflow.tsx"
+  ],
+  "unrelatedFileGitBlob": "4ef4907646970f1cd06ec80cf51a9516497244d6",
+  "buildInputReference": "review-closure/build-focus-fix/source-manifest.json",
+  "changedInputsSinceOriginalBuild": [
+    "web/management/workflow.tsx"
+  ]
+}

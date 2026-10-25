@@ -65,10 +65,16 @@ export function ReadState({ loading, error, status, empty, emptyText, retry, sav
 
 export function SafeConfirm({ children, rootClassName = "", afterOpenChange, ...props }: ModalProps) {
   const id = useId().replace(/[^A-Za-z0-9_-]/g, "");
+  const revealAction = (element: HTMLElement) => {
+    const rect = element.getBoundingClientRect();
+    if (rect.top < 0 || rect.bottom > window.innerHeight) element.scrollIntoView({ block: "nearest", inline: "nearest" });
+  };
   return <Modal width={560} style={{ top: 24 }} {...props}
     rootClassName={`management-overlay embedded-idp-workflow-confirm workflow-confirm-${id} ${rootClassName}`}
     maskClosable={false} closable={!props.confirmLoading} keyboard={!props.confirmLoading}
-    cancelButtonProps={{ ...props.cancelButtonProps, disabled: !!props.confirmLoading }}
+    okButtonProps={{ ...props.okButtonProps, onFocus: event => { revealAction(event.currentTarget); props.okButtonProps?.onFocus?.(event); } }}
+    cancelButtonProps={{ ...props.cancelButtonProps, disabled: !!props.confirmLoading,
+      onFocus: event => { revealAction(event.currentTarget); props.cancelButtonProps?.onFocus?.(event); } }}
     afterOpenChange={open => {
       if (open) document.querySelector<HTMLButtonElement>(`.workflow-confirm-${id} .ant-modal-footer .ant-btn-default`)?.focus();
       afterOpenChange?.(open);

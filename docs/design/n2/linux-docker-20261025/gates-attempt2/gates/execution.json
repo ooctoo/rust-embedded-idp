@@ -1,0 +1,205 @@
+{
+  "suite": "gates",
+  "startedUtc": "2026-10-25T02:10:29.746871+00:00",
+  "platform": "linux/arm64",
+  "headed": true,
+  "freshFixture": true,
+  "n2Layout": true,
+  "postgresVersion": "18.6 (Debian 18.6-1.pgdg12+2)",
+  "commands": [
+    {
+      "tool": "check_management_n2_linux.py",
+      "exitCode": 0,
+      "passLines": [],
+      "diagnostic": ""
+    },
+    {
+      "tool": "check_management_n2_linux_restart.mjs",
+      "exitCode": 0,
+      "passLines": [
+        "PASS separate browser Cookie and explicit-token sessions established",
+        "PASS owned app stopped and rebuilt at the same origin and paths",
+        "PASS explicit Bearer token still authenticates the same session after restart",
+        "PASS existing persistent-profile Cookie restores the same session and expiry",
+        "PASS explicit-token logout revokes only its session",
+        "PASS browser UI logout revokes its session and rejects replay of the old Cookie"
+      ],
+      "diagnostic": ""
+    }
+  ],
+  "exitCode": 0,
+  "restartAttempts": [
+    {
+      "name": "idp-n2-linux-6e8c01c9d08e-enabled",
+      "exitCode": 143,
+      "oomKilled": false
+    }
+  ],
+  "cleanup": {
+    "objects": [
+      {
+        "name": "idp-n2-linux-6e8c01c9d08e-prepare-4a1d66",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-6e8c01c9d08e-prepare-2ca420",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-6e8c01c9d08e-prepare-6d27f0",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-6e8c01c9d08e-prepare-1be0a5",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-6e8c01c9d08e-prepare-a89f98",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-6e8c01c9d08e-prepare-1cea35",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-6e8c01c9d08e-prepare-62b728",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-6e8c01c9d08e-disabled",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-6e8c01c9d08e-prepare-6579e4",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-6e8c01c9d08e-fixed",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-6e8c01c9d08e-prepare-ec948a",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-6e8c01c9d08e-choose",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-6e8c01c9d08e-prepare-2cad40",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-6e8c01c9d08e-default",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-6e8c01c9d08e-prepare-c8924a",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-6e8c01c9d08e-missing-schema",
+        "exitCode": 1,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-6e8c01c9d08e-prepare-366ee1",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-6e8c01c9d08e-missing-client",
+        "exitCode": 1,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-6e8c01c9d08e-prepare-0b2c19",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-6e8c01c9d08e-prepare-b6cdb9",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-6e8c01c9d08e-bad-key",
+        "exitCode": 1,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-6e8c01c9d08e-prepare-71c61a",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-6e8c01c9d08e-prepare-5d91d8",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-6e8c01c9d08e-key-permissions",
+        "exitCode": 1,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-6e8c01c9d08e-prepare-736ded",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-6e8c01c9d08e-source-conflict",
+        "exitCode": 1,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-6e8c01c9d08e-prepare-ba0401",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-6e8c01c9d08e-unsupported-business",
+        "exitCode": 1,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-6e8c01c9d08e-prepare-d0951d",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-6e8c01c9d08e-prepare-0b0a33",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-6e8c01c9d08e-missing-admin",
+        "exitCode": 1,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-6e8c01c9d08e-prepare-59cb32",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-6e8c01c9d08e-enabled",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-ui-b-6e8c01c9d08e",
+        "exitCode": 0,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-6e8c01c9d08e",
+        "removedOrAbsent": true
+      },
+      {
+        "name": "idp-n2-linux-6e8c01c9d08e-data",
+        "removedOrAbsent": true
+      },
+      {
+        "name": "idp-n2-linux-6e8c01c9d08e-secrets",
+        "removedOrAbsent": true
+      }
+    ],
+    "errors": [],
+    "privateDirectoryRemoved": true
+  },
+  "durationSeconds": 119.05
+}

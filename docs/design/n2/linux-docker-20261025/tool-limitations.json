@@ -1,0 +1,11 @@
+{
+  "cliWrapper": {
+    "exitCode": 1,
+    "failure": "npm network ENOTFOUND; package not installed",
+    "fallback": "existing repository acceptance scripts and installed Playwright library"
+  },
+  "pythonCompileCache": {
+    "failure": "py_compile default cache location outside writable roots",
+    "resolution": "-B unittest and ast.parse; no outside cache required"
+  }
+}

@@ -1,0 +1,93 @@
+{
+  "browserVersion": "155.0.8059.85",
+  "headed": true,
+  "profileMode": "owned persistent regular profiles; not incognito contexts",
+  "profilesRemoved": 6,
+  "cleanupErrors": [],
+  "cases": [
+    {
+      "name": "four ports coexist in one Cookie jar and restore their exact sessions",
+      "cookieMetadata": [
+        {
+          "name": "idp_ui_b_enabled",
+          "path": "/identity/admin/auth/browser",
+          "domain": "127.0.0.1",
+          "httpOnly": true,
+          "sameSite": "Strict",
+          "secure": false
+        },
+        {
+          "name": "idp_ui_b_fixed",
+          "path": "/identity/admin/auth/browser",
+          "domain": "127.0.0.1",
+          "httpOnly": true,
+          "sameSite": "Strict",
+          "secure": false
+        },
+        {
+          "name": "idp_ui_b_choose",
+          "path": "/identity/admin/auth/browser",
+          "domain": "127.0.0.1",
+          "httpOnly": true,
+          "sameSite": "Strict",
+          "secure": false
+        },
+        {
+          "name": "idp_ui_b_disabled",
+          "path": "/gateway/admin/auth/browser",
+          "domain": "127.0.0.1",
+          "httpOnly": true,
+          "sameSite": "Strict",
+          "secure": false
+        }
+      ],
+      "sessionEquality": [
+        true,
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "name": "forged subject without a credential and forged platform target cannot grant authority",
+      "unauthenticated": 401,
+      "nonzeroPlatformTarget": 403
+    },
+    {
+      "name": "logout at one port does not replace or revoke the three other entry sessions"
+    },
+    {
+      "name": "no-locks injection fails closed before Cookie login and clears password",
+      "injection": "no-locks",
+      "browserLoginRequests": 0
+    },
+    {
+      "name": "storage-get injection fails closed before Cookie login and clears password",
+      "injection": "storage-get",
+      "browserLoginRequests": 0
+    },
+    {
+      "name": "storage-set injection fails closed before Cookie login and clears password",
+      "injection": "storage-set",
+      "browserLoginRequests": 0
+    },
+    {
+      "name": "storage-discard injection fails closed before Cookie login and clears password",
+      "injection": "storage-discard",
+      "browserLoginRequests": 0
+    },
+    {
+      "name": "two real tabs serialize actual refresh rotations under Web Locks",
+      "injection": "login/restore expiry and client clock only",
+      "rotations": 2,
+      "maximumConcurrentRefresh": 1,
+      "authoritativeSessionUnchanged": true
+    }
+  ],
+  "pageErrors": [],
+  "refreshResponses": [
+    200,
+    200
+  ],
+  "complete": true
+}

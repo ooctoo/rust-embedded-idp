@@ -1,0 +1,50 @@
+{
+  "reviewed": [
+    "container build inputs and artifact identity",
+    "fixture ownership, partial creation, restart and cleanup",
+    "L01-L09 result mapping",
+    "browser assertion changes, SafeConfirm focus repair and callback preservation",
+    "historical failures and public evidence",
+    "documentation temporal scope and relative links",
+    "simplicity and scoped local commit"
+  ],
+  "fixes": [
+    "SQL refuses absent container and executes verified ID",
+    "private-directory cleanup errors persist execution result and fail suite",
+    "SafeConfirm reveals full focused action in short viewport",
+    "historical plan-only wording clarified"
+  ],
+  "linuxOfflineTests": 16,
+  "macOfflineTests": 5,
+  "webTests": 115,
+  "bundleTests": 3,
+  "pythonAst": "pass",
+  "nodeSyntax": "pass",
+  "rustfmt": "pass; see rustfmt.txt",
+  "gitDiffCheck": "pass for source, tests, documentation and structured evidence; original machine build .log files excluded from whitespace normalization",
+  "allEightRepairedArtifactStages": "pass",
+  "independentRepairedConsole": "98 groups passed",
+  "currentRunnerRealSessionSupplement": "8 groups passed",
+  "runtimeAndBuildSourceBoundary": "Per-run tool manifests retained. Final runner cleanup-failure reporting adjustment is covered by mock failure and final-tools-check real success; it does not change the successful paths of the eight-stage run.",
+  "remainingLimits": [
+    "Initial client positive-save rejection cannot be retrospectively attributed from the retained original evidence",
+    "No whole-N2, production, real-consumer, CI, Windows or native IME/zoom revalidation claim",
+    "Intermittent natural SafeConfirm clipping was repaired and retested; explicit boundary injection also passed on the original artifact and is not a guaranteed pre-fix failure"
+  ],
+  "unrelatedFileGitBlob": "4ef4907646970f1cd06ec80cf51a9516497244d6",
+  "scopePolicy": "Only this batch; no push, deployment, CI or M1-03-06 work",
+  "relativeMarkdownLinks": "pass",
+  "publicEvidenceScan": {
+    "textFiles": 209,
+    "patterns": [
+      "privateKey",
+      "databaseUri",
+      "jwt",
+      "homePath",
+      "fixturePassword",
+      "clientSecretValue"
+    ],
+    "findings": []
+  },
+  "machineLogWhitespace": "Original apt/pnpm/build output trailing spaces retained, hashes unchanged; 10 sanitized .log files intentionally included despite gitignore"
+}

@@ -30,6 +30,8 @@ const layoutWidths = process.env.IDP_UI_N2_LAYOUT === '1' ? [320, 390, 767, 768,
 const pass = name => { cases.push(name); console.log(`PASS ${name}`); };
 const button = (p, name) => p.getByRole('button', { name: new RegExp('^' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/([\u3400-\u9fff])(?=[\u3400-\u9fff])/g, '$1\\s*') + '$') });
 const settle = p => p.waitForFunction(() => !document.querySelector('.ant-spin-spinning, .ant-spin-blur'));
+const confirmationFocus = [];
+const confirmationKeyboard = [];
 async function goto(p, hash) {
   accepted.add(p);
   try {
@@ -109,12 +111,13 @@ async function layout(p, label, width) {
   assert.ok(result.uniqueInputs); assert.equal(result.headings, 1);
   layouts.push({ label, width, ...result });
 }
-async function shortConfirmation(p, modal, regionName, cancelName, confirmName) {
+async function shortConfirmation(p, modal, regionName, cancelName, confirmName, trial = 1) {
   await p.setViewportSize({ width: 320, height: 150 });
   const region = modal.getByRole('region', { name: regionName, exact: true });
   const dimensions = await region.evaluate(el => ({ height: el.clientHeight, scrollHeight: el.scrollHeight, width: el.clientWidth, scrollWidth: el.scrollWidth }));
   assert.ok(dimensions.height > 0, 'short viewport must not collapse the consequences to zero height');
   assert.ok(dimensions.scrollWidth <= dimensions.width + 1, 'consequence text reflows locally');
+  await region.evaluate(el => { el.scrollTop = 0; });
   await region.focus();
   if (dimensions.scrollHeight > dimensions.height) {
     await p.keyboard.press('PageDown');
@@ -122,8 +125,57 @@ async function shortConfirmation(p, modal, regionName, cancelName, confirmName) 
   }
   for (const name of [confirmName, cancelName]) {
     const action = button(modal, name); await action.focus();
+    const immediate = await action.boundingBox();
+    try {
+      await p.waitForFunction(el => {
+        const rect = el.getBoundingClientRect();
+        return document.activeElement === el && rect.top >= -1 && rect.bottom <= innerHeight + 1;
+      }, await action.elementHandle(), { timeout: 3000 });
+    } catch (error) {
+      const scrollContext = await action.evaluate(el => {
+        const ancestors = [];
+        for (let node = el; node; node = node.parentElement) {
+          const style = getComputedStyle(node), rect = node.getBoundingClientRect();
+          ancestors.push({ tag: node.tagName, className: node.className, top: rect.top, bottom: rect.bottom,
+            scrollTop: node.scrollTop, scrollHeight: node.scrollHeight, clientHeight: node.clientHeight,
+            overflowY: style.overflowY, paddingBottom: style.paddingBottom, scrollPaddingBottom: style.scrollPaddingBottom });
+        }
+        return { focused: document.activeElement === el, innerHeight, visualHeight: visualViewport?.height, ancestors };
+      });
+      await writeFile(join(output, 'short-confirmation-failure.json'), JSON.stringify({ regionName, action: name, immediate, final: await action.boundingBox(), viewport: p.viewportSize(), scrollContext }, null, 2));
+      await p.screenshot({ path: join(output, 'short-confirmation-failure.png'), mask: [p.locator('input,textarea')], animations: 'disabled' });
+      throw error;
+    }
     const rect = await action.boundingBox();
     assert.ok(rect && rect.y >= -1 && rect.y + rect.height <= 151, 'focused confirmation action is not clipped');
+    confirmationFocus.push({ regionName, trial, action: name, immediate, settled: rect, fullyVisible: true });
+  }
+  // The loop ends on cancel: use a real Tab to reach the confirming action.
+  await p.keyboard.press('Tab');
+  const keyboardAction = button(modal, confirmName);
+  await focused(p, keyboardAction);
+  const keyboardRect = await keyboardAction.boundingBox();
+  assert.ok(keyboardRect && keyboardRect.y >= -1 && keyboardRect.y + keyboardRect.height <= 151, 'keyboard-focused confirmation action is not clipped');
+  confirmationKeyboard.push({ regionName, trial, action: confirmName, key: 'Tab', rect: keyboardRect, fullyVisible: true });
+  if (regionName === '操作范围与后果') {
+    await button(modal, cancelName).focus();
+    const before = await keyboardAction.evaluate(el => {
+      const wrap = el.closest('.ant-modal-wrap');
+      if (!wrap) throw new Error('Confirmation scroll container missing');
+      // Reproduce the observed 8px clipping deterministically before focus.
+      wrap.scrollTop += el.getBoundingClientRect().bottom - (innerHeight + 8);
+      const rect = el.getBoundingClientRect();
+      return { top: rect.top, bottom: rect.bottom, viewportHeight: innerHeight };
+    });
+    assert.ok(before.bottom > before.viewportHeight + 7 && before.bottom <= before.viewportHeight + 9);
+    let after;
+    try {
+      await keyboardAction.focus();
+      await p.waitForFunction(el => { const rect = el.getBoundingClientRect(); return document.activeElement === el && rect.top >= -1 && rect.bottom <= innerHeight + 1; }, await keyboardAction.elementHandle(), { timeout: 3000 });
+    } finally {
+      after = await keyboardAction.boundingBox();
+      await writeFile(join(output, `short-confirmation-focus-probe-${trial}.json`), JSON.stringify({ setup: 'explicit scroll-position injection reproducing the observed 8px clipping', before, after, fullyVisible: !!after && after.y >= -1 && after.y + after.height <= 151 }, null, 2));
+    }
   }
   layouts.push({ label: regionName, viewportWidth: 320, viewportHeight: 150, ...dimensions });
   await p.setViewportSize({ width: 320, height: 600 });
@@ -169,7 +221,7 @@ try {
     }
     for (const path of ['/', '/api/admin/clients', '/admin/clients', '/auth/session', '/devices', '/oidc/jwks']) assert.equal((await p.request.get(host.origin + path)).status(), 404);
     const cookies = await t.context.cookies();
-    const cookie = cookies.find(c => c.name === 'idp_ui_b'); assert.ok(cookie);
+    const cookie = cookies.find(c => c.name === (host.cookie_name ?? 'idp_ui_b')); assert.ok(cookie);
     assert.equal(cookie.path, host.mount + '/admin/auth/browser'); assert.equal(cookie.httpOnly, true); assert.equal(cookie.sameSite, 'Strict');
     const markers = await p.evaluate(() => Object.keys(localStorage).filter(k => k.startsWith('embedded-idp:browser-session:')));
     assert.deepEqual(markers, [`embedded-idp:browser-session:${host.origin}|${host.mount}/admin/auth/browser|management`]);
@@ -315,7 +367,7 @@ try {
   const permissionReview = p.getByRole('dialog', { name: '确认创建权限', exact: true }); await permissionReview.waitFor();
   await focused(p, button(permissionReview, '取消')); await focusCycle(p, permissionReview);
   if (process.env.IDP_UI_N2_LAYOUT === '1') {
-    await shortConfirmation(p, permissionReview, '操作范围与后果', '取消', '确认');
+    for (let trial = 1; trial <= 10; trial++) await shortConfirmation(p, permissionReview, '操作范围与后果', '取消', '确认', trial);
     pass('N2 short SafeConfirm keeps scope and consequences scrollable and both keyboard actions reachable');
   }
   await p.keyboard.press('Escape'); await permissionReview.waitFor({ state: 'hidden' }); await focused(p, preview);
@@ -351,5 +403,5 @@ try {
   await runPaginationChecks({ fixture, open, goto, settle, button, pass });
   await runStateChecks({ open, goto, settle, button, pass });
   assert.deepEqual(pageErrors, []);
-  await writeFile(join(output, 'results.json'), JSON.stringify({ cases, pageErrors, contrast, layouts, labels, keyboardWrites: t.writes.length, dangerPreviewWrites: fixed.writes.length, evidence: 'compiled reference host; isolated DB; explicit response injection and CSS zoom labelled' }, null, 2) + '\n');
+  await writeFile(join(output, 'results.json'), JSON.stringify({ cases, pageErrors, contrast, layouts, labels, confirmationFocus, confirmationKeyboard, keyboardWrites: t.writes.length, dangerPreviewWrites: fixed.writes.length, evidence: 'compiled reference host; isolated DB; explicit response injection and CSS zoom labelled' }, null, 2) + '\n');
 } finally { await Promise.all(contexts.map(c => c.close().catch(() => {}))); await browser.close(); }

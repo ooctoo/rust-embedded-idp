@@ -1,6 +1,8 @@
 # 管理后台交付总结与后续实施计划
 
-N2 Linux Docker方案进展（2026-10-25）：已形成[最小执行方案](management-console-n2-linux-docker-execution-plan.md)，推荐先做Linux arm64、Debian/glibc、release默认features及Mac Chrome的H01隔离组合，明确构建、在线/离线配置、隔离数据、用例、证据和所有权清理；完整复审补齐准备依赖顺序、布局开关、重建停止/端口和清理边界，仅本轮四份相关文档本地归档、未推送。真实生产架构/宿主、生产浏览器及CI组合继续单列。本轮不改产品或工具，不准备环境、不执行补验、不部署，不启动M1-03–06。
+N2 Linux Docker实际补验进展（2026-10-25）：后续已获环境准备及实际执行授权，所列Linux arm64、Debian/glibc、release默认features + Mac Chrome的H01组合完成L01–L09适用补验；实际构建、运行门槛、会话安全及六套任务完整复验、视觉抽查与清理见[执行报告](n2-linux-docker-execution-result.md)及[证据](design/n2/linux-docker-20261025/README.md)。历史失败与工具修正保留，Rust源码未改，Web仅修复SafeConfirm短屏焦点可见性并重建制品；不扩大为整体N2、生产宿主/浏览器、真实消费者或CI通过。后续完整复审补齐SQL所有权与清理落盘错误路径、16项离线回归及受影响面实际复验；仅相关Web局部修复、工具、测试、文档和证据随本地提交归档，不推送、不部署，不启动M1-03–06。
+
+N2 Linux Docker方案归档时的历史进展（2026-10-25）：已形成[最小执行方案](management-console-n2-linux-docker-execution-plan.md)，推荐先做Linux arm64、Debian/glibc、release默认features及Mac Chrome的H01隔离组合，明确构建、在线/离线配置、隔离数据、用例、证据和所有权清理；完整复审补齐准备依赖顺序、布局开关、重建停止/端口和清理边界，当时仅四份相关文档本地归档、未推送。方案整理阶段未改产品或工具，未准备环境或执行补验；后续实际执行见页首报告。真实生产架构/宿主、生产浏览器及CI组合继续单列，不部署、不启动M1-03–06。
 
 运行拓扑更新（2026-10-24，R02）：[开发、自动化与生产运行拓扑](validation-runtime-topology.md)明确当前自动化、Rust开发服务和浏览器测试在Mac；未来本套自动化接入GitHub Actions，N2 runner组合另定；生产Rust目标为Docker运行于Linux，生产浏览器范围待定。Windows准备不阻塞当前Mac测试，也未取得Windows支持通过结论；历史R01目标保留，不直接当作已冻结生产支持清单。原有安全合同与N2适用验收要求继续有效。本次只更新六份相关文档，不改产品/CI或历史证据，完整复审与提交前静态核对后随本地提交归档；不推送、不部署，不启动M1-03–06。
 

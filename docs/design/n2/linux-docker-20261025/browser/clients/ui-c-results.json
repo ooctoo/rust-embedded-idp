@@ -1,0 +1,16 @@
+{
+  "cases": [
+    "enabled: real list, existing and missing ID, public create and readback",
+    "disabled: real list, existing and missing ID, public create and readback",
+    "Fixed nonzero cannot open platform clients"
+  ],
+  "pageErrors": [],
+  "contrast": [
+    {
+      "label": "client page explanation",
+      "color": "rgb(88, 103, 124)",
+      "ratio": 5.76
+    }
+  ],
+  "evidence": "isolated real hosts; list states, failed/malformed reads and readback failure injected; unknown writes complete real POST and independent GET before injected abort; UI-C hash/history and covered-menu guards tested in both modes; late real detail/POST responses held until same-session cross-tab real logout, then delivered"
+}

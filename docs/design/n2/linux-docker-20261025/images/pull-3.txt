@@ -1,0 +1,8 @@
+bookworm-slim: Pulling from library/debian
+41b2195c3553: Pulling fs layer
+41b2195c3553: Verifying Checksum
+41b2195c3553: Download complete
+41b2195c3553: Pull complete
+Digest: sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
+Status: Downloaded newer image for debian:bookworm-slim
+docker.io/library/debian:bookworm-slim

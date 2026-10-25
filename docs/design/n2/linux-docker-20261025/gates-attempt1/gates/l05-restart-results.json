@@ -1,0 +1,31 @@
+{
+  "scope": "N2 L05 Linux arm64 app-container restart with Mac Chrome",
+  "browserVersion": "155.0.8059.85",
+  "headed": true,
+  "profileMode": "new ordinary persistent profile owned by this run",
+  "restart": {
+    "sameOrigin": "http://127.0.0.1:50687",
+    "sameMount": "/identity",
+    "sameUiPath": "/console"
+  },
+  "sessions": {
+    "separateBeforeRestart": true,
+    "cookieSessionIdSameAcrossRestart": false,
+    "explicitSessionIdSameAcrossRestart": false,
+    "cookieExpiryBefore": 1793499004,
+    "cookieExpiryAfter": null,
+    "cookieExpiryUnchanged": false,
+    "explicitExpiryBefore": 1793499005,
+    "explicitExpiryAfter": null,
+    "explicitExpiryUnchanged": false
+  },
+  "responses": {},
+  "profileRemoved": true,
+  "cleanupErrors": [],
+  "cases": [],
+  "failure": {
+    "name": "Error",
+    "message": "Owned browser Cookie metadata missing"
+  },
+  "complete": false
+}

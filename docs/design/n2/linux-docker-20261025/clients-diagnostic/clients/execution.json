@@ -1,0 +1,113 @@
+{
+  "suite": "clients",
+  "startedUtc": "2026-10-25T02:17:13.350818+00:00",
+  "platform": "linux/arm64",
+  "headed": true,
+  "freshFixture": true,
+  "n2Layout": true,
+  "postgresVersion": "18.6 (Debian 18.6-1.pgdg12+2)",
+  "commands": [
+    {
+      "tool": "check_management_clients.mjs",
+      "exitCode": 1,
+      "passLines": [
+        "PASS enabled: real list, existing and missing ID, public create and readback",
+        "PASS disabled: real list, existing and missing ID, public create and readback",
+        "PASS Fixed nonzero cannot open platform clients",
+        "PASS real confidential create, blank retain, replacement and conversion to public; secret absent from summary, URL and storage",
+        "PASS sampled explanatory text, field hints and configuration labels meet 4.5:1 on white",
+        "PASS dot-only client IDs read, edit and reread the same existing configuration",
+        "PASS real cursor next page and reset after 52 synthetic API seeds",
+        "PASS type, PKCE, sort, query and reset start at first page with no cursor; next page carries cursor",
+        "PASS injected list loading, empty, filtered empty and error states are distinct"
+      ],
+      "diagnostic": "UI-C failed after: injected list loading, empty, filtered empty and error states are distinct\nnode:internal/modules/run_main:107\n    triggerUncaughtException(\n    ^\n\nlocator.waitFor: Timeout 15000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('dialog', { name: '\u5ba2\u6237\u7aef\u914d\u7f6e', exact: true }) to be visible\u001b[22m\n\n    at locate (<repo>/scripts/check_management_clients.mjs:74:22)\n    at async file://<repo>/scripts/check_management_clients.mjs:260:5 {\n  log: [\n    \"  - waiting for getByRole('dialog', { name: '\u5ba2\u6237\u7aef\u914d\u7f6e', exact: true }) to be visible\"\n  ],\n  name: 'TimeoutError'\n}\n\nNode.js v24.19.0\n"
+    }
+  ],
+  "exitCode": 1,
+  "error": {
+    "type": "RuntimeError",
+    "message": "Acceptance command failed"
+  },
+  "restartAttempts": [],
+  "cleanup": {
+    "objects": [
+      {
+        "name": "idp-n2-linux-ad1645a15082-prepare-e0f249",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-ad1645a15082-prepare-e77a53",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-ad1645a15082-prepare-36ee7f",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-ad1645a15082-prepare-f9a5e4",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-ad1645a15082-enabled",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-ad1645a15082-prepare-aae38c",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-ad1645a15082-prepare-b150bb",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-ad1645a15082-prepare-2698ef",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-ad1645a15082-disabled",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-ad1645a15082-prepare-54ab72",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-ad1645a15082-fixed",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-ad1645a15082-prepare-56b5d0",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-ad1645a15082-choose",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-ui-b-ad1645a15082",
+        "exitCode": 0,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-ad1645a15082-data",
+        "removedOrAbsent": true
+      },
+      {
+        "name": "idp-n2-linux-ad1645a15082-secrets",
+        "removedOrAbsent": true
+      },
+      {
+        "name": "idp-n2-linux-ad1645a15082",
+        "removedOrAbsent": true
+      }
+    ],
+    "errors": [],
+    "privateDirectoryRemoved": true
+  },
+  "durationSeconds": 58.99
+}

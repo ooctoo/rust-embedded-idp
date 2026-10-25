@@ -1,0 +1,118 @@
+{
+  "suite": "console",
+  "startedUtc": "2026-10-25T02:50:54.148528+00:00",
+  "platform": "linux/arm64",
+  "headed": true,
+  "freshFixture": true,
+  "n2Layout": true,
+  "postgresVersion": "18.6 (Debian 18.6-1.pgdg12+2)",
+  "commands": [
+    {
+      "tool": "check_management_console.mjs",
+      "exitCode": 1,
+      "passLines": [
+        "PASS capability failure reconnect and keyboard login rejection keep email, clear password and expose no old workspace",
+        "PASS enabled: compiled meta assets mount Cookie Path and purpose marker; old paths are absent",
+        "PASS disabled: compiled meta assets mount Cookie Path and purpose marker; old paths are absent",
+        "PASS fixed: compiled meta assets mount Cookie Path and purpose marker; old paths are absent",
+        "PASS choose: compiled meta assets mount Cookie Path and purpose marker; old paths are absent",
+        "PASS mobile menu: keyboard trap Escape trigger return and page selection title focus with unchanged identity",
+        "PASS read-only current-session drawer: named keyboard trap and trigger return",
+        "PASS actual Select labels are checked and a severed label association is rejected",
+        "PASS N2 short client confirmation keeps consequences scrollable and both keyboard actions reachable",
+        "PASS keyboard client filter lookup validation detail confirmation and cancellation restore focus without writing",
+        "PASS computed title secondary primary hover control boundary and keyboard focus contrast meet sampled thresholds",
+        "PASS 15 platform and tenant pages: 7 widths, 200-percent CSS zoom, one title, labels and DOM reading order",
+        "PASS real unmatched email filter stays out of URL and copied page restores only the page locator",
+        "PASS actual permission textarea label is checked and a severed association is rejected"
+      ],
+      "diagnostic": "node:internal/modules/run_main:107\n    triggerUncaughtException(\n    ^\n\npage.waitForFunction: Timeout 3000ms exceeded.\n    at shortConfirmation (<repo>/scripts/check_management_console.mjs:128:15)\n    at async file://<repo>/scripts/check_management_console.mjs:331:5 {\n  log: [],\n  name: 'TimeoutError'\n}\n\nNode.js v24.19.0\n"
+    }
+  ],
+  "exitCode": 1,
+  "error": {
+    "type": "RuntimeError",
+    "message": "Acceptance command failed"
+  },
+  "restartAttempts": [],
+  "cleanup": {
+    "objects": [
+      {
+        "name": "idp-n2-linux-cfd798cbf8a3-prepare-e6ef20",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-cfd798cbf8a3-prepare-b988b9",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-cfd798cbf8a3-prepare-d4dc5d",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-cfd798cbf8a3-prepare-e5653d",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-cfd798cbf8a3-enabled",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-cfd798cbf8a3-prepare-978d03",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-cfd798cbf8a3-prepare-10380d",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-cfd798cbf8a3-prepare-3fb400",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-cfd798cbf8a3-disabled",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-cfd798cbf8a3-prepare-53f67a",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-cfd798cbf8a3-fixed",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-cfd798cbf8a3-prepare-229c29",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-cfd798cbf8a3-choose",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-ui-b-cfd798cbf8a3",
+        "exitCode": 0,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-cfd798cbf8a3-data",
+        "removedOrAbsent": true
+      },
+      {
+        "name": "idp-n2-linux-cfd798cbf8a3-secrets",
+        "removedOrAbsent": true
+      },
+      {
+        "name": "idp-n2-linux-cfd798cbf8a3",
+        "removedOrAbsent": true
+      }
+    ],
+    "errors": [],
+    "privateDirectoryRemoved": true
+  },
+  "durationSeconds": 27.45
+}

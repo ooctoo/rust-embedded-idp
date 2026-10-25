@@ -1,0 +1,119 @@
+{
+  "suite": "navigation",
+  "startedUtc": "2026-10-25T02:13:31.745771+00:00",
+  "platform": "linux/arm64",
+  "headed": true,
+  "freshFixture": true,
+  "n2Layout": true,
+  "postgresVersion": "18.6 (Debian 18.6-1.pgdg12+2)",
+  "commands": [
+    {
+      "tool": "check_management_navigation.mjs",
+      "exitCode": 0,
+      "passLines": [
+        "PASS platform and target retain every existing task without changing login session",
+        "PASS hash Back Forward and Cookie reload restore the selected page",
+        "PASS a delayed old-tenant response cannot populate the new target",
+        "PASS unknown and traversal hashes fail locally; missing targets never mount a data page",
+        "PASS dot tenant IDs are managed and restored without normalized detail paths",
+        "PASS draft cancellation restores history; pending writes block target changes without replay",
+        "PASS a committed write with a lost response stays on its original target until explicit departure and is never replayed",
+        "PASS cancelling Back to an unmarked pre-login entry preserves the current page and draft",
+        "PASS duplicate-hash entries retain their position when cancelling a later Forward",
+        "PASS narrow navigation closes on selection and the page has no global horizontal overflow",
+        "PASS Disabled retains all nine legacy pages and its dedicated administrator entry",
+        "PASS Fixed nonzero sessions cannot request platform or another tenant via URL",
+        "PASS Choose cancellation preserves its source session and completion opens the new login scope",
+        "PASS Choose accepts and restores exact dot tenant identities",
+        "PASS a pending real refresh blocks navigation before one original-target write (time and expiry injected)",
+        "PASS another tab's logout clears the old workspace and reload returns to login",
+        "PASS the existing inline subject-session action draft uses the same navigation guard",
+        "PASS the keyboard skip-navigation link focuses the page heading without altering its hash",
+        "PASS ordinary 403 retains the workspace while ordinary 401 clears authenticated page data"
+      ],
+      "diagnostic": ""
+    }
+  ],
+  "exitCode": 0,
+  "restartAttempts": [],
+  "cleanup": {
+    "objects": [
+      {
+        "name": "idp-n2-linux-45a86b755d15-prepare-ba6a0c",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-45a86b755d15-prepare-d6e206",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-45a86b755d15-prepare-e2d0cb",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-45a86b755d15-prepare-bf0545",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-45a86b755d15-enabled",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-45a86b755d15-prepare-7cdb51",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-45a86b755d15-prepare-c67e3a",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-45a86b755d15-prepare-7af95b",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-45a86b755d15-disabled",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-45a86b755d15-prepare-a4adbe",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-45a86b755d15-fixed",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-45a86b755d15-prepare-075aff",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-45a86b755d15-choose",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-ui-b-45a86b755d15",
+        "exitCode": 0,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-45a86b755d15",
+        "removedOrAbsent": true
+      },
+      {
+        "name": "idp-n2-linux-45a86b755d15-data",
+        "removedOrAbsent": true
+      },
+      {
+        "name": "idp-n2-linux-45a86b755d15-secrets",
+        "removedOrAbsent": true
+      }
+    ],
+    "errors": [],
+    "privateDirectoryRemoved": true
+  },
+  "durationSeconds": 52.72
+}

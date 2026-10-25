@@ -1,0 +1,42 @@
+{
+  "checkedUtc": "2026-10-25T03:12:13.546998+00:00",
+  "context": "desktop-linux",
+  "ownedRuntimeResourcesRemaining": {
+    "containers": [],
+    "networks": [],
+    "volumes": []
+  },
+  "retainedImages": [
+    {
+      "tag": "idp-n2-linux:9f5c91f45f37-runtime",
+      "id": "sha256:f53e3679aa8f588e4569afcf3b1d4cbef011332f1892a28ae2047edd0c481812",
+      "os": "linux",
+      "architecture": "arm64",
+      "repoDigests": []
+    },
+    {
+      "tag": "idp-n2-linux:9f5c91f45f37-prepare",
+      "id": "sha256:9a774235c569a17429099fd001f09d213e9b82da9a14e0f67b1b6863fd1928c8",
+      "os": "linux",
+      "architecture": "arm64",
+      "repoDigests": []
+    },
+    {
+      "tag": "idp-n2-linux:4518ea76c25c-runtime",
+      "id": "sha256:52b7b51438b4c94f61be3794dbd8db8f115f0c2db365c5d026c289f5ab17a718",
+      "os": "linux",
+      "architecture": "arm64",
+      "repoDigests": []
+    },
+    {
+      "tag": "idp-n2-linux:4518ea76c25c-prepare",
+      "id": "sha256:e20fc23c0c22f0ecee4d8e397e44835f7ec54fae7b3d6d844a70a6b420f652a1",
+      "os": "linux",
+      "architecture": "arm64",
+      "repoDigests": []
+    }
+  ],
+  "chromeVersion": "Google Chrome 155.0.8059.85",
+  "retainedSharedBuildCache": true,
+  "globalPrunePerformed": false
+}

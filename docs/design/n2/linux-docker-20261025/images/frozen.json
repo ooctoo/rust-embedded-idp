@@ -1,0 +1,30 @@
+{
+  "node": {
+    "tag": "node:22-bookworm-slim",
+    "reference": "node@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d",
+    "id": "sha256:7323ec8ada5c53c30d18c1d92134274097efa099b4ecb810d65a613a32da973e",
+    "platform": "linux/arm64",
+    "selectedPlatformManifest": "sha256:ceb43e5c219139035fb742900629e4abed89fe0997f7c03250c499e1f2710c9e"
+  },
+  "rust": {
+    "tag": "rust:1.93.0-bookworm",
+    "reference": "rust@sha256:d0a4aa3ca2e1088ac0c81690914a0d810f2eee188197034edf366ed010a2b382",
+    "id": "sha256:974c6114633e375779c7550f5c885f82a3701f22cfabbf8dd9dfd35e139f88ec",
+    "platform": "linux/arm64",
+    "selectedPlatformManifest": "sha256:4236252d8283c39f060c9c4c97776b39c08e0fdab034346887b2648c211f6ca4"
+  },
+  "runtime": {
+    "tag": "debian:bookworm-slim",
+    "reference": "debian@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8",
+    "id": "sha256:28fe65558df3e10c89e7d685cb86544cdc138f242d12100c5b0981f92aae0853",
+    "platform": "linux/arm64",
+    "selectedPlatformManifest": "sha256:991827bb788d78bbc130dcb851913beecff43296360f48838aca7cbdfae4375c"
+  },
+  "postgres": {
+    "tag": "postgres:18.6-bookworm",
+    "reference": "postgres@sha256:bbf83594798e144bff365a9c191c5d779f181fb3135902064ab8ff11918020fc",
+    "id": "sha256:1518a079f5f4987988538d2dcde58230afeaa22a1822fe3f09767bfb5d7fb932",
+    "platform": "linux/arm64",
+    "selectedPlatformManifest": "sha256:a5377a521c0383c9862394c90bdbf7707800ac9a6e40d18318193badfac52ce0"
+  }
+}

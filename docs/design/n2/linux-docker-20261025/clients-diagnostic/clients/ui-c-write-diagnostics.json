@@ -1,0 +1,106 @@
+[
+  {
+    "phase": "request",
+    "clientType": "public_desktop",
+    "pkceRequired": true,
+    "hasSecret": false,
+    "redirectSchemes": [
+      "http"
+    ]
+  },
+  {
+    "phase": "response",
+    "status": 200
+  },
+  {
+    "phase": "request",
+    "clientType": "public_desktop",
+    "pkceRequired": true,
+    "hasSecret": false,
+    "redirectSchemes": [
+      "http"
+    ]
+  },
+  {
+    "phase": "response",
+    "status": 200
+  },
+  {
+    "phase": "request",
+    "clientType": "confidential_web",
+    "pkceRequired": true,
+    "hasSecret": true,
+    "redirectSchemes": [
+      "https"
+    ]
+  },
+  {
+    "phase": "response",
+    "status": 200
+  },
+  {
+    "phase": "request",
+    "clientType": "confidential_web",
+    "pkceRequired": true,
+    "hasSecret": false,
+    "redirectSchemes": [
+      "https"
+    ]
+  },
+  {
+    "phase": "response",
+    "status": 200
+  },
+  {
+    "phase": "request",
+    "clientType": "confidential_web",
+    "pkceRequired": true,
+    "hasSecret": true,
+    "redirectSchemes": [
+      "https"
+    ]
+  },
+  {
+    "phase": "response",
+    "status": 200
+  },
+  {
+    "phase": "request",
+    "clientType": "public_desktop",
+    "pkceRequired": true,
+    "hasSecret": false,
+    "redirectSchemes": [
+      "http"
+    ]
+  },
+  {
+    "phase": "response",
+    "status": 200
+  },
+  {
+    "phase": "request",
+    "clientType": "public_desktop",
+    "pkceRequired": true,
+    "hasSecret": false,
+    "redirectSchemes": [
+      "http"
+    ]
+  },
+  {
+    "phase": "response",
+    "status": 200
+  },
+  {
+    "phase": "request",
+    "clientType": "public_desktop",
+    "pkceRequired": true,
+    "hasSecret": false,
+    "redirectSchemes": [
+      "http"
+    ]
+  },
+  {
+    "phase": "response",
+    "status": 200
+  }
+]

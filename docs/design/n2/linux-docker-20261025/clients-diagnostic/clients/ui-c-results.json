@@ -1,0 +1,32 @@
+{
+  "cases": [
+    "enabled: real list, existing and missing ID, public create and readback",
+    "disabled: real list, existing and missing ID, public create and readback",
+    "Fixed nonzero cannot open platform clients",
+    "real confidential create, blank retain, replacement and conversion to public; secret absent from summary, URL and storage",
+    "sampled explanatory text, field hints and configuration labels meet 4.5:1 on white",
+    "dot-only client IDs read, edit and reread the same existing configuration",
+    "real cursor next page and reset after 52 synthetic API seeds",
+    "type, PKCE, sort, query and reset start at first page with no cursor; next page carries cursor",
+    "injected list loading, empty, filtered empty and error states are distinct"
+  ],
+  "pageErrors": [],
+  "contrast": [
+    {
+      "label": "client page explanation",
+      "color": "rgb(88, 103, 124)",
+      "ratio": 5.76
+    },
+    {
+      "label": "field constraints",
+      "color": "rgb(88, 103, 124)",
+      "ratio": 5.76
+    },
+    {
+      "label": "current configuration labels",
+      "color": "rgb(88, 103, 124)",
+      "ratio": 5.76
+    }
+  ],
+  "evidence": "isolated real hosts; list states, failed/malformed reads and readback failure injected; unknown writes complete real POST and independent GET before injected abort; UI-C hash/history and covered-menu guards tested in both modes; late real detail/POST responses held until same-session cross-tab real logout, then delivered"
+}

@@ -1,0 +1,28 @@
+{
+  "checkedUtc": "2026-10-25T02:41:09.228954+00:00",
+  "context": "desktop-linux",
+  "ownedRuntimeResourcesRemaining": {
+    "containers": [],
+    "networks": [],
+    "volumes": []
+  },
+  "retainedImages": [
+    {
+      "tag": "idp-n2-linux:9f5c91f45f37-runtime",
+      "id": "sha256:f53e3679aa8f588e4569afcf3b1d4cbef011332f1892a28ae2047edd0c481812",
+      "architecture": "arm64",
+      "os": "linux",
+      "repoDigests": []
+    },
+    {
+      "tag": "idp-n2-linux:9f5c91f45f37-prepare",
+      "id": "sha256:9a774235c569a17429099fd001f09d213e9b82da9a14e0f67b1b6863fd1928c8",
+      "architecture": "arm64",
+      "os": "linux",
+      "repoDigests": []
+    }
+  ],
+  "chromeVersion": "Google Chrome 155.0.8059.85",
+  "retainedSharedBuildCache": true,
+  "globalPrunePerformed": false
+}
