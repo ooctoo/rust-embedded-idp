@@ -235,7 +235,8 @@ def prepare(work, state):
         checkout_tree = command(['git', 'rev-parse', 'HEAD^{tree}'])
         js = """const {createRequire}=require('node:module'); const r=createRequire(process.cwd()+'/scripts/n2-ci/package.json');
 const {chromium}=r('playwright'); const p=r('playwright/package.json'); const fs=require('node:fs'),path=require('node:path');
-const browsers=JSON.parse(fs.readFileSync(path.join(path.dirname(r.resolve('playwright-core/package.json')),'browsers.json'),'utf8'));
+const playwrightRequire=createRequire(r.resolve('playwright/package.json'));
+const browsers=JSON.parse(fs.readFileSync(path.join(path.dirname(playwrightRequire.resolve('playwright-core/package.json')),'browsers.json'),'utf8'));
 console.log(JSON.stringify({version:p.version,browser:browsers.browsers.find(b=>b.name==='chromium'),executable:chromium.executablePath()}));"""
         state['preflightStage'] = 'owned-full-chromium'
         browser = json.loads(command(['node', '-e', js]))

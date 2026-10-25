@@ -241,6 +241,37 @@ class DriverTests(unittest.TestCase):
             self.run_bounded.assert_not_called()
             self.fixtures.create.assert_not_called()
 
+    def test_browser_metadata_resolves_core_from_nonhoisted_playwright(self):
+        with self.mocked_prepare() as (work, state, *_):
+            ci.prepare(work, state)
+        script = next(call.args[0][2] for call in self.command.call_args_list
+                      if call.args[0][:2] == ['node', '-e'])
+        project = self.root / 'pnpm-project'
+        package = project / 'scripts/n2-ci'
+        modules = package / 'node_modules'
+        playwright = modules / '.pnpm/playwright@1.64.1/node_modules/playwright'
+        core = modules / '.pnpm/playwright-core@1.64.1/node_modules/playwright-core'
+        for path in [playwright, core]: path.mkdir(parents=True)
+        ci.write_json(package / 'package.json', {'name': 'offline-synthetic-tooling'})
+        ci.write_json(playwright / 'package.json', {'name': 'playwright', 'version': '1.64.1', 'main': 'index.js'})
+        (playwright / 'index.js').write_text("exports.chromium = {executablePath: () => '/synthetic/owned/chrome'};\n")
+        ci.write_json(core / 'package.json', {'name': 'playwright-core', 'version': '1.64.1'})
+        manifest = {'name': 'chromium', 'revision': '1248', 'browserVersion': '156.0.8078.4'}
+        ci.write_json(core / 'browsers.json', {'browsers': [manifest]})
+        (modules / 'playwright').symlink_to(playwright, target_is_directory=True)
+        (playwright.parent / 'playwright-core').symlink_to(core, target_is_directory=True)
+        direct = subprocess.run(['node', '-e',
+            "require('node:module').createRequire(process.cwd()+'/scripts/n2-ci/package.json').resolve('playwright-core/package.json')"],
+            cwd=project, capture_output=True, text=True, timeout=5)
+        self.assertNotEqual(direct.returncode, 0)
+        self.assertIn('MODULE_NOT_FOUND', direct.stderr)
+        result = subprocess.run(['node', '-e', script], cwd=project,
+                                capture_output=True, text=True, timeout=5)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), {'version': '1.64.1', 'browser': manifest,
+                                                     'executable': '/synthetic/owned/chrome'})
+        self.run_bounded.assert_not_called(); self.fixtures.create.assert_not_called()
+
     def test_prepare_mismatches_or_bounded_build_failure_never_mark_prepared(self):
         invalid_inputs = [
             {'system': 'Darwin'}, {'machine': 'x86_64'}, {'daemon': 'linux/amd64'},

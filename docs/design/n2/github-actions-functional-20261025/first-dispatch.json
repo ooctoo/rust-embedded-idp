@@ -1,0 +1,14 @@
+{
+  "requestedAt": "2026-10-25T10:03:03.584116+00:00",
+  "method": "POST",
+  "endpoint": "actions/workflows/395805707/dispatches",
+  "body": {
+    "ref": "codex/management-console-ui-b"
+  },
+  "expectedHeadSha": "c304310d146ae916cbd89bad6168b96d3052db53",
+  "transportAttempt": 2,
+  "previousTransportFailure": "transport-1-dispatch.json",
+  "automaticDispatchRetries": 0,
+  "acknowledged": true,
+  "response": null
+}

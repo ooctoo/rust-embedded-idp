@@ -1,0 +1,53 @@
+{
+  "reviewedAt": "2026-10-25T10:10:10.313025+00:00",
+  "parentSha": "c304310d146ae916cbd89bad6168b96d3052db53",
+  "failureRun": 40183166070,
+  "failureStage": "owned-full-chromium",
+  "reproducedCause": "tool-root require cannot resolve transitive playwright-core in pnpm nonhoisted layout",
+  "fix": "createRequire from installed playwright package.json; no dependency/version/workflow/product change",
+  "sourceSha256": {
+    "scripts/run_management_n2_ci.py": "c695da4001c157bea37958d0223e2418f8278b2fe9db9a0cf51f07c9eb726a65",
+    "scripts/test_management_n2_ci.py": "38e7ef8927942ba57445ab9555c151f9b6dfa56890ec0ee583941337d9bbf8f9"
+  },
+  "checks": [
+    {
+      "command": "python3 -B scripts/test_management_n2_tools.py",
+      "checks": 5,
+      "exitCode": 0,
+      "log": "mac-tools-after-resolution-fix.txt"
+    },
+    {
+      "command": "python3 -B scripts/test_management_n2_linux_tools.py",
+      "checks": 28,
+      "exitCode": 0,
+      "log": "linux-tools-after-resolution-fix.txt"
+    },
+    {
+      "command": "python3 -B scripts/test_management_n2_ci.py",
+      "checks": 39,
+      "exitCode": 0,
+      "log": "ci-driver-after-resolution-fix.txt"
+    },
+    {
+      "command": "python3 -B scripts/test_n2_ci_processes.py",
+      "checks": 21,
+      "exitCode": 0,
+      "log": "processes-after-resolution-fix.txt"
+    },
+    {
+      "command": "node scripts/test_management_functional.mjs",
+      "checks": 32,
+      "exitCode": 0,
+      "log": "selection-after-resolution-fix.txt"
+    }
+  ],
+  "totalOfflineChecks": 125,
+  "pythonMemorySyntax": "passed",
+  "whitespaceCheck": {
+    "sourceAndOtherEvidence": "passed",
+    "preservedMachineLog": "docs/design/n2/github-actions-functional-20261025/runs/40183166070/job-log-sanitized.txt",
+    "rawLogWarnings": "14 trailing-whitespace lines preserved byte-for-byte; not source formatting failures"
+  },
+  "remoteScope": "only acceptance branch; no main merge or deployment",
+  "unrelatedReviewBlob": "4ef4907646970f1cd06ec80cf51a9516497244d6"
+}

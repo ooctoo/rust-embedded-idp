@@ -1,0 +1,61 @@
+[
+  {
+    "observedAt": "2026-10-25T10:03:52.490727+00:00",
+    "state": {
+      "runId": 40183166070,
+      "headSha": "c304310d146ae916cbd89bad6168b96d3052db53",
+      "event": "workflow_dispatch",
+      "status": "completed",
+      "conclusion": "failure",
+      "attempt": 1,
+      "jobs": [
+        {
+          "id": 121138312244,
+          "status": "in_progress",
+          "conclusion": null,
+          "labels": [
+            "ubuntu-24.04-arm"
+          ],
+          "runner": "GitHub Actions 1000000079",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Initialize private work and public evidence roots",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Checkout reviewed ref",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Select frozen Node tool runtime",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Activate frozen pnpm",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Validate tooling offline",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install locked tools and paired full Chromium",
+              "status": "in_progress",
+              "conclusion": null
+            }
+          ]
+        }
+      ]
+    }
+  }
+]

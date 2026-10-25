@@ -1,0 +1,6 @@
+{
+  "phase": "prepare",
+  "status": "failed",
+  "stage": "owned-full-chromium",
+  "error": "CalledProcessError"
+}
