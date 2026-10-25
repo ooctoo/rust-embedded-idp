@@ -1,5 +1,7 @@
 # 管理后台交付总结与后续实施计划
 
+N2功能优先方案进展（2026-10-25）：需求方明确缩放与旁白不再测试。已形成[剩余功能缺口与GitHub Actions最小执行方案](management-console-n2-github-actions-functional-plan.md)，推荐单个Ubuntu24.04 arm64 job，在Debian/glibc release默认features参考宿主上，以Linux headless Chromium复用登录/会话、权限隔离、写后回读及异常恢复。现有混合脚本须先明确功能选集，避免继续执行缩放；真实消费者和生产支持矩阵单列，视觉签认不作为本批功能前置。完整复审补齐默认分支手动触发前提、构建资源及桌面键盘功能边界，仅四份相关文档随本地提交归档，实际SHA以包含本文的Git记录为准；未改产品、工具、依赖或CI，未准备环境或执行补验、未推送或部署，M1-03–06未启动；此前已完成的Mac/Linux证据保留。
+
 N2 Linux Docker实际补验进展（2026-10-25）：后续已获环境准备及实际执行授权，所列Linux arm64、Debian/glibc、release默认features + Mac Chrome的H01组合完成L01–L09适用补验；实际构建、运行门槛、会话安全及六套任务完整复验、视觉抽查与清理见[执行报告](n2-linux-docker-execution-result.md)及[证据](design/n2/linux-docker-20261025/README.md)。历史失败与工具修正保留，Rust源码未改，Web仅修复SafeConfirm短屏焦点可见性并重建制品；不扩大为整体N2、生产宿主/浏览器、真实消费者或CI通过。后续完整复审补齐SQL所有权与清理落盘错误路径、16项离线回归及受影响面实际复验；仅相关Web局部修复、工具、测试、文档和证据随本地提交归档，不推送、不部署，不启动M1-03–06。
 
 N2 Linux Docker方案归档时的历史进展（2026-10-25）：已形成[最小执行方案](management-console-n2-linux-docker-execution-plan.md)，推荐先做Linux arm64、Debian/glibc、release默认features及Mac Chrome的H01隔离组合，明确构建、在线/离线配置、隔离数据、用例、证据和所有权清理；完整复审补齐准备依赖顺序、布局开关、重建停止/端口和清理边界，当时仅四份相关文档本地归档、未推送。方案整理阶段未改产品或工具，未准备环境或执行补验；后续实际执行见页首报告。真实生产架构/宿主、生产浏览器及CI组合继续单列，不部署、不启动M1-03–06。
