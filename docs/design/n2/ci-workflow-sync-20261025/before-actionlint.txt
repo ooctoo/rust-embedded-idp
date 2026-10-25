@@ -1,0 +1,16 @@
+.github/workflows/n2-functional.yml:22:20: context "runner" is not allowed here. available contexts are "github", "inputs", "matrix", "needs", "secrets", "strategy", "vars". see https://docs.github.com/en/actions/learn-github-actions/contexts#context-availability for more details [expression]
+   |
+22 |       N2_WORK: ${{ runner.temp }}/idp-n2-ci-${{ github.run_id }}-${{ github.run_attempt }}
+   |                    ^~~~~~~~~~~
+.github/workflows/n2-functional.yml:23:22: context "runner" is not allowed here. available contexts are "github", "inputs", "matrix", "needs", "secrets", "strategy", "vars". see https://docs.github.com/en/actions/learn-github-actions/contexts#context-availability for more details [expression]
+   |
+23 |       N2_PUBLIC: ${{ runner.temp }}/n2-public/${{ github.run_id }}/${{ github.run_attempt }}
+   |                      ^~~~~~~~~~~
+.github/workflows/n2-functional.yml:24:19: context "runner" is not allowed here. available contexts are "github", "inputs", "matrix", "needs", "secrets", "strategy", "vars". see https://docs.github.com/en/actions/learn-github-actions/contexts#context-availability for more details [expression]
+   |
+24 |       TMPDIR: ${{ runner.temp }}/idp-n2-ci-${{ github.run_id }}-${{ github.run_attempt }}/tmp
+   |                   ^~~~~~~~~~~
+.github/workflows/n2-functional.yml:25:37: context "runner" is not allowed here. available contexts are "github", "inputs", "matrix", "needs", "secrets", "strategy", "vars". see https://docs.github.com/en/actions/learn-github-actions/contexts#context-availability for more details [expression]
+   |
+25 |       PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/idp-n2-ci-${{ github.run_id }}-${{ github.run_attempt }}/browsers
+   |                                     ^~~~~~~~~~~

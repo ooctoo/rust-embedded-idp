@@ -1,0 +1,21 @@
+F
+======================================================================
+FAIL: test_workflow_runner_paths_are_scoped_to_initialization_step (test_management_n2_ci.DriverTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Workspace/code/github/ooctoo/rust-embedded-idp/scripts/test_management_n2_ci.py", line 623, in test_workflow_runner_paths_are_scoped_to_initialization_step
+    self.assertNotRegex(job_environment, r'\$\{\{\s*runner\.',
+AssertionError: Regex matched: '${{ runner.' matches '\\$\\{\\{\\s*runner\\.' in "      N2_WORK: ${{ runner.temp }}/idp-n2-ci-${{ github.run_id }}-${{ github.run_attempt }}\n      N2_PUBLIC: ${{ runner.temp }}/n2-public/${{ github.run_id }}/${{ github.run_attempt }}\n      TMPDIR: ${{ runner.temp }}/idp-n2-ci-${{ github.run_id }}-${{ github.run_attempt }}/tmp\n      PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/idp-n2-ci-${{ github.run_id }}-${{ github.run_attempt }}/browsers\n      PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT: '30000'\n      CARGO_BUILD_JOBS: '2'\n      CI: 'true'\n" : GitHub rejects runner context in job-level env
+
+======================================================================
+FAIL: test_workflow_initialization_exports_only_validated_owned_paths (test_management_n2_ci.DriverTests) (mutation='valid')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Workspace/code/github/ooctoo/rust-embedded-idp/scripts/test_management_n2_ci.py", line 654, in test_workflow_initialization_exports_only_validated_owned_paths
+    self.assertEqual(len(lines), 5)
+AssertionError: 1 != 5
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.124s
+
+FAILED (failures=2)

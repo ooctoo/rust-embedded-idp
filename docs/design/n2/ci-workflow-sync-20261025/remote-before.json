@@ -1,0 +1,35 @@
+{
+  "observedOn": "2026-10-25",
+  "method": "read-only GitHub API; main ref via connector, Actions metadata and acceptance ref via gh fallback",
+  "main": "4ce8adec3c5f501be75e31d0c0df779d76016713",
+  "acceptance": "8fd9f46da55eaa6fa47b5247b9ddd7a71e1d9606",
+  "workflow": {
+    "id": 395805707,
+    "name": "N2 functional regression",
+    "path": ".github/workflows/n2-functional.yml",
+    "state": "active"
+  },
+  "runs": [
+    {
+      "id": 40180099183,
+      "event": "push",
+      "headSha": "cfca218045270ccd97747f65d577ea924f62ceaf",
+      "conclusion": "failure"
+    },
+    {
+      "id": 40179595301,
+      "event": "push",
+      "headSha": "c8875fda99f5db77b6d61a3906b1124a72fa1465",
+      "conclusion": "failure"
+    },
+    {
+      "id": 40179533109,
+      "event": "push",
+      "headSha": "8fd9f46da55eaa6fa47b5247b9ddd7a71e1d9606",
+      "conclusion": "failure"
+    }
+  ],
+  "totalRunRecords": 3,
+  "workflowDispatchRecords": 0,
+  "dispatchedByThisTask": false
+}

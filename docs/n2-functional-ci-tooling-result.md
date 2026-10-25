@@ -1,8 +1,10 @@
 # N2功能选集、CI驱动与workflow适配回传
 
+后续状态（2026-10-25）：此前验收内容已按授权推送，main仅纳入并修正N2 workflow；[本轮同步报告](n2-ci-workflow-sync-result.md)记录验收分支同步、124项离线复验及新执行SHA冻结。下文122项结果及“尚未推送”等均为工具实施阶段的历史记录，原证据不改写；实际N2 CI补验仍未执行。
+
 日期：2026-10-25。实施依据为已提交的[最小执行方案](management-console-n2-github-actions-functional-plan.md)，起点`52ee553a8c8d0481a25c68bee96b38205d19a276`。需求方随后授权工具实现及离线验证，仍禁止实际补验、产品改动、推送、部署及M1-03–06。
 
-当前状态：功能选集、驱动、依赖冻结和独立workflow完成全面复审、问题修复和最终整合复验；122项离线工具检查及静态检查通过。[证据目录](design/n2/ci-functional-tooling-20261025/README.md)保留最终结果、初次失败和修正说明。本轮仅相关工具、测试、文档和证据随本地签名提交归档，实际SHA以包含本文的Git记录为准；基线为上述方案提交。没有运行任何实际浏览器、Docker、PG、HTTP产品验收或GitHub Actions，不能宣布CI环境或264项功能断言已通过。无关`docs/m1-02-code-review.md`保持原样。
+工具实施阶段状态：功能选集、驱动、依赖冻结和独立workflow完成全面复审、问题修复和最终整合复验；122项离线工具检查及静态检查通过。[证据目录](design/n2/ci-functional-tooling-20261025/README.md)保留最终结果、初次失败和修正说明。本轮仅相关工具、测试、文档和证据随本地签名提交归档，实际SHA以包含本文的Git记录为准；基线为上述方案提交。没有运行任何实际浏览器、Docker、PG、HTTP产品验收或GitHub Actions，不能宣布CI环境或264项功能断言已通过。无关`docs/m1-02-code-review.md`保持原样。
 
 ## 实现范围
 

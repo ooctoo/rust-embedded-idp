@@ -19,16 +19,17 @@ jobs:
       run:
         shell: bash
     env:
-      N2_WORK: ${{ runner.temp }}/idp-n2-ci-${{ github.run_id }}-${{ github.run_attempt }}
-      N2_PUBLIC: ${{ runner.temp }}/n2-public/${{ github.run_id }}/${{ github.run_attempt }}
-      TMPDIR: ${{ runner.temp }}/idp-n2-ci-${{ github.run_id }}-${{ github.run_attempt }}/tmp
-      PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/idp-n2-ci-${{ github.run_id }}-${{ github.run_attempt }}/browsers
       PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT: '30000'
       CARGO_BUILD_JOBS: '2'
       CI: 'true'
     steps:
       - name: Initialize private work and public evidence roots
         timeout-minutes: 1
+        env:
+          N2_WORK: ${{ runner.temp }}/idp-n2-ci-${{ github.run_id }}-${{ github.run_attempt }}
+          N2_PUBLIC: ${{ runner.temp }}/n2-public/${{ github.run_id }}/${{ github.run_attempt }}
+          TMPDIR: ${{ runner.temp }}/idp-n2-ci-${{ github.run_id }}-${{ github.run_attempt }}/tmp
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/idp-n2-ci-${{ github.run_id }}-${{ github.run_attempt }}/browsers
         run: |
           python3 -B - <<'PY'
           import os
@@ -53,6 +54,10 @@ jobs:
               if path.stat().st_mode & 0o077:
                   raise RuntimeError('CI roots require owner-only permissions')
           (work / 'job-started-at').write_text(str(time.time()) + '\n')
+          if os.environ.get('GITHUB_ENV'):
+              with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as stream:
+                  for name in ['N2_WORK', 'N2_PUBLIC', 'TMPDIR', 'PLAYWRIGHT_BROWSERS_PATH']:
+                      stream.write(name + '=' + os.environ[name] + '\n')
           PY
 
       - name: Checkout reviewed ref

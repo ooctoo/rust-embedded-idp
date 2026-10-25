@@ -6,6 +6,7 @@ import contextlib
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -615,6 +616,51 @@ class DriverTests(unittest.TestCase):
         summary = ci.read_json(self.work / 'evidence/suite-summary.json')
         self.assertFalse(summary['complete'])
         self.assertEqual(summary['suites'][0]['status'], 'not_executed')
+
+    def test_workflow_runner_paths_are_scoped_to_initialization_step(self):
+        workflow = (ci.ROOT / '.github/workflows/n2-functional.yml').read_text()
+        job_environment = workflow.split('    env:\n', 1)[1].split('    steps:\n', 1)[0]
+        self.assertNotRegex(job_environment, r'\$\{\{\s*runner\.',
+                            'GitHub rejects runner context in job-level env')
+        initialization = workflow.split('      - name: Initialize private work and public evidence roots\n', 1)[1]
+        initialization = initialization.split('\n      - name: Checkout reviewed ref', 1)[0]
+        step_environment = initialization.split('        env:\n', 1)[1].split('        run: |\n', 1)[0]
+        names = set(re.findall(r'^          ([A-Z0-9_]+):', step_environment, re.M))
+        self.assertEqual(names, {'N2_WORK', 'N2_PUBLIC', 'TMPDIR', 'PLAYWRIGHT_BROWSERS_PATH'})
+        self.assertEqual(step_environment.count('${{ runner.temp }}'), 4)
+
+    def test_workflow_initialization_exports_only_validated_owned_paths(self):
+        workflow = (ci.ROOT / '.github/workflows/n2-functional.yml').read_text()
+        section = workflow.split('      - name: Initialize private work and public evidence roots\n', 1)[1]
+        script = textwrap.dedent(section.split('        run: |\n', 1)[1].split('\n      - name: Checkout reviewed ref', 1)[0])
+        for mutation in ['valid', 'wrong-work', 'symlink']:
+            with self.subTest(mutation=mutation):
+                base = (self.root / ('export-' + mutation)).resolve(); base.mkdir()
+                work = base / 'idp-n2-ci-123-1'; public = base / 'n2-public/123/1'
+                target = base / 'target'; target.mkdir()
+                sentinel = target / 'sentinel'; sentinel.write_text('keep')
+                export = base / 'github-env'; export.write_text('PREEXISTING=kept\n')
+                if mutation == 'symlink': work.symlink_to(target, target_is_directory=True)
+                expected = {'N2_WORK': str(work), 'N2_PUBLIC': str(public),
+                            'TMPDIR': str(work / 'tmp'), 'PLAYWRIGHT_BROWSERS_PATH': str(work / 'browsers')}
+                environment = {**os.environ, **expected, 'RUNNER_TEMP': str(base), 'GITHUB_ENV': str(export)}
+                if mutation == 'wrong-work': environment['N2_WORK'] = str(base / 'wrong')
+                result = subprocess.run(['bash', '--noprofile', '--norc', '-eo', 'pipefail', '-c', script],
+                                        cwd=base, env=environment, capture_output=True, text=True, timeout=5)
+                if mutation == 'valid':
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    lines = export.read_text().splitlines()
+                    self.assertEqual(lines[0], 'PREEXISTING=kept')
+                    self.assertEqual(len(lines), 5)
+                    self.assertEqual(dict(line.split('=', 1) for line in lines[1:]), expected)
+                    self.assertTrue((work / 'tmp').is_dir())
+                else:
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertEqual(export.read_text(), 'PREEXISTING=kept\n')
+                    self.assertFalse(public.exists())
+                self.assertEqual(sentinel.read_text(), 'keep')
+                self.assertFalse((target / 'tmp').exists())
+        self.command.assert_not_called(); self.run_bounded.assert_not_called()
 
     def test_workflow_initialization_validates_identity_and_paths_before_writing(self):
         workflow = (ci.ROOT / '.github/workflows/n2-functional.yml').read_text()

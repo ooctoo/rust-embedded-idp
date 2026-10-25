@@ -1,0 +1,10 @@
+{
+  "acceptanceBaseline": "8fd9f46da55eaa6fa47b5247b9ddd7a71e1d9606",
+  "workflowSourceMain": "4ce8adec3c5f501be75e31d0c0df779d76016713",
+  "workflowGitBlob": "a5c8b310c5742ca256faa57066f1042e00ae1676",
+  "workflowSha256Before": "8cd34c91f8814ea2a4bfc9a9c6c5fc496a2fce3a83d71a14df963adfea8e7a31",
+  "workflowSha256After": "90f3937d257f9fbcbd46706eb0a60fa18bf7b2a697f4434833010316b9947ebf",
+  "synchronization": "exact file copy; no merge or cherry-pick of main history",
+  "executionSha": "the Git commit containing this evidence, verified against the remote branch after push",
+  "actualN2JobsExecuted": 0
+}

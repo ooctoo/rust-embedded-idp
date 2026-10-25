@@ -1,5 +1,7 @@
 # N2剩余功能缺口与GitHub Actions最小执行方案
 
+N2远端就绪与workflow同步进展（2026-10-25）：截至`8fd9f46`的验收内容已按前序授权推送；main仅纳入N2 workflow并修正上下文。本轮将main `4ce8adec`的workflow精确同步到验收分支，完整复审及124项离线工具检查通过；[同步报告](n2-ci-workflow-sync-result.md)记录证据和新执行SHA的冻结规则。本轮仅相关同步、测试和文档/证据提交并推送，264项功能断言组尚未在CI实际执行。下文原阶段记录保留；本轮不触发实际补验、不部署，不测缩放/旁白，M1-03–06未启动。
+
 后续工具实施进展（2026-10-25）：需求方已另行授权功能选集、CI驱动和workflow适配及离线工具验证，结果见[实施回传](n2-functional-ci-tooling-result.md)和[证据](design/n2/ci-functional-tooling-20261025/README.md)。已实现工具并完成122项离线检查；264项功能断言只登记未实跑，仍未执行实际CI补验或改产品。下文保留本方案归档时的阶段边界；当前实现完成复审后仅本地提交归档，实际SHA以包含本文的Git记录为准；未推送/部署，缩放与旁白不测，M1-03–06未启动。
 
 日期：2026-10-25。编写基线为本地`cc0456118a5c795347cf1d6eb142392df570fe7a`，当前分支`codex/management-console-ui-b`。依据[R02运行拓扑](validation-runtime-topology.md)、[Linux Docker补验报告](n2-linux-docker-execution-result.md)、[Mac报告](n2-mac-execution-result.md)及需求方随后“先关注功能”“不再测试缩放和旁白”的范围调整。
