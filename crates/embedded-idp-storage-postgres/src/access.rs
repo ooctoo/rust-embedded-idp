@@ -2,6 +2,7 @@ mod admin;
 mod authentication;
 mod device_management;
 mod device_proof;
+mod management_preparation;
 mod oidc;
 mod refresh;
 mod registration;

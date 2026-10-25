@@ -46,6 +46,29 @@ pub trait TenantOidcResourceTransaction: TenantOidcTransaction + TenantRefreshTr
         account: &str,
     ) -> Result<Option<TenantUserProfile>, StoreError>;
 }
+/// Optional logout boundary; hosts need not expose OIDC resource endpoints.
+pub trait TenantLogoutService: Send + Sync {
+    /// Authenticate the entry's client, then revoke only the current refresh
+    /// credential's session/family. Invalid, expired, retired or foreign tokens
+    /// are idempotent no-ops; client authentication and storage failures are errors.
+    fn logout_session(&self, command: TenantTokenRequest) -> Result<(), TenantAuthError>;
+}
+impl<S, T, G, D, C, I, V> TenantLogoutService for CoreTenantOidcService<S, T, G, D, C, I, V>
+where
+    S: TenantAuthStore,
+    for<'a> S::Transaction<'a>: TenantOidcResourceTransaction,
+    T: TokenIssuer + AccessTokenValidator + ScopedAccessTokenIssuer + IdTokenIssuer + Send + Sync,
+    G: RefreshTokenGenerator + Send + Sync,
+    D: RefreshTokenDigester + Send + Sync,
+    C: Clock + Send + Sync,
+    I: IdGenerator + Send + Sync,
+    V: ClientSecretVerifier + Send + Sync,
+{
+    fn logout_session(&self, command: TenantTokenRequest) -> Result<(), TenantAuthError> {
+        TenantOidcResourceService::logout(self, command)
+    }
+}
+
 pub trait TenantOidcResourceService: Send + Sync {
     fn user_info(&self, access_token: SecretString) -> Result<TenantUserInfo, TenantAuthError>;
     /// Only authenticated confidential clients may introspect. None means inactive

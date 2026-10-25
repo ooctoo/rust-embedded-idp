@@ -225,7 +225,26 @@ async fn browser_flow_hides_refresh_and_sets_scoped_cookie() {
     assert!(set_cookie.contains("HttpOnly"));
     assert!(set_cookie.contains("SameSite=Strict"));
     assert!(set_cookie.contains("Secure"));
-    assert!(!body(response).await.to_string().contains("refresh_token"));
+    let actual_body = body(response).await;
+    assert!(!actual_body.to_string().contains("refresh_token"));
+    #[cfg(feature = "openapi")]
+    {
+        let contract = serde_json::to_value(crate::openapi::business_document()).unwrap();
+        for (schema, actual) in [
+            ("BrowserAuthenticated", &actual_body),
+            ("BrowserTokens", &actual_body["tokens"]),
+            ("Session", &actual_body["session"]),
+        ] {
+            let properties = contract["components"]["schemas"][schema]["properties"]
+                .as_object()
+                .unwrap();
+            assert_eq!(
+                actual.as_object().unwrap().keys().collect::<Vec<_>>(),
+                properties.keys().collect::<Vec<_>>()
+            );
+        }
+    }
+
     let response = send(
         &app,
         "/auth/browser/restore",

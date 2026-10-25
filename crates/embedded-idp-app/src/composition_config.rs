@@ -23,6 +23,7 @@ use std::{
 #[derive(Clone)]
 pub(crate) struct BrowserConfig {
     pub cookie_name: String,
+    pub development_session_ttl_secs: Option<u64>,
 }
 #[derive(Clone)]
 pub(crate) struct EntryConfig {
@@ -34,6 +35,7 @@ pub(crate) struct EntryConfig {
     pub browser: Option<BrowserConfig>,
     pub ui_base_path: Option<String>,
     pub registration_enabled: bool,
+    pub oidc_enabled: bool,
 }
 #[derive(Clone)]
 pub(crate) struct ReferenceBusinessConfig {
@@ -225,6 +227,13 @@ struct Business {
     require_device_proof: bool,
     #[serde(default)]
     registration_enabled: bool,
+    #[serde(default)]
+    oidc: Option<OidcProtocol>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OidcProtocol {
+    enabled: bool,
 }
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -236,6 +245,8 @@ enum Policy {
 #[serde(deny_unknown_fields)]
 struct Browser {
     cookie_name: String,
+    #[serde(default)]
+    development_session_ttl_secs: Option<u64>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -352,9 +363,11 @@ impl AppConfig {
                 mount_prefix: "/api".into(),
                 browser: Some(BrowserConfig {
                     cookie_name: format!("idp_{port}_management"),
+                    development_session_ttl_secs: None,
                 }),
                 ui_base_path: Some(c.admin_ui_base_path.clone()),
                 registration_enabled: false,
+                oidc_enabled: false,
             },
             business_entries: vec![EntryConfig {
                 login_entry: "business".into(),
@@ -364,9 +377,11 @@ impl AppConfig {
                 mount_prefix: String::new(),
                 browser: Some(BrowserConfig {
                     cookie_name: format!("idp_{port}_business"),
+                    development_session_ttl_secs: None,
                 }),
                 ui_base_path: None,
                 registration_enabled: c.embedded_idp.auth.allow_local_registration,
+                oidc_enabled: false,
             }],
             reference_business: Some(ReferenceBusinessConfig {
                 public_client: c.public_client.clone(),
@@ -377,14 +392,26 @@ impl AppConfig {
         }
     }
     pub(crate) fn from_file(path: &Path) -> Result<Self, String> {
+        Self::load_file(path, true)
+    }
+    pub(crate) fn for_preparation(path: &Path) -> Result<Self, String> {
+        Self::load_file(path, false)
+    }
+    fn load_file(path: &Path, for_startup: bool) -> Result<Self, String> {
         let names: BTreeSet<String> = env::vars_os()
             .filter_map(|(key, _)| key.into_string().ok())
             .collect();
-        Self::from_file_with_lookup(path, &names, true, &|name| match env::var(name) {
-            Ok(value) => Ok(Some(value)),
-            Err(env::VarError::NotPresent) => Ok(None),
-            Err(env::VarError::NotUnicode(_)) => Err("invalid secret encoding".into()),
-        })
+        Self::from_file_with_lookup(
+            path,
+            &names,
+            for_startup,
+            for_startup,
+            &|name| match env::var(name) {
+                Ok(value) => Ok(Some(value)),
+                Err(env::VarError::NotPresent) => Ok(None),
+                Err(env::VarError::NotUnicode(_)) => Err("invalid secret encoding".into()),
+            },
+        )
     }
     #[cfg(test)]
     fn from_file_with_env(
@@ -392,12 +419,15 @@ impl AppConfig {
         envs: &std::collections::HashMap<String, String>,
     ) -> Result<Self, String> {
         let names = envs.keys().cloned().collect();
-        Self::from_file_with_lookup(path, &names, false, &|name| Ok(envs.get(name).cloned()))
+        Self::from_file_with_lookup(path, &names, false, true, &|name| {
+            Ok(envs.get(name).cloned())
+        })
     }
     fn from_file_with_lookup(
         path: &Path,
         names: &BTreeSet<String>,
         for_startup: bool,
+        resolve_email: bool,
         lookup: &impl Fn(&str) -> Result<Option<String>, String>,
     ) -> Result<Self, String> {
         let bytes = read_limited(path, 1024 * 1024, "configuration")?;
@@ -406,7 +436,7 @@ impl AppConfig {
         reject_nulls(&unique.0, None)?;
         let d: Document = serde_path_to_error::deserialize(unique.0.into_deserializer())
             .map_err(|e| format!("invalid JSON configuration field: {}", e.path()))?;
-        if d.version != 1 {
+        if !matches!(d.version, 1 | 2) {
             return Err("unsupported configuration version".into());
         }
         let mut refs = vec![(
@@ -498,10 +528,15 @@ impl AppConfig {
             mount_prefix: d.management.mount_prefix,
             browser: d.management.browser.map(|b| BrowserConfig {
                 cookie_name: b.cookie_name,
+                development_session_ttl_secs: b.development_session_ttl_secs,
             }),
             ui_base_path: d.management.ui.map(|x| x.base_path),
             registration_enabled: false,
+            oidc_enabled: false,
         };
+        if d.version == 1 && d.business_entries.iter().any(|b| b.oidc.is_some()) {
+            return Err("OIDC configuration requires version 2".into());
+        }
         let mut business_entries = Vec::new();
         for b in d.business_entries {
             business_entries.push(EntryConfig {
@@ -512,9 +547,11 @@ impl AppConfig {
                 mount_prefix: b.mount_prefix,
                 browser: b.browser.map(|x| BrowserConfig {
                     cookie_name: x.cookie_name,
+                    development_session_ttl_secs: x.development_session_ttl_secs,
                 }),
                 ui_base_path: None,
                 registration_enabled: b.registration_enabled,
+                oidc_enabled: b.oidc.is_some_and(|o| o.enabled),
             })
         }
         let absolute = if path.is_absolute() {
@@ -579,11 +616,13 @@ impl AppConfig {
             .connection
             .uri_ref
             .resolve(base, lookup)?;
-        c.email_delivery = d
-            .runtime
-            .email
-            .map(|email| email.normalize(base, lookup))
-            .transpose()?;
+        if resolve_email {
+            c.email_delivery = d
+                .runtime
+                .email
+                .map(|email| email.normalize(base, lookup))
+                .transpose()?;
+        }
         c.postgres
             .validate()
             .map_err(|_| "invalid runtime.postgres".to_string())?;
@@ -611,15 +650,22 @@ impl AppConfig {
         .map_err(str::to_owned)?;
         if config.client_config().session_ttl_secs.is_some() {
             config
-                .with_development_session_ttl_secs(self.development_session_ttl_secs)
+                .with_development_session_ttl_secs(
+                    b.development_session_ttl_secs
+                        .unwrap_or(self.development_session_ttl_secs),
+                )
                 .map_err(str::to_owned)
+        } else if b.development_session_ttl_secs.is_some() {
+            Err("browser.development_session_ttl_secs requires development-login transport".into())
         } else {
             Ok(config)
         }
     }
     pub(crate) fn validate_for_startup(&self) -> Result<(), String> {
-        if self.reference_business.is_none() && !self.business_entries.is_empty() {
-            return Err("business entries are not supported by this build".into());
+        if self.reference_business.is_none()
+            && self.business_entries.iter().any(|e| e.require_device_proof)
+        {
+            return Err("business device proof is not supported by this build".into());
         }
         Ok(())
     }
@@ -631,6 +677,10 @@ impl AppConfig {
         let mut clients = BTreeSet::new();
         let mut cookies = BTreeSet::new();
         let mut paths: Vec<(String, String)> = Vec::new();
+        if self.business_entries.iter().any(|e| e.oidc_enabled) {
+            paths.push(("shared OIDC".into(), "/oidc".into()));
+            paths.push(("discovery".into(), "/.well-known".into()));
+        }
         let mut cookie_paths: Vec<String> = Vec::new();
         for (management, e) in std::iter::once((true, &self.management))
             .chain(self.business_entries.iter().map(|e| (false, e)))
@@ -656,6 +706,9 @@ impl AppConfig {
                     "business device proof is not supported by this build"
                 }
                 .into());
+            }
+            if e.registration_enabled && !matches!(e.policy, LoginTenantPolicy::Fixed { .. }) {
+                return Err("registration requires a fixed tenant policy".into());
             }
             if e.registration_enabled && email.is_none() {
                 return Err("registration requires runtime.email".into());
@@ -761,7 +814,7 @@ impl SecretRef {
         Ok(v)
     }
 }
-fn read_limited(path: &Path, limit: u64, label: &str) -> Result<Vec<u8>, String> {
+pub(crate) fn read_limited(path: &Path, limit: u64, label: &str) -> Result<Vec<u8>, String> {
     if !fs::metadata(path)
         .map_err(|_| format!("cannot read {label}"))?
         .is_file()
@@ -1025,6 +1078,33 @@ mod tests {
         HashMap::from([("DB_URI".into(), "postgres://localhost/db".into())])
     }
     #[test]
+    fn preparation_skips_unrelated_secrets_and_startup_capability_gate() {
+        let mut value = doc();
+        value["runtime"]["email"] = serde_json::json!({"mode":"smtp","smtp":{"username":"user","password_ref":{"env":"UNAVAILABLE_SMTP"}}});
+        value["business_entries"] = serde_json::json!([{"login_entry":"product","client_id":"product-client","tenant_policy":{"kind":"choose"},"mount_prefix":"/product"}]);
+        let path = std::env::temp_dir().join(format!("a01-prep-{}.json", std::process::id()));
+        std::fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
+        let lookup = |key: &str| {
+            assert_eq!(
+                key, "DB_URI",
+                "preparation must not resolve unrelated secrets"
+            );
+            Ok(Some("postgres://localhost/db".into()))
+        };
+        let config =
+            AppConfig::from_file_with_lookup(&path, &BTreeSet::new(), false, false, &lookup)
+                .unwrap();
+        assert!(config.email_delivery.is_none());
+        assert!(config.validate_for_startup().is_ok());
+        value["runtime"]["email"]["smtp"]["port"] = serde_json::json!(0);
+        std::fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
+        assert!(
+            AppConfig::from_file_with_lookup(&path, &BTreeSet::new(), false, false, &lookup)
+                .is_err()
+        );
+        std::fs::remove_file(path).unwrap();
+    }
+    #[test]
     fn management_and_legacy_conflicts() {
         let c = parse(&doc(), &envs()).ok().unwrap();
         assert!(c.business_entries.is_empty());
@@ -1094,22 +1174,23 @@ mod tests {
             std::thread::current().id()
         ));
         let mut d = doc();
-        d["business_entries"] = serde_json::json!([{"login_entry":"product","client_id":"product","tenant_policy":{"kind":"choose"},"mount_prefix":"/product"}]);
+        d["business_entries"] = serde_json::json!([{"login_entry":"product","client_id":"product","tenant_policy":{"kind":"choose"},"mount_prefix":"/product","require_device_proof":true}]);
         fs::write(&path, serde_json::to_vec(&d).unwrap()).unwrap();
         let calls = Cell::new(0);
         let lookup = |_: &str| {
             calls.set(calls.get() + 1);
             Ok(None)
         };
-        let err = AppConfig::from_file_with_lookup(&path, &BTreeSet::new(), true, &lookup)
+        let err = AppConfig::from_file_with_lookup(&path, &BTreeSet::new(), true, true, &lookup)
             .err()
             .unwrap();
         assert!(err.contains("not supported"));
         assert_eq!(calls.get(), 0);
+        d["business_entries"][0]["require_device_proof"] = false.into();
         d["management"]["mount_prefix"] = "/invalid+".into();
         fs::write(&path, serde_json::to_vec(&d).unwrap()).unwrap();
         assert!(
-            AppConfig::from_file_with_lookup(&path, &BTreeSet::new(), true, &lookup)
+            AppConfig::from_file_with_lookup(&path, &BTreeSet::new(), true, true, &lookup)
                 .err()
                 .unwrap()
                 .contains("mount")
@@ -1185,11 +1266,95 @@ mod tests {
             .is_none());
     }
     #[test]
-    fn nonempty_business_is_valid_but_build_rejects_startup() {
+    fn oidc_v2_is_explicit_and_reserves_shared_routes() {
+        let mut v = doc();
+        v["business_entries"] = serde_json::json!([{"login_entry":"one","client_id":"one","tenant_policy":{"kind":"choose"},"mount_prefix":"/one","oidc":{"enabled":true}}]);
+        assert!(parse(&v, &envs()).err().unwrap().contains("version 2"));
+        v["version"] = 2.into();
+        assert!(parse(&v, &envs()).unwrap().business_entries[0].oidc_enabled);
+        for field in ["device", "scan"] {
+            v["business_entries"][0][field] = serde_json::json!({"enabled":true});
+            assert!(parse(&v, &envs()).is_err());
+            v["business_entries"][0]
+                .as_object_mut()
+                .unwrap()
+                .remove(field);
+        }
+        for path in ["/oidc", "/.well-known", "/oidc/token"] {
+            v["business_entries"][0]["mount_prefix"] = path.into();
+            assert!(parse(&v, &envs()).err().unwrap().contains("conflict"));
+        }
+        v["business_entries"][0]["mount_prefix"] = "/one".into();
+        v["business_entries"][0]["oidc"] = serde_json::json!({"enabled":false});
+        assert!(!parse(&v, &envs()).unwrap().business_entries[0].oidc_enabled);
+        v["business_entries"][0]["oidc"] = serde_json::json!({"enabled":true,"device":true});
+        assert!(parse(&v, &envs()).is_err());
+    }
+    #[test]
+    fn ordinary_business_is_supported_at_startup() {
         let mut v = doc();
         v["business_entries"] = serde_json::json!([{"login_entry":"product","client_id":"product-client","tenant_policy":{"kind":"fixed","tenant_id":"a"},"mount_prefix":"/product"}]);
         let c = parse(&v, &envs()).ok().unwrap();
-        assert!(c.validate_for_startup().is_err());
+        assert!(c.validate_for_startup().is_ok());
+    }
+    #[test]
+    fn registration_requires_fixed_policy_and_email_and_full_browser_rejects_dev_ttl() {
+        let mut v = doc();
+        v["business_entries"] = serde_json::json!([{"login_entry":"registration","client_id":"registration","tenant_policy":{"kind":"fixed","tenant_id":"a"},"mount_prefix":"/registration","registration_enabled":true}]);
+        assert!(parse(&v, &envs()).err().unwrap().contains("email"));
+        v["runtime"]["email"] = serde_json::json!({"mode":"log"});
+        assert!(parse(&v, &envs()).is_ok());
+        v["business_entries"][0]["tenant_policy"] = serde_json::json!({"kind":"choose"});
+        assert!(parse(&v, &envs()).err().unwrap().contains("fixed"));
+        v["business_entries"][0]["registration_enabled"] = false.into();
+        v["business_entries"][0]["browser"] =
+            serde_json::json!({"cookie_name":"business","development_session_ttl_secs":120});
+        assert!(parse(&v, &envs()).err().unwrap().contains("development"));
+    }
+    #[cfg(all(feature = "development-private-network-http", debug_assertions))]
+    #[test]
+    fn ordinary_registration_and_independent_browser_lifetimes() {
+        let mut v = doc();
+        v["business_entries"] = serde_json::json!([
+            {"login_entry":"one","client_id":"one","tenant_policy":{"kind":"fixed","tenant_id":"a"},"mount_prefix":"/one","browser":{"cookie_name":"one","development_session_ttl_secs":120}},
+            {"login_entry":"two","client_id":"two","tenant_policy":{"kind":"choose"},"mount_prefix":"/two","browser":{"cookie_name":"two","development_session_ttl_secs":240}}
+        ]);
+        // Full browser sessions must not silently ignore a development TTL.
+        assert!(parse(&v, &envs()).err().unwrap().contains("development"));
+        v["runtime"]["http"]["transport_policy"] = "development-private-network-http".into();
+        v["runtime"]["http"]["browser_origin"] = "http://192.168.1.10:9100".into();
+        let c = parse(&v, &envs()).ok().unwrap();
+        let configs = c
+            .business_entries
+            .iter()
+            .map(|entry| {
+                c.browser_http_config(entry, AccessTokenPurpose::Business)
+                    .unwrap()
+                    .client_config()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(configs[0].session_ttl_secs, Some(120));
+        assert_eq!(configs[1].session_ttl_secs, Some(240));
+        assert_eq!(
+            c.browser_http_config(&c.management, AccessTokenPurpose::Management)
+                .unwrap()
+                .client_config()
+                .session_ttl_secs,
+            Some(900)
+        );
+        v["business_entries"].as_array_mut().unwrap().reverse();
+        let reordered = parse(&v, &envs()).ok().unwrap();
+        assert_eq!(reordered.business_entries[1].login_entry, "one");
+        assert_eq!(reordered.business_entries[1].mount_prefix, "/one");
+        v["business_entries"][1]["registration_enabled"] = true.into();
+        assert!(parse(&v, &envs()).err().unwrap().contains("email"));
+        v["runtime"]["email"] = serde_json::json!({"mode":"log"});
+        assert!(parse(&v, &envs()).is_ok());
+        v["business_entries"][0]["registration_enabled"] = true.into();
+        assert!(parse(&v, &envs()).err().unwrap().contains("fixed"));
+        v["business_entries"][0]["registration_enabled"] = false.into();
+        v["business_entries"][0]["browser"]["development_session_ttl_secs"] = 59.into();
+        assert!(parse(&v, &envs()).is_err());
     }
     #[test]
     fn rejects_policy_paths_cookie_and_secrets() {
@@ -1279,16 +1444,16 @@ mod tests {
         let mut names =
             BTreeSet::from(["DB_URI".to_string(), "EMBEDDED_IDP_APP_UNKNOWN".to_string()]);
         fs::write(&path, serde_json::to_vec(&doc()).unwrap()).unwrap();
-        assert!(AppConfig::from_file_with_lookup(&path, &names, false, &lookup).is_err());
+        assert!(AppConfig::from_file_with_lookup(&path, &names, false, true, &lookup).is_err());
         assert!(calls.borrow().is_empty());
         names.remove("EMBEDDED_IDP_APP_UNKNOWN");
         let mut bad = doc();
         bad["management"]["mount_prefix"] = "/bad+path".into();
         fs::write(&path, serde_json::to_vec(&bad).unwrap()).unwrap();
-        assert!(AppConfig::from_file_with_lookup(&path, &names, false, &lookup).is_err());
+        assert!(AppConfig::from_file_with_lookup(&path, &names, false, true, &lookup).is_err());
         assert!(calls.borrow().is_empty());
         fs::write(&path, serde_json::to_vec(&doc()).unwrap()).unwrap();
-        assert!(AppConfig::from_file_with_lookup(&path, &names, false, &lookup).is_ok());
+        assert!(AppConfig::from_file_with_lookup(&path, &names, false, true, &lookup).is_ok());
         assert_eq!(&*calls.borrow(), &["DB_URI".to_string()]);
         fs::remove_file(path).unwrap();
     }
@@ -1302,7 +1467,7 @@ mod tests {
         for v in [
             serde_json::json!(null),
             serde_json::json!("1"),
-            serde_json::json!(2),
+            serde_json::json!(3),
         ] {
             let mut d = doc();
             d["version"] = v;

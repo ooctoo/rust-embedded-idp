@@ -21,10 +21,26 @@ use std::sync::Arc;
 /// Client credentials stay in Basic auth or POST forms, never query strings.
 pub fn tenant_oidc_resource_router(service: Arc<dyn TenantOidcResourceService>) -> Router {
     Router::new()
+        .route("/auth/logout", post(logout))
+        .with_state(service.clone())
+        .layer(DefaultBodyLimit::max(AUTH_DEVICE_BODY_LIMIT_BYTES))
+        .layer(middleware::from_fn(no_store))
+        .merge(tenant_oidc_protocol_resource_router(service))
+}
+/// Shared issuer resource endpoints, without an entry-local logout route.
+pub fn tenant_oidc_protocol_resource_router(service: Arc<dyn TenantOidcResourceService>) -> Router {
+    Router::new()
         .route("/oidc/userinfo", get(user_info))
         .route("/oidc/introspect", post(introspect))
         .route("/oidc/revoke", post(revoke))
-        .route("/auth/logout", post(logout))
+        .with_state(service)
+        .layer(DefaultBodyLimit::max(AUTH_DEVICE_BODY_LIMIT_BYTES))
+        .layer(middleware::from_fn(no_store))
+}
+/// Ordinary logout only, retaining the existing form/Basic client contract.
+pub fn tenant_logout_router(service: Arc<dyn TenantLogoutService>) -> Router {
+    Router::new()
+        .route("/auth/logout", post(ordinary_logout))
         .with_state(service)
         .layer(DefaultBodyLimit::max(AUTH_DEVICE_BODY_LIMIT_BYTES))
         .layer(middleware::from_fn(no_store))
@@ -168,6 +184,23 @@ async fn logout(
     headers: HeaderMap,
     Form(form): Form<LogoutForm>,
 ) -> Response {
+    logout_response(headers, form, move |request| service.logout(request)).await
+}
+async fn ordinary_logout(
+    State(service): State<Arc<dyn TenantLogoutService>>,
+    headers: HeaderMap,
+    Form(form): Form<LogoutForm>,
+) -> Response {
+    logout_response(headers, form, move |request| {
+        service.logout_session(request)
+    })
+    .await
+}
+async fn logout_response(
+    headers: HeaderMap,
+    form: LogoutForm,
+    operation: impl FnOnce(TenantTokenRequest) -> Result<(), TenantAuthError> + Send + 'static,
+) -> Response {
     let request = match command(
         &headers,
         TokenForm {
@@ -180,11 +213,12 @@ async fn logout(
         Ok(c) => c,
         Err(e) => return resource_error(e),
     };
-    match call(move || service.logout(request)).await {
+    match call(move || operation(request)).await {
         Ok(()) => StatusCode::OK.into_response(),
         Err(e) => resource_error(e),
     }
 }
+
 fn resource_error(error: TenantAuthError) -> Response {
     let (status, code) = match &error {
         TenantAuthError::InvalidClient => (StatusCode::UNAUTHORIZED, "invalid_client"),
@@ -217,6 +251,132 @@ fn resource_error(error: TenantAuthError) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::body::Body;
+    use std::sync::Mutex;
+    use tower::ServiceExt;
+
+    #[derive(Default)]
+    struct Logout(Mutex<Vec<TenantTokenRequest>>);
+    impl TenantLogoutService for Logout {
+        fn logout_session(&self, command: TenantTokenRequest) -> Result<(), TenantAuthError> {
+            self.0.lock().unwrap().push(command);
+            Ok(())
+        }
+    }
+    #[tokio::test]
+    async fn ordinary_logout_retains_form_basic_limits_and_does_not_expose_oidc() {
+        let service = Arc::new(Logout::default());
+        let router = tenant_logout_router(service.clone());
+        for basic in [false, true] {
+            let mut request = axum::http::Request::post("/auth/logout")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded");
+            let body = if basic {
+                request = request.header(
+                    header::AUTHORIZATION,
+                    format!("Basic {}", Base64::encode_string(b"web:synthetic")),
+                );
+                "refresh_token=fixture"
+            } else {
+                "refresh_token=fixture&client_id=desktop"
+            };
+            let response = router
+                .clone()
+                .oneshot(request.body(Body::from(body)).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+        }
+        {
+            let calls = service.0.lock().unwrap();
+            assert_eq!(calls.len(), 2);
+            assert_eq!(calls[0].client_id, "desktop");
+            assert!(calls[0].client_secret.is_none());
+            assert_eq!(calls[1].client_id, "web");
+            assert_eq!(
+                calls[1].client_secret.as_ref().unwrap().expose_secret(),
+                "synthetic"
+            );
+            assert_eq!(calls[1].token.expose_secret(), "fixture");
+            assert_eq!(calls[1].token_type_hint, Some(TenantTokenType::Refresh));
+        }
+        for (uri, content_type, body, tenant, basic, status) in [
+            (
+                "/auth/logout?client_id=desktop",
+                "application/x-www-form-urlencoded",
+                "refresh_token=fixture".into(),
+                false,
+                false,
+                StatusCode::UNAUTHORIZED,
+            ),
+            (
+                "/auth/logout",
+                "application/x-www-form-urlencoded",
+                "refresh_token=fixture&client_id=desktop".into(),
+                true,
+                false,
+                StatusCode::BAD_REQUEST,
+            ),
+            (
+                "/auth/logout",
+                "application/x-www-form-urlencoded",
+                "refresh_token=fixture&client_id=desktop".into(),
+                false,
+                true,
+                StatusCode::UNAUTHORIZED,
+            ),
+            (
+                "/auth/logout",
+                "application/json",
+                "{}".into(),
+                false,
+                false,
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            ),
+            (
+                "/auth/logout",
+                "application/x-www-form-urlencoded",
+                "x".repeat(AUTH_DEVICE_BODY_LIMIT_BYTES + 1),
+                false,
+                false,
+                StatusCode::PAYLOAD_TOO_LARGE,
+            ),
+        ] {
+            let mut request =
+                axum::http::Request::post(uri).header(header::CONTENT_TYPE, content_type);
+            if tenant {
+                request = request.header("x-embedded-idp-tenant-id", "t1");
+            }
+            if basic {
+                request = request.header(header::AUTHORIZATION, "Basic d2ViOnNlY3JldA==");
+            }
+            let response = router
+                .clone()
+                .oneshot(request.body(Body::from(body)).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), status);
+            assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+            if status == StatusCode::UNAUTHORIZED {
+                assert_eq!(
+                    response.headers()[header::WWW_AUTHENTICATE],
+                    "Basic realm=\"idp\""
+                );
+            }
+        }
+        assert_eq!(service.0.lock().unwrap().len(), 2);
+        for path in ["/oidc/userinfo", "/oidc/introspect", "/oidc/revoke"] {
+            assert_eq!(
+                router
+                    .clone()
+                    .oneshot(axum::http::Request::post(path).body(Body::empty()).unwrap())
+                    .await
+                    .unwrap()
+                    .status(),
+                StatusCode::NOT_FOUND
+            );
+        }
+    }
     #[test]
     fn basic_credentials_decode_oauth_components_and_reject_ambiguous_sources() {
         let mut headers = HeaderMap::new();

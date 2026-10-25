@@ -173,7 +173,9 @@ pub fn build_composition(config: &AppConfig) -> Result<AppComposition, String> {
             .map_err(|_| "invalid business token configuration".to_string())
     };
     // Preserve legacy token/key validation before any reference client seed.
-    let business_metadata = if config.reference_business.is_some() {
+    let business_metadata = if config.reference_business.is_some()
+        || config.business_entries.iter().any(|e| e.oidc_enabled)
+    {
         let metadata = tokens(false)?;
         let jwks = metadata
             .jwks_document()
@@ -249,7 +251,7 @@ pub fn build_composition(config: &AppConfig) -> Result<AppComposition, String> {
             PhcClientSecretCodec,
         ))));
     let management_auth = |browser: bool| {
-        CoreManagementAuthenticationService::new(
+        let auth = CoreManagementAuthenticationService::new(
             mode,
             config.embedded_idp.auth.clone(),
             TenantLoginEntry {
@@ -266,7 +268,13 @@ pub fn build_composition(config: &AppConfig) -> Result<AppComposition, String> {
             SystemClock,
             UuidV7IdGenerator,
         )
-        .map_err(|_| "invalid management login configuration")
+        .map_err(|_| "invalid management login configuration")?;
+        match browser_lifetime.filter(|_| config.reference_business.is_none()) {
+            Some(ttl) => auth
+                .with_restricted_browser_isolation(ttl)
+                .map_err(|_| "invalid management browser isolation"),
+            None => Ok(auth),
+        }
     };
     let management = Arc::new(management_auth(false)?);
     let mut management_routes = management_router(management.clone(), admin_routes);
@@ -308,6 +316,33 @@ pub fn build_composition(config: &AppConfig) -> Result<AppComposition, String> {
         router = router.merge(ui);
     }
     let Some(reference) = &config.reference_business else {
+        let mut oidc_entries = std::collections::BTreeMap::new();
+        for entry in &config.business_entries {
+            let (routes, oidc) = ordinary_business_routes(config, entry, &store, &catalog, &key)?;
+            if let Some(oidc) = oidc {
+                oidc_entries.insert(entry.client_id.clone(), oidc);
+            }
+            router = if entry.mount_prefix.is_empty() {
+                router.merge(routes)
+            } else {
+                router.nest(&entry.mount_prefix, routes)
+            };
+        }
+        if !oidc_entries.is_empty() {
+            let dispatcher = Arc::new(crate::oidc_dispatch::OidcDispatch {
+                entries: oidc_entries,
+                tokens: tokens(false)?,
+            });
+            let (jwks, etag) = business_metadata.ok_or("missing OIDC metadata")?;
+            router = router
+                .merge(tenant_oidc_authorization_router(
+                    dispatcher.clone(),
+                    TenantOidcHttpConfig::new(BUSINESS_AUDIENCE, "/oidc/token")
+                        .map_err(|_| "invalid shared token path")?,
+                ))
+                .merge(tenant_oidc_protocol_resource_router(dispatcher))
+                .merge(oidc_metadata_router(config, jwks, etag));
+        }
         return Ok(AppComposition {
             router,
             scan_cleanup: None,
@@ -552,38 +587,186 @@ pub fn build_composition(config: &AppConfig) -> Result<AppComposition, String> {
     } else {
         public
     };
-    let issuer = config.embedded_idp.issuer.trim_end_matches('/');
-    let discovery = json!({"issuer":config.embedded_idp.issuer,"authorization_endpoint":format!("{issuer}/oidc/authorize"),"token_endpoint":format!("{issuer}/oidc/token"),"jwks_uri":format!("{issuer}/oidc/jwks"),"userinfo_endpoint":format!("{issuer}/oidc/userinfo"),"introspection_endpoint":format!("{issuer}/oidc/introspect"),"revocation_endpoint":format!("{issuer}/oidc/revoke"),"response_types_supported":["code"],"grant_types_supported":["authorization_code"],"subject_types_supported":["public"],"id_token_signing_alg_values_supported":["RS256"],"code_challenge_methods_supported":["S256"],"scopes_supported":["openid","profile","email"],"token_endpoint_auth_methods_supported":["none","client_secret_basic","client_secret_post"]});
     Ok(AppComposition {
         router: router
-            .route(
-                "/.well-known/openid-configuration",
-                get(move || {
-                    let data = discovery.clone();
-                    async move { Json(data) }
-                }),
-            )
-            .route(
-                "/oidc/jwks",
-                get(move || {
-                    let data = jwks.clone();
-                    let etag = etag.clone();
-                    async move {
-                        (
-                            [
-                                ("etag", etag),
-                                ("cache-control", "public, max-age=300".into()),
-                            ],
-                            Json(data),
-                        )
-                    }
-                }),
-            )
+            .merge(oidc_metadata_router(config, jwks, etag))
             .merge(public)
             .merge(browser_business),
         scan_cleanup: scan_service,
     })
 }
+
+fn oidc_metadata_router(config: &AppConfig, jwks: serde_json::Value, etag: String) -> Router {
+    let issuer = config.embedded_idp.issuer.trim_end_matches('/');
+    let discovery = json!({"issuer":config.embedded_idp.issuer,"authorization_endpoint":format!("{issuer}/oidc/authorize"),"token_endpoint":format!("{issuer}/oidc/token"),"jwks_uri":format!("{issuer}/oidc/jwks"),"userinfo_endpoint":format!("{issuer}/oidc/userinfo"),"introspection_endpoint":format!("{issuer}/oidc/introspect"),"revocation_endpoint":format!("{issuer}/oidc/revoke"),"response_types_supported":["code"],"grant_types_supported":["authorization_code"],"subject_types_supported":["public"],"id_token_signing_alg_values_supported":["RS256"],"code_challenge_methods_supported":["S256"],"scopes_supported":["openid","profile","email"],"token_endpoint_auth_methods_supported":["none","client_secret_basic","client_secret_post"]});
+    Router::new()
+        .route(
+            "/.well-known/openid-configuration",
+            get(move || {
+                let data = discovery.clone();
+                async move { Json(data) }
+            }),
+        )
+        .route(
+            "/oidc/jwks",
+            get(move || {
+                let data = jwks.clone();
+                let etag = etag.clone();
+                async move {
+                    (
+                        [
+                            ("etag", etag),
+                            ("cache-control", "public, max-age=300".into()),
+                        ],
+                        Json(data),
+                    )
+                }
+            }),
+        )
+}
+
+fn ordinary_business_routes(
+    config: &AppConfig,
+    entry: &crate::composition_config::EntryConfig,
+    store: &PostgresAccessStore,
+    catalog: &PermissionCatalog,
+    key: &RsaSigningKeyConfig,
+) -> Result<(Router, Option<crate::oidc_dispatch::OidcEntry>), String> {
+    let browser_http = entry
+        .browser
+        .as_ref()
+        .map(|_| config.browser_http_config(entry, AccessTokenPurpose::Business))
+        .transpose()?;
+    let browser_ttl = browser_http
+        .as_ref()
+        .and_then(|http| http.client_config().session_ttl_secs);
+    let auth = |browser: bool| {
+        let ttl = if browser { browser_ttl } else { None };
+        let tokens = Rs256JwtService::new(
+            ProductionJwtConfig {
+                issuer: config.embedded_idp.issuer.clone(),
+                audience: BUSINESS_AUDIENCE.into(),
+                scope: "openid profile email".into(),
+                access_token_ttl_secs: ttl
+                    .map_or(config.embedded_idp.auth.access_token_ttl_secs, |ttl| {
+                        config.embedded_idp.auth.access_token_ttl_secs.min(ttl - 1)
+                    }),
+                refresh_token_ttl_secs: ttl
+                    .map_or(config.embedded_idp.auth.refresh_token_ttl_secs, |ttl| {
+                        config.embedded_idp.auth.refresh_token_ttl_secs.min(ttl)
+                    }),
+                clock_skew_secs: 0,
+            },
+            key.clone(),
+            vec![],
+        )
+        .map_err(|_| "invalid business token configuration")?;
+        let auth = CoreTenantAuthenticationService::new(
+            config.tenancy_mode,
+            config.embedded_idp.auth.clone(),
+            TenantLoginEntry {
+                client_id: entry.client_id.clone(),
+                login_entry: entry.login_entry.clone(),
+                policy: entry.policy.clone(),
+                require_device_proof: false,
+            },
+            store.clone(),
+            tokens,
+            SecureRefreshTokenGenerator,
+            Sha256RefreshTokenDigester,
+            SystemClock,
+            UuidV7IdGenerator,
+        )
+        .map_err(|_| "invalid business login configuration".to_string())?;
+        match browser_ttl {
+            Some(ttl) => auth
+                .with_restricted_browser_isolation(ttl)
+                .map_err(|_| "invalid business browser isolation".to_string()),
+            None => Ok(auth),
+        }
+    };
+    let service = Arc::new(auth(false)?);
+    let logout = CoreTenantOidcService::new(
+        auth(false)?,
+        config.embedded_idp.issuer.clone(),
+        config.embedded_idp.oidc.clone(),
+        "openid profile email".into(),
+        PhcClientSecretCodec,
+    )
+    .map_err(|_| "invalid business logout configuration")?;
+    let oidc = if entry.oidc_enabled {
+        let protocol = Arc::new(
+            CoreTenantOidcService::new(
+                auth(false)?,
+                config.embedded_idp.issuer.clone(),
+                config.embedded_idp.oidc.clone(),
+                "openid profile email".into(),
+                PhcClientSecretCodec,
+            )
+            .map_err(|_| "invalid business OIDC configuration")?
+            .with_required_s256_pkce(),
+        );
+        Some(crate::oidc_dispatch::OidcEntry {
+            authorization: protocol.clone(),
+            resource: protocol,
+        })
+    } else {
+        None
+    };
+    let mut routes = tenant_auth_router(service.clone())
+        .merge(tenant_refresh_router(service.clone()))
+        .merge(tenant_logout_router(Arc::new(logout)))
+        .merge(tenant_self_router(
+            service,
+            Arc::new(CoreAccessService::new(
+                config.tenancy_mode,
+                catalog.clone(),
+                store.clone(),
+            )),
+        ));
+    if let Some(http) = browser_http {
+        let browser_service: Arc<dyn BrowserSessionService> = match browser_ttl {
+            Some(ttl) => Arc::new(
+                auth(true)?
+                    .into_restricted_browser(ttl)
+                    .map_err(|_| "invalid browser lifetime")?,
+            ),
+            None => Arc::new(auth(false)?),
+        };
+        routes = routes.merge(browser_session_router(browser_service, http)?);
+    }
+    if entry.registration_enabled {
+        let mut registration_config = config.embedded_idp.auth.clone();
+        registration_config.allow_local_registration = true;
+        let registration = CoreTenantRegistrationService::new(
+            config.tenancy_mode,
+            registration_config,
+            store.clone(),
+            SystemClock,
+            UuidV7IdGenerator,
+            NumericVerificationCodeGenerator,
+        )
+        .map_err(|_| "invalid registration configuration")?;
+        let email_config = config
+            .email_delivery
+            .as_ref()
+            .ok_or("registration requires runtime.email")?;
+        let email = Arc::new(DefaultVerificationEmailService::new(
+            AppEmailSenderProvider::new(email_config.clone()),
+            VerificationEmailConfig {
+                from_email: email_config.from_email.clone(),
+                from_name: email_config.from_name.clone(),
+                subject: email_config.subject.clone(),
+            },
+        ));
+        routes = routes.merge(
+            tenant_registration_router(Arc::new(registration), entry.policy.clone(), email)
+                .map_err(|_| "invalid registration routes")?,
+        );
+    }
+    Ok((routes, oidc))
+}
+
 fn health_router(store: PostgresAccessStore, catalog: PermissionCatalog) -> Router {
     Router::new()
         .route("/healthz", get(|| async { Json(json!({"status":"ok"})) }))
@@ -630,8 +813,8 @@ fn check_entry_references(config: &AppConfig, store: &PostgresAccessStore) -> Re
             let client = tx.oidc_client(client_id)?
                 .ok_or(AccessError::InvalidInput("entry.client_missing"))?;
             client.validate().map_err(|_| AccessError::InvalidInput("entry.client_invalid"))?;
-            if client_id == config.management.client_id && client.client_type != OidcClientType::PublicDesktop {
-                return Err(AccessError::InvalidInput("management.client_type").into());
+            if client_id == config.management.client_id && (client.client_type != OidcClientType::PublicDesktop || client.client_secret_hash.is_some()) {
+                return Err(AccessError::InvalidInput("management.client_configuration").into());
             }
         }
         Ok(())

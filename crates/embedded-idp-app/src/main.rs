@@ -6,6 +6,8 @@ mod bootstrap;
 mod composition_config;
 mod config;
 mod email_sender;
+mod management_client_preparation;
+mod oidc_dispatch;
 mod scan_ui;
 
 use tokio::net::TcpListener;
@@ -22,6 +24,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut args = std::env::args().skip(1);
     let config = if let Some(command) = args.next() {
         match command.as_str() {
+            "prepare-management-client" | "prepare-management-client-audit" => {
+                if let Err((code, message)) =
+                    management_client_preparation::run(args.collect(), command.ends_with("-audit"))
+                {
+                    eprintln!("{message}");
+                    std::process::exit(code);
+                }
+                return Ok(());
+            }
             "bootstrap-admin" => {
                 return administrator_init::run(args.collect()).map_err(Into::into)
             }
@@ -38,7 +49,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             "--help" if args.next().is_none() => {
                 println!(
                     "Run with no arguments to start the reference host.\nUse --config <path> for explicit JSON configuration (management-only in this build).\n{}",
-                    administrator_init::USAGE
+                    format!("{}\n{}", administrator_init::USAGE, management_client_preparation::USAGE)
                 );
                 return Ok(());
             }

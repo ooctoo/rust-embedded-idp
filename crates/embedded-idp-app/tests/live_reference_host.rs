@@ -286,12 +286,15 @@ impl Host {
             .set_read_timeout(Some(Duration::from_secs(10)))
             .unwrap();
         let body = body.map(|b| b.to_string()).unwrap_or_default();
-        let mut request=format!("{method} {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nx-embedded-idp-admin-key: ignored-legacy-key\r\nx-embedded-idp-account-id: forged-subject\r\nContent-Length: {}\r\n",body.len());
+        let mut request = format!(
+            "{method} {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nx-embedded-idp-admin-key: ignored-legacy-key\r\nx-embedded-idp-account-id: forged-subject\r\nContent-Length: {}\r\n",
+            body.len()
+        );
         if !body.is_empty() {
             request.push_str("Content-Type: application/json\r\n");
         }
         if let Some(token) = token {
-            let scheme = if path.starts_with("/auth/tenant-selection/") {
+            let scheme = if path.contains("/auth/tenant-selection/") {
                 "TenantSelection"
             } else {
                 "Bearer"
@@ -816,7 +819,11 @@ impl Host {
         origin: &str,
     ) -> (u16, Option<String>, Value) {
         let body = body.to_string();
-        let mut request = format!("POST {path} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nOrigin: {origin}\r\nX-Embedded-Idp-Browser: 1\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: {}\r\n", self.port, body.len());
+        let mut request = format!(
+            "POST {path} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nOrigin: {origin}\r\nX-Embedded-Idp-Browser: 1\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: {}\r\n",
+            self.port,
+            body.len()
+        );
         if let Some(cookie) = cookie {
             request.push_str(&format!("Cookie: {cookie}\r\n"));
         }
@@ -1328,7 +1335,7 @@ impl Db {
             child: command.spawn().unwrap(),
             port,
         };
-        let deadline = Instant::now() + Duration::from_secs(20);
+        let deadline = Instant::now() + Duration::from_secs(60);
         loop {
             assert!(
                 host.child.try_wait().unwrap().is_none(),
@@ -1365,7 +1372,7 @@ impl Db {
                 .unwrap(),
             port,
         };
-        let deadline = Instant::now() + Duration::from_secs(20);
+        let deadline = Instant::now() + Duration::from_secs(60);
         loop {
             assert!(
                 host.child.try_wait().unwrap().is_none(),
@@ -2285,7 +2292,10 @@ fn n1_request(
     stream
         .set_read_timeout(Some(Duration::from_secs(10)))
         .unwrap();
-    let mut request = format!("{method} {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: {}\r\n", body.len());
+    let mut request = format!(
+        "{method} {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: {}\r\n",
+        body.len()
+    );
     for (name, value) in headers {
         request.push_str(&format!("{name}: {value}\r\n"));
     }
@@ -2717,4 +2727,1606 @@ fn n1_reference_tenant_body_path_and_concurrent_version_share_transaction() {
     assert_eq!(audit_count(), concurrent_before + 2);
     assert_eq!(host.raw("PATCH", "/api/admin/tenants", Some(bearer), None, Some(json!({"tenant_id":"ordinary","name":"stale","status":"active","allow_registration":false,"expected_version":1}))).0, 409);
     assert_eq!(audit_count(), concurrent_before + 2);
+}
+
+#[test]
+#[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
+fn a01_preparation_cli_then_read_only_p4_login_and_restricted_p5() {
+    for mode in [TenancyMode::Disabled, TenancyMode::Enabled] {
+        let db = Db::new(mode);
+        db.bootstrap();
+        db.sentinel();
+        let before = db.snapshot();
+        db.explicit_rejected(mode); // P4 must not seed a missing management client.
+        assert_eq!(db.snapshot(), before);
+        let config = db.dir.join("explicit.json");
+        let definition = db.dir.join("management.json");
+        let original =
+            json!({"client_name":"Management test","redirect_uris":["http://127.0.0.1/callback"]});
+        fs::write(&definition, serde_json::to_vec(&original).unwrap()).unwrap();
+        let prepare = |audit: bool| {
+            let mut command = Command::new(env!("CARGO_BIN_EXE_embedded-idp-app"));
+            for (key, _) in env::vars().filter(|(k, _)| {
+                k.starts_with("EMBEDDED_IDP_APP_") || k == "EMBEDDED_IDP_COMMON_ENV_FILE"
+            }) {
+                command.env_remove(key);
+            }
+            command
+                .env("IDP_TEST_DATABASE_URI", &db.uri)
+                .arg(if audit {
+                    "prepare-management-client-audit"
+                } else {
+                    "prepare-management-client"
+                })
+                .arg("--config")
+                .arg(&config);
+            if !audit {
+                command.arg("--definition").arg(&definition);
+            }
+            command.output().unwrap()
+        };
+        assert_eq!(prepare(false).status.code(), Some(4)); // no implicit audit DDL
+        assert_eq!(db.snapshot(), before);
+        assert!(prepare(true).status.success());
+        let created = prepare(false);
+        assert!(created.status.success());
+        assert_eq!(String::from_utf8_lossy(&created.stdout).trim(), "Created");
+        let prepared = db.snapshot();
+        let matched = prepare(false);
+        assert!(matched.status.success());
+        assert_eq!(
+            String::from_utf8_lossy(&matched.stdout).trim(),
+            "AlreadyMatches"
+        );
+        assert_eq!(db.snapshot(), prepared);
+        fs::write(
+            &definition,
+            serde_json::to_vec(
+                &json!({"client_name":"Different","redirect_uris":["http://127.0.0.1/callback"]}),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(prepare(false).status.code(), Some(3));
+        assert_eq!(db.snapshot(), prepared);
+        let host = db.start_explicit("/identity", "/console");
+        assert_eq!(
+            db.snapshot(),
+            prepared,
+            "P4 startup must not modify identity/audit records"
+        );
+        let admin = host.json(
+            "POST",
+            "/identity/admin/auth/login",
+            None,
+            None,
+            Some(json!({"email":"admin@example.test","password":"Runtime-Admin123"})),
+            200,
+        );
+        assert_eq!(
+            host.raw(
+                "POST",
+                "/identity/admin/clients/upsert",
+                None,
+                None,
+                Some(json!({}))
+            )
+            .0,
+            401
+        );
+        host.json("POST", "/identity/admin/clients/upsert", Some(token(&admin)), None, Some(json!({"client_id":"a01-business","client_name":"Prepared business","redirect_uris":["http://127.0.0.1/business-callback"],"client_type":"public_desktop","pkce_required":true})), 200);
+        host.json(
+            "GET",
+            "/identity/admin/clients/-/lookup?client_id=a01-business",
+            Some(token(&admin)),
+            None,
+            None,
+            200,
+        );
+        if mode == TenancyMode::Enabled {
+            host.json("POST", "/identity/admin/tenants", Some(token(&admin)), None, Some(json!({"tenant_id":"a01-business","name":"Prepared tenant","allow_registration":false,"administrator":{"kind":"new","email":"a01-member@example.test","password":"Runtime-Member123"}})), 201);
+        }
+        assert_eq!(
+            host.raw("POST", "/auth/register", None, None, Some(json!({})))
+                .0,
+            404
+        );
+    }
+}
+
+#[test]
+#[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
+fn a02_ordinary_entries_are_isolated_read_only_and_preserve_sessions_on_reorder() {
+    for mode in [TenancyMode::Disabled, TenancyMode::Enabled] {
+        let db = Db::new(mode);
+        db.bootstrap();
+        db.seed_management_client();
+        let setup = db.start_explicit("/identity", "/console");
+        let admin = setup.json(
+            "POST",
+            "/identity/admin/auth/login",
+            None,
+            None,
+            Some(json!({"email":"admin@example.test","password":"Runtime-Admin123"})),
+            200,
+        );
+        for client in ["ordinary-one", "ordinary-two"] {
+            setup.json("POST", "/identity/admin/clients/upsert", Some(token(&admin)), None,
+                Some(json!({"client_id":client,"client_name":client,"redirect_uris":["http://127.0.0.1/callback"],"client_type":"public_desktop","pkce_required":true})), 200);
+        }
+        let (tenant, email, password) = if mode == TenancyMode::Enabled {
+            setup.json("POST", "/identity/admin/tenants", Some(token(&admin)), None,
+                Some(json!({"tenant_id":"ordinary-domain","name":"Ordinary","allow_registration":false,"administrator":{"kind":"new","email":"ordinary@example.test","password":"Runtime-Member123"}})), 201);
+            (
+                "ordinary-domain",
+                "ordinary@example.test",
+                "Runtime-Member123",
+            )
+        } else {
+            ("0", "admin@example.test", "Runtime-Admin123")
+        };
+        drop(setup);
+        let port = TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let _ = db.explicit_command(port, mode, "/identity", "/console");
+        let mut config: Value =
+            serde_json::from_slice(&fs::read(db.dir.join("explicit.json")).unwrap()).unwrap();
+        config["business_entries"] = json!([
+            {"login_entry":"ordinary-one","client_id":"ordinary-one","tenant_policy":{"kind":"fixed","tenant_id":tenant},"mount_prefix":"/one","browser":{"cookie_name":"ordinary_one"}},
+            {"login_entry":"ordinary-two","client_id":"ordinary-two","tenant_policy":{"kind":"fixed","tenant_id":tenant},"mount_prefix":"/two","browser":{"cookie_name":"ordinary_two"}}
+        ]);
+        // A missing configured reference must fail before any identity write.
+        let before = db.snapshot();
+        let mut invalid = config.clone();
+        invalid["business_entries"][0]["client_id"] = "missing-client".into();
+        assert!(!db
+            .explicit_command_from_config(invalid)
+            .status()
+            .unwrap()
+            .success());
+        assert_eq!(db.snapshot(), before);
+        let host = db.start_command(port, &mut db.explicit_command_from_config(config.clone()));
+        assert_eq!(
+            db.snapshot(),
+            before,
+            "ordinary startup never seeds or repairs"
+        );
+        let credentials = json!({"email":email,"password":password});
+        let one = host.json(
+            "POST",
+            "/one/auth/login",
+            None,
+            None,
+            Some(credentials.clone()),
+            200,
+        );
+        let two = host.json(
+            "POST",
+            "/two/auth/login",
+            None,
+            None,
+            Some(credentials.clone()),
+            200,
+        );
+        for (path, access) in [
+            ("/two/auth/session", token(&one)),
+            ("/one/auth/session", token(&two)),
+            ("/identity/admin/auth/session", token(&one)),
+        ] {
+            assert_eq!(host.raw("GET", path, Some(access), None, None).0, 401);
+        }
+        host.json(
+            "GET",
+            "/one/auth/me/roles?business_id=runtime",
+            Some(token(&one)),
+            None,
+            None,
+            200,
+        );
+        assert_eq!(
+            host.raw("GET", "/one/auth/me/roles", Some(token(&one)), None, None)
+                .0,
+            400
+        );
+        assert_eq!(
+            host.raw(
+                "POST",
+                "/two/auth/refresh",
+                None,
+                None,
+                Some(json!({"refresh_token":one["tokens"]["refresh_token"]}))
+            )
+            .0,
+            401
+        );
+        let rotated = host.json(
+            "POST",
+            "/one/auth/refresh",
+            None,
+            None,
+            Some(json!({"refresh_token":one["tokens"]["refresh_token"]})),
+            200,
+        );
+        let (status, cookie, browser) =
+            host.browser("/one/auth/browser/login", None, None, credentials.clone());
+        assert_eq!(status, 200);
+        let cookie = cookie.unwrap();
+        assert!(cookie.starts_with("ordinary_one="));
+        assert!(cookie.contains("Path=/one/auth/browser"));
+        assert!(cookie.contains("HttpOnly"));
+        assert!(browser["tokens"].get("refresh_token").is_none());
+        let expected = json!({"expected_session":browser_identity(&browser["session"])});
+        assert_eq!(
+            host.browser(
+                "/two/auth/browser/restore",
+                Some(cookie_pair(&cookie)),
+                None,
+                expected.clone()
+            )
+            .0,
+            401
+        );
+        let (status, restored_cookie, restored) = host.browser(
+            "/one/auth/browser/restore",
+            Some(cookie_pair(&cookie)),
+            None,
+            expected,
+        );
+        assert_eq!(status, 200);
+        // Restore rotates refresh credentials just like refresh; retain the new cookie.
+        let cookie = restored_cookie.unwrap();
+        let expected = json!({"expected_session":browser_identity(&restored["session"])});
+        for (method, path) in [
+            ("POST", "/one/auth/register"),
+            ("POST", "/one/devices/proof/challenges"),
+            ("GET", "/one/oidc/userinfo"),
+            ("POST", "/one/auth/device-scan"),
+            ("GET", "/.well-known/openid-configuration"),
+            ("GET", "/oidc/jwks"),
+        ] {
+            assert_eq!(host.raw(method, path, None, None, None).0, 404, "{path}");
+        }
+        drop(host);
+        config["business_entries"].as_array_mut().unwrap().reverse();
+        let before_restart = db.snapshot();
+        let host = db.start_command(port, &mut db.explicit_command_from_config(config));
+        assert_eq!(db.snapshot(), before_restart);
+        host.json(
+            "GET",
+            "/one/auth/session",
+            Some(token(&rotated)),
+            None,
+            None,
+            200,
+        );
+        let (status, restored_cookie, restored) = host.browser(
+            "/one/auth/browser/restore",
+            Some(cookie_pair(&cookie)),
+            None,
+            expected,
+        );
+        assert_eq!(status, 200);
+        // Restore rotates refresh credentials just like refresh; retain the new cookie.
+        let cookie = restored_cookie.unwrap();
+        let expected = json!({"expected_session":browser_identity(&restored["session"])});
+        let (status, refreshed_cookie, refreshed) = host.browser(
+            "/one/auth/browser/refresh",
+            Some(cookie_pair(&cookie)),
+            None,
+            expected,
+        );
+        assert_eq!(status, 200);
+        let refreshed_cookie = refreshed_cookie.unwrap();
+        assert_eq!(
+            host.browser(
+                "/one/auth/browser/logout",
+                Some(cookie_pair(&refreshed_cookie)),
+                None,
+                json!({"expected_session":browser_identity(&refreshed["session"])})
+            )
+            .0,
+            204
+        );
+        // Reuse detection must commit its revocation, while the other entry survives.
+        assert_eq!(
+            host.raw(
+                "POST",
+                "/one/auth/refresh",
+                None,
+                None,
+                Some(json!({"refresh_token":one["tokens"]["refresh_token"]}))
+            )
+            .0,
+            401
+        );
+        assert_eq!(
+            host.raw(
+                "GET",
+                "/one/auth/session",
+                Some(token(&rotated)),
+                None,
+                None
+            )
+            .0,
+            401
+        );
+        host.json(
+            "GET",
+            "/two/auth/session",
+            Some(token(&two)),
+            None,
+            None,
+            200,
+        );
+    }
+}
+
+impl Host {
+    fn ordinary_logout_form(&self, path: &str, form: &str, basic: Option<&str>) -> u16 {
+        let mut request = format!(
+            "POST {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: {}\r\n",
+            form.len()
+        );
+        if let Some(credentials) = basic {
+            request.push_str(&format!(
+                "Authorization: Basic {}\r\n",
+                Base64::encode_string(credentials.as_bytes())
+            ));
+        }
+        request.push_str("\r\n");
+        request.push_str(form);
+        let mut stream = TcpStream::connect(("127.0.0.1", self.port)).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        stream.write_all(request.as_bytes()).unwrap();
+        let mut response = String::new();
+        stream.read_to_string(&mut response).unwrap();
+        response.split_whitespace().nth(1).unwrap().parse().unwrap()
+    }
+
+    fn oidc_form(&self, path: &str, form: &str, authorization: Option<&str>) -> (u16, String) {
+        let mut request = format!(
+            "POST {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: {}\r\n",
+            form.len()
+        );
+        if let Some(authorization) = authorization {
+            request.push_str(&format!("Authorization: {authorization}\r\n"));
+        }
+        request.push_str("\r\n");
+        request.push_str(form);
+        let mut stream = TcpStream::connect(("127.0.0.1", self.port)).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        stream.write_all(request.as_bytes()).unwrap();
+        let mut response = String::new();
+        stream.read_to_string(&mut response).unwrap();
+        let (headers, body) = response.split_once("\r\n\r\n").unwrap();
+        (
+            headers.split_whitespace().nth(1).unwrap().parse().unwrap(),
+            body.into(),
+        )
+    }
+
+    fn oidc_authorize(&self, query: &str, bearer: &str) -> (u16, String) {
+        let mut stream = TcpStream::connect(("127.0.0.1", self.port)).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        write!(stream, "GET /oidc/authorize?{query} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nAuthorization: Bearer {bearer}\r\n\r\n").unwrap();
+        let mut response = String::new();
+        stream.read_to_string(&mut response).unwrap();
+        let status = response.split_whitespace().nth(1).unwrap().parse().unwrap();
+        (status, response)
+    }
+}
+
+#[test]
+#[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
+fn a02b_shared_oidc_dispatch_is_client_and_session_bound() {
+    let db = Db::new(TenancyMode::Disabled);
+    db.bootstrap();
+    db.seed_management_client();
+    let setup = db.start_explicit("/identity", "/console");
+    let admin = setup.json(
+        "POST",
+        "/identity/admin/auth/login",
+        None,
+        None,
+        Some(json!({"email":"admin@example.test","password":"Runtime-Admin123"})),
+        200,
+    );
+    for client in ["oidc-one", "oidc-two", "oidc-off"] {
+        setup.json("POST", "/identity/admin/clients/upsert", Some(token(&admin)), None,
+            Some(json!({"client_id":client,"client_name":client,"redirect_uris":["http://127.0.0.1/callback"],"client_type":"public_desktop","pkce_required":true})), 200);
+    }
+    drop(setup);
+
+    let port = TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let _ = db.explicit_command(port, db.mode, "/identity", "/console");
+    let mut config: Value =
+        serde_json::from_slice(&fs::read(db.dir.join("explicit.json")).unwrap()).unwrap();
+    config["version"] = json!(2);
+    config["business_entries"] = json!([
+        {"login_entry":"oidc-one","client_id":"oidc-one","tenant_policy":{"kind":"fixed","tenant_id":"0"},"mount_prefix":"/one","oidc":{"enabled":true}},
+        {"login_entry":"oidc-two","client_id":"oidc-two","tenant_policy":{"kind":"fixed","tenant_id":"0"},"mount_prefix":"/two","oidc":{"enabled":true}},
+        {"login_entry":"oidc-off","client_id":"oidc-off","tenant_policy":{"kind":"fixed","tenant_id":"0"},"mount_prefix":"/off"}
+    ]);
+    let mut host = db.start_command(port, &mut db.explicit_command_from_config(config.clone()));
+    assert_eq!(
+        host.raw("GET", "/.well-known/openid-configuration", None, None, None)
+            .0,
+        200
+    );
+    let metadata = host.json(
+        "GET",
+        "/.well-known/openid-configuration",
+        None,
+        None,
+        None,
+        200,
+    );
+    assert_eq!(metadata["issuer"], config["runtime"]["issuer"]);
+    assert_eq!(
+        metadata["grant_types_supported"],
+        json!(["authorization_code"])
+    );
+    assert_eq!(
+        metadata["code_challenge_methods_supported"],
+        json!(["S256"])
+    );
+    for name in [
+        "authorization_endpoint",
+        "token_endpoint",
+        "userinfo_endpoint",
+        "introspection_endpoint",
+        "revocation_endpoint",
+        "jwks_uri",
+    ] {
+        assert!(metadata[name].as_str().unwrap().starts_with(&format!(
+            "{}/oidc/",
+            config["runtime"]["issuer"]
+                .as_str()
+                .unwrap()
+                .trim_end_matches('/')
+        )));
+    }
+    assert!(metadata.get("device_authorization_endpoint").is_none());
+    let jwks = host.json("GET", "/oidc/jwks", None, None, None, 200);
+    assert_eq!(jwks["keys"].as_array().unwrap().len(), 1);
+    assert_eq!(jwks["keys"][0]["alg"], "RS256");
+    assert_eq!(jwks["keys"][0]["kty"], "RSA");
+    assert!(jwks["keys"][0].get("d").is_none());
+    assert_eq!(host.raw("GET", "/oidc/jwks", None, None, None).0, 200);
+    for path in [
+        "/off/oidc/authorize",
+        "/off/oidc/token",
+        "/off/oidc/userinfo",
+    ] {
+        assert_eq!(host.raw("GET", path, None, None, None).0, 404, "{path}");
+    }
+    // OIDC is shared at the issuer root and adds no ordinary root logout alias.
+    assert_eq!(host.raw("POST", "/auth/logout", None, None, None).0, 404);
+    assert_eq!(
+        host.raw("GET", "/one/oidc/userinfo", None, None, None).0,
+        404
+    );
+
+    let one = host.json(
+        "POST",
+        "/one/auth/login",
+        None,
+        None,
+        Some(json!({"email":"admin@example.test","password":"Runtime-Admin123"})),
+        200,
+    );
+    let two = host.json(
+        "POST",
+        "/two/auth/login",
+        None,
+        None,
+        Some(json!({"email":"admin@example.test","password":"Runtime-Admin123"})),
+        200,
+    );
+    let off = host.json(
+        "POST",
+        "/off/auth/login",
+        None,
+        None,
+        Some(json!({"email":"admin@example.test","password":"Runtime-Admin123"})),
+        200,
+    );
+    assert_eq!(
+        host.raw("GET", "/oidc/userinfo", Some(token(&off)), None, None)
+            .0,
+        401
+    );
+    let verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
+    let challenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
+    let query = |client: &str, redirect: &str, code_challenge: &str| {
+        format!(
+            "response_type=code&client_id={client}&redirect_uri={redirect}&scope=openid%20profile%20email&state=state123&code_challenge={code_challenge}&code_challenge_method=S256"
+        )
+    };
+    assert_eq!(
+        host.oidc_authorize(
+            &query(
+                "unknown-client",
+                "http%3A%2F%2F127.0.0.1%2Fcallback",
+                challenge
+            ),
+            token(&one)
+        )
+        .0,
+        400
+    );
+    assert_eq!(
+        host.oidc_authorize(
+            &query("oidc-one", "http%3A%2F%2F127.0.0.1%2Fwrong", challenge),
+            token(&one)
+        )
+        .0,
+        400
+    );
+    assert_eq!(
+        host.oidc_authorize(
+            &query("oidc-off", "http%3A%2F%2F127.0.0.1%2Fcallback", challenge),
+            token(&off)
+        )
+        .0,
+        401
+    );
+    assert_eq!(
+        host.oidc_authorize(
+            &query("oidc-one", "http%3A%2F%2F127.0.0.1%2Fcallback", challenge),
+            token(&two)
+        )
+        .0,
+        401,
+        "a business actor from another client cannot authorize this client"
+    );
+    // Management-purpose bearer and forged subject headers are not accepted as actors.
+    assert_eq!(
+        host.oidc_authorize(
+            &query("oidc-one", "http%3A%2F%2F127.0.0.1%2Fcallback", challenge),
+            token(&admin)
+        )
+        .0,
+        401
+    );
+    assert_eq!(
+        host.oidc_authorize(
+            &query("oidc-one", "http%3A%2F%2F127.0.0.1%2Fcallback", challenge),
+            "eyJhbGciOiJub25lIn0.eyJzdWIiOiJmb3JnZWQifQ."
+        )
+        .0,
+        401
+    );
+
+    let (status, raw) = host.oidc_authorize(
+        &query("oidc-one", "http%3A%2F%2F127.0.0.1%2Fcallback", challenge),
+        token(&one),
+    );
+    assert_eq!(status, 307, "{raw}");
+    let location = raw
+        .lines()
+        .find_map(|line| {
+            line.strip_prefix("location: ")
+                .or_else(|| line.strip_prefix("Location: "))
+        })
+        .unwrap();
+    let redirect = location
+        .split_once("\r")
+        .map_or(location, |(value, _)| value);
+    let code = redirect
+        .split("code=")
+        .nth(1)
+        .unwrap()
+        .split('&')
+        .next()
+        .unwrap();
+    let exchange = |client: &str, code: &str, redirect: &str, verifier: &str| {
+        format!(
+            "grant_type=authorization_code&client_id={client}&code={code}&redirect_uri={redirect}&code_verifier={verifier}"
+        )
+    };
+    let wrong_redirect = host.oidc_form(
+        "/oidc/token",
+        &exchange("oidc-one", code, "http%3A%2F%2F127.0.0.1%2Fwrong", verifier),
+        None,
+    );
+    assert_eq!(wrong_redirect.0, 400, "{}", wrong_redirect.1);
+    let wrong_pkce = host.oidc_form(
+        "/oidc/token",
+        &exchange(
+            "oidc-one",
+            code,
+            "http%3A%2F%2F127.0.0.1%2Fcallback",
+            "wrong-verifier",
+        ),
+        None,
+    );
+    assert_eq!(wrong_pkce.0, 400, "{}", wrong_pkce.1);
+    let cross_client = host.oidc_form(
+        "/oidc/token",
+        &exchange(
+            "oidc-two",
+            code,
+            "http%3A%2F%2F127.0.0.1%2Fcallback",
+            verifier,
+        ),
+        None,
+    );
+    assert_eq!(cross_client.0, 400, "{}", cross_client.1);
+    let (status, body) = host.oidc_form(
+        "/oidc/token",
+        &exchange(
+            "oidc-one",
+            code,
+            "http%3A%2F%2F127.0.0.1%2Fcallback",
+            verifier,
+        ),
+        None,
+    );
+    assert_eq!(status, 200, "{body}");
+    let tokens: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(tokens["token_type"], "Bearer");
+    let userinfo = host.raw(
+        "GET",
+        "/oidc/userinfo",
+        tokens["access_token"].as_str(),
+        None,
+        None,
+    );
+    assert_eq!(userinfo.0, 200, "{}", userinfo.1);
+    assert!(userinfo.1.contains("oidc-one"));
+    assert_eq!(
+        host.oidc_form(
+            "/oidc/token",
+            &exchange(
+                "oidc-one",
+                code,
+                "http%3A%2F%2F127.0.0.1%2Fcallback",
+                verifier,
+            ),
+            None
+        )
+        .0,
+        400,
+        "authorization code must be single-use"
+    );
+
+    // Reordering preserves dispatch by client identity; removing one enabled entry removes it from
+    // the active protocol registry without claiming global session revocation.
+    drop(host);
+    config["business_entries"].as_array_mut().unwrap().reverse();
+    host = db.start_command(port, &mut db.explicit_command_from_config(config.clone()));
+    assert_eq!(
+        host.raw("GET", "/one/auth/session", Some(token(&one)), None, None)
+            .0,
+        200
+    );
+    assert_eq!(
+        host.raw(
+            "GET",
+            "/oidc/userinfo",
+            tokens["access_token"].as_str(),
+            None,
+            None
+        )
+        .0,
+        200
+    );
+    drop(host);
+    config["business_entries"][2]["oidc"]["enabled"] = json!(false);
+    host = db.start_command(port, &mut db.explicit_command_from_config(config.clone()));
+    let now_disabled = host.raw(
+        "GET",
+        "/oidc/userinfo",
+        tokens["access_token"].as_str(),
+        None,
+        None,
+    );
+    assert_eq!(
+        now_disabled.0, 401,
+        "disabled entry is no longer in OIDC dispatch registry"
+    );
+    host.json(
+        "GET",
+        "/one/auth/session",
+        Some(token(&one)),
+        None,
+        None,
+        200,
+    );
+    drop(host);
+    for entry in config["business_entries"].as_array_mut().unwrap() {
+        entry["oidc"] = json!({"enabled":false});
+    }
+    host = db.start_command(port, &mut db.explicit_command_from_config(config));
+    for path in [
+        "/.well-known/openid-configuration",
+        "/oidc/jwks",
+        "/oidc/userinfo",
+    ] {
+        assert_eq!(host.raw("GET", path, None, None, None).0, 404);
+    }
+}
+
+#[test]
+#[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
+fn a02b_confidential_oidc_clients_authenticate_and_isolate_resource_operations() {
+    let db = Db::new(TenancyMode::Enabled);
+    db.bootstrap();
+    db.seed_management_client();
+    let setup = db.start_explicit("/identity", "/console");
+    let admin = setup.json(
+        "POST",
+        "/identity/admin/auth/login",
+        None,
+        None,
+        Some(json!({"email":"admin@example.test","password":"Runtime-Admin123"})),
+        200,
+    );
+    for (client, secret) in [
+        ("confidential-one", "Synthetic-One-Secret"),
+        ("confidential-two", "Synthetic-Two-Secret"),
+    ] {
+        setup.json(
+            "POST",
+            "/identity/admin/clients/upsert",
+            Some(token(&admin)),
+            None,
+            Some(json!({"client_id":client,"client_name":client,"redirect_uris":["http://127.0.0.1/callback"],"client_type":"confidential_web","pkce_required":true,"client_secret":secret})),
+            200,
+        );
+    }
+    setup.json(
+        "POST",
+        "/identity/admin/tenants",
+        Some(token(&admin)),
+        None,
+        Some(json!({"tenant_id":"confidential-domain","name":"Confidential domain","allow_registration":false,"administrator":{"kind":"new","email":"confidential@example.test","password":"Runtime-Member123"}})),
+        201,
+    );
+    drop(setup);
+
+    let port = TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let _ = db.explicit_command(port, db.mode, "/identity", "/console");
+    let mut config: Value =
+        serde_json::from_slice(&fs::read(db.dir.join("explicit.json")).unwrap()).unwrap();
+    config["version"] = json!(2);
+    config["business_entries"] = json!([
+        {"login_entry":"confidential-one","client_id":"confidential-one","tenant_policy":{"kind":"choose"},"mount_prefix":"/one","oidc":{"enabled":true}},
+        {"login_entry":"confidential-two","client_id":"confidential-two","tenant_policy":{"kind":"fixed","tenant_id":"confidential-domain"},"mount_prefix":"/two","oidc":{"enabled":true}}
+    ]);
+    let host = db.start_command(port, &mut db.explicit_command_from_config(config));
+    let one = host.json(
+        "POST",
+        "/one/auth/login",
+        None,
+        None,
+        Some(json!({"email":"confidential@example.test","password":"Runtime-Member123"})),
+        200,
+    );
+    assert_eq!(one["status"], "tenant_selection_required");
+    let one = host.json(
+        "POST",
+        "/one/auth/tenant-selection/complete",
+        one["selection_ticket"].as_str(),
+        None,
+        Some(json!({"tenant_id":"confidential-domain"})),
+        200,
+    );
+    let verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
+    let (status, raw) = host.oidc_authorize(
+        "response_type=code&client_id=confidential-one&redirect_uri=http%3A%2F%2F127.0.0.1%2Fcallback&scope=openid%20profile%20email&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256",
+        token(&one),
+    );
+    assert_eq!(status, 307, "{raw}");
+    let location = raw
+        .lines()
+        .find_map(|line| {
+            line.strip_prefix("location: ")
+                .or_else(|| line.strip_prefix("Location: "))
+        })
+        .unwrap();
+    let code = location
+        .split("code=")
+        .nth(1)
+        .unwrap()
+        .split('&')
+        .next()
+        .unwrap();
+    let token_form = format!(
+        "grant_type=authorization_code&code={code}&redirect_uri=http%3A%2F%2F127.0.0.1%2Fcallback&code_verifier={verifier}"
+    );
+    let basic = |client: &str, secret: &str| {
+        format!(
+            "Basic {}",
+            Base64::encode_string(format!("{client}:{secret}").as_bytes())
+        )
+    };
+    let wrong_secret = host.oidc_form(
+        "/oidc/token",
+        &token_form,
+        Some(&basic("confidential-one", "wrong-secret")),
+    );
+    assert_eq!(wrong_secret.0, 401, "{}", wrong_secret.1);
+    let exchanged = host.oidc_form(
+        "/oidc/token",
+        &token_form,
+        Some(&basic("confidential-one", "Synthetic-One-Secret")),
+    );
+    assert_eq!(exchanged.0, 200, "{}", exchanged.1);
+    let tokens: Value = serde_json::from_str(&exchanged.1).unwrap();
+    let access = tokens["access_token"].as_str().unwrap();
+    let introspection = |credential: String| {
+        host.oidc_form(
+            "/oidc/introspect",
+            &format!("token={access}&token_type_hint=access_token"),
+            Some(&credential),
+        )
+    };
+    let first_info = introspection(basic("confidential-one", "Synthetic-One-Secret"));
+    assert_eq!(first_info.0, 200, "{}", first_info.1);
+    assert!(serde_json::from_str::<Value>(&first_info.1).unwrap()["active"] == true);
+    let wrong_secret_info = introspection(basic("confidential-one", "wrong-secret"));
+    assert_eq!(wrong_secret_info.0, 401, "{}", wrong_secret_info.1);
+    let cross_client_info = introspection(basic("confidential-two", "Synthetic-Two-Secret"));
+    assert_eq!(cross_client_info.0, 200, "{}", cross_client_info.1);
+    assert_eq!(
+        serde_json::from_str::<Value>(&cross_client_info.1).unwrap()["active"],
+        false
+    );
+
+    let cross_client_revoke = host.oidc_form(
+        "/oidc/revoke",
+        &format!("token={access}&token_type_hint=access_token"),
+        Some(&basic("confidential-two", "Synthetic-Two-Secret")),
+    );
+    assert_eq!(cross_client_revoke.0, 200, "{}", cross_client_revoke.1);
+    assert_eq!(
+        host.raw("GET", "/oidc/userinfo", Some(access), None, None)
+            .0,
+        200,
+        "cross-client revocation is a no-op for another client's token"
+    );
+    let revoke = host.oidc_form(
+        "/oidc/revoke",
+        &format!("token={access}&token_type_hint=access_token"),
+        Some(&basic("confidential-one", "Synthetic-One-Secret")),
+    );
+    assert_eq!(revoke.0, 200, "{}", revoke.1);
+    assert_eq!(
+        host.raw("GET", "/oidc/userinfo", Some(access), None, None)
+            .0,
+        401
+    );
+}
+
+#[test]
+#[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
+fn a02_choose_confidential_and_opt_in_registration() {
+    let db = Db::new(TenancyMode::Enabled);
+    db.bootstrap();
+    db.seed_management_client();
+    let setup = db.start_explicit("/identity", "/console");
+    let admin = setup.json(
+        "POST",
+        "/identity/admin/auth/login",
+        None,
+        None,
+        Some(json!({"email":"admin@example.test","password":"Runtime-Admin123"})),
+        200,
+    );
+    for client in ["choose-one", "choose-two", "fixed-registration"] {
+        setup.json("POST", "/identity/admin/clients/upsert", Some(token(&admin)), None, Some(json!({"client_id":client,"client_name":client,"redirect_uris":["http://127.0.0.1/callback"],"client_type":"public_desktop","pkce_required":true})), 200);
+    }
+    setup.json("POST", "/identity/admin/clients/upsert", Some(token(&admin)), None, Some(json!({"client_id":"backend","client_name":"Backend","redirect_uris":["http://127.0.0.1/callback"],"client_type":"confidential_web","pkce_required":true,"client_secret":"Synthetic-Backend-Secret"})), 200);
+    setup.json("POST", "/identity/admin/tenants", Some(token(&admin)), None, Some(json!({"tenant_id":"domain-a","name":"A","allow_registration":true,"administrator":{"kind":"new","email":"choose@example.test","password":"Runtime-Member123"}})), 201);
+    let members = setup.json(
+        "GET",
+        "/identity/admin/accounts",
+        Some(token(&admin)),
+        Some("domain-a"),
+        None,
+        200,
+    );
+    let subject = members["items"][0]["account_id"].as_str().unwrap();
+    setup.json("POST", "/identity/admin/tenants", Some(token(&admin)), None, Some(json!({"tenant_id":"domain-b","name":"B","allow_registration":true,"administrator":{"kind":"existing","subject_id":subject}})), 201);
+    drop(setup);
+    let port = TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let _ = db.explicit_command(port, TenancyMode::Enabled, "/identity", "/console");
+    let mut config: Value =
+        serde_json::from_slice(&fs::read(db.dir.join("explicit.json")).unwrap()).unwrap();
+    config["runtime"]["email"] = json!({"mode":"log"});
+    config["business_entries"] = json!([
+        {"login_entry":"choose-one","client_id":"choose-one","tenant_policy":{"kind":"choose"},"mount_prefix":"/choose-one","browser":{"cookie_name":"choose_one"}},
+        {"login_entry":"choose-two","client_id":"choose-two","tenant_policy":{"kind":"choose"},"mount_prefix":"/choose-two"},
+        {"login_entry":"backend","client_id":"backend","tenant_policy":{"kind":"fixed","tenant_id":"domain-a"},"mount_prefix":"/backend","browser":{"cookie_name":"backend_browser"}},
+        {"login_entry":"registration","client_id":"fixed-registration","tenant_policy":{"kind":"fixed","tenant_id":"domain-a"},"mount_prefix":"/registration","registration_enabled":true}
+    ]);
+    let host = db.start_command(port, &mut db.explicit_command_from_config(config));
+    let credentials = json!({"email":"choose@example.test","password":"Runtime-Member123"});
+    let choice = host.json(
+        "POST",
+        "/choose-one/auth/login",
+        None,
+        None,
+        Some(credentials.clone()),
+        200,
+    );
+    assert_eq!(choice["status"], "tenant_selection_required");
+    let ticket = choice["selection_ticket"].as_str().unwrap();
+    assert_eq!(
+        host.raw(
+            "POST",
+            "/choose-two/auth/tenant-selection/complete",
+            Some(ticket),
+            None,
+            Some(json!({"tenant_id":"domain-a"}))
+        )
+        .0,
+        401
+    );
+    let tenants = host.json(
+        "GET",
+        "/choose-one/auth/tenant-selection/tenants",
+        Some(ticket),
+        None,
+        None,
+        200,
+    );
+    assert_eq!(tenants["tenants"].as_array().unwrap().len(), 2);
+    let selected = host.json(
+        "POST",
+        "/choose-one/auth/tenant-selection/complete",
+        Some(ticket),
+        None,
+        Some(json!({"tenant_id":"domain-a"})),
+        200,
+    );
+    assert_eq!(selected["session"]["tenant_id"], "domain-a");
+    let switch = host.json(
+        "POST",
+        "/choose-one/auth/me/tenant-selection",
+        Some(token(&selected)),
+        None,
+        None,
+        200,
+    );
+    let switched = host.json(
+        "POST",
+        "/choose-one/auth/tenant-selection/complete",
+        switch["selection_ticket"].as_str(),
+        None,
+        Some(json!({"tenant_id":"domain-b"})),
+        200,
+    );
+    assert_eq!(switched["session"]["tenant_id"], "domain-b");
+    let (status, _, browser_choice) = host.browser(
+        "/choose-one/auth/browser/login",
+        None,
+        None,
+        credentials.clone(),
+    );
+    assert_eq!(status, 200);
+    let (status, cookie, browser_selected) = host.browser(
+        "/choose-one/auth/browser/tenant-selection/complete",
+        None,
+        browser_choice["selection_ticket"].as_str(),
+        json!({"tenant_id":"domain-a"}),
+    );
+    assert_eq!(status, 200);
+    assert!(cookie.unwrap().contains("Path=/choose-one/auth/browser"));
+    assert_eq!(browser_selected["session"]["tenant_id"], "domain-a");
+    // Confidential credentials stay in the server caller; browser lifecycle needs none.
+    let (status, cookie, browser) = host.browser(
+        "/backend/auth/browser/login",
+        None,
+        None,
+        credentials.clone(),
+    );
+    assert_eq!(status, 200);
+    let cookie = cookie.unwrap();
+    assert_eq!(
+        host.browser(
+            "/backend/auth/browser/logout",
+            Some(cookie_pair(&cookie)),
+            None,
+            json!({"expected_session":browser_identity(&browser["session"])})
+        )
+        .0,
+        204
+    );
+    for basic in [false, true] {
+        let backend = host.json(
+            "POST",
+            "/backend/auth/login",
+            None,
+            None,
+            Some(credentials.clone()),
+            200,
+        );
+        let refresh = backend["tokens"]["refresh_token"].as_str().unwrap();
+        let form = format!("refresh_token={refresh}&client_id=backend");
+        assert_eq!(
+            host.ordinary_logout_form("/backend/auth/logout", &form, None),
+            401
+        );
+        assert_eq!(
+            host.ordinary_logout_form(
+                "/backend/auth/logout",
+                &format!("{form}&client_secret=wrong"),
+                None
+            ),
+            401
+        );
+        assert_eq!(
+            host.raw(
+                "GET",
+                "/backend/auth/session",
+                Some(token(&backend)),
+                None,
+                None
+            )
+            .0,
+            200
+        );
+        let status = if basic {
+            host.ordinary_logout_form(
+                "/backend/auth/logout",
+                &format!("refresh_token={refresh}"),
+                Some("backend:Synthetic-Backend-Secret"),
+            )
+        } else {
+            host.ordinary_logout_form(
+                "/backend/auth/logout",
+                &format!("{form}&client_secret=Synthetic-Backend-Secret"),
+                None,
+            )
+        };
+        assert_eq!(status, 200);
+        assert_eq!(
+            host.raw(
+                "GET",
+                "/backend/auth/session",
+                Some(token(&backend)),
+                None,
+                None
+            )
+            .0,
+            401
+        );
+    }
+    let registration = json!({"tenant_id":"domain-a","email":"registered@example.test","password":"Registration-Test123"});
+    assert_eq!(
+        host.raw(
+            "POST",
+            "/choose-one/auth/register",
+            None,
+            None,
+            Some(registration.clone())
+        )
+        .0,
+        404
+    );
+    let mut wrong = registration.clone();
+    wrong["tenant_id"] = "domain-b".into();
+    assert_eq!(
+        host.raw(
+            "POST",
+            "/registration/auth/register",
+            None,
+            None,
+            Some(wrong)
+        )
+        .0,
+        400
+    );
+    let registered = host.json(
+        "POST",
+        "/registration/auth/register",
+        None,
+        None,
+        Some(registration),
+        202,
+    );
+    assert_eq!(registered["account_status"], "pending_verification");
+    assert!(registered.get("verification_code").is_none());
+}
+
+#[cfg(all(feature = "development-private-network-http", debug_assertions))]
+#[test]
+#[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
+fn a02_private_http_business_lifetimes_are_per_entry_and_token_sessions_stay_full() {
+    const ORIGIN: &str = "http://192.168.31.159:8080";
+    let db = Db::new(TenancyMode::Disabled);
+    db.bootstrap();
+    db.seed_management_client();
+    for client in ["lifetime-one", "lifetime-two"] {
+        db.adapter.connect().unwrap().execute(&format!("insert into {}.oidc_clients(client_id,client_name,redirect_uris_json,client_type,pkce_required,created_at_epoch) values ($1,$1,'[\"http://127.0.0.1/callback\"]','public_desktop',true,1)",db.adapter.schema_name()), &[&client]).unwrap();
+    }
+    let port = TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let _ = db.explicit_command(port, db.mode, "/identity", "/console");
+    let mut config: Value =
+        serde_json::from_slice(&fs::read(db.dir.join("explicit.json")).unwrap()).unwrap();
+    config["management"].as_object_mut().unwrap().remove("ui");
+    config["runtime"]["http"] = json!({"browser_origin":ORIGIN,"transport_policy":"development-private-network-http","development_session_ttl_secs":600});
+    config["business_entries"] = json!([
+        {"login_entry":"lifetime-one","client_id":"lifetime-one","tenant_policy":{"kind":"fixed","tenant_id":"0"},"mount_prefix":"/one","browser":{"cookie_name":"one","development_session_ttl_secs":120}},
+        {"login_entry":"lifetime-two","client_id":"lifetime-two","tenant_policy":{"kind":"fixed","tenant_id":"0"},"mount_prefix":"/two","browser":{"cookie_name":"two","development_session_ttl_secs":240}}
+    ]);
+    let host = db.start_command(port, &mut db.explicit_command_from_config(config));
+    let lifetime = |session: &Value| -> (i64, i64) {
+        let id = session["session"]["session_id"].as_str().unwrap();
+        let row = db.adapter.connect().unwrap().query_one(&format!("select s.expires_at_epoch-s.created_at_epoch,r.expires_at_epoch-r.issued_at_epoch from {}.auth_sessions s join {}.refresh_tokens r on r.tenant_id=s.tenant_id and r.session_id=s.id and r.token_version=s.refresh_token_version where s.id::text=$1",db.adapter.schema_name(),db.adapter.schema_name()), &[&id]).unwrap();
+        (row.get(0), row.get(1))
+    };
+    for (prefix, ttl) in [("/one", 120i64), ("/two", 240), ("/identity/admin", 600)] {
+        let credentials = json!({"email":"admin@example.test","password":"Runtime-Admin123"});
+        let (status, cookie, session) = host.browser_with_origin(
+            &format!("{prefix}/auth/browser/login"),
+            None,
+            None,
+            credentials.clone(),
+            ORIGIN,
+        );
+        assert_eq!(status, 200, "{session}");
+        let (session_ttl, refresh_ttl) = lifetime(&session);
+        assert!(
+            session_ttl >= ttl - 1 && session_ttl <= ttl,
+            "{prefix}: {session_ttl}"
+        );
+        assert!(
+            refresh_ttl >= ttl - 1 && refresh_ttl <= ttl,
+            "{prefix}: {refresh_ttl}"
+        );
+        let access_expiry = session["tokens"]["access_expires_at_unix_secs"]
+            .as_i64()
+            .unwrap();
+        let session_expiry = session["session"]["expires_at_unix_secs"].as_i64().unwrap();
+        assert!(access_expiry < session_expiry);
+        let cookie = cookie.unwrap();
+        assert_eq!(
+            host.browser_with_origin(
+                &format!("{prefix}/auth/browser/refresh"),
+                Some(cookie_pair(&cookie)),
+                None,
+                json!({"expected_session":browser_identity(&session["session"])}),
+                ORIGIN
+            )
+            .0,
+            403
+        );
+        let ordinary = host.json(
+            "POST",
+            &format!("{prefix}/auth/login"),
+            None,
+            None,
+            Some(credentials),
+            200,
+        );
+        let (session_ttl, refresh_ttl) = lifetime(&ordinary);
+        assert!(
+            session_ttl > 600 && refresh_ttl > 600,
+            "ordinary token lifetime must remain independent"
+        );
+    }
+}
+
+#[test]
+#[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
+fn a02_refresh_concurrency_logout_and_failure_are_atomic_and_entry_isolated() {
+    let db = Db::new(TenancyMode::Disabled);
+    db.bootstrap();
+    db.seed_management_client();
+    for client in ["race-one", "race-two"] {
+        db.adapter.connect().unwrap().execute(&format!("insert into {}.oidc_clients(client_id,client_name,redirect_uris_json,client_type,pkce_required,created_at_epoch) values ($1,$1,'[\"http://127.0.0.1/callback\"]','public_desktop',true,1)",db.adapter.schema_name()), &[&client]).unwrap();
+    }
+    let port = TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let _ = db.explicit_command(port, db.mode, "/identity", "/console");
+    let mut config: Value =
+        serde_json::from_slice(&fs::read(db.dir.join("explicit.json")).unwrap()).unwrap();
+    config["business_entries"] = json!([
+        {"login_entry":"race-one","client_id":"race-one","tenant_policy":{"kind":"fixed","tenant_id":"0"},"mount_prefix":"/one"},
+        {"login_entry":"race-two","client_id":"race-two","tenant_policy":{"kind":"fixed","tenant_id":"0"},"mount_prefix":"/two"}
+    ]);
+    let host = db.start_command(port, &mut db.explicit_command_from_config(config));
+    let login_at = |prefix: &str| {
+        host.json(
+            "POST",
+            &format!("{prefix}/auth/login"),
+            None,
+            None,
+            Some(json!({"email":"admin@example.test","password":"Runtime-Admin123"})),
+            200,
+        )
+    };
+    let refresh = |session: &Value| {
+        host.raw(
+            "POST",
+            "/one/auth/refresh",
+            None,
+            None,
+            Some(json!({"refresh_token":session["tokens"]["refresh_token"]})),
+        )
+    };
+    let other = login_at("/two");
+    let raced = login_at("/one");
+    let barrier = std::sync::Barrier::new(2);
+    let (first, second) = thread::scope(|scope| {
+        let first = scope.spawn(|| {
+            barrier.wait();
+            refresh(&raced)
+        });
+        let second = scope.spawn(|| {
+            barrier.wait();
+            refresh(&raced)
+        });
+        (first.join().unwrap(), second.join().unwrap())
+    });
+    assert!(
+        (first.0 == 200 && second.0 == 401) || (first.0 == 401 && second.0 == 200),
+        "exactly one rotation succeeds: {first:?}, {second:?}"
+    );
+    let winner: Value =
+        serde_json::from_str(if first.0 == 200 { &first.1 } else { &second.1 }).unwrap();
+    // The losing replay's 401 must COMMIT family revocation, not roll it back.
+    assert_eq!(
+        host.raw("GET", "/one/auth/session", Some(token(&winner)), None, None)
+            .0,
+        401
+    );
+    assert_eq!(refresh(&winner).0, 401);
+
+    // Logout deliberately accepts only the current refresh credential. Exercise
+    // the race and both serial orders without granting stale tokens revocation.
+    for ordering in [0, 1, 2] {
+        let session = login_at("/one");
+        let form = format!(
+            "client_id=race-one&refresh_token={}",
+            session["tokens"]["refresh_token"].as_str().unwrap()
+        );
+        let barrier = std::sync::Barrier::new(2);
+        let (rotated, logged_out) = if ordering == 0 {
+            thread::scope(|scope| {
+                let rotate = scope.spawn(|| {
+                    barrier.wait();
+                    refresh(&session)
+                });
+                let logout = scope.spawn(|| {
+                    barrier.wait();
+                    host.ordinary_logout_form("/one/auth/logout", &form, None)
+                });
+                (rotate.join().unwrap(), logout.join().unwrap())
+            })
+        } else if ordering == 1 {
+            (
+                refresh(&session),
+                host.ordinary_logout_form("/one/auth/logout", &form, None),
+            )
+        } else {
+            let logged_out = host.ordinary_logout_form("/one/auth/logout", &form, None);
+            (refresh(&session), logged_out)
+        };
+        assert_eq!(logged_out, 200);
+        assert!(rotated.0 == 200 || rotated.0 == 401, "{rotated:?}");
+        if ordering == 1 {
+            assert_eq!(rotated.0, 200);
+        }
+        if ordering == 2 {
+            assert_eq!(rotated.0, 401);
+        }
+        if rotated.0 == 200 {
+            // Refresh won: logout with its now-stale predecessor is a no-op.
+            // The current credential still logs out exactly this session.
+            let rotated: Value = serde_json::from_str(&rotated.1).unwrap();
+            host.json(
+                "GET",
+                "/one/auth/session",
+                Some(token(&rotated)),
+                None,
+                None,
+                200,
+            );
+            let current_form = format!(
+                "client_id=race-one&refresh_token={}",
+                rotated["tokens"]["refresh_token"].as_str().unwrap()
+            );
+            assert_eq!(
+                host.ordinary_logout_form("/one/auth/logout", &current_form, None),
+                200
+            );
+            assert_eq!(refresh(&rotated).0, 401);
+        }
+        assert_eq!(
+            host.raw(
+                "GET",
+                "/one/auth/session",
+                Some(token(&session)),
+                None,
+                None
+            )
+            .0,
+            401
+        );
+    }
+
+    // Fail the final INSERT after the session version and old refresh row were
+    // updated. All three changes must roll back together, and retry must work.
+    let session = login_at("/one");
+    let id = session["session"]["session_id"].as_str().unwrap();
+    let schema = db.adapter.schema_name();
+    let snapshot = || -> Vec<String> {
+        db.adapter.connect().unwrap().query(&format!(
+            "select row_to_json(s)::text as row from {schema}.auth_sessions s where id::text=$1 union all select row_to_json(r)::text from {schema}.refresh_tokens r where session_id::text=$1 order by row"
+        ), &[&id]).unwrap().into_iter().map(|r| r.get(0)).collect()
+    };
+    let before = snapshot();
+    db.adapter.connect().unwrap().batch_execute(&format!(
+        "create function {schema}.a02_fail_refresh_insert() returns trigger language plpgsql as $$ begin raise exception 'a02 rotation fault' using errcode = 'P0001'; end $$; create trigger a02_fail_refresh_insert before insert on {schema}.refresh_tokens for each row execute function {schema}.a02_fail_refresh_insert()"
+    )).unwrap();
+    assert_eq!(refresh(&session).0, 500);
+    assert_eq!(
+        snapshot(),
+        before,
+        "failed rotation must not consume the old credential or increment its version"
+    );
+    db.adapter.connect().unwrap().batch_execute(&format!(
+        "drop trigger a02_fail_refresh_insert on {schema}.refresh_tokens; drop function {schema}.a02_fail_refresh_insert()"
+    )).unwrap();
+    assert_eq!(refresh(&session).0, 200);
+    host.json(
+        "GET",
+        "/two/auth/session",
+        Some(token(&other)),
+        None,
+        None,
+        200,
+    );
+    host.json(
+        "POST",
+        "/two/auth/refresh",
+        None,
+        None,
+        Some(json!({"refresh_token":other["tokens"]["refresh_token"]})),
+        200,
+    );
+}
+
+#[cfg(all(feature = "development-private-network-http", debug_assertions))]
+#[test]
+#[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
+fn a02_restricted_choose_cannot_escape_browser_lifetime_through_token_routes() {
+    const ORIGIN: &str = "http://192.168.31.159:8080";
+    let db = Db::new(TenancyMode::Enabled);
+    db.bootstrap();
+    db.seed_management_client();
+    let setup = db.start_explicit("/identity", "/console");
+    let admin = setup.json(
+        "POST",
+        "/identity/admin/auth/login",
+        None,
+        None,
+        Some(json!({"email":"admin@example.test","password":"Runtime-Admin123"})),
+        200,
+    );
+    setup.json("POST", "/identity/admin/clients/upsert", Some(token(&admin)), None,
+        Some(json!({"client_id":"restricted-choose","client_name":"Restricted choose","redirect_uris":["http://127.0.0.1/callback"],"client_type":"public_desktop","pkce_required":true})), 200);
+    setup.json("POST", "/identity/admin/tenants", Some(token(&admin)), None,
+        Some(json!({"tenant_id":"domain-a","name":"A","allow_registration":false,"administrator":{"kind":"new","email":"choose@example.test","password":"Runtime-Member123"}})), 201);
+    let members = setup.json(
+        "GET",
+        "/identity/admin/accounts",
+        Some(token(&admin)),
+        Some("domain-a"),
+        None,
+        200,
+    );
+    let subject = members["items"][0]["account_id"].as_str().unwrap();
+    setup.json("POST", "/identity/admin/tenants", Some(token(&admin)), None,
+        Some(json!({"tenant_id":"domain-b","name":"B","allow_registration":false,"administrator":{"kind":"existing","subject_id":subject}})), 201);
+    drop(setup);
+    let port = TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let _ = db.explicit_command(port, db.mode, "/identity", "/console");
+    let mut config: Value =
+        serde_json::from_slice(&fs::read(db.dir.join("explicit.json")).unwrap()).unwrap();
+    config["management"].as_object_mut().unwrap().remove("ui");
+    config["runtime"]["http"] = json!({"browser_origin":ORIGIN,"transport_policy":"development-private-network-http","development_session_ttl_secs":600});
+    config["business_entries"] = json!([
+        {"login_entry":"restricted-choose","client_id":"restricted-choose","tenant_policy":{"kind":"choose"},"mount_prefix":"/choose","browser":{"cookie_name":"restricted_choose","development_session_ttl_secs":120}}
+    ]);
+    let host = db.start_command(port, &mut db.explicit_command_from_config(config));
+    let credentials = json!({"email":"choose@example.test","password":"Runtime-Member123"});
+    let (status, _, browser_choice) = host.browser_with_origin(
+        "/choose/auth/browser/login",
+        None,
+        None,
+        credentials.clone(),
+        ORIGIN,
+    );
+    assert_eq!(status, 200, "{browser_choice}");
+    let restricted_ticket = browser_choice["selection_ticket"].as_str().unwrap();
+    assert_eq!(
+        host.raw(
+            "POST",
+            "/choose/auth/tenant-selection/complete",
+            Some(restricted_ticket),
+            None,
+            Some(json!({"tenant_id":"domain-a"}))
+        )
+        .0,
+        401
+    );
+    let tenants = host.json(
+        "GET",
+        "/choose/auth/tenant-selection/tenants",
+        Some(restricted_ticket),
+        None,
+        None,
+        200,
+    );
+    assert_eq!(tenants["tenants"].as_array().unwrap().len(), 2);
+    let (status, cookie, restricted) = host.browser_with_origin(
+        "/choose/auth/browser/tenant-selection/complete",
+        None,
+        Some(restricted_ticket),
+        json!({"tenant_id":"domain-a"}),
+        ORIGIN,
+    );
+    assert_eq!(
+        status, 200,
+        "rejected token completion must not consume browser ticket: {restricted}"
+    );
+    assert!(cookie.unwrap().contains("Path=/choose/auth/browser"));
+    let lifetimes = |session: &Value| -> (i64, i64) {
+        let id = session["session"]["session_id"].as_str().unwrap();
+        let row = db.adapter.connect().unwrap().query_one(&format!("select s.expires_at_epoch-s.created_at_epoch,r.expires_at_epoch-r.issued_at_epoch from {}.auth_sessions s join {}.refresh_tokens r on r.tenant_id=s.tenant_id and r.session_id=s.id and r.token_version=s.refresh_token_version where s.id::text=$1",db.adapter.schema_name(),db.adapter.schema_name()), &[&id]).unwrap();
+        (row.get(0), row.get(1))
+    };
+    let (session_ttl, refresh_ttl) = lifetimes(&restricted);
+    assert!((119..=120).contains(&session_ttl), "{session_ttl}");
+    assert!((119..=120).contains(&refresh_ttl), "{refresh_ttl}");
+    assert_eq!(
+        host.raw(
+            "POST",
+            "/choose/auth/me/tenant-selection",
+            Some(token(&restricted)),
+            None,
+            None
+        )
+        .0,
+        401
+    );
+    // Ordinary login and switching retain their full existing lifetime.
+    let choice = host.json(
+        "POST",
+        "/choose/auth/login",
+        None,
+        None,
+        Some(credentials),
+        200,
+    );
+    let normal = host.json(
+        "POST",
+        "/choose/auth/tenant-selection/complete",
+        choice["selection_ticket"].as_str(),
+        None,
+        Some(json!({"tenant_id":"domain-a"})),
+        200,
+    );
+    let (session_ttl, refresh_ttl) = lifetimes(&normal);
+    assert!(session_ttl > 600 && refresh_ttl > 600);
+    let switch = host.json(
+        "POST",
+        "/choose/auth/me/tenant-selection",
+        Some(token(&normal)),
+        None,
+        None,
+        200,
+    );
+    let switched = host.json(
+        "POST",
+        "/choose/auth/tenant-selection/complete",
+        switch["selection_ticket"].as_str(),
+        None,
+        Some(json!({"tenant_id":"domain-b"})),
+        200,
+    );
+    assert_eq!(switched["session"]["tenant_id"], "domain-b");
+    let (session_ttl, refresh_ttl) = lifetimes(&switched);
+    assert!(session_ttl > 600 && refresh_ttl > 600);
+}
+
+#[cfg(all(feature = "development-private-network-http", debug_assertions))]
+#[test]
+#[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
+fn a02b_private_browser_cannot_upgrade_through_oidc() {
+    const ORIGIN: &str = "http://192.168.31.159:8080";
+    let db = Db::new(TenancyMode::Disabled);
+    db.bootstrap();
+    db.seed_management_client();
+    let setup = db.start_explicit("/identity", "/console");
+    let admin = setup.json(
+        "POST",
+        "/identity/admin/auth/login",
+        None,
+        None,
+        Some(json!({"email":"admin@example.test","password":"Runtime-Admin123"})),
+        200,
+    );
+    setup.json("POST", "/identity/admin/clients/upsert", Some(token(&admin)), None,
+        Some(json!({"client_id":"short-oidc","client_name":"Short OIDC","redirect_uris":["http://127.0.0.1/callback"],"client_type":"public_desktop","pkce_required":true})),200);
+    drop(setup);
+    let port = TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let _ = db.explicit_command(port, db.mode, "/identity", "/console");
+    let mut config: Value =
+        serde_json::from_slice(&fs::read(db.dir.join("explicit.json")).unwrap()).unwrap();
+    config["version"] = json!(2);
+    config["management"].as_object_mut().unwrap().remove("ui");
+    config["runtime"]["http"] = json!({"browser_origin":ORIGIN,"transport_policy":"development-private-network-http","development_session_ttl_secs":600});
+    config["business_entries"] = json!([{"login_entry":"short-oidc","client_id":"short-oidc","tenant_policy":{"kind":"fixed","tenant_id":"0"},"mount_prefix":"/one","oidc":{"enabled":true},"browser":{"cookie_name":"short_oidc","development_session_ttl_secs":120}}]);
+    let host = db.start_command(port, &mut db.explicit_command_from_config(config));
+    let credentials = json!({"email":"admin@example.test","password":"Runtime-Admin123"});
+    let (status, _, browser) = host.browser_with_origin(
+        "/one/auth/browser/login",
+        None,
+        None,
+        credentials.clone(),
+        ORIGIN,
+    );
+    assert_eq!(status, 200);
+    let query = "response_type=code&client_id=short-oidc&redirect_uri=http%3A%2F%2F127.0.0.1%2Fcallback&scope=openid&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256";
+    assert_eq!(host.oidc_authorize(query, token(&browser)).0, 401);
+    let normal = host.json(
+        "POST",
+        "/one/auth/login",
+        None,
+        None,
+        Some(credentials),
+        200,
+    );
+    assert_eq!(host.oidc_authorize(query, token(&normal)).0, 307);
+    assert_eq!(
+        host.oidc_authorize(
+            &query.replace("method=S256", "method=plain"),
+            token(&normal)
+        )
+        .0,
+        400
+    );
 }

@@ -245,8 +245,21 @@ fn resource_introspection_authenticates_inactive_tokens_and_logout_is_scoped_ato
     else {
         panic!()
     };
+    for invalid_client in [true, false] {
+        let mut request = resource_request(tokens.refresh_token.clone());
+        if invalid_client {
+            request.client_id = "other".into();
+        } else {
+            request.client_secret = None;
+        }
+        assert_eq!(
+            oidc.logout_session(request),
+            Err(TenantAuthError::InvalidClient)
+        );
+        assert!(auth.authenticate(tokens.access_token.token.clone()).is_ok());
+    }
     // A retired token cannot be used to log out a live family without proof.
-    oidc.logout(resource_request(initial.tokens.refresh_token))
+    oidc.logout_session(resource_request(initial.tokens.refresh_token))
         .unwrap();
     assert!(auth.authenticate(tokens.access_token.token.clone()).is_ok());
     s.0.lock().unwrap().fail_insert = true;
@@ -255,14 +268,15 @@ fn resource_introspection_authenticates_inactive_tokens_and_logout_is_scoped_ato
         .is_err());
     assert!(auth.authenticate(tokens.access_token.token.clone()).is_ok());
     s.0.lock().unwrap().fail_insert = false;
-    oidc.logout(resource_request(tokens.refresh_token.clone()))
+    oidc.logout_session(resource_request(tokens.refresh_token.clone()))
         .unwrap();
     assert_eq!(
         oidc.introspect_token(resource_request(tokens.access_token.token))
             .unwrap(),
         None
     );
-    oidc.logout(resource_request(tokens.refresh_token)).unwrap();
+    oidc.logout_session(resource_request(tokens.refresh_token))
+        .unwrap();
     assert!(s
         .0
         .lock()
@@ -329,4 +343,115 @@ fn userinfo_rechecks_identity_and_releases_only_scope_authorized_claims() {
     s.0.lock().unwrap().fail_insert = false;
     s.0.lock().unwrap().members[0].status = MembershipStatus::Suspended;
     assert!(oidc.user_info(raw).is_err());
+}
+
+#[test]
+fn ordinary_oidc_enforces_s256_and_rechecks_short_source_before_consuming_code() {
+    use base64ct::{Base64UrlUnpadded, Encoding};
+    use sha2::{Digest, Sha256};
+    let s = seed();
+    let policy = LoginTenantPolicy::ChooseAfterAuthentication;
+    let auth = svc(policy.clone(), s.clone());
+    let TenantLoginOutcome::SelectionRequired(ticket) = auth.login(login()).unwrap() else {
+        panic!()
+    };
+    let initial = auth.select_tenant(ticket.ticket, "t1".into()).unwrap();
+    let actor = auth
+        .authenticate(initial.tokens.access_token.clone())
+        .unwrap();
+    let make = || {
+        CoreTenantOidcService::new(
+            svc(policy.clone(), s.clone())
+                .with_restricted_browser_isolation(120)
+                .unwrap(),
+            "https://idp.example.test".into(),
+            OidcConfig {
+                authorization_code_ttl_secs: 60,
+                require_pkce_for_public_clients: true,
+            },
+            "openid profile".into(),
+            Secrets,
+        )
+        .unwrap()
+    };
+    let verifier = "a".repeat(43);
+    let request = TenantAuthorizationRequest {
+        response_type: "code".into(),
+        client_id: "web".into(),
+        redirect_uri: "testapp://callback".into(),
+        scope: "openid".into(),
+        state: None,
+        nonce: None,
+        code_challenge: Some(verifier.clone()),
+        code_challenge_method: Some(PkceChallengeMethod::Plain),
+    };
+    let old_code = make().authorize(actor.clone(), request.clone()).unwrap();
+    let strict = make().with_required_s256_pkce();
+    assert!(strict.authorize(actor.clone(), request.clone()).is_err());
+    let command = |code| TenantCodeExchange {
+        grant_type: "authorization_code".into(),
+        client_id: "web".into(),
+        code,
+        redirect_uri: "testapp://callback".into(),
+        client_secret: None,
+        code_verifier: Some(SecretString::new(verifier.clone())),
+    };
+    assert!(strict.exchange(command(old_code.code)).is_err());
+    assert!(s.0.lock().unwrap().authorizations[0].consumed_at.is_none());
+    let request = TenantAuthorizationRequest {
+        code_challenge: Some(Base64UrlUnpadded::encode_string(&Sha256::digest(
+            verifier.as_bytes(),
+        ))),
+        code_challenge_method: Some(PkceChallengeMethod::S256),
+        ..request
+    };
+    let code = strict.authorize(actor.clone(), request.clone()).unwrap();
+    let proof = TenantAuthenticationProof {
+        proof: DeviceProofPresentation {
+            device_id: "d1".into(),
+            key_id: Base64UrlUnpadded::encode_string(&[1; 32]),
+            challenge: Base64UrlUnpadded::encode_string(&[2; 32]),
+            signature: Base64UrlUnpadded::encode_string(&[3; 64]),
+            signed_at: C.now(),
+        },
+        binding: DeviceRequestBinding::new(
+            "t1",
+            DeviceProofProfile::new(TENANT_DEVICE_AUTH_PROFILE).unwrap(),
+            "api",
+            CanonicalHttpMethod::Post,
+            "/oidc/token",
+            [0; 32],
+        )
+        .unwrap(),
+    };
+    assert!(matches!(
+        TenantOidcAuthorizationService::exchange(&strict, command(code.code.clone()), Some(proof)),
+        Err(TenantAuthError::DeviceProofRequired)
+    ));
+    assert!(s
+        .0
+        .lock()
+        .unwrap()
+        .authorizations
+        .iter()
+        .all(|c| c.consumed_at.is_none()));
+    // Simulate a pre-existing short session when the ordinary lifetime is raised.
+    {
+        let mut d = s.0.lock().unwrap();
+        let source = d
+            .sessions
+            .iter_mut()
+            .find(|s| s.id == actor.session_id)
+            .unwrap();
+        source.expires_at = source.created_at + Duration::from_secs(60);
+    }
+    assert!(strict.authorize(actor, request).is_err());
+    assert!(strict.exchange(command(code.code)).is_err());
+    assert!(s
+        .0
+        .lock()
+        .unwrap()
+        .authorizations
+        .iter()
+        .all(|c| c.consumed_at.is_none()));
 }

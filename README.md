@@ -91,6 +91,8 @@ unset ADMIN_PASSWORD
 
 ## 验证与文档
 
+- [剩余产品能力技术设计](docs/product-capability-completion-design.md) / [分阶段实施方案](docs/product-capability-completion-plan.md)（2026-10-25：覆盖既定接入缺口、设备自助与租户嵌入，以及安全/身份/运行软件的候选增强；A01、A02A、A02B-B1及配套A03已实施并完成局部验证，见各批实施记录；未做完整验收或部署；候选增强不自动纳入首版）
+
 ```sh
 node scripts/test_dev_env.mjs
 node scripts/test_device_proof_vectors.mjs

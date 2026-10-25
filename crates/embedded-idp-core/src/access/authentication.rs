@@ -234,6 +234,8 @@ pub struct CoreTenantAuthenticationService<S, T, G, D, C, I> {
     pub(super) mode: TenancyMode,
     purpose: AccessTokenPurpose,
     config: AuthConfig,
+    restricted_browser_isolation_secs: Option<u64>,
+    restricted_browser_selection: bool,
     pub(super) entry: TenantLoginEntry,
     pub(super) store: S,
     tokens: T,
@@ -243,6 +245,21 @@ pub struct CoreTenantAuthenticationService<S, T, G, D, C, I> {
     pub(super) ids: I,
 }
 impl<S, T, G, D, C, I> CoreTenantAuthenticationService<S, T, G, D, C, I> {
+    /// Isolate restricted-browser selection tickets from ordinary token issuance.
+    /// Configure the same bound on both services before converting the browser
+    /// service with `into_restricted_browser`. Short-lived source sessions cannot
+    /// switch through the ordinary service into a longer-lived session.
+    pub fn with_restricted_browser_isolation(
+        mut self,
+        lifetime_secs: u64,
+    ) -> Result<Self, TenantAuthError> {
+        if !(60..=3600).contains(&lifetime_secs) {
+            return Err(AccessError::InvalidInput("browser_session_lifetime").into());
+        }
+        self.restricted_browser_isolation_secs = Some(lifetime_secs);
+        Ok(self)
+    }
+
     fn validate_login_tenant(&self, tenant: &str) -> Result<(), AccessError> {
         if self.purpose == AccessTokenPurpose::Management
             && self.entry.policy
@@ -256,10 +273,34 @@ impl<S, T, G, D, C, I> CoreTenantAuthenticationService<S, T, G, D, C, I> {
         self.entry.policy.validate_selection(self.mode, tenant)
     }
     fn selection_purpose(&self) -> &'static str {
+        if self.restricted_browser_selection {
+            return self.restricted_selection_purpose();
+        }
         match self.purpose {
             AccessTokenPurpose::Business => SELECTION_PURPOSE,
             AccessTokenPurpose::Management => "management_tenant_selection",
         }
+    }
+    fn restricted_selection_purpose(&self) -> &'static str {
+        match self.purpose {
+            AccessTokenPurpose::Business => "restricted_browser_tenant_selection",
+            AccessTokenPurpose::Management => "restricted_browser_management_tenant_selection",
+        }
+    }
+    fn require_switch_lifetime(&self, session: &TenantSession) -> Result<(), TenantAuthError> {
+        if self.restricted_browser_isolation_secs.is_some()
+            && !self.restricted_browser_selection
+            && session
+                .expires_at
+                .duration_since(session.created_at)
+                .map_err(|_| TenantAuthError::InvalidSession)?
+                < Duration::from_secs(self.config.session_ttl_secs)
+        {
+            // Without a persisted channel marker, any shorter source requires
+            // fresh authentication, including sessions from an older bound.
+            return Err(TenantAuthError::InvalidSession);
+        }
+        Ok(())
     }
     pub fn new(
         mode: TenancyMode,
@@ -312,6 +353,8 @@ impl<S, T, G, D, C, I> CoreTenantAuthenticationService<S, T, G, D, C, I> {
             mode,
             purpose,
             config,
+            restricted_browser_isolation_secs: None,
+            restricted_browser_selection: false,
             entry,
             store,
             tokens,
@@ -428,6 +471,9 @@ where
                     )
                 })
                 .transpose()?;
+            if let Some(source) = &source {
+                self.require_switch_lifetime(source)?;
+            }
             let scope = source.as_ref().and_then(|s| s.scope.clone());
             let authenticated_at = source
                 .as_ref()
@@ -778,7 +824,12 @@ where
             || record.ticket_digest != *digest
             || record.client_id != self.entry.client_id
             || record.login_entry != self.entry.login_entry
-            || record.purpose != self.selection_purpose()
+            || (record.purpose != self.selection_purpose()
+                // Listing is shared by browser and token clients, but must never
+                // consume a ticket from the other issuance channel.
+                && !(target.is_none()
+                    && self.restricted_browser_isolation_secs.is_some()
+                    && record.purpose == self.restricted_selection_purpose()))
             || record.authenticated_at > now
             || record.expires_at <= now
             || record.consumed_at.is_some()
@@ -963,6 +1014,12 @@ where
         let token = self.validate_token(&access_token)?;
         self.store.auth_transaction(self.mode, |tx| {
             let actor = self.locked_token(tx, &token)?;
+            if self.restricted_browser_isolation_secs.is_some() {
+                let session = tx
+                    .session(&actor.tenant_id, &actor.session_id)?
+                    .ok_or(TenantAuthError::InvalidSession)?;
+                self.require_switch_lifetime(&session)?;
+            }
             self.issue_selection(
                 tx,
                 &actor.subject_id,
