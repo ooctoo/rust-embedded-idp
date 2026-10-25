@@ -1,0 +1,19 @@
+{
+  "command": [
+    "pnpm",
+    "--dir",
+    "scripts/n2-ci",
+    "install",
+    "--lockfile-only",
+    "--frozen-lockfile",
+    "--offline",
+    "--ignore-scripts",
+    "--store-dir",
+    "<owned temporary store>"
+  ],
+  "exitCode": 0,
+  "initialDefaultStoreAttempt": "EPERM while registering project under configured external pnpm store; used a temporary store without changing global settings",
+  "hostNode": "24.19.0; expected engine warning, CI shell 22.23.4 not locally exercised",
+  "dependencyInstallation": false,
+  "browserInstallation": false
+}

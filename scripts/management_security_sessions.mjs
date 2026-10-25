@@ -1,3 +1,4 @@
+import { functionalOnly } from './management_functional.mjs';
 import assert from 'node:assert/strict';
 
 // Runs only against the caller's validated, disposable UI-B fixture.
@@ -36,7 +37,7 @@ export async function runSessionChecks(h) {
     return review;
   }
   let review = await preview(firstSession.account_id);
-  await review.screenshot({ animations: 'disabled', path: `${h.output}/ui-e-session-confirm.png`, mask: [review.locator('input,textarea')] });
+  if (!functionalOnly) await review.screenshot({ animations: 'disabled', path: `${h.output}/ui-e-session-confirm.png`, mask: [review.locator('input,textarea')] });
   const path = `${operator.host.origin}${operator.host.mount}/admin/accounts/${firstSession.account_id}/sessions/revoke`;
   const batch = p.waitForResponse(r => r.request().method() === 'POST' && r.url() === path);
   await button(review, '确认撤销全部会话').click();
@@ -147,7 +148,7 @@ export async function runSessionChecks(h) {
   const result = await checked.json(); assert.ok(result.audit_id); assert.ok(['allow', 'deny'].includes(result.decision));
   const event = await api(operator, `/access/audit-events/${result.audit_id}`, tenant); assert.equal(event.audit_id, result.audit_id);
   await p.getByText(/这是查询时刻的判断结果/).waitFor(); await review.waitFor({ state: 'hidden' }); assert.equal(diagnosticWrites, 1);
-  await p.locator('.management-page').screenshot({ animations: 'disabled', path: `${h.output}/ui-e-diagnostic.png`, mask: [p.locator('input,textarea')] });
+  if (!functionalOnly) await p.locator('.management-page').screenshot({ animations: 'disabled', path: `${h.output}/ui-e-diagnostic.png`, mask: [p.locator('input,textarea')] });
   pass('real diagnostic returns audit ID and current decision with independent audit detail read');
 
   try {
@@ -192,7 +193,7 @@ export async function runSessionChecks(h) {
   const chosen = list.items[0];
   await button(p, `查看审计记录 ${chosen.audit_id}`).click(); const detail = dialog(p, '审计记录详情');
   const direct = await api(operator, `/access/audit-events/${chosen.audit_id}`, tenant);
-  await detail.getByLabel('审计变更内容').waitFor(); await detail.screenshot({ animations: 'disabled', path: `${h.output}/ui-e-audit-detail.png` });
+  await detail.getByLabel('审计变更内容').waitFor(); if (!functionalOnly) await detail.screenshot({ animations: 'disabled', path: `${h.output}/ui-e-audit-detail.png` });
   assert.ok((await detail.innerText()).includes(chosen.audit_id)); assert.ok((await detail.innerText()).includes(direct.request_id));
   for (const value of [direct.actor_id, direct.actor_session_id, direct.authentication_source, direct.operation, 'UTC']) if (value) assert.ok((await detail.innerText()).includes(value));
   assert.equal(direct.target_domain, tenant);

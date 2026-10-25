@@ -1,4 +1,6 @@
 // UI-F integration supplement. Only an explicitly owned disposable fixture is accepted.
+import { browserLaunchOptions } from './management_browser.mjs';
+import { functionalOnly, createFunctionalCoverage, finalizeFunctionalRun } from './management_functional.mjs';
 import assert from 'node:assert/strict';
 import { readFile, mkdir, writeFile, realpath } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
@@ -22,16 +24,18 @@ assert.equal(execFileSync('docker', ['inspect', '--format', '{{index .Config.Lab
 for (const [mode, schema] of Object.entries(fixture.schemas)) assert.match(schema, new RegExp(`^uib_${mode}_[a-f0-9]+$`));
 for (const host of Object.values(fixture.hosts)) { assert.equal(new URL(host.origin).hostname, '127.0.0.1'); assert.ok(host.mount.startsWith('/') && host.ui.startsWith('/')); }
 const { chromium } = await import(pathToFileURL(process.env.IDP_UI_PLAYWRIGHT_PATH).href);
-const browser = await chromium.launch({ headless: process.env.IDP_UI_HEADED !== "1", executablePath: process.env.IDP_UI_BROWSER_EXECUTABLE });
+const browser = await chromium.launch(browserLaunchOptions());
 const output = process.env.IDP_UI_OUTPUT_DIR ?? fixtureDir;
 await mkdir(output, { recursive: true });
+const coverage = createFunctionalCoverage('console', output);
 const cases = [], pageErrors = [], contexts = [], contrast = [], layouts = [], labels = [], accepted = new WeakSet();
-const layoutWidths = process.env.IDP_UI_N2_LAYOUT === '1' ? [320, 390, 767, 768, 1023, 1024, 1440] : [320, 390, 768, 1024, 1440];
-const pass = name => { cases.push(name); console.log(`PASS ${name}`); };
+const layoutWidths = !functionalOnly && process.env.IDP_UI_N2_LAYOUT === '1' ? [320, 390, 767, 768, 1023, 1024, 1440] : [320, 390, 768, 1024, 1440];
+const pass = name => { coverage.pass(name); cases.push(name); console.log(`PASS ${name}`); };
 const button = (p, name) => p.getByRole('button', { name: new RegExp('^' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/([\u3400-\u9fff])(?=[\u3400-\u9fff])/g, '$1\\s*') + '$') });
 const settle = p => p.waitForFunction(() => !document.querySelector('.ant-spin-spinning, .ant-spin-blur'));
 const confirmationFocus = [];
 const confirmationKeyboard = [];
+let failure;
 async function goto(p, hash) {
   accepted.add(p);
   try {
@@ -43,6 +47,7 @@ async function goto(p, hash) {
 }
 async function open(key, hash, viewport = { width: 1440, height: 1000 }) {
   const host = fixture.hosts[key];
+  if (functionalOnly) viewport = { width: 1440, height: 1000 };
   const context = await browser.newContext({ viewport, reducedMotion: 'reduce' }); contexts.push(context);
   const page = await context.newPage(); page.setDefaultTimeout(15000);
   page.on('pageerror', e => pageErrors.push(e.name));
@@ -101,7 +106,7 @@ async function colorRatio(locator, label, minimum = 4.5, property = 'color', bac
   assert.ok(ratio >= minimum, `${label}: ${ratio.toFixed(2)} < ${minimum}`);
 }
 async function layout(p, label, width) {
-  await p.setViewportSize({ width, height: process.env.IDP_UI_N2_LAYOUT === '1' ? 600 : 1000 });
+  await p.setViewportSize({ width, height: !functionalOnly && process.env.IDP_UI_N2_LAYOUT === '1' ? 600 : 1000 });
   const result = await p.evaluate(() => {
     const ids = [...document.querySelectorAll('input[id],select[id],textarea[id]')].map(el => el.id);
     return { viewport: innerWidth, height: innerHeight, dpr: devicePixelRatio, document: document.documentElement.scrollWidth, uniqueInputs: new Set(ids).size === ids.length,
@@ -143,7 +148,7 @@ async function shortConfirmation(p, modal, regionName, cancelName, confirmName, 
         return { focused: document.activeElement === el, innerHeight, visualHeight: visualViewport?.height, ancestors };
       });
       await writeFile(join(output, 'short-confirmation-failure.json'), JSON.stringify({ regionName, action: name, immediate, final: await action.boundingBox(), viewport: p.viewportSize(), scrollContext }, null, 2));
-      await p.screenshot({ path: join(output, 'short-confirmation-failure.png'), mask: [p.locator('input,textarea')], animations: 'disabled' });
+      if (!functionalOnly) await p.screenshot({ path: join(output, 'short-confirmation-failure.png'), mask: [p.locator('input,textarea')], animations: 'disabled' });
       throw error;
     }
     const rect = await action.boundingBox();
@@ -181,7 +186,7 @@ async function shortConfirmation(p, modal, regionName, cancelName, confirmName, 
   await p.setViewportSize({ width: 320, height: 600 });
 }
 try {
-  const loginContext = await browser.newContext({ viewport: { width: 320, height: 800 }, reducedMotion: 'reduce' }); contexts.push(loginContext);
+  const loginContext = await browser.newContext({ viewport: functionalOnly ? { width: 1440, height: 1000 } : { width: 320, height: 800 }, reducedMotion: 'reduce' }); contexts.push(loginContext);
   const login = await loginContext.newPage(); login.setDefaultTimeout(15000);
   login.on('pageerror', e => pageErrors.push(e.name));
   const host = fixture.hosts.enabled;
@@ -199,8 +204,8 @@ try {
   assert.equal(await login.getByLabel('密码', { exact: true }).inputValue(), '');
   assert.equal(await login.getByLabel('邮箱', { exact: true }).inputValue(), 'admin@example.test');
   assert.equal(await login.locator('.management-shell').count(), 0);
-  await layout(login, 'login failure', 320);
-  await login.screenshot({ path: join(output, 'ui-f-login-320.png'), animations: 'disabled', mask: [login.locator('input[type="password"]')] });
+  if (!functionalOnly) await layout(login, 'login failure', 320);
+  if (!functionalOnly) await login.screenshot({ path: join(output, 'ui-f-login-320.png'), animations: 'disabled', mask: [login.locator('input[type="password"]')] });
   pass('capability failure reconnect and keyboard login rejection keep email, clear password and expose no old workspace');
   await loginContext.close();
   // The four policies use actual compiled Rust resources, not a Vite server.
@@ -231,8 +236,9 @@ try {
     await t.context.close();
   }
 
-  const t = await open('enabled', '#/platform/home', { width: 390, height: 844 }), p = t.page;
+  const t = await open('enabled', functionalOnly ? '#/platform/clients' : '#/platform/home', { width: 390, height: 844 }), p = t.page;
   const identity = await api(t, '/auth/session');
+  if (!functionalOnly) {
   const toggle = button(p, '菜单');
   await toggle.focus(); await p.keyboard.press('Enter');
   const nav = p.getByRole('dialog', { name: '管理任务', exact: true }); await nav.waitFor();
@@ -245,7 +251,7 @@ try {
     return Math.abs(rect.x) < 1 && rect.width >= 270 && rect.right <= innerWidth &&
       !wrapper.getAnimations().some(animation => animation.playState === 'running');
   }, await nav.elementHandle());
-  await p.screenshot({ path: join(output, 'ui-f-menu-390.png'), animations: 'disabled' });
+  if (!functionalOnly) await p.screenshot({ path: join(output, 'ui-f-menu-390.png'), animations: 'disabled' });
   assert.equal(await p.locator('#' + await toggle.getAttribute('aria-controls')).count(), 1);
   await focusCycle(p, nav); await p.keyboard.press('Escape'); await nav.waitFor({ state: 'hidden' }); await focused(p, toggle);
   assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
@@ -256,13 +262,14 @@ try {
   assert.equal(await p.locator('.management-sidebar [aria-current="page"]').innerText(), '客户端管理');
   assert.deepEqual(await api(t, '/auth/session'), identity);
   pass('mobile menu: keyboard trap Escape trigger return and page selection title focus with unchanged identity');
+  }
 
   const current = button(p, '当前会话'); await current.focus(); await p.keyboard.press('Enter');
   const session = p.getByRole('dialog', { name: '当前管理会话', exact: true }); await session.waitFor();
   await focusCycle(p, session); await p.keyboard.press('Escape'); await session.waitFor({ state: 'hidden' }); await focused(p, current);
   pass('read-only current-session drawer: named keyboard trap and trigger return');
 
-  await layout(p, 'clients', 1440);
+  if (!functionalOnly) await layout(p, 'clients', 1440);
   const type = p.getByLabel('类型', { exact: true }); await type.focus(); await p.keyboard.press('ArrowDown');
   await p.keyboard.press('ArrowDown'); await p.keyboard.press('Enter');
   await button(p, '查询').focus(); await p.keyboard.press('Enter'); await settle(p);
@@ -286,7 +293,7 @@ try {
   await p.waitForFunction(el => el.getAttribute('aria-invalid') === 'true', await invalid.elementHandle());
   const described = await invalid.getAttribute('aria-describedby'); assert.ok(described);
   assert.ok(await p.locator('[id="' + described + '"]').innerText());
-  await colorRatio(lookup.locator('.ant-form-item-explain-error'), 'validation error text');
+  if (!functionalOnly) await colorRatio(lookup.locator('.ant-form-item-explain-error'), 'validation error text');
   await invalid.fill('management-ui-b'); await p.keyboard.press('Enter');
   const editor = p.getByRole('dialog', { name: '客户端配置', exact: true }); await editor.waitFor(); await settle(p);
   const name = editor.getByLabel('名称', { exact: true }); await focused(p, name);
@@ -294,19 +301,20 @@ try {
   await button(editor, '核对并保存').focus(); await p.keyboard.press('Enter');
   const review = p.getByRole('dialog', { name: '确认保存客户端配置', exact: true }); await review.waitFor();
   await focused(p, button(review, '返回修改')); await focusCycle(p, review);
-  if (process.env.IDP_UI_N2_LAYOUT === '1') {
+  if (!functionalOnly && process.env.IDP_UI_N2_LAYOUT === '1') {
     await shortConfirmation(p, review, '待保存的完整配置', '返回修改', '确认保存');
     pass('N2 short client confirmation keeps consequences scrollable and both keyboard actions reachable');
   }
-  await layout(p, 'client confirmation', 320);
-  await review.locator('.ant-modal-content').screenshot({ path: join(output, 'ui-f-confirm-320.png'), animations: 'disabled' });
+  if (!functionalOnly) await layout(p, 'client confirmation', 320);
+  if (!functionalOnly) await review.locator('.ant-modal-content').screenshot({ path: join(output, 'ui-f-confirm-320.png'), animations: 'disabled' });
   await p.keyboard.press('Escape'); await review.waitFor({ state: 'hidden' }); await focused(p, button(editor, '核对并保存'));
   await button(editor, '关闭配置').focus(); await p.keyboard.press('Enter'); await editor.waitFor({ state: 'hidden' }); await focused(p, trigger);
   assert.deepEqual(t.writes, []);
   pass('keyboard client filter lookup validation detail confirmation and cancellation restore focus without writing');
 
   await p.setViewportSize({ width: 1440, height: 1000 });
-  await p.screenshot({ path: join(output, 'ui-f-clients-1440.png'), animations: 'disabled' });
+  if (!functionalOnly) await p.screenshot({ path: join(output, 'ui-f-clients-1440.png'), animations: 'disabled' });
+  if (!functionalOnly) {
   await colorRatio(p.locator('.management-content > h1'), 'page title');
   await colorRatio(p.locator('.management-client-page .ant-typography-secondary'), 'secondary explanation');
   await colorRatio(trigger, 'primary button text');
@@ -316,7 +324,9 @@ try {
   await trigger.focus(); await colorRatio(trigger, 'keyboard focus outline', 3, 'outline-color', 'rgb(255,255,255)');
   const outline = await trigger.evaluate(el => getComputedStyle(el).outlineStyle); assert.equal(outline, 'solid');
   pass('computed title secondary primary hover control boundary and keyboard focus contrast meet sampled thresholds');
+  }
 
+  if (!functionalOnly) {
   // Reflow and DOM reading order are local browser checks, not assistive-device certification.
   const pages = ['#/platform/home', '#/platform/tenants', '#/platform/administrators', '#/platform/accounts', '#/platform/clients', '#/platform/directory', '#/platform/audit',
     ...['home', 'members', 'roles', 'directory', 'diagnostic', 'devices', 'sessions', 'audit'].map(x => '#/tenants/tenant-a/' + x)];
@@ -336,6 +346,7 @@ try {
     await p.evaluate(() => { document.body.style.zoom = ''; });
   }
   pass(`15 platform and tenant pages: ${layoutWidths.length} widths, 200-percent CSS zoom, one title, labels and DOM reading order`);
+  }
   await goto(p, '#/platform/accounts');
   const email = 'no-match-uif@example.test';
   await p.getByLabel('邮箱', { exact: true }).fill(email); await button(p, '查询').click(); await settle(p);
@@ -366,7 +377,7 @@ try {
   const preview = button(permission, '核对'); await preview.focus(); await p.keyboard.press('Enter');
   const permissionReview = p.getByRole('dialog', { name: '确认创建权限', exact: true }); await permissionReview.waitFor();
   await focused(p, button(permissionReview, '取消')); await focusCycle(p, permissionReview);
-  if (process.env.IDP_UI_N2_LAYOUT === '1') {
+  if (!functionalOnly && process.env.IDP_UI_N2_LAYOUT === '1') {
     for (let trial = 1; trial <= 10; trial++) await shortConfirmation(p, permissionReview, '操作范围与后果', '取消', '确认', trial);
     pass('N2 short SafeConfirm keeps scope and consequences scrollable and both keyboard actions reachable');
   }
@@ -377,6 +388,7 @@ try {
   pass('permission editor and nested SafeConfirm: keyboard scope review cancellation and trigger return use existing Ant focus management');
   await t.context.close();
 
+  if (!functionalOnly) {
   const system = await open('disabled', '#/system/home');
   for (const key of ['home', 'members', 'roles', 'directory', 'diagnostic', 'devices', 'sessions', 'audit', 'accounts', 'clients', 'administrators']) {
     await goto(system.page, '#/system/' + key);
@@ -388,12 +400,15 @@ try {
   }
   pass(`11 Disabled system pages: ${layoutWidths.length} widths, 200-percent CSS zoom and unique headings and form IDs`);
   await system.context.close();
+  }
   const fixed = await open('fixed', '#/tenants/tenant-a/sessions');
   await fixed.page.getByRole('button', { name: /^查看会话 / }).first().click();
   const single = fixed.page.getByRole('dialog', { name: '会话详情', exact: true }); await single.waitFor(); await settle(fixed.page);
+  if (!functionalOnly) {
   await colorRatio(button(single, '撤销会话'), 'danger action text');
   assert.deepEqual(fixed.writes, []);
   pass('computed danger action contrast meets text threshold without issuing a security write');
+  }
   await fixed.context.close();
 
   await runTenantChecks({ open, goto, settle, button, pass, accepting: async (p, action) => {
@@ -403,5 +418,11 @@ try {
   await runPaginationChecks({ fixture, open, goto, settle, button, pass });
   await runStateChecks({ open, goto, settle, button, pass });
   assert.deepEqual(pageErrors, []);
-  await writeFile(join(output, 'results.json'), JSON.stringify({ cases, pageErrors, contrast, layouts, labels, confirmationFocus, confirmationKeyboard, keyboardWrites: t.writes.length, dangerPreviewWrites: fixed.writes.length, evidence: 'compiled reference host; isolated DB; explicit response injection and CSS zoom labelled' }, null, 2) + '\n');
-} finally { await Promise.all(contexts.map(c => c.close().catch(() => {}))); await browser.close(); }
+} catch (error) {
+  failure = error;
+  throw error;
+} finally {
+  await finalizeFunctionalRun({ coverage, contexts, browser, failure,
+    resultPath: join(output, 'results.json'),
+    result: { cases, pageErrors, contrast, layouts, labels, confirmationFocus, confirmationKeyboard, keyboardWrites: t.writes.length, dangerPreviewWrites: fixed.writes.length, evidence: functionalOnly ? 'CI functional selection; isolated compiled reference host; explicit response injections; no visual, zoom or screen-reader acceptance' : 'compiled reference host; isolated DB; explicit response injection and CSS zoom labelled' } });
+}

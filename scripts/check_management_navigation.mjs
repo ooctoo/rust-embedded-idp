@@ -1,7 +1,9 @@
 // Opt-in real-host UI-B acceptance. Fixture must own disposable uib_* schemas
 // and a loopback-only idp-ui-b-* container; never point this at an existing instance.
+import { browserLaunchOptions } from './management_browser.mjs';
+import { functionalOnly, createFunctionalCoverage, finalizeFunctionalRun } from './management_functional.mjs';
 import assert from "node:assert/strict";
-import { readFile, mkdir, writeFile } from "node:fs/promises";
+import { readFile, mkdir } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
 const fixture = JSON.parse(await readFile(process.env.IDP_UI_TEST_FIXTURE, "utf8"));
@@ -9,11 +11,13 @@ assert.match(fixture.container, /^idp-ui-b-[a-f0-9]+$/);
 for (const schema of Object.values(fixture.schemas)) assert.match(schema, /^uib_(enabled|disabled)_[a-f0-9]+$/);
 for (const host of Object.values(fixture.hosts)) assert.equal(new URL(host.origin).hostname, "127.0.0.1");
 const { chromium } = await import(process.env.IDP_UI_PLAYWRIGHT_PATH ? pathToFileURL(process.env.IDP_UI_PLAYWRIGHT_PATH).href : "playwright");
-const browser = await chromium.launch({ headless: process.env.IDP_UI_HEADED !== "1", ...(process.env.IDP_UI_BROWSER_EXECUTABLE ? { executablePath: process.env.IDP_UI_BROWSER_EXECUTABLE } : {}) });
+const browser = await chromium.launch(browserLaunchOptions());
 const output = process.env.IDP_UI_OUTPUT_DIR ?? fixture.dir;
 await mkdir(output, { recursive: true });
+const coverage = createFunctionalCoverage('navigation', output);
 const results = [], errors = [];
-const pass = name => { results.push(name); console.log(`PASS ${name}`); };
+let failure;
+const pass = name => { coverage.pass(name); results.push(name); console.log(`PASS ${name}`); };
 const heading = page => page.locator(".management-content > h1");
 const waitHeading = async (page, text) => {
   await page.waitForFunction(value => document.querySelector(".management-content > h1")?.textContent === value, text);
@@ -251,10 +255,11 @@ try {
   await unknownHistory.page.waitForURL("**/#/tenants/tenant-a/roles");
   assert.equal(await unknownHistory.page.evaluate(() => history.state.idpConsoleHistory.index), duplicateIndex);
   pass("duplicate-hash entries retain their position when cancelling a later Forward");
-  await page.screenshot({ path: `${output}/ui-b-tenant.png`, fullPage: true, animations: "disabled" });
+  if (!functionalOnly) await page.screenshot({ path: `${output}/ui-b-tenant.png`, fullPage: true, animations: "disabled" });
   await setHash(page, "#/platform/clients"); await waitHeading(page, "客户端管理"); await settle(page);
   await page.waitForFunction(() => [...document.querySelectorAll("button")].some(button => button.textContent === "刷新客户端" && !button.disabled));
-  await page.screenshot({ path: `${output}/ui-b-platform.png`, fullPage: true, animations: "disabled" });
+  if (!functionalOnly) await page.screenshot({ path: `${output}/ui-b-platform.png`, fullPage: true, animations: "disabled" });
+  if (!functionalOnly) {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole("button", { name: /^菜\s*单$/ }).click();
   const navigation = page.getByRole("dialog", { name: "管理任务", exact: true });
@@ -262,7 +267,7 @@ try {
   await waitHeading(page, "租户管理"); await navigation.waitFor({ state: "hidden" }); await settle(page);
   const widths = await page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth }));
   assert.equal(widths.document, widths.viewport);
-  await page.screenshot({ path: `${output}/ui-b-mobile.png`, fullPage: true, animations: "disabled" });
+  if (!functionalOnly) await page.screenshot({ path: `${output}/ui-b-mobile.png`, fullPage: true, animations: "disabled" });
   for (const width of [320, 390, 768, 1024, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     for (const [hash, title] of [["#/platform/tenants", "租户管理"], ["#/platform/clients", "客户端管理"], ["#/tenants/tenant-a/roles", "角色与权限"]]) {
@@ -278,12 +283,13 @@ try {
         assert.ok(scroll.max > 0 && scroll.left > 0, "narrow client table scrolls locally");
       }
       if (width === 320 && title === "角色与权限") {
-        await page.screenshot({ path: `${output}/ui-b-roles-mobile.png`, fullPage: true, animations: "disabled" });
+        if (!functionalOnly) await page.screenshot({ path: `${output}/ui-b-roles-mobile.png`, fullPage: true, animations: "disabled" });
       }
     }
   }
   await page.setViewportSize({ width: 1440, height: 1000 });
   pass("narrow navigation closes on selection and the page has no global horizontal overflow");
+  }
   const disabled = await open("disabled", "#/system/home");
   await waitHeading(disabled.page, "工作台");
   for (const [key, label] of [["members", "成员管理"], ["roles", "角色与权限"], ["directory", "权限目录"], ["diagnostic", "权限诊断"], ["devices", "设备管理"], ["sessions", "会话管理"], ["audit", "审计记录"], ["accounts", "账号安全"], ["clients", "客户端管理"], ["administrators", "系统管理员"]]) {
@@ -382,7 +388,7 @@ try {
   await page.getByLabel("邮箱", { exact: true }).waitFor();
   assert.equal(await page.locator(".management-shell").count(), 0);
   pass("another tab's logout clears the old workspace and reload returns to login");
-  await disabled.page.screenshot({ path: `${output}/ui-b-system.png`, fullPage: true, animations: "disabled" });
+  if (!functionalOnly) await disabled.page.screenshot({ path: `${output}/ui-b-system.png`, fullPage: true, animations: "disabled" });
   await menu(disabled.page, "会话管理").click(); await waitHeading(disabled.page, "会话管理"); await settle(disabled.page);
   await disabled.page.getByPlaceholder("用户 ID", { exact: true }).fill("fixture-subject");
   await expectDialog(disabled, () => menu(disabled.page, "系统管理员").click());
@@ -408,14 +414,14 @@ try {
   assert.equal(await disabled.page.locator(".management-shell").count(), 0);
   pass("ordinary 403 retains the workspace while ordinary 401 clears authenticated page data");
   assert.deepEqual(errors, []);
-  await writeFile(`${output}/ui-b-results.json`, JSON.stringify({ cases: results, pageErrors: errors, evidence: "real compiled hosts and PostgreSQL; delayed-read/write injections explicitly scoped" }, null, 2));
   console.log(JSON.stringify({ passed: results.length, pageErrors: errors.length, output }));
 } catch (error) {
+  failure = error;
   for (const [index, context] of contexts.entries()) for (const page of context.pages()) {
-    await page.screenshot({ path: `${output}/ui-b-failure-${index}.png`, fullPage: true, animations: "disabled" }).catch(() => {});
+    if (!functionalOnly) await page.screenshot({ path: `${output}/ui-b-failure-${index}.png`, fullPage: true, animations: "disabled" }).catch(() => {});
   }
   throw error;
 } finally {
-  for (const context of contexts) await context.close();
-  await browser.close();
+  await finalizeFunctionalRun({ coverage, contexts, browser, failure,
+    resultPath: `${output}/ui-b-results.json`, result: { cases: results, pageErrors: errors, evidence: "real compiled hosts and PostgreSQL; delayed-read/write injections explicitly scoped" } });
 }

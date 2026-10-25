@@ -1,0 +1,17 @@
+Focused read-only review: scripts/run_management_n2_ci.py, scripts/test_management_n2_ci.py, and .github/workflows/n2-functional.yml.
+
+Validation run:
+- python3 -B scripts/test_management_n2_ci.py
+- Result: 36 tests passed. Output: ci-offline-review.txt.
+- Test setup patches command/run_bounded to forbid external operations; mocked prepare uses synthetic browser metadata/dummy bytes. No Docker/browser/PG/HTTP/product acceptance ran.
+
+Findings:
+- No blocking false-pass or ordinary-success-path inconsistency found in the reviewed gates.
+- Publication validation checks schema/sanitized marker, canonical relative paths, digest format, symlink-free exact on-disk set, and SHA256 for each listed file. Driver verification additionally checks the public filename whitelist and UTF-8/secret patterns.
+- Eight suites are required in exact order, each execution record and required command list is checked, and selected/excluded functional coverage is compared to the frozen manifest. Raw functional results require complete=true, cleanupErrors=[], failure=null, pageErrors=[], unique exact selected case names. Runtime gates/session results require complete=true, no cleanupErrors, and unique exact case names; runtime coverage must exactly match the generated expected coverage on final verification.
+- Preparation evidence gates include environment/tool manifests, build source and image summaries, runtime/prepare build logs and all four frozen-image pull logs; these paths match prepare() output layout.
+- Browser package/revision/manifest version are exact; actual binary version output is checked for the exact version token. Negative mocks include a similar-prefix version and pass rejection.
+- owned_paths() validates run/attempt-derived paths and symlink checks before mkdir; tests verify rejected paths do not create/touch targets and symlink targets remain intact.
+- Workflow retains nonzero finalizer status, uploads only its selected public path with error on empty, and requires upload success/artifact ID in final verification. Setup/finalize failure uses a constant failure marker unless a complete hashed failed publication exists. Runner loss/cancellation cleanup cannot be guaranteed; documentation correctly limits that claim.
+
+No source files modified.

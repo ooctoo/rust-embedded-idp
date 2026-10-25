@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import socket
 import subprocess
 import tempfile
@@ -15,11 +16,53 @@ import time
 import urllib.request
 import uuid
 
+from n2_ci_runtime import ci_profile, command_timeout, run_bounded
+
 OWNER = 'idp.n2-linux.fixture'
+CI_LABELS = {'run_id': 'GITHUB_RUN_ID', 'run_attempt': 'GITHUB_RUN_ATTEMPT',
+             'job': 'GITHUB_JOB', 'source_sha': 'GITHUB_SHA'}
+
+
+def ci_identity():
+    if not ci_profile():
+        return None
+    identity = {key: os.environ.get(variable, '') for key, variable in CI_LABELS.items()}
+    patterns = {'run_id': r'[1-9][0-9]*', 'run_attempt': r'[1-9][0-9]*',
+                'job': r'[A-Za-z_][A-Za-z0-9_-]{0,99}', 'source_sha': r'[a-f0-9]{40}'}
+    if any(not re.fullmatch(patterns[key], value) for key, value in identity.items()):
+        raise ValueError('CI fixture requires validated GitHub run identity')
+    return identity
+
+
+def validate_ci_docker_environment():
+    if not ci_profile():
+        return
+    if (os.environ.get('DOCKER_CONTEXT') != 'default' or
+            os.environ.get('DOCKER_HOST', 'unix:///var/run/docker.sock') != 'unix:///var/run/docker.sock' or
+            os.environ.get('DOCKER_TLS_VERIFY') or os.environ.get('DOCKER_CERT_PATH')):
+        raise ValueError('CI Docker requires explicit default context and local Unix socket without TLS overrides')
+    try:
+        local_socket = stat.S_ISSOCK(Path('/var/run/docker.sock').stat().st_mode)
+    except OSError:
+        local_socket = False
+    if not local_socket:
+        raise ValueError('CI Docker local Unix socket is unavailable')
+
+
+def verify_docker_context():
+    if ci_profile():
+        validate_ci_docker_environment()
+        context = json.loads(docker('context', 'inspect', 'default').stdout)[0]
+        if context.get('Endpoints', {}).get('docker', {}).get('Host') != 'unix:///var/run/docker.sock':
+            raise ValueError('CI default Docker context must resolve to the local Unix socket')
+    elif docker('context', 'show').stdout.strip() != 'desktop-linux':
+        raise RuntimeError('Expected explicitly selected local desktop-linux context')
 
 
 def docker(*args, input=None, check=True):
-    result = subprocess.run(['docker', *args], input=input, text=True, capture_output=True)
+    validate_ci_docker_environment()
+    run = run_bounded if ci_profile() else subprocess.run
+    result = run(['docker', *args], input=input, text=True, capture_output=True)
     if check and result.returncode:
         # Raw stderr may contain configuration, connection URIs or passwords.
         raise RuntimeError('Docker operation failed: ' + args[0])
@@ -35,7 +78,7 @@ def api(host, path, method='GET', data=None, token=None, target=None):
     request = urllib.request.Request(host['origin'] + host['mount'] + '/admin' + path,
                                     data=None if data is None else json.dumps(data).encode(),
                                     headers=headers, method=method)
-    with urllib.request.urlopen(request, timeout=20) as response:
+    with urllib.request.urlopen(request, timeout=command_timeout(20) if ci_profile() else 20) as response:
         return json.load(response) if response.status != 204 else None
 
 
@@ -46,8 +89,8 @@ class Fixture:
 
     @classmethod
     def create(cls, runtime, prepare, postgres):
-        if docker('context', 'show').stdout.strip() != 'desktop-linux':
-            raise RuntimeError('Expected explicitly selected local desktop-linux context')
+        identity = ci_identity()
+        verify_docker_context()
         daemon = docker('info', '--format', '{{.OSType}}/{{.Architecture}}').stdout.strip()
         if daemon not in ('linux/aarch64', 'linux/arm64'):
             raise RuntimeError('Native Linux arm64 daemon required')
@@ -61,20 +104,34 @@ class Fixture:
         fixture = cls({'dir': str(directory), 'nonce': nonce, 'runtime': runtime,
                        'prepare': prepare, 'postgres': postgres, 'resources': [], 'hosts': {},
                        'schemas': {}, 'password': 'N2-' + uuid.uuid4().hex + 'aA!',
-                       'db_password': uuid.uuid4().hex})
+                       'db_password': uuid.uuid4().hex, 'ci': identity})
         fixture.save()
         return fixture
 
     @classmethod
     def load(cls, path):
-        path = Path(path).resolve()
+        original = Path(path)
+        if ci_profile() and (original.is_symlink() or original.parent.is_symlink()):
+            raise ValueError('CI fixture state must not use symlinks')
+        path = original.resolve()
         state = json.loads(path.read_text())
         if (path.name != 'state.json' or path.parent != Path(state['dir']) or
                 path.parent.parent != Path(tempfile.gettempdir()).resolve() or
                 not re.fullmatch(r'idp-ui-b-[\w-]+', path.parent.name) or
                 not re.fullmatch(r'[a-f0-9]{12}', state['nonce'])):
             raise ValueError('Not an owned Linux fixture state')
-        return cls(state)
+        identity = ci_identity()
+        if state.get('ci') != identity:
+            raise ValueError('Fixture belongs to a different CI run or execution profile')
+        if identity:
+            if path.stat().st_mode & 0o077 or path.parent.stat().st_mode & 0o077:
+                raise ValueError('CI fixture recovery state must remain private')
+            verify_docker_context()
+        fixture = cls(state)
+        if identity:
+            for resource in state['resources']:
+                fixture.inspect_owned(resource)
+        return fixture
 
     def save(self):
         temporary = self.directory / 'state.next'
@@ -83,7 +140,10 @@ class Fixture:
         temporary.replace(self.directory / 'state.json')
 
     def labels(self):
-        return ['--label', OWNER + '=' + str(self.directory), '--label', 'idp.n2-linux.run=' + self.state['nonce']]
+        labels = ['--label', OWNER + '=' + str(self.directory), '--label', 'idp.n2-linux.run=' + self.state['nonce']]
+        for key, value in (self.state.get('ci') or {}).items():
+            labels += ['--label', 'idp.n2-linux.ci.' + key + '=' + value]
+        return labels
 
     def add(self, kind, name, args):
         resource = {'kind': kind, 'name': name}
@@ -102,6 +162,17 @@ class Fixture:
 
     def inspect_owned(self, resource):
         kind, name = resource['kind'], resource['name']
+        identity = ci_identity()
+        if self.state.get('ci') != identity:
+            raise ValueError('Fixture belongs to a different CI run or execution profile')
+        if identity:
+            prefix = 'idp-n2-linux-' + self.state['nonce']
+            valid = ((kind == 'container' and (name == 'idp-ui-b-' + self.state['nonce'] or
+                     re.fullmatch(re.escape(prefix) + r'-[a-z][a-z0-9-]*', name))) or
+                     (kind == 'network' and name == prefix) or
+                     (kind == 'volume' and name in (prefix + '-data', prefix + '-secrets')))
+            if not valid:
+                raise ValueError('CI fixture resource name or kind mismatch')
         result = docker(kind, 'inspect', name, check=False)
         if result.returncode:
             # A failed inspect is not evidence of absence or a healthy daemon.
@@ -114,6 +185,8 @@ class Fixture:
         labels = item.get('Labels') if kind != 'container' else item['Config'].get('Labels')
         if not labels or labels.get(OWNER) != str(self.directory) or labels.get('idp.n2-linux.run') != self.state['nonce']:
             raise ValueError('Resource ownership mismatch')
+        if identity and any(labels.get('idp.n2-linux.ci.' + key) != value for key, value in identity.items()):
+            raise ValueError('CI resource run ownership mismatch')
         if kind == 'container' and resource.get('id') and resource['id'] != item['Id']:
             raise ValueError('Container ID changed')
         return item
@@ -223,7 +296,7 @@ class Fixture:
                 if not item['State']['Running']:
                     raise RuntimeError('App exited before readiness: ' + label)
                 try:
-                    with urllib.request.urlopen(host['origin'] + '/readyz', timeout=.5) as response:
+                    with urllib.request.urlopen(host['origin'] + '/readyz', timeout=command_timeout(.5) if ci_profile() else .5) as response:
                         if response.status == 200:
                             mapping = item['NetworkSettings']['Ports']['8080/tcp']
                             if mapping != [{'HostIp': '127.0.0.1', 'HostPort': str(port)}]:

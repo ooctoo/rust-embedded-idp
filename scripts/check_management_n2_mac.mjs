@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { browserLaunchOptions } from './management_browser.mjs';
 const fixture = JSON.parse(await readFile(process.env.IDP_UI_TEST_FIXTURE, 'utf8'));
 assert.match(fixture.container, /^idp-ui-b-[a-f0-9]+$/);
 assert.equal(execFileSync('docker', ['inspect', '--format', '{{index .Config.Labels "idp.ui-b.fixture"}}', fixture.container], { encoding: 'utf8' }).trim(), fixture.dir);
@@ -17,8 +18,10 @@ let failure, browserVersion;
 async function newContext(options = {}) {
   const profile = await mkdtemp(join(tmpdir(), 'idp-n2-chrome-'));
   const entry = { profile }; contexts.push(entry);
-  entry.context = await chromium.launchPersistentContext(profile, { ...options, headless: false,
-    executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' });
+  const launch = process.env.IDP_UI_PROFILE === 'ci-functional'
+    ? { ...browserLaunchOptions(), viewport: { width: 1440, height: 1000 } }
+    : { headless: false, executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' };
+  entry.context = await chromium.launchPersistentContext(profile, { ...options, ...launch });
   browserVersion = entry.context.browser().version();
   return entry.context;
 }
@@ -162,7 +165,8 @@ try {
       console.error(`Cleanup retained owned profile ${entry.profile}: ${error.name}`);
     }
   }
-  await writeFile(output + '/results.json', JSON.stringify({ browserVersion, headed: true, profileMode: 'owned persistent regular profiles; not incognito contexts',
+  await writeFile(output + '/results.json', JSON.stringify({ browserVersion, headed: process.env.IDP_UI_PROFILE !== 'ci-functional',
+    profileMode: process.env.IDP_UI_PROFILE === 'ci-functional' ? 'owned Linux headless persistent profiles' : 'owned persistent regular profiles; not incognito contexts',
     profilesRemoved, cleanupErrors, cases, pageErrors, refreshResponses, failure, complete: !failure && cleanupErrors.length === 0 && cases.length === 8 }, null, 2) + '\n');
   if (cleanupErrors.length && !failure) throw new Error('Owned Chrome profile cleanup failed; see results.json');
 }

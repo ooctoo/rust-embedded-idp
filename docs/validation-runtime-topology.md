@@ -1,5 +1,7 @@
 # 开发、自动化与生产运行拓扑
 
+N2 CI工具进展（2026-10-25）：后续授权的[功能选集、CI驱动与workflow适配](n2-functional-ci-tooling-result.md)已实现并完成提交前复审，随本地提交归档，122项离线工具检查通过；单Linux arm64/headless Chromium行尚未实际运行，不改变已有Mac/Linux限定证据或生产支持范围。未改产品、未实际补验、仅本地提交归档、未推送/部署；缩放和旁白不测，M1-03–06未启动。
+
 功能优先范围更新（2026-10-25）：需求方明确不再测试缩放和旁白，先梳理N2剩余功能缺口并形成[GitHub Actions功能回归最小方案](management-console-n2-github-actions-functional-plan.md)。推荐独立Linux arm64托管runner＋headless Chromium功能组合；当前工具仍在Mac，N2 CI尚未接入。功能性键盘/弹层/恢复断言保留，缩放和独立视觉专项不作为本批门槛，原历史证据及签认待定记录保持。完整复审补齐默认分支手动触发前提、构建资源及桌面键盘功能边界；仅四份相关文档随本地提交归档，实际SHA以包含本文的Git记录为准。不改产品/工具/workflow，不准备环境或执行，不推送或部署，不启动M1-03–06。
 
 N2 Linux Docker实际补验进展（2026-10-25）：后续已获环境准备及实际执行授权，所列Linux arm64、Debian/glibc、release默认features + Mac Chrome的H01组合完成L01–L09适用补验；实际构建、运行门槛、会话安全及六套任务完整复验、视觉抽查与清理见[执行报告](n2-linux-docker-execution-result.md)及[证据](design/n2/linux-docker-20261025/README.md)。历史失败与工具修正保留，Rust源码未改，Web仅修复SafeConfirm短屏焦点可见性并重建制品；不扩大为整体N2、生产宿主/浏览器、真实消费者或CI通过。后续完整复审补齐SQL所有权与清理落盘错误路径、16项离线回归及受影响面实际复验；仅相关Web局部修复、工具、测试、文档和证据随本地提交归档，不推送、不部署，不启动M1-03–06。

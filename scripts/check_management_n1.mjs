@@ -1,6 +1,8 @@
 // N1 browser checks: real disposable UI-B fixture, with explicitly injected responses.
+import { browserLaunchOptions } from './management_browser.mjs';
+import { createFunctionalCoverage, finalizeFunctionalRun } from './management_functional.mjs';
 import assert from 'node:assert/strict';
-import { readFile, mkdir, writeFile } from 'node:fs/promises';
+import { readFile, mkdir } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { randomBytes } from 'node:crypto';
 
@@ -9,12 +11,14 @@ assert.match(fixture.container, /^idp-ui-b-[a-f0-9]+$/);
 for (const schema of Object.values(fixture.schemas)) assert.match(schema, /^uib_(enabled|disabled)_[a-f0-9]+$/);
 for (const host of Object.values(fixture.hosts)) assert.equal(new URL(host.origin).hostname, '127.0.0.1');
 const { chromium } = await import(process.env.IDP_UI_PLAYWRIGHT_PATH ? pathToFileURL(process.env.IDP_UI_PLAYWRIGHT_PATH).href : 'playwright');
-const browser = await chromium.launch({ headless: process.env.IDP_UI_HEADED !== "1", ...(process.env.IDP_UI_BROWSER_EXECUTABLE ? { executablePath: process.env.IDP_UI_BROWSER_EXECUTABLE } : {}) });
+const browser = await chromium.launch(browserLaunchOptions());
 const output = process.env.IDP_UI_OUTPUT_DIR ?? fixture.dir;
 await mkdir(output, { recursive: true });
+const coverage = createFunctionalCoverage('n1', output);
 const cases = [], errors = [], contexts = [];
 const heldResponses = new Set();
-const pass = name => { cases.push(name); console.log(`PASS ${name}`); };
+let failure;
+const pass = name => { coverage.pass(name); cases.push(name); console.log(`PASS ${name}`); };
 const button = (parent, name) => parent.getByRole('button', { name: new RegExp('^' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/([\u3400-\u9fff])(?=[\u3400-\u9fff])/g, '$1\\s*') + '$') });
 const drawer = page => page.getByRole('dialog', { name: '客户端配置', exact: true });
 const confirm = page => page.getByRole('dialog', { name: '确认保存客户端配置', exact: true });
@@ -325,8 +329,11 @@ try {
     pass(`tenant ${id} ${kind}: held real response after same-session cross-tab logout cannot restore identity, editor or success; no replay`);
   }
   assert.deepEqual(errors, []);
+} catch (error) {
+  failure = error;
+  throw error;
 } finally {
   for (const release of heldResponses) release();
-  await Promise.all(contexts.map(c => c.close().catch(() => {}))); await browser.close();
-  await writeFile(`${output}/n1-browser-results.json`, JSON.stringify({ cases, pageErrors: errors, evidence: 'isolated compiled reference host; explicit route injections for response and write-outcome cases; no target-environment or deployment claim' }, null, 2));
+  await finalizeFunctionalRun({ coverage, contexts, browser, failure,
+    resultPath: `${output}/n1-browser-results.json`, result: { cases, pageErrors: errors, evidence: 'isolated compiled reference host; explicit route injections for response and write-outcome cases; no target-environment or deployment claim' } });
 }

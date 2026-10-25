@@ -1,5 +1,7 @@
 # N2剩余功能缺口与GitHub Actions最小执行方案
 
+后续工具实施进展（2026-10-25）：需求方已另行授权功能选集、CI驱动和workflow适配及离线工具验证，结果见[实施回传](n2-functional-ci-tooling-result.md)和[证据](design/n2/ci-functional-tooling-20261025/README.md)。已实现工具并完成122项离线检查；264项功能断言只登记未实跑，仍未执行实际CI补验或改产品。下文保留本方案归档时的阶段边界；当前实现完成复审后仅本地提交归档，实际SHA以包含本文的Git记录为准；未推送/部署，缩放与旁白不测，M1-03–06未启动。
+
 日期：2026-10-25。编写基线为本地`cc0456118a5c795347cf1d6eb142392df570fe7a`，当前分支`codex/management-console-ui-b`。依据[R02运行拓扑](validation-runtime-topology.md)、[Linux Docker补验报告](n2-linux-docker-execution-result.md)、[Mac报告](n2-mac-execution-result.md)及需求方随后“先关注功能”“不再测试缩放和旁白”的范围调整。
 
 **本文件是方案，未实施或执行。** 本轮只新增本方案并维护README、拓扑和交付汇总入口；完整复审修正后仅四份相关文档随本地提交归档，实际SHA以包含本文的Git记录为准。不改产品、测试驱动、依赖锁文件或workflow，不准备环境、不运行补验、不推送、不部署，不启动M1-03–06。无关`docs/m1-02-code-review.md`修改保留。

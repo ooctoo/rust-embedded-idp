@@ -1,0 +1,54 @@
+{
+  "scope": "offline tooling and synthetic subprocess stubs only",
+  "actualBrowserRuns": 0,
+  "actualDockerRuns": 0,
+  "actualPgRuns": 0,
+  "productAcceptanceRuns": 0,
+  "githubActionsRuns": 0,
+  "python": "3.9.6 (default, Aug 17 2026, 12:07:42) \n[Clang 21.0.0 (clang-2100.3.34.1)]",
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "node": "v24.19.0",
+  "commands": [
+    {
+      "command": "python3 -B scripts/test_management_n2_tools.py",
+      "exitCode": 0,
+      "checks": 5,
+      "log": "mac-tools-offline.txt",
+      "sourceInputs": "tested-tool-inputs.json",
+      "runOrigin": "fresh complete integrated revalidation after review fixes"
+    },
+    {
+      "command": "python3 -B scripts/test_management_n2_linux_tools.py",
+      "exitCode": 0,
+      "checks": 28,
+      "log": "linux-tools-offline.txt",
+      "sourceInputs": "tested-tool-inputs.json",
+      "runOrigin": "fresh complete integrated revalidation after review fixes"
+    },
+    {
+      "command": "python3 -B scripts/test_management_n2_ci.py",
+      "exitCode": 0,
+      "checks": 36,
+      "log": "ci-driver-offline.txt",
+      "sourceInputs": "tested-tool-inputs.json",
+      "runOrigin": "fresh complete integrated revalidation after review fixes"
+    },
+    {
+      "command": "python3 -B scripts/test_n2_ci_processes.py",
+      "exitCode": 0,
+      "checks": 21,
+      "log": "ci-processes-offline.txt",
+      "sourceInputs": "tested-tool-inputs.json",
+      "runOrigin": "fresh complete integrated revalidation after review fixes"
+    },
+    {
+      "command": "node scripts/test_management_functional.mjs",
+      "exitCode": 0,
+      "checks": 31,
+      "log": "functional-selection-offline.txt",
+      "sourceInputs": "tested-tool-inputs.json",
+      "runOrigin": "fresh complete integrated revalidation after review fixes"
+    }
+  ],
+  "offlineCheckTotal": 121
+}

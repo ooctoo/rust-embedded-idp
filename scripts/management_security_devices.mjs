@@ -1,3 +1,4 @@
+import { functionalOnly } from './management_functional.mjs';
 // Disposable UI-E device checks; caller owns fixture validation and cleanup.
 import assert from 'node:assert/strict';
 import { randomUUID, generateKeyPairSync, createHash } from 'node:crypto';
@@ -78,15 +79,17 @@ export async function runDeviceChecks(h) {
   pass('active and suspended bindings unbind independently; other user and tenant sessions survive');
   let cancelledPosts = 0; const countCancelled = request => { if (request.method() === 'POST' && request.url().includes('/admin/devices/')) cancelledPosts++; }; p.on('request', countCancelled);
   await button(d, '停用设备').click(); let review = dialog(p, '确认停用设备');
-  await p.setViewportSize({ width: 320, height: 800 });
+  if (!functionalOnly) await p.setViewportSize({ width: 320, height: 800 });
   const region = review.getByRole('region', { name: '操作范围与后果' });
   assert.equal(await region.getAttribute('tabindex'), '0');
   await review.getByLabel('操作原因').fill('测'.repeat(171)); assert.ok(await button(review, '确认停用').isDisabled());
   await review.getByLabel('操作原因').fill('合法原因');
   await p.waitForFunction(() => document.getAnimations().every(a => a.playState !== 'running' || a.effect?.getTiming().iterations === Infinity));
-  const reviewBox = await review.boundingBox(); assert.ok(reviewBox.width >= 280 && reviewBox.x >= 0 && reviewBox.x + reviewBox.width <= 321);
-  await review.screenshot({ animations: 'disabled', path: `${h.output}/ui-e-device-320.png`, mask: [review.locator('input,textarea')] }); await accepting(p, () => button(review, '取消').click()); await review.waitFor({ state: 'hidden' });
-  await p.setViewportSize({ width: 1440, height: 1000 }); p.off('request', countCancelled); assert.equal(cancelledPosts, 0); assert.equal((await device('active')).version, 1);
+  if (!functionalOnly) {
+    const reviewBox = await review.boundingBox(); assert.ok(reviewBox.width >= 280 && reviewBox.x >= 0 && reviewBox.x + reviewBox.width <= 321);
+  }
+  if (!functionalOnly) await review.screenshot({ animations: 'disabled', path: `${h.output}/ui-e-device-320.png`, mask: [review.locator('input,textarea')] }); await accepting(p, () => button(review, '取消').click()); await review.waitFor({ state: 'hidden' });
+  if (!functionalOnly) await p.setViewportSize({ width: 1440, height: 1000 }); p.off('request', countCancelled); assert.equal(cancelledPosts, 0); assert.equal((await device('active')).version, 1);
   pass('device reason enforces UTF-8 byte limit and discarded confirmation sends no mutation');
   await stateAction(d, '停用设备', '确认停用设备', '确认停用', 1);
   assert.equal((await device('active')).status, 'disabled'); assert.equal((await binding(2)).status, 'active'); assert.equal(await sessionStatus(2), 'revoked'); assert.equal(await sessionStatus(3), 'active');

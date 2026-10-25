@@ -1,0 +1,2 @@
+functional-cases.json: valid JSON
+syntax and scoped diff checks passed

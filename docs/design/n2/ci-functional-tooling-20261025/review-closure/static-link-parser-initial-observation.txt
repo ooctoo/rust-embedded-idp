@@ -1,0 +1,3 @@
+Observed static-check harness issues, not product defects:
+1. Initial local anchor parser retained Unicode arrow in heading `10. tenant_v2 → tenant_v3 显式迁移`, while existing GitHub link omits it. Corrected local slug parser; existing document link unchanged.
+2. Intermediate static run started before newly created final/offline-results.json existed; it correctly reported missing target. Generated final metadata after all five commands completed, then reran static checks.

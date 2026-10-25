@@ -1,0 +1,146 @@
+{
+  "scope": "offline tooling only; no browser/Docker/Postgres/HTTP executions",
+  "node": "v24.19.0",
+  "syntaxChecks": [
+    {
+      "command": [
+        "node",
+        "--check",
+        "scripts/check_management_navigation.mjs"
+      ],
+      "exitCode": 0,
+      "output": ""
+    },
+    {
+      "command": [
+        "node",
+        "--check",
+        "scripts/check_management_clients.mjs"
+      ],
+      "exitCode": 0,
+      "output": ""
+    },
+    {
+      "command": [
+        "node",
+        "--check",
+        "scripts/check_management_authorization.mjs"
+      ],
+      "exitCode": 0,
+      "output": ""
+    },
+    {
+      "command": [
+        "node",
+        "--check",
+        "scripts/check_management_security.mjs"
+      ],
+      "exitCode": 0,
+      "output": ""
+    },
+    {
+      "command": [
+        "node",
+        "--check",
+        "scripts/check_management_n1.mjs"
+      ],
+      "exitCode": 0,
+      "output": ""
+    },
+    {
+      "command": [
+        "node",
+        "--check",
+        "scripts/check_management_console.mjs"
+      ],
+      "exitCode": 0,
+      "output": ""
+    },
+    {
+      "command": [
+        "node",
+        "--check",
+        "scripts/management_security_devices.mjs"
+      ],
+      "exitCode": 0,
+      "output": ""
+    },
+    {
+      "command": [
+        "node",
+        "--check",
+        "scripts/management_security_sessions.mjs"
+      ],
+      "exitCode": 0,
+      "output": ""
+    },
+    {
+      "command": [
+        "node",
+        "--check",
+        "scripts/management_functional.mjs"
+      ],
+      "exitCode": 0,
+      "output": ""
+    },
+    {
+      "command": [
+        "node",
+        "--check",
+        "scripts/test_management_functional.mjs"
+      ],
+      "exitCode": 0,
+      "output": ""
+    }
+  ],
+  "mockAndSourceBranchChecks": 23,
+  "suiteSelections": {
+    "navigation": {
+      "selected": 18,
+      "excluded": 1
+    },
+    "clients": {
+      "selected": 24,
+      "excluded": 3
+    },
+    "authorization": {
+      "selected": 41,
+      "excluded": 1
+    },
+    "security": {
+      "selected": 46,
+      "excluded": 1
+    },
+    "n1": {
+      "selected": 26,
+      "excluded": 0
+    },
+    "console": {
+      "selected": 91,
+      "excluded": 7
+    }
+  },
+  "fixedDuringOfflineReview": [
+    {
+      "issue": "N1 dot and dot-dot cases normalized to duplicate semantic IDs",
+      "firstCheck": "createFunctionalCoverage rejected Duplicate functional manifest case or ID",
+      "fix": "Explicit dot and dot-dot semantic ID words plus global unique-ID assertion",
+      "recheck": "all six suite mock completion paths passed"
+    },
+    {
+      "issue": "Device module retained a 320px bounding-box assertion after disabling viewport switching",
+      "fix": "Guard narrow geometry in explicit legacy profile; retain UTF-8 reason/cancel/no-write assertions",
+      "recheck": "source review and offline guarded-block tests passed"
+    },
+    {
+      "issue": "Audit screenshot combined line initially put waitFor behind screenshot condition",
+      "fix": "Keep functional audit waitFor unconditional; guard screenshot alone",
+      "recheck": "source assertion passed"
+    }
+  ],
+  "limitations": [
+    "Mock completion supplies case names; it does not prove live browser behavior.",
+    "Actual CI/headless/browser cases remain unexecuted per user scope.",
+    "The six-suite manifest excludes gates/session; parent driver owns their separate coverage contract."
+  ]
+}

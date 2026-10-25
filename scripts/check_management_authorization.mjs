@@ -1,6 +1,8 @@
 // Opt-in UI-D checks against the disposable UI-B fixture. No .env or persistent tokens.
+import { browserLaunchOptions } from './management_browser.mjs';
+import { functionalOnly, createFunctionalCoverage, finalizeFunctionalRun } from './management_functional.mjs';
 import assert from 'node:assert/strict';
-import { readFile, mkdir, writeFile } from 'node:fs/promises';
+import { readFile, mkdir } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { randomBytes } from 'node:crypto';
 
@@ -14,10 +16,12 @@ for (const key of ['enabled', 'disabled', 'fixed', 'choose']) {
   assert.ok(host.mount.startsWith('/') && host.ui.startsWith('/'));
 }
 const { chromium } = await import(process.env.IDP_UI_PLAYWRIGHT_PATH ? pathToFileURL(process.env.IDP_UI_PLAYWRIGHT_PATH).href : 'playwright');
-const browser = await chromium.launch({ headless: process.env.IDP_UI_HEADED !== "1", ...(process.env.IDP_UI_BROWSER_EXECUTABLE ? { executablePath: process.env.IDP_UI_BROWSER_EXECUTABLE } : {}) });
+const browser = await chromium.launch(browserLaunchOptions());
 const output = process.env.IDP_UI_OUTPUT_DIR ?? fixture.dir;
 await mkdir(output, { recursive: true });
+const coverage = createFunctionalCoverage('authorization', output);
 const contexts = [], cases = [], pageErrors = [], held = new Set(), dialogAnswers = new WeakMap();
+let failure;
 function bounded(promise, stage) {
   let timer;
   return Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`Timed out: ${stage}`)), 15000); })]).finally(() => clearTimeout(timer));
@@ -35,7 +39,7 @@ async function accepting(page, action) {
 const id = randomBytes(6).toString('hex');
 const tenant = `uid-${id}`, tenant2 = `uid-existing-${id}`, email = `uid-${id}@example.test`;
 const business = `uid_${id}`, roleName = `UI D role ${id}`;
-const pass = name => { cases.push(name); console.log(`PASS ${name}`); };
+const pass = name => { coverage.pass(name); cases.push(name); console.log(`PASS ${name}`); };
 const button = (p, name) => p.getByRole('button', { name: new RegExp('^' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/([\u3400-\u9fff])(?=[\u3400-\u9fff])/g, '$1\\s*') + '$') });
 const dialog = (p, name) => p.getByRole('dialog', { name, exact: true });
 const settle = p => p.waitForFunction(() => !document.querySelector('.ant-spin-spinning, .ant-spin-blur'));
@@ -84,7 +88,7 @@ async function captureReview(p, review, name) {
       Number(getComputedStyle(el).opacity) === 1 && Number(getComputedStyle(wrapper).opacity) === 1 &&
       getComputedStyle(wrapper).visibility === 'visible';
   }, element);
-  await review.screenshot({ path: `${output}/${name}.png`, animations: 'allow', mask: [review.locator('input, textarea, [contenteditable=true]')] });
+  if (!functionalOnly) await review.screenshot({ path: `${output}/${name}.png`, animations: 'allow', mask: [review.locator('input, textarea, [contenteditable=true]')] });
 }
 async function waitWrite(p, suffix, action) {
   const result = p.waitForResponse(r => new URL(r.url()).pathname.endsWith(suffix) && r.request().method() === 'POST');
@@ -209,7 +213,7 @@ async function grant(t, d, target, subject, name, kind, resourceId) {
     await review.getByRole('region', { name: '操作范围与后果' }).waitFor();
     const suffix = target === '0' ? '-system' : '';
     await captureReview(p, review, `ui-d-grant-${kind}${suffix}`);
-    if (kind === 'instance') {
+    if (kind === 'instance' && !functionalOnly) {
       await p.setViewportSize({ width: 320, height: 800 });
       const region = review.getByRole('region', { name: '操作范围与后果' });
       assert.equal(await region.getAttribute('tabindex'), '0');
@@ -541,14 +545,16 @@ try {
   assert.ok(await button(md, `选择角色 ${roleName}`).isDisabled());
   await accepting(p, () => md.locator('button.ant-drawer-close').click());
   pass('protected role is read-only and disabled ordinary role cannot be granted');
+  if (!functionalOnly) {
   for (const width of [320, 390, 768, 1440]) {
     await p.setViewportSize({ width, height: 900 });
     const duplicate = await p.evaluate(() => { const ids = [...document.querySelectorAll('[id]')].map(x => x.id).filter(Boolean); return ids.length !== new Set(ids).size; });
     assert.equal(duplicate, false, `duplicate IDs at ${width}`);
     assert.ok(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `page overflow at ${width}`);
-    await p.screenshot({ path: `${output}/ui-d-${width}.png`, animations: 'disabled', mask: [p.locator('input, textarea, [contenteditable=true]')] });
+    if (!functionalOnly) await p.screenshot({ path: `${output}/ui-d-${width}.png`, animations: 'disabled', mask: [p.locator('input, textarea, [contenteditable=true]')] });
   }
   pass('320, 390, 768 and 1440 widths: unique IDs and no document horizontal overflow');
+  }
   const disabled = await open('disabled', '#/system/members'); const dp = disabled.page;
   assert.equal(await button(dp, '绑定已有用户').count(), 0);
   assert.equal(await button(dp, '创建租户').count(), 0);
@@ -1160,15 +1166,15 @@ try {
   }
   assert.deepEqual(pageErrors, []);
 } catch (error) {
+  failure = error;
   for (const release of held) release();
   console.error(`UI-D failed after: ${cases.at(-1) ?? 'startup'}`);
   for (const [index, context] of contexts.entries()) for (const page of context.pages()) {
-    await page.screenshot({ path: `${output}/ui-d-failure-${index}.png`, animations: 'disabled', mask: [page.locator('input, textarea, [contenteditable=true]')] }).catch(() => {});
+    if (!functionalOnly) await page.screenshot({ path: `${output}/ui-d-failure-${index}.png`, animations: 'disabled', mask: [page.locator('input, textarea, [contenteditable=true]')] }).catch(() => {});
   }
   throw error;
 } finally {
   for (const release of held) release();
-  await writeFile(`${output}/ui-d-results.json`, JSON.stringify({ cases, pageErrors, evidence: 'isolated real UI-B hosts; screenshots mask inputs; empty, 401, 403, malformed, 409, lost response and readback failure explicitly injected; held responses and cross-tab logout use real hosts' }, null, 2));
-  for (const context of contexts) await context.close();
-  await browser.close();
+  await finalizeFunctionalRun({ coverage, contexts, browser, failure,
+    resultPath: `${output}/ui-d-results.json`, result: { cases, pageErrors, evidence: 'isolated real UI-B hosts; screenshots mask inputs; empty, 401, 403, malformed, 409, lost response and readback failure explicitly injected; held responses and cross-tab logout use real hosts' } });
 }

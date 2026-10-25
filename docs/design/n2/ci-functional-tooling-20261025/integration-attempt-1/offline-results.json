@@ -1,0 +1,55 @@
+{
+  "scope": "offline tool validation only",
+  "actualBrowserRuns": 0,
+  "actualDockerRuns": 0,
+  "actualPgRuns": 0,
+  "productAcceptanceRuns": 0,
+  "python": "3.9.6 (default, Aug 17 2026, 12:07:42) \n[Clang 21.0.0 (clang-2100.3.34.1)]",
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "commands": [
+    {
+      "command": [
+        "python3",
+        "-B",
+        "scripts/test_management_n2_tools.py"
+      ],
+      "exitCode": 0,
+      "log": "mac-tools-offline.txt"
+    },
+    {
+      "command": [
+        "python3",
+        "-B",
+        "scripts/test_management_n2_linux_tools.py"
+      ],
+      "exitCode": 0,
+      "log": "linux-tools-offline.txt"
+    },
+    {
+      "command": [
+        "python3",
+        "-B",
+        "scripts/test_management_n2_ci.py"
+      ],
+      "exitCode": 1,
+      "log": "ci-driver-offline.txt"
+    },
+    {
+      "command": [
+        "python3",
+        "-B",
+        "scripts/test_n2_ci_processes.py"
+      ],
+      "exitCode": 0,
+      "log": "ci-processes-offline.txt"
+    },
+    {
+      "command": [
+        "node",
+        "scripts/test_management_functional.mjs"
+      ],
+      "exitCode": 0,
+      "log": "functional-selection-offline.txt"
+    }
+  ]
+}

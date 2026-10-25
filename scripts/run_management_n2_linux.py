@@ -43,7 +43,18 @@ def main():
     parser.add_argument('--postgres', required=True); parser.add_argument('--playwright', required=True, type=Path)
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--suites', nargs='+', required=True, choices=['gates', 'n2_mac', 'navigation', 'clients', 'authorization', 'security', 'n1', 'console'])
+    parser.add_argument('--profile', choices=['mac-chrome', 'ci-functional'], default='mac-chrome')
+    parser.add_argument('--ci-work', type=Path, help='owned private root prepared by run_management_n2_ci.py')
     args = parser.parse_args()
+    if args.profile == 'ci-functional':
+        from run_management_n2_ci import BASES, SUITES, main as ci_main, read_json
+        if args.ci_work is None or args.suites != SUITES:
+            parser.error('CI profile requires its prepared work root and all eight suites in order')
+        state = read_json(args.ci_work / 'job-state.json')
+        if (args.runtime != state.get('runtime') or args.prepare != state.get('prepare') or
+                args.postgres != BASES['postgres'] or str(args.playwright) != state.get('playwright')):
+            parser.error('CI inputs differ from the prepared job state')
+        return ci_main(['run', '--work', str(args.ci_work), '--output', str(args.output)])
     chrome = Path('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome')
     if not chrome.is_file() or not args.playwright.is_file(): parser.error('Installed Chrome and Playwright required')
     args.output.mkdir(exist_ok=False)

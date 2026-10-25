@@ -2,7 +2,10 @@
 
 All fixture paths are created under TemporaryDirectory and Docker is mocked.
 """
+import argparse
 import json
+import stat
+from types import SimpleNamespace
 import os
 from pathlib import Path
 import subprocess
@@ -11,6 +14,7 @@ import unittest
 from unittest.mock import patch
 
 import prepare_management_n2_linux as n2
+import build_management_n2_linux as build
 import run_management_n2_linux as runner
 from run_management_n2_linux import profile_recovery_required
 
@@ -96,7 +100,7 @@ class FixtureSafetyTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='n2-tools-test-')
         self.addCleanup(self.temp.cleanup)
-        self.directory = Path(self.temp.name) / 'idp-ui-b-test'
+        self.directory = (Path(self.temp.name) / 'idp-ui-b-test').resolve()
         self.directory.mkdir()
         self.state = {
             'dir': str(self.directory), 'nonce': 'a' * 12, 'resources': [],
@@ -304,6 +308,197 @@ class FixtureSafetyTests(unittest.TestCase):
         self.assertIn('/run/idp/secrets/database-uri', encoded)
         self.assertEqual(config['runtime']['postgres']['connection']['schema_name'], 'schema-test')
         self.assertNotIn('postgresql://', encoded)
+
+
+class CIFixtureAndBuildTests(unittest.TestCase):
+    def setUp(self):
+        self.env = {'IDP_UI_PROFILE': 'ci-functional', 'DOCKER_CONTEXT': 'default',
+                    'DOCKER_HOST': 'unix:///var/run/docker.sock', 'GITHUB_RUN_ID': '12',
+                    'GITHUB_RUN_ATTEMPT': '2', 'GITHUB_JOB': 'functional', 'GITHUB_SHA': 'a' * 40}
+        self.environment = patch.dict(os.environ, self.env, clear=True)
+        self.environment.start(); self.addCleanup(self.environment.stop)
+        self.temp = tempfile.TemporaryDirectory(prefix='n2-ci-mock-')
+        self.addCleanup(self.temp.cleanup)
+        self.directory = (Path(self.temp.name) / 'idp-ui-b-test').resolve()
+        self.directory.mkdir(mode=0o700)
+        self.state = {'dir': str(self.directory), 'nonce': 'a' * 12,
+                      'ci': n2.ci_identity(), 'resources': [], 'hosts': {}}
+        self.fixture = n2.Fixture(self.state)
+
+    def test_endpoint_rejects_ambiguous_remote_and_tls_configuration(self):
+        for changes in [{'DOCKER_CONTEXT': ''}, {'DOCKER_CONTEXT': 'remote'},
+                        {'DOCKER_HOST': 'tcp://127.0.0.1:2375'},
+                        {'DOCKER_HOST': 'ssh://elsewhere'}, {'DOCKER_TLS_VERIFY': '1'},
+                        {'DOCKER_CERT_PATH': '/private/certs'}]:
+            with self.subTest(changes=changes), patch.dict(os.environ, changes):
+                with self.assertRaisesRegex(ValueError, 'CI Docker requires'):
+                    n2.validate_ci_docker_environment()
+        with patch.object(Path, 'stat', return_value=SimpleNamespace(st_mode=stat.S_IFREG)):
+            with self.assertRaisesRegex(ValueError, 'socket is unavailable'):
+                n2.validate_ci_docker_environment()
+        with patch.object(Path, 'stat', return_value=SimpleNamespace(st_mode=stat.S_IFSOCK)):
+            n2.validate_ci_docker_environment()
+
+    def test_context_endpoint_is_verified_without_global_switch(self):
+        with patch.object(n2, 'validate_ci_docker_environment'), patch.object(n2, 'docker') as docker:
+            docker.return_value = subprocess.CompletedProcess([], 0, json.dumps([
+                {'Endpoints': {'docker': {'Host': 'ssh://elsewhere'}}}]), '')
+            with self.assertRaisesRegex(ValueError, 'resolve to the local'):
+                n2.verify_docker_context()
+            docker.assert_called_once_with('context', 'inspect', 'default')
+
+    def test_docker_uses_bounded_helper_and_propagates_timeout(self):
+        with patch.object(n2, 'validate_ci_docker_environment'), \
+             patch.object(n2, 'run_bounded', side_effect=TimeoutError('deadline')) as bounded, \
+             patch.object(n2.subprocess, 'run') as raw:
+            with self.assertRaises(TimeoutError):
+                n2.docker('info')
+            bounded.assert_called_once_with(['docker', 'info'], input=None, text=True, capture_output=True)
+            raw.assert_not_called()
+
+    def test_invalid_or_different_run_identity_is_refused(self):
+        for key, invalid in [('GITHUB_RUN_ID', '0'), ('GITHUB_RUN_ATTEMPT', '-1'),
+                             ('GITHUB_JOB', '../job'), ('GITHUB_SHA', 'short')]:
+            with self.subTest(key=key), patch.dict(os.environ, {key: invalid}):
+                with self.assertRaisesRegex(ValueError, 'validated GitHub'):
+                    n2.ci_identity()
+        self.fixture.save()
+        with patch.object(n2.tempfile, 'gettempdir', return_value=self.temp.name), \
+             patch.dict(os.environ, {'GITHUB_RUN_ATTEMPT': '3'}), \
+             patch.object(n2, 'docker') as docker:
+            with self.assertRaisesRegex(ValueError, 'different CI run'):
+                n2.Fixture.load(self.directory / 'state.json')
+            docker.assert_not_called()
+
+    def test_load_rechecks_private_path_context_and_labels(self):
+        name = 'idp-n2-linux-' + self.state['nonce'] + '-enabled'
+        self.state['resources'] = [{'kind': 'container', 'name': name, 'id': 'owned-id'}]
+        self.fixture.save()
+        item = {'Id': 'owned-id', 'Config': {'Labels': {
+            n2.OWNER: str(self.directory), 'idp.n2-linux.run': self.state['nonce'],
+            **{'idp.n2-linux.ci.' + key: value for key, value in self.state['ci'].items()}}}}
+        with patch.object(n2.tempfile, 'gettempdir', return_value=self.temp.name), \
+             patch.object(n2, 'verify_docker_context') as verify, patch.object(n2, 'docker') as docker:
+            docker.return_value = subprocess.CompletedProcess([], 0, json.dumps([item]), '')
+            loaded = n2.Fixture.load(self.directory / 'state.json')
+            self.assertEqual(loaded.state['ci'], self.state['ci'])
+            verify.assert_called_once()
+            item['Config']['Labels']['idp.n2-linux.ci.run_id'] = '999'
+            docker.return_value = subprocess.CompletedProcess([], 0, json.dumps([item]), '')
+            with self.assertRaisesRegex(ValueError, 'run ownership mismatch'):
+                n2.Fixture.load(self.directory / 'state.json')
+        self.assertIn('idp.n2-linux.ci.source_sha=' + 'a' * 40, self.fixture.labels())
+
+    def test_foreign_resource_name_is_refused_before_docker(self):
+        with patch.object(n2, 'docker') as docker:
+            with self.assertRaisesRegex(ValueError, 'name or kind mismatch'):
+                self.fixture.inspect_owned({'kind': 'volume', 'name': 'foreign-data'})
+            docker.assert_not_called()
+
+    def test_build_parallelism_bounds_and_default_features_are_preserved(self):
+        self.assertEqual(build.build_jobs('2'), 2)
+        for invalid in ['0', '-1', '17', '2.0', ' 2', '01']:
+            with self.subTest(value=invalid), self.assertRaises(argparse.ArgumentTypeError):
+                build.build_jobs(invalid)
+        dockerfile = (build.REPO / build.DOCKERFILE).read_text()
+        self.assertIn('ARG CARGO_BUILD_JOBS', dockerfile)
+        self.assertIn('cargo build -p embedded-idp-app --release --locked', dockerfile)
+        self.assertNotIn('--no-default-features', dockerfile)
+        self.assertIn('else unset CARGO_BUILD_JOBS', dockerfile)
+
+    def test_build_rejects_foreign_daemon_and_base_architecture_before_build(self):
+        digest = 'example@sha256:' + 'b' * 64
+        for index, (daemon, base) in enumerate([('linux/x86_64', 'linux/arm64'),
+                                                ('linux/arm64', 'linux/amd64')]):
+            output = Path(self.temp.name) / ('public-' + str(index))
+            argv = ['build', '--node-image', digest, '--rust-image', digest,
+                    '--runtime-image', digest, '--output', str(output)]
+            def command(args, **kwargs):
+                return subprocess.CompletedProcess(args, 0, daemon if args[0] == 'docker' else 'a' * 40, '')
+            def run(args, log, context):
+                self.assertNotIn('buildx', args)
+                log.write_text(base + ' sha256:local\n')
+                return 0
+            with self.subTest(daemon=daemon, base=base), patch('sys.argv', argv), \
+                 patch.object(build, 'verify_docker_context'), patch.object(build, 'copy_context', return_value=[]), \
+                 patch.object(build, 'run_command', side_effect=command), \
+                 patch.object(build, 'run_build', side_effect=run), patch('builtins.print'):
+                self.assertEqual(build.main(), 1)
+            self.assertEqual(json.loads((output / 'failure.json').read_text())['error'], 'ValueError')
+
+    def test_load_rejects_group_readable_state_and_symlink(self):
+        self.fixture.save()
+        state_path = self.directory / 'state.json'
+        state_path.chmod(0o640)
+        with patch.object(n2.tempfile, 'gettempdir', return_value=self.temp.name), \
+             patch.object(n2, 'verify_docker_context') as verify:
+            with self.assertRaisesRegex(ValueError, 'remain private'):
+                n2.Fixture.load(state_path)
+            verify.assert_not_called()
+        link = self.directory / 'linked-state.json'
+        link.symlink_to(state_path)
+        with self.assertRaisesRegex(ValueError, 'must not use symlinks'):
+            n2.Fixture.load(link)
+
+    def test_build_log_preserves_order_whitespace_and_timeout_partial_output(self):
+        log = Path(self.temp.name) / 'build.log'
+        output = str(self.directory) + '/line  \nsecond\n'
+        with patch.object(build, 'validate_ci_docker_environment'), \
+             patch.object(build, 'run_bounded', return_value=subprocess.CompletedProcess([], 0, output, '')) as bounded:
+            self.assertEqual(build.run_build(['docker', 'buildx'], log, self.directory), 0)
+            self.assertEqual(log.read_text(), '<BUILD_CONTEXT>/line  \nsecond\n')
+            self.assertEqual(bounded.call_args.kwargs['timeout'], 1800)
+            self.assertEqual(bounded.call_args.kwargs['stderr'], subprocess.STDOUT)
+            self.assertEqual(bounded.call_args.kwargs['env']['DOCKER_CONTEXT'], 'default')
+            self.assertNotIn('GITHUB_SHA', bounded.call_args.kwargs['env'])
+        with patch.object(build, 'validate_ci_docker_environment'), \
+             patch.object(build, 'run_bounded', side_effect=subprocess.TimeoutExpired('docker', 1, output=output.encode())):
+            with self.assertRaises(subprocess.TimeoutExpired):
+                build.run_build(['docker', 'buildx'], log, self.directory)
+            self.assertEqual(log.read_text(), '<BUILD_CONTEXT>/line  \nsecond\n')
+
+    def test_build_failure_records_safe_type_and_removes_temporary_context(self):
+        output = Path(self.temp.name) / 'public'
+        digest = 'example@sha256:' + 'b' * 64
+        argv = ['build', '--node-image', digest, '--rust-image', digest,
+                '--runtime-image', digest, '--output', str(output), '--build-jobs', '2']
+        contexts = []
+        def copy_context(context):
+            contexts.append(context)
+            return [{'path': 'Cargo.toml', 'sha256': 'c' * 64}]
+        with patch('sys.argv', argv), patch.object(build, 'verify_docker_context'), \
+             patch.object(build, 'copy_context', side_effect=copy_context), \
+             patch.object(build, 'run_command', side_effect=lambda args, **kw: subprocess.CompletedProcess(args, 0, 'linux/arm64' if args[0] == 'docker' else 'a' * 40, '')), \
+             patch.object(build, 'run_build', side_effect=TimeoutError('secret must not escape')), \
+             patch('builtins.print'):
+            self.assertEqual(build.main(), 1)
+        failure = json.loads((output / 'failure.json').read_text())
+        self.assertEqual(failure['error'], 'TimeoutError')
+        self.assertNotIn('secret', (output / 'failure.json').read_text())
+        self.assertTrue((output / 'source-manifest.json').exists())
+        self.assertTrue(contexts)
+        self.assertTrue(all(not context.exists() for context in contexts))
+
+    def test_build_cli_passes_jobs_to_both_targets_and_checks_architecture(self):
+        output = Path(self.temp.name) / 'public'
+        digest = 'example@sha256:' + 'b' * 64
+        argv = ['build', '--node-image', digest, '--rust-image', digest,
+                '--runtime-image', digest, '--output', str(output), '--build-jobs', '2']
+        image = json.dumps([{'Id': 'sha256:local', 'Os': 'linux', 'Architecture': 'arm64'}])
+        def command(args, **kwargs):
+            return subprocess.CompletedProcess(args, 0, ('linux/arm64' if args[1] == 'info' else image) if args[0] == 'docker' else 'a' * 40, '')
+        def run_build(args, log, context):
+            log.write_text('linux/arm64 sha256:local\n')
+            return 0
+        with patch('sys.argv', argv), patch.object(build, 'verify_docker_context'), \
+             patch.object(build, 'copy_context', return_value=[]), \
+             patch.object(build, 'run_command', side_effect=command), \
+             patch.object(build, 'run_build', side_effect=run_build) as run:
+            self.assertEqual(build.main(), 0)
+        commands = [call.args[0] for call in run.call_args_list if 'buildx' in call.args[0]]
+        self.assertEqual(len(commands), 2)
+        self.assertTrue(all('CARGO_BUILD_JOBS=2' in command for command in commands))
+        self.assertEqual(json.loads((output / 'image-summary.json').read_text())['cargo_build_jobs'], 2)
 
 
 if __name__ == '__main__':

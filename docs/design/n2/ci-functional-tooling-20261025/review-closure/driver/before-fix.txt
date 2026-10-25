@@ -1,0 +1,2 @@
+Offline pre-fix mock reproduction; no product/service execution.
+BUG reproduced: verify accepted summary-only pack without publication or suite evidence.

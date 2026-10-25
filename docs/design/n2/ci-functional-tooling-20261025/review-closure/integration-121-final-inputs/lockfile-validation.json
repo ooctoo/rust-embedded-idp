@@ -1,0 +1,18 @@
+{
+  "command": [
+    "pnpm",
+    "--dir",
+    "scripts/n2-ci",
+    "install",
+    "--lockfile-only",
+    "--frozen-lockfile",
+    "--offline",
+    "--ignore-scripts",
+    "--store-dir",
+    "<owned temporary store>"
+  ],
+  "exitCode": 0,
+  "dependencyInstallation": false,
+  "browserInstallation": false,
+  "hostNode": "24.19.0; expected engine warning, target 22.23.4 not exercised locally"
+}

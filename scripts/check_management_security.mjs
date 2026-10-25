@@ -1,6 +1,8 @@
 // Opt-in UI-E checks against the disposable UI-B fixture. No .env or persistent tokens.
+import { browserLaunchOptions } from './management_browser.mjs';
+import { functionalOnly, createFunctionalCoverage, finalizeFunctionalRun } from './management_functional.mjs';
 import assert from 'node:assert/strict';
-import { readFile, mkdir, writeFile } from 'node:fs/promises';
+import { readFile, mkdir } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { randomBytes } from 'node:crypto';
 import { realpath } from 'node:fs/promises';
@@ -27,11 +29,13 @@ for (const key of ['enabled', 'disabled', 'fixed', 'choose']) {
   assert.ok(host.mount.startsWith('/') && host.ui.startsWith('/'));
 }
 const { chromium } = await import(process.env.IDP_UI_PLAYWRIGHT_PATH ? pathToFileURL(process.env.IDP_UI_PLAYWRIGHT_PATH).href : 'playwright');
-const browser = await chromium.launch({ headless: process.env.IDP_UI_HEADED !== "1", ...(process.env.IDP_UI_BROWSER_EXECUTABLE ? { executablePath: process.env.IDP_UI_BROWSER_EXECUTABLE } : {}) });
+const browser = await chromium.launch(browserLaunchOptions());
 const output = process.env.IDP_UI_OUTPUT_DIR ?? fixture.dir;
 await mkdir(output, { recursive: true });
+const coverage = createFunctionalCoverage('security', output);
 const contexts = [], cases = [], pageErrors = [], held = new Set(), dialogAnswers = new WeakMap();
 const supplements = [];
+let failure;
 function bounded(promise, stage) {
   let timer;
   return Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`Timed out: ${stage}`)), 15000); })]).finally(() => clearTimeout(timer));
@@ -47,7 +51,7 @@ async function accepting(page, action) {
   try { await action(); } finally { dialogAnswers.delete(page); }
 }
 const id = randomBytes(6).toString('hex');
-const pass = name => { cases.push(name); console.log(`PASS ${name}`); };
+const pass = name => { coverage.pass(name); cases.push(name); console.log(`PASS ${name}`); };
 const button = (p, name) => p.getByRole('button', { name: new RegExp('^' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/([\u3400-\u9fff])(?=[\u3400-\u9fff])/g, '$1\\s*') + '$') });
 const dialog = (p, name) => p.getByRole('dialog', { name, exact: true });
 const settle = p => p.waitForFunction(() => !document.querySelector('.ant-spin-spinning, .ant-spin-blur'));
@@ -312,16 +316,16 @@ try {
   pass('acknowledged account status remains confirmed when the follow-up read fails');
 
   security = await accountEditor(operator, uncertainEmail);
-  for (const width of [320, 390, 768, 1440]) {
-    await p.setViewportSize({ width, height: 900 });
+  for (const width of functionalOnly ? [1440] : [320, 390, 768, 1440]) {
+    if (!functionalOnly) await p.setViewportSize({ width, height: 900 });
     await security.getByLabel('设置新密码', { exact: true }).fill(`UiE-layout-${id}-9!`); await button(security, '更新密码').click();
     const confirmation = dialog(p, '确认更新密码'); await confirmation.waitFor();
     const region = confirmation.getByRole('region', { name: '操作范围与后果' }); assert.equal(await region.getAttribute('tabindex'), '0');
-    await p.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth);
+    if (!functionalOnly) await p.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth);
     await p.waitForFunction(() => document.activeElement?.textContent?.replace(/\s/g, '') === '返回修改');
     await p.waitForFunction(() => document.getAnimations().every(a => a.playState !== 'running' || a.effect?.getTiming().iterations === Infinity));
-    const box = await confirmation.boundingBox(); assert.ok(box.width >= Math.min(280, width - 32) && box.x >= 0 && box.x + box.width <= width + 1);
-    if (width === 320 || width === 1440) await confirmation.screenshot({ animations: 'disabled', path: `${output}/ui-e-account-${width}.png`, mask: [confirmation.locator('input,textarea')] });
+    const box = functionalOnly ? null : await confirmation.boundingBox(); if (!functionalOnly) assert.ok(box.width >= Math.min(280, width - 32) && box.x >= 0 && box.x + box.width <= width + 1);
+    if (!functionalOnly && (width === 320 || width === 1440)) await confirmation.screenshot({ animations: 'disabled', path: `${output}/ui-e-account-${width}.png`, mask: [confirmation.locator('input,textarea')] });
     await button(confirmation, '返回修改').click();
   }
   await p.setViewportSize({ width: 1440, height: 1000 });
@@ -330,7 +334,7 @@ try {
   await p.waitForURL('**/#/platform/accounts'); assert.ok(await security.isVisible());
   assert.ok(await security.getByLabel('设置新密码', { exact: true }).inputValue());
   await goto(p, '#/platform/home'); assert.equal(await dialog(p, '账号安全').count(), 0);
-  pass('password draft rejects hash departure and confirmation is cancel-focused and contained at four widths');
+  pass(functionalOnly ? 'password draft rejects hash departure and normal desktop confirmation is cancel-focused' : 'password draft rejects hash departure and confirmation is cancel-focused and contained at four widths');
 
   const disabledTest = await open('disabled', '#/system/accounts');
   const disabledAccount = (await writeApi(disabledTest, 'POST', '/platform/accounts', { tenant_id: '0', email: `uie-disabled-${id}@example.test`, password: fixture.password })).account;
@@ -392,6 +396,7 @@ try {
   } finally { latch.release(); await wp.unroute(latePath); }
   pass('pending account write blocks departure and fully delivered success after same-session logout cannot restore workspace or replay');
 
+  if (!functionalOnly) {
   for (const width of [320, 390, 768, 1440]) {
     await p.setViewportSize({ width, height: 900 });
     for (const hash of ['#/platform/accounts', '#/tenants/tenant-a/devices', '#/tenants/tenant-a/sessions', '#/tenants/tenant-a/audit', '#/tenants/tenant-a/diagnostic']) {
@@ -402,6 +407,7 @@ try {
   }
   await p.setViewportSize({ width: 1440, height: 1000 });
   pass('all five security surfaces fit 320 390 768 and 1440 viewports with unique form IDs');
+  }
 
   await runDeviceChecks({ fixture, id, output, browser, contexts, pageErrors, open, api, writeApi, sql, button, dialog, goto, accepting, bounded, gate, settle, prepareDeparture, checkDeparture, supplements, pass });
   await runSessionChecks({ fixture, id, output, browser, contexts, pageErrors, open, api, writeApi, sql, button, dialog, goto, accepting, bounded, gate, settle, prepareDeparture, checkDeparture, supplements, pass });
@@ -466,15 +472,15 @@ try {
   }
   assert.deepEqual(pageErrors, []);
 } catch (error) {
+  failure = error;
   for (const release of held) release();
   console.error(`UI-E checks failed after: ${cases.at(-1) ?? 'startup'}`);
   for (const [index, context] of contexts.entries()) for (const page of context.pages()) {
-    await page.screenshot({ animations: 'disabled', path: `${output}/ui-e-failure-${index}.png`, mask: [page.locator('input, textarea, [contenteditable=true]')] }).catch(() => {});
+    if (!functionalOnly) await page.screenshot({ animations: 'disabled', path: `${output}/ui-e-failure-${index}.png`, mask: [page.locator('input, textarea, [contenteditable=true]')] }).catch(() => {});
   }
   throw error;
 } finally {
   for (const release of held) release();
-  await writeFile(`${output}/ui-e-results.json`, JSON.stringify({ cases, pageErrors, evidence: 'isolated compiled hosts and PostgreSQL; temporary SQL seeds explicitly scoped; writes and independent reads real; error and delayed responses explicitly injected; no production or deployment acceptance' }, null, 2));
-  await Promise.all(contexts.map(context => context.close().catch(() => {})));
-  await browser.close();
+  await finalizeFunctionalRun({ coverage, contexts, browser, failure,
+    resultPath: `${output}/ui-e-results.json`, result: { cases, pageErrors, evidence: 'isolated compiled hosts and PostgreSQL; temporary SQL seeds explicitly scoped; writes and independent reads real; error and delayed responses explicitly injected; no production or deployment acceptance' } });
 }

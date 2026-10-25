@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "/tmp/n2-review-primary/static-review.py", line 29, in <module>
+    assert dest.exists(),(p,target)
+AssertionError: (PosixPath('/Volumes/Workspace/code/github/ooctoo/rust-embedded-idp/docs/n2-functional-ci-tooling-result.md'), 'design/n2/ci-functional-tooling-20261025/review-closure/final/offline-results.json')

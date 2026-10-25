@@ -6,6 +6,7 @@ import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { browserLaunchOptions } from './management_browser.mjs';
 
 const fixturePath = process.env.IDP_UI_TEST_FIXTURE;
 const output = process.env.IDP_UI_OUTPUT_DIR;
@@ -92,9 +93,8 @@ function clientConfiguration(sentinel = false) {
 try {
   profile = await mkdtemp(join(tmpdir(), 'idp-n2-linux-l05-'));
   context = await chromium.launchPersistentContext(profile, {
-    headless: false,
-    executablePath,
-    viewport: { width: 1440, height: 900 },
+    ...(process.env.IDP_UI_PROFILE === 'ci-functional' ? browserLaunchOptions() : { headless: false, executablePath }),
+    viewport: { width: 1440, height: process.env.IDP_UI_PROFILE === 'ci-functional' ? 1000 : 900 },
     reducedMotion: 'reduce',
   });
   browserVersion = context.browser().version();
@@ -263,9 +263,9 @@ try {
   }
 
   const results = {
-    scope: 'N2 L05 Linux arm64 app-container restart with Mac Chrome',
+    scope: process.env.IDP_UI_PROFILE === 'ci-functional' ? 'CI-FUNC-ARM64-01 L05 Linux headless Chromium' : 'N2 L05 Linux arm64 app-container restart with Mac Chrome',
     browserVersion,
-    headed: true,
+    headed: process.env.IDP_UI_PROFILE !== 'ci-functional',
     profileMode: 'new ordinary persistent profile owned by this run',
     restart: { stopExitCode, oomKilled: stopOomKilled, sameOrigin: host.origin, sameMount: host.mount, sameUiPath: host.ui },
     sessions: {

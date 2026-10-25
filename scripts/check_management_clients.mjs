@@ -1,5 +1,7 @@
 // Opt-in UI-C checks against the private UI-B fixture only. Network injections
 // below are explicitly labelled; they do not simulate real packet loss.
+import { browserLaunchOptions } from './management_browser.mjs';
+import { functionalOnly, createFunctionalCoverage, finalizeFunctionalRun } from './management_functional.mjs';
 import assert from 'node:assert/strict';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
@@ -10,13 +12,15 @@ assert.match(fixture.container, /^idp-ui-b-[a-f0-9]+$/);
 for (const schema of Object.values(fixture.schemas)) assert.match(schema, /^uib_(enabled|disabled)_[a-f0-9]+$/);
 for (const host of Object.values(fixture.hosts)) assert.equal(new URL(host.origin).hostname, '127.0.0.1');
 const { chromium } = await import(process.env.IDP_UI_PLAYWRIGHT_PATH ? pathToFileURL(process.env.IDP_UI_PLAYWRIGHT_PATH).href : 'playwright');
-const browser = await chromium.launch({ headless: process.env.IDP_UI_HEADED !== "1", ...(process.env.IDP_UI_BROWSER_EXECUTABLE ? { executablePath: process.env.IDP_UI_BROWSER_EXECUTABLE } : {}) });
+const browser = await chromium.launch(browserLaunchOptions());
 const output = process.env.IDP_UI_OUTPUT_DIR ?? fixture.dir;
 await mkdir(output, { recursive: true });
+const coverage = createFunctionalCoverage('clients', output);
 const contexts = [], cases = [], errors = [], contrast = [];
 const writeDiagnostics = [];
+let failure;
 const heldResponses = new Set();
-const pass = name => { cases.push(name); console.log(`PASS ${name}`); };
+const pass = name => { coverage.pass(name); cases.push(name); console.log(`PASS ${name}`); };
 const runId = randomBytes(6).toString('hex');
 const idFor = value => `${value}-${runId}`;
 const lookupUrl = (base, id) => `${base}/-/lookup?client_id=${encodeURIComponent(id)}`;
@@ -146,7 +150,7 @@ try {
   pass('Fixed nonzero cannot open platform clients');
 
   const test = await open('enabled'); const { page, host } = test; await waitList(page);
-  await textContrast(page.locator('.management-client-page .ant-typography-secondary'), 'client page explanation');
+  if (!functionalOnly) await textContrast(page.locator('.management-client-page .ant-typography-secondary'), 'client page explanation');
   const clientWrites = [];
   let scopedRequests = 0;
   page.on('request', request => {
@@ -182,11 +186,11 @@ try {
   const publicGet = await page.request.get(host.origin + host.mount + '/admin/clients/' + idFor('uic-confidential'), { headers: { authorization: test.getBearer() } });
   assert.ok(publicGet.ok()); assert.equal((await publicGet.json()).client_secret_configured, false); assert.ok(scopedRequests > 0);
   await drawer(page).getByText('不适用', { exact: true }).first().waitFor();
-  await textContrast(drawer(page).locator('.ant-form-item-extra'), 'field constraints');
-  await textContrast(drawer(page).locator('.ant-descriptions-item-label'), 'current configuration labels');
-  await page.screenshot({ path: `${output}/ui-c-detail.png`, animations: 'disabled' }); await close(page);
+  if (!functionalOnly) await textContrast(drawer(page).locator('.ant-form-item-extra'), 'field constraints');
+  if (!functionalOnly) await textContrast(drawer(page).locator('.ant-descriptions-item-label'), 'current configuration labels');
+  if (!functionalOnly) await page.screenshot({ path: `${output}/ui-c-detail.png`, animations: 'disabled' }); await close(page);
   pass('real confidential create, blank retain, replacement and conversion to public; secret absent from summary, URL and storage');
-  pass('sampled explanatory text, field hints and configuration labels meet 4.5:1 on white');
+  if (!functionalOnly) pass('sampled explanatory text, field hints and configuration labels meet 4.5:1 on white');
 
   // Real API seeding uses the currently authenticated bearer only in memory.
   const base = host.origin + host.mount + '/admin/clients';
@@ -347,13 +351,14 @@ try {
   await button(drawer(page), '关闭配置').click();
   assert.equal(await drawer(page).getByLabel('名称', { exact: true }).inputValue(), 'UI C dirty draft');
   await review(page);
-  await confirm(page).screenshot({ path: `${output}/ui-c-confirm.png`, animations: 'allow' });
+  if (!functionalOnly) await confirm(page).screenshot({ path: `${output}/ui-c-confirm.png`, animations: 'allow' });
   await button(confirm(page), '返回修改').click();
   await button(drawer(page), '核对并保存').waitFor();
   await page.waitForFunction(() => document.activeElement?.textContent?.includes('核对并保存'));
   pass('cancel dirty reload and close preserve draft; confirmation returns focus');
   // Discard only the synthetic draft after verifying the cancellation path.
   page.removeAllListeners('dialog'); page.on('dialog', dialog => dialog.accept()); await close(page);
+  if (!functionalOnly) {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.setViewportSize({ width: 320, height: 900 });
   await locate(page, idFor('uic-enabled-public'));
@@ -398,8 +403,9 @@ try {
 
   }
   await page.evaluate(() => window.scrollTo(0, 0));
-  await page.screenshot({ path: `${output}/ui-c-clients.png`, animations: 'disabled' });
+  if (!functionalOnly) await page.screenshot({ path: `${output}/ui-c-clients.png`, animations: 'disabled' });
   pass('320/390/768/1440 document, drawer and modal fit; narrow table scroll and keyboard entry/close work');
+  }
 
   // UI-C-specific guard and coordinator cases. The menu is covered by the
   // drawer/modal; dispatch activates the existing menu handler, not a fake click.
@@ -554,6 +560,7 @@ try {
   }
   assert.deepEqual(errors, []);
 } catch (error) {
+  failure = error;
   const surfaces = [];
   for (const context of contexts) for (const page of context.pages()) {
     surfaces.push(await page.evaluate(() => ({
@@ -569,13 +576,12 @@ try {
   await writeFile(`${output}/ui-c-write-diagnostics.json`, JSON.stringify(writeDiagnostics, null, 2));
   console.error(`UI-C failed after: ${cases.at(-1) ?? 'startup'}`);
   for (const [index, context] of contexts.entries()) for (const page of context.pages()) {
-    await page.screenshot({ path: `${output}/ui-c-failure-${index}.png`, animations: 'disabled',
+    if (!functionalOnly) await page.screenshot({ path: `${output}/ui-c-failure-${index}.png`, animations: 'disabled',
       mask: [page.locator('input, textarea, [contenteditable=true]')] }).catch(() => {});
   }
   throw error;
 } finally {
   for (const release of heldResponses) release();
-  await writeFile(`${output}/ui-c-results.json`, JSON.stringify({ cases, pageErrors: errors, contrast, evidence: 'isolated real hosts; list states, failed/malformed reads and readback failure injected; unknown writes complete real POST and independent GET before injected abort; UI-C hash/history and covered-menu guards tested in both modes; late real detail/POST responses held until same-session cross-tab real logout, then delivered' }, null, 2));
-  for (const context of contexts) await context.close();
-  await browser.close();
+  await finalizeFunctionalRun({ coverage, contexts, browser, failure,
+    resultPath: `${output}/ui-c-results.json`, result: { cases, pageErrors: errors, contrast, evidence: 'isolated real hosts; list states, failed/malformed reads and readback failure injected; unknown writes complete real POST and independent GET before injected abort; UI-C hash/history and covered-menu guards tested in both modes; late real detail/POST responses held until same-session cross-tab real logout, then delivered' } });
 }
