@@ -1,0 +1,103 @@
+{
+  "suite": "n2_mac",
+  "profile": "ci-functional",
+  "status": "passed",
+  "exitCode": 0,
+  "headed": false,
+  "channel": "chromium",
+  "viewport": [
+    1440,
+    1000
+  ],
+  "freshFixture": true,
+  "n2Layout": false,
+  "commands": [
+    {
+      "tool": "scripts/check_management_n2_mac.mjs",
+      "exitCode": 0,
+      "diagnostic": {
+        "sourceFrames": []
+      }
+    }
+  ],
+  "cleanup": {
+    "objects": [
+      {
+        "name": "idp-n2-linux-95f2f222e628-prepare-8b0903",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-95f2f222e628-prepare-a35026",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-95f2f222e628-prepare-a726a1",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-95f2f222e628-prepare-b31aa0",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-95f2f222e628-enabled",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-95f2f222e628-prepare-491df2",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-95f2f222e628-prepare-d93cb2",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-95f2f222e628-prepare-ae49d2",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-95f2f222e628-disabled",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-95f2f222e628-prepare-f579c6",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-95f2f222e628-fixed",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-95f2f222e628-prepare-587764",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-95f2f222e628-choose",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-ui-b-95f2f222e628",
+        "exitCode": 0,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-95f2f222e628-data",
+        "removedOrAbsent": true
+      },
+      {
+        "name": "idp-n2-linux-95f2f222e628-secrets",
+        "removedOrAbsent": true
+      },
+      {
+        "name": "idp-n2-linux-95f2f222e628",
+        "removedOrAbsent": true
+      }
+    ],
+    "errors": [],
+    "privateDirectoryRemoved": true
+  },
+  "durationSeconds": 55.48
+}

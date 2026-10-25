@@ -1,0 +1,52 @@
+{
+  "sourceSha": "d7214815dd168c97532495b884fea8f4fedfac7d",
+  "checkoutTreeMatchesGit": true,
+  "buildInputsHashCheckedAgainstGit": 259,
+  "toolInputsHashCheckedAgainstGit": 43,
+  "suites": [
+    {
+      "suite": "gates",
+      "status": "passed",
+      "executedGroups": 10,
+      "missingGroups": 0,
+      "cleanupErrors": [],
+      "privateDirectoryRemoved": true
+    },
+    {
+      "suite": "n2_mac",
+      "status": "failed",
+      "executedGroups": 7,
+      "missingGroups": 1,
+      "cleanupErrors": [],
+      "privateDirectoryRemoved": true
+    },
+    {
+      "suite": "navigation",
+      "status": "not_executed"
+    },
+    {
+      "suite": "clients",
+      "status": "not_executed"
+    },
+    {
+      "suite": "authorization",
+      "status": "not_executed"
+    },
+    {
+      "suite": "security",
+      "status": "not_executed"
+    },
+    {
+      "suite": "n1",
+      "status": "not_executed"
+    },
+    {
+      "suite": "console",
+      "status": "not_executed"
+    }
+  ],
+  "fullBatchAccepted": false,
+  "failureClass": "premature refresh-count assertion before both real reload completions",
+  "artifactSealAndExpiryReview": "artifact-verification.json",
+  "publicationLogArchival": "all nine ignored .log attachments explicitly included in repair commit de50eb9d02fe977ec60932c0e7072aba514c6f69"
+}

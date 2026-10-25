@@ -1,0 +1,103 @@
+{
+  "suite": "clients",
+  "profile": "ci-functional",
+  "status": "passed",
+  "exitCode": 0,
+  "headed": false,
+  "channel": "chromium",
+  "viewport": [
+    1440,
+    1000
+  ],
+  "freshFixture": true,
+  "n2Layout": false,
+  "commands": [
+    {
+      "tool": "scripts/check_management_clients.mjs",
+      "exitCode": 0,
+      "diagnostic": {
+        "sourceFrames": []
+      }
+    }
+  ],
+  "cleanup": {
+    "objects": [
+      {
+        "name": "idp-n2-linux-340b1c0df5d2-prepare-693ace",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-340b1c0df5d2-prepare-078529",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-340b1c0df5d2-prepare-23f41e",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-340b1c0df5d2-prepare-c7197a",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-340b1c0df5d2-enabled",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-340b1c0df5d2-prepare-d24a64",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-340b1c0df5d2-prepare-ae13d8",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-340b1c0df5d2-prepare-a00381",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-340b1c0df5d2-disabled",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-340b1c0df5d2-prepare-9f203b",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-340b1c0df5d2-fixed",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-340b1c0df5d2-prepare-7cc8a5",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-340b1c0df5d2-choose",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-ui-b-340b1c0df5d2",
+        "exitCode": 0,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-340b1c0df5d2-data",
+        "removedOrAbsent": true
+      },
+      {
+        "name": "idp-n2-linux-340b1c0df5d2-secrets",
+        "removedOrAbsent": true
+      },
+      {
+        "name": "idp-n2-linux-340b1c0df5d2",
+        "removedOrAbsent": true
+      }
+    ],
+    "errors": [],
+    "privateDirectoryRemoved": true
+  },
+  "durationSeconds": 92.58
+}

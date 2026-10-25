@@ -1,0 +1,844 @@
+CI-FUNC-ARM64-01	Set up job	﻿2026-10-25T10:31:09.3911829Z Current runner version: '2.338.0'
+CI-FUNC-ARM64-01	Set up job	2026-10-25T10:31:09.3948418Z ##[group]Runner Image Provisioner
+CI-FUNC-ARM64-01	Set up job	2026-10-25T10:31:09.3949890Z Hosted Compute Agent
+CI-FUNC-ARM64-01	Set up job	2026-10-25T10:31:09.3950640Z Version: 20261021.618
+CI-FUNC-ARM64-01	Set up job	2026-10-25T10:31:09.3951333Z Commit: 21505ad2541d5be6135ed84fc33697146cf75b8e
+CI-FUNC-ARM64-01	Set up job	2026-10-25T10:31:09.3952165Z Build Date: 2026-10-21T00:45:21Z
+CI-FUNC-ARM64-01	Set up job	2026-10-25T10:31:09.3952916Z Worker ID: {c688813f-4a1a-4c81-84ec-90786b25b35d}
+CI-FUNC-ARM64-01	Set up job	2026-10-25T10:31:09.3953605Z Region: northcentralus
+CI-FUNC-ARM64-01	Set up job	2026-10-25T10:31:09.3954333Z Cloud: Azure
+CI-FUNC-ARM64-01	Set up job	2026-10-25T10:31:09.3954891Z ##[endgroup]
+CI-FUNC-ARM64-01	Set up job	2026-10-25T10:31:09.3957610Z ##[group]Operating System
+CI-FUNC-ARM64-01	Set up job	2026-10-25T10:31:09.3958299Z Ubuntu
+CI-FUNC-ARM64-01	Set up job	2026-10-25T10:31:09.3958818Z 24.04.5
+CI-FUNC-ARM64-01	Set up job	2026-10-25T10:31:09.3959390Z LTS
+CI-FUNC-ARM64-01	Set up job	2026-10-25T10:31:09.3959900Z ##[endgroup]
+CI-FUNC-ARM64-01	Set up job	2026-10-25T10:31:09.3960457Z ##[group]Runner Image
+CI-FUNC-ARM64-01	Set up job	2026-10-25T10:31:09.3961188Z Image: ubuntu-24.04-arm
+CI-FUNC-ARM64-01	Set up job	2026-10-25T10:31:09.3961768Z Version: 20261012.149.1
+CI-FUNC-ARM64-01	Set up job	2026-10-25T10:31:09.3962957Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24-arm64/20261012.149/images/ubuntu/Ubuntu2404-Arm64-Readme.md
+CI-FUNC-ARM64-01	Set up job	2026-10-25T10:31:09.3964792Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24-arm64%2F20261012.149
+CI-FUNC-ARM64-01	Set up job	2026-10-25T10:31:09.3966163Z ##[endgroup]
+CI-FUNC-ARM64-01	Set up job	2026-10-25T10:31:09.3967273Z ##[group]GITHUB_TOKEN Permissions
+CI-FUNC-ARM64-01	Set up job	2026-10-25T10:31:09.3970585Z Contents: read
+CI-FUNC-ARM64-01	Set up job	2026-10-25T10:31:09.3971258Z Metadata: read
+CI-FUNC-ARM64-01	Set up job	2026-10-25T10:31:09.3971934Z ##[endgroup]
+CI-FUNC-ARM64-01	Set up job	2026-10-25T10:31:09.3975739Z Secret source: Actions
+CI-FUNC-ARM64-01	Set up job	2026-10-25T10:31:09.3976871Z Cache mode: write
+CI-FUNC-ARM64-01	Set up job	2026-10-25T10:31:09.3977851Z Prepare workflow directory
+CI-FUNC-ARM64-01	Set up job	2026-10-25T10:31:09.4433406Z Prepare all required actions
+CI-FUNC-ARM64-01	Set up job	2026-10-25T10:31:09.4484215Z Getting action download info
+CI-FUNC-ARM64-01	Set up job	2026-10-25T10:31:09.6484647Z Download action repository 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' (SHA:3d3c42e5aac5ba805825da76410c181273ba90b1)
+CI-FUNC-ARM64-01	Set up job	2026-10-25T10:31:09.7799959Z Download action repository 'actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1' (SHA:949feb2413d6458794dcd2491c4babbbce0c15c1)
+CI-FUNC-ARM64-01	Set up job	2026-10-25T10:31:10.1282989Z Download action repository 'actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9' (SHA:cf430e030ddbb5b0abf93d22962f4752f3646cd9)
+CI-FUNC-ARM64-01	Set up job	2026-10-25T10:31:10.5734996Z Complete job name: CI-FUNC-ARM64-01
+CI-FUNC-ARM64-01	Initialize private work and public evidence roots	﻿2026-10-25T10:31:10.6643282Z ##[group]Run python3 -B - <<'PY'
+CI-FUNC-ARM64-01	Initialize private work and public evidence roots	2026-10-25T10:31:10.6644439Z ^[[36;1mpython3 -B - <<'PY'^[[0m
+CI-FUNC-ARM64-01	Initialize private work and public evidence roots	2026-10-25T10:31:10.6645157Z ^[[36;1mimport os^[[0m
+CI-FUNC-ARM64-01	Initialize private work and public evidence roots	2026-10-25T10:31:10.6646335Z ^[[36;1mimport re^[[0m
+CI-FUNC-ARM64-01	Initialize private work and public evidence roots	2026-10-25T10:31:10.6647074Z ^[[36;1mimport time^[[0m
+CI-FUNC-ARM64-01	Initialize private work and public evidence roots	2026-10-25T10:31:10.6647811Z ^[[36;1mfrom pathlib import Path^[[0m
+CI-FUNC-ARM64-01	Initialize private work and public evidence roots	2026-10-25T10:31:10.6649221Z ^[[36;1mrun_id, attempt = os.environ['GITHUB_RUN_ID'], os.environ['GITHUB_RUN_ATTEMPT']^[[0m
+CI-FUNC-ARM64-01	Initialize private work and public evidence roots	2026-10-25T10:31:10.6650504Z ^[[36;1mif not all(re.fullmatch(r'[1-9][0-9]*', value) for value in [run_id, attempt]):^[[0m
+CI-FUNC-ARM64-01	Initialize private work and public evidence roots	2026-10-25T10:31:10.6651715Z ^[[36;1m    raise RuntimeError('Invalid run identity')^[[0m
+CI-FUNC-ARM64-01	Initialize private work and public evidence roots	2026-10-25T10:31:10.6652712Z ^[[36;1mroot = Path(os.environ['RUNNER_TEMP']).resolve()^[[0m
+CI-FUNC-ARM64-01	Initialize private work and public evidence roots	2026-10-25T10:31:10.6653699Z ^[[36;1mwork = root / f'idp-n2-ci-{run_id}-{attempt}'^[[0m
+CI-FUNC-ARM64-01	Initialize private work and public evidence roots	2026-10-25T10:31:10.6654804Z ^[[36;1mpublic = root / 'n2-public' / run_id / attempt^[[0m
+CI-FUNC-ARM64-01	Initialize private work and public evidence roots	2026-10-25T10:31:10.6656079Z ^[[36;1mif Path(os.environ['N2_WORK']) != work or Path(os.environ['N2_PUBLIC']) != public:^[[0m
+CI-FUNC-ARM64-01	Initialize private work and public evidence roots	2026-10-25T10:31:10.6657574Z ^[[36;1m    raise RuntimeError('CI initialization path mismatch')^[[0m
+CI-FUNC-ARM64-01	Initialize private work and public evidence roots	2026-10-25T10:31:10.6658669Z ^[[36;1mpaths = [work, work / 'tmp', public, work / 'job-started-at']^[[0m
+CI-FUNC-ARM64-01	Initialize private work and public evidence roots	2026-10-25T10:31:10.6659679Z ^[[36;1mfor path in paths:^[[0m
+CI-FUNC-ARM64-01	Initialize private work and public evidence roots	2026-10-25T10:31:10.6660598Z ^[[36;1m    if any(part.is_symlink() for part in [path, *path.parents]):^[[0m
+CI-FUNC-ARM64-01	Initialize private work and public evidence roots	2026-10-25T10:31:10.6661743Z ^[[36;1m        raise RuntimeError('CI initialization symlink rejected')^[[0m
+CI-FUNC-ARM64-01	Initialize private work and public evidence roots	2026-10-25T10:31:10.6662729Z ^[[36;1mos.umask(0o077)^[[0m
+CI-FUNC-ARM64-01	Initialize private work and public evidence roots	2026-10-25T10:31:10.6663491Z ^[[36;1mfor path in [work, work / 'tmp', public]:^[[0m
+CI-FUNC-ARM64-01	Initialize private work and public evidence roots	2026-10-25T10:31:10.6664501Z ^[[36;1m    path.mkdir(parents=True, exist_ok=True, mode=0o700)^[[0m
+CI-FUNC-ARM64-01	Initialize private work and public evidence roots	2026-10-25T10:31:10.6665679Z ^[[36;1m    if path.stat().st_mode & 0o077:^[[0m
+CI-FUNC-ARM64-01	Initialize private work and public evidence roots	2026-10-25T10:31:10.6667688Z ^[[36;1m        raise RuntimeError('CI roots require owner-only permissions')^[[0m
+CI-FUNC-ARM64-01	Initialize private work and public evidence roots	2026-10-25T10:31:10.6668875Z ^[[36;1m(work / 'job-started-at').write_text(str(time.time()) + '\n')^[[0m
+CI-FUNC-ARM64-01	Initialize private work and public evidence roots	2026-10-25T10:31:10.6669931Z ^[[36;1mif os.environ.get('GITHUB_ENV'):^[[0m
+CI-FUNC-ARM64-01	Initialize private work and public evidence roots	2026-10-25T10:31:10.6670958Z ^[[36;1m    with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as stream:^[[0m
+CI-FUNC-ARM64-01	Initialize private work and public evidence roots	2026-10-25T10:31:10.6672112Z ^[[36;1m        for name in ['N2_WORK', 'N2_PUBLIC', 'TMPDIR', 'PLAYWRIGHT_BROWSERS_PATH']:^[[0m
+CI-FUNC-ARM64-01	Initialize private work and public evidence roots	2026-10-25T10:31:10.6673299Z ^[[36;1m            stream.write(name + '=' + os.environ[name] + '\n')^[[0m
+CI-FUNC-ARM64-01	Initialize private work and public evidence roots	2026-10-25T10:31:10.6674221Z ^[[36;1mPY^[[0m
+CI-FUNC-ARM64-01	Initialize private work and public evidence roots	2026-10-25T10:31:10.6779281Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+CI-FUNC-ARM64-01	Initialize private work and public evidence roots	2026-10-25T10:31:10.6780862Z env:
+CI-FUNC-ARM64-01	Initialize private work and public evidence roots	2026-10-25T10:31:10.6781659Z   PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT: 30000
+CI-FUNC-ARM64-01	Initialize private work and public evidence roots	2026-10-25T10:31:10.6782464Z   CARGO_BUILD_JOBS: 2
+CI-FUNC-ARM64-01	Initialize private work and public evidence roots	2026-10-25T10:31:10.6783354Z   CI: true
+CI-FUNC-ARM64-01	Initialize private work and public evidence roots	2026-10-25T10:31:10.6784122Z   N2_WORK: /home/runner/work/_temp/idp-n2-ci-40185099189-1
+CI-FUNC-ARM64-01	Initialize private work and public evidence roots	2026-10-25T10:31:10.6785131Z   N2_PUBLIC: /home/runner/work/_temp/n2-public/40185099189/1
+CI-FUNC-ARM64-01	Initialize private work and public evidence roots	2026-10-25T10:31:10.6786586Z   TMPDIR: /home/runner/work/_temp/idp-n2-ci-40185099189-1/tmp
+CI-FUNC-ARM64-01	Initialize private work and public evidence roots	2026-10-25T10:31:10.6787757Z   PLAYWRIGHT_BROWSERS_PATH: /home/runner/work/_temp/idp-n2-ci-40185099189-1/browsers
+CI-FUNC-ARM64-01	Initialize private work and public evidence roots	2026-10-25T10:31:10.6788832Z ##[endgroup]
+CI-FUNC-ARM64-01	Checkout reviewed ref	﻿2026-10-25T10:31:10.7431512Z ##[group]Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.7432658Z with:
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.7433297Z   persist-credentials: false
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.7434148Z   fetch-depth: 1
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.7434863Z   repository: ooctoo/rust-embedded-idp
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.7439487Z   token: ***
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.7440177Z   ssh-strict: true
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.7440820Z   ssh-user: git
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.7441539Z   clean: true
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.7442201Z   sparse-checkout-cone-mode: true
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.7442943Z   fetch-tags: false
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.7443719Z   show-progress: true
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.7444399Z   lfs: false
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.7445081Z   submodules: false
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.7445990Z   set-safe-directory: true
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.7446754Z   allow-unsafe-pr-checkout: false
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.7447558Z env:
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.7448239Z   PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT: 30000
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.7449094Z   CARGO_BUILD_JOBS: 2
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.7449745Z   CI: true
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.7450693Z   N2_WORK: /home/runner/work/_temp/idp-n2-ci-40185099189-1
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.7451647Z   N2_PUBLIC: /home/runner/work/_temp/n2-public/40185099189/1
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.7452656Z   TMPDIR: /home/runner/work/_temp/idp-n2-ci-40185099189-1/tmp
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.7453847Z   PLAYWRIGHT_BROWSERS_PATH: /home/runner/work/_temp/idp-n2-ci-40185099189-1/browsers
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.7454874Z ##[endgroup]
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.8280703Z Syncing repository: ooctoo/rust-embedded-idp
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.8283311Z ##[group]Getting Git version info
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.8284674Z Working directory is '/home/runner/work/rust-embedded-idp/rust-embedded-idp'
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.8286667Z [command]/usr/bin/git version
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.8310319Z git version 2.55.0
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.8331485Z ##[endgroup]
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.8341254Z Temporarily overriding HOME='/home/runner/work/_temp/1b830921-a19d-43f9-8e94-556f4267ea5b' before making global git config changes
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.8342981Z Adding repository directory to the temporary git global config as a safe directory
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.8346307Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/rust-embedded-idp/rust-embedded-idp
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.8378342Z Deleting the contents of '/home/runner/work/rust-embedded-idp/rust-embedded-idp'
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.8383401Z ##[group]Determining repository object format
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.8385517Z ##[endgroup]
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.8387183Z ##[group]Initializing the repository
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.8389905Z [command]/usr/bin/git init /home/runner/work/rust-embedded-idp/rust-embedded-idp
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.8475900Z hint: Using 'master' as the name for the initial branch. This default branch name
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.8477563Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.8479241Z hint: to use in all of your new repositories, which will suppress this warning,
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.8480522Z hint: call:
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.8481380Z hint:
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.8482425Z hint: 	git config --global init.defaultBranch <name>
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.8483448Z hint:
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.8484596Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.8486281Z hint: 'development'. The just-created branch can be renamed via this command:
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.8487548Z hint:
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.8489773Z hint: 	git branch -m <name>
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.8490833Z hint:
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.8492167Z hint: Disable this message with "git config set advice.defaultBranchName false"
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.8494015Z Initialized empty Git repository in /home/runner/work/rust-embedded-idp/rust-embedded-idp/.git/
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.8497826Z [command]/usr/bin/git remote add origin https://github.com/ooctoo/rust-embedded-idp
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.8528252Z ##[endgroup]
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.8529768Z ##[group]Disabling automatic garbage collection
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.8533156Z [command]/usr/bin/git config --local gc.auto 0
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.8570980Z ##[endgroup]
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.8572875Z ##[group]Setting up auth
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.8573685Z Removing SSH command configuration
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.8589175Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.8621157Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.8902480Z Removing HTTP extra header
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.8908366Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.8941179Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.9125507Z Removing includeIf entries pointing to credentials config files
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.9130236Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.9160698Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.9366864Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-123ee0ac-896c-417d-ba2e-4f839e684b8b.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.9406220Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/rust-embedded-idp/rust-embedded-idp/.git.path /home/runner/work/_temp/git-credentials-123ee0ac-896c-417d-ba2e-4f839e684b8b.config
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.9436651Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/rust-embedded-idp/rust-embedded-idp/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-123ee0ac-896c-417d-ba2e-4f839e684b8b.config
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.9467598Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-123ee0ac-896c-417d-ba2e-4f839e684b8b.config
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.9500301Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-123ee0ac-896c-417d-ba2e-4f839e684b8b.config
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.9533012Z ##[endgroup]
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.9534214Z ##[group]Fetching the repository
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:10.9539893Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +de50eb9d02fe977ec60932c0e7072aba514c6f69:refs/remotes/origin/codex/management-console-ui-b
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:11.8746806Z From https://github.com/ooctoo/rust-embedded-idp
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:11.8748775Z  * [new ref]         de50eb9d02fe977ec60932c0e7072aba514c6f69 -> origin/codex/management-console-ui-b
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:11.8756097Z [command]/usr/bin/git branch --list --remote origin/codex/management-console-ui-b
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:11.8779499Z   origin/codex/management-console-ui-b
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:11.8786686Z [command]/usr/bin/git rev-parse refs/remotes/origin/codex/management-console-ui-b
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:11.8808337Z de50eb9d02fe977ec60932c0e7072aba514c6f69
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:11.8817373Z ##[endgroup]
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:11.8818547Z ##[group]Determining the checkout info
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:11.8819873Z ##[endgroup]
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:11.8820952Z [command]/usr/bin/git sparse-checkout disable
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:11.8860648Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:11.8891792Z ##[group]Checking out the ref
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:11.8895198Z [command]/usr/bin/git checkout --progress --force -B codex/management-console-ui-b refs/remotes/origin/codex/management-console-ui-b
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:12.0225943Z Switched to a new branch 'codex/management-console-ui-b'
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:12.0228476Z branch 'codex/management-console-ui-b' set up to track 'origin/codex/management-console-ui-b'.
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:12.0241694Z ##[endgroup]
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:12.0277038Z [command]/usr/bin/git log -1 --format=%H
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:12.0302531Z de50eb9d02fe977ec60932c0e7072aba514c6f69
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:12.0311706Z ##[group]Removing auth
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:12.0312599Z Removing SSH command configuration
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:12.0315061Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:12.0346438Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:12.0537944Z Removing HTTP extra header
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:12.0541126Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:12.0575122Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:12.0773180Z Removing includeIf entries pointing to credentials config files
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:12.0775182Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:12.0800048Z includeif.gitdir:/home/runner/work/rust-embedded-idp/rust-embedded-idp/.git.path
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:12.0802019Z includeif.gitdir:/home/runner/work/rust-embedded-idp/rust-embedded-idp/.git/worktrees/*.path
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:12.0803527Z includeif.gitdir:/github/workspace/.git.path
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:12.0804610Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:12.0808884Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/rust-embedded-idp/rust-embedded-idp/.git.path
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:12.0833110Z /home/runner/work/_temp/git-credentials-123ee0ac-896c-417d-ba2e-4f839e684b8b.config
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:12.0843601Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/rust-embedded-idp/rust-embedded-idp/.git.path \/home\/runner\/work\/_temp\/git\-credentials\-123ee0ac\-896c\-417d\-ba2e\-4f839e684b8b\.config
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:12.0878196Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/rust-embedded-idp/rust-embedded-idp/.git/worktrees/*.path
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:12.0901094Z /home/runner/work/_temp/git-credentials-123ee0ac-896c-417d-ba2e-4f839e684b8b.config
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:12.0917262Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/rust-embedded-idp/rust-embedded-idp/.git/worktrees/*.path \/home\/runner\/work\/_temp\/git\-credentials\-123ee0ac\-896c\-417d\-ba2e\-4f839e684b8b\.config
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:12.0948723Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:12.0973066Z /github/runner_temp/git-credentials-123ee0ac-896c-417d-ba2e-4f839e684b8b.config
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:12.0982587Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path \/github\/runner_temp\/git\-credentials\-123ee0ac\-896c\-417d\-ba2e\-4f839e684b8b\.config
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:12.1014120Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:12.1036531Z /github/runner_temp/git-credentials-123ee0ac-896c-417d-ba2e-4f839e684b8b.config
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:12.1044289Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path \/github\/runner_temp\/git\-credentials\-123ee0ac\-896c\-417d\-ba2e\-4f839e684b8b\.config
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:12.1077191Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:12.1277239Z Removing credentials config '/home/runner/work/_temp/git-credentials-123ee0ac-896c-417d-ba2e-4f839e684b8b.config'
+CI-FUNC-ARM64-01	Checkout reviewed ref	2026-10-25T10:31:12.1287524Z ##[endgroup]
+CI-FUNC-ARM64-01	Select frozen Node tool runtime	﻿2026-10-25T10:31:12.1521917Z ##[group]Run actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+CI-FUNC-ARM64-01	Select frozen Node tool runtime	2026-10-25T10:31:12.1523033Z with:
+CI-FUNC-ARM64-01	Select frozen Node tool runtime	2026-10-25T10:31:12.1523544Z   node-version: 22.23.4
+CI-FUNC-ARM64-01	Select frozen Node tool runtime	2026-10-25T10:31:12.1524142Z   architecture: arm64
+CI-FUNC-ARM64-01	Select frozen Node tool runtime	2026-10-25T10:31:12.1524727Z   check-latest: false
+CI-FUNC-ARM64-01	Select frozen Node tool runtime	2026-10-25T10:31:12.1525562Z   package-manager-cache: false
+CI-FUNC-ARM64-01	Select frozen Node tool runtime	2026-10-25T10:31:12.1531537Z   token: ***
+CI-FUNC-ARM64-01	Select frozen Node tool runtime	2026-10-25T10:31:12.1532049Z env:
+CI-FUNC-ARM64-01	Select frozen Node tool runtime	2026-10-25T10:31:12.1532644Z   PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT: 30000
+CI-FUNC-ARM64-01	Select frozen Node tool runtime	2026-10-25T10:31:12.1533432Z   CARGO_BUILD_JOBS: 2
+CI-FUNC-ARM64-01	Select frozen Node tool runtime	2026-10-25T10:31:12.1533995Z   CI: true
+CI-FUNC-ARM64-01	Select frozen Node tool runtime	2026-10-25T10:31:12.1534642Z   N2_WORK: /home/runner/work/_temp/idp-n2-ci-40185099189-1
+CI-FUNC-ARM64-01	Select frozen Node tool runtime	2026-10-25T10:31:12.1535751Z   N2_PUBLIC: /home/runner/work/_temp/n2-public/40185099189/1
+CI-FUNC-ARM64-01	Select frozen Node tool runtime	2026-10-25T10:31:12.1536807Z   TMPDIR: /home/runner/work/_temp/idp-n2-ci-40185099189-1/tmp
+CI-FUNC-ARM64-01	Select frozen Node tool runtime	2026-10-25T10:31:12.1538087Z   PLAYWRIGHT_BROWSERS_PATH: /home/runner/work/_temp/idp-n2-ci-40185099189-1/browsers
+CI-FUNC-ARM64-01	Select frozen Node tool runtime	2026-10-25T10:31:12.1539176Z ##[endgroup]
+CI-FUNC-ARM64-01	Select frozen Node tool runtime	2026-10-25T10:31:12.2553282Z Attempting to download 22.23.4...
+CI-FUNC-ARM64-01	Select frozen Node tool runtime	2026-10-25T10:31:12.9641278Z Acquiring 22.23.4 - arm64 from https://github.com/actions/node-versions/releases/download/22.23.4-39619033003/node-22.23.4-linux-arm64.tar.gz
+CI-FUNC-ARM64-01	Select frozen Node tool runtime	2026-10-25T10:31:13.3918234Z Extracting ...
+CI-FUNC-ARM64-01	Select frozen Node tool runtime	2026-10-25T10:31:13.4020002Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/a0e1b8b1-11a7-41a3-bdbe-9eb05865b453 -f /home/runner/work/_temp/8cf09f2b-1040-4e79-8b7f-f5e4e83e98b6
+CI-FUNC-ARM64-01	Select frozen Node tool runtime	2026-10-25T10:31:14.3060897Z Adding to the cache ...
+CI-FUNC-ARM64-01	Select frozen Node tool runtime	2026-10-25T10:31:17.1448593Z ##[group]Environment details
+CI-FUNC-ARM64-01	Select frozen Node tool runtime	2026-10-25T10:31:17.3296018Z node: v22.23.4
+CI-FUNC-ARM64-01	Select frozen Node tool runtime	2026-10-25T10:31:17.3296336Z npm: 10.9.9
+CI-FUNC-ARM64-01	Select frozen Node tool runtime	2026-10-25T10:31:17.3296555Z yarn: 1.22.22
+CI-FUNC-ARM64-01	Select frozen Node tool runtime	2026-10-25T10:31:17.3297005Z ##[endgroup]
+CI-FUNC-ARM64-01	Activate frozen pnpm	﻿2026-10-25T10:31:17.3416529Z ##[group]Run corepack enable
+CI-FUNC-ARM64-01	Activate frozen pnpm	2026-10-25T10:31:17.3416924Z ^[[36;1mcorepack enable^[[0m
+CI-FUNC-ARM64-01	Activate frozen pnpm	2026-10-25T10:31:17.3417181Z ^[[36;1mcorepack prepare pnpm@10.30.1 --activate^[[0m
+CI-FUNC-ARM64-01	Activate frozen pnpm	2026-10-25T10:31:17.3417478Z ^[[36;1mtest "$(node --version)" = v22.23.4^[[0m
+CI-FUNC-ARM64-01	Activate frozen pnpm	2026-10-25T10:31:17.3417762Z ^[[36;1mtest "$(pnpm --version)" = 10.30.1^[[0m
+CI-FUNC-ARM64-01	Activate frozen pnpm	2026-10-25T10:31:17.3468121Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+CI-FUNC-ARM64-01	Activate frozen pnpm	2026-10-25T10:31:17.3468496Z env:
+CI-FUNC-ARM64-01	Activate frozen pnpm	2026-10-25T10:31:17.3468707Z   PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT: 30000
+CI-FUNC-ARM64-01	Activate frozen pnpm	2026-10-25T10:31:17.3468974Z   CARGO_BUILD_JOBS: 2
+CI-FUNC-ARM64-01	Activate frozen pnpm	2026-10-25T10:31:17.3469178Z   CI: true
+CI-FUNC-ARM64-01	Activate frozen pnpm	2026-10-25T10:31:17.3469397Z   N2_WORK: /home/runner/work/_temp/idp-n2-ci-40185099189-1
+CI-FUNC-ARM64-01	Activate frozen pnpm	2026-10-25T10:31:17.3469739Z   N2_PUBLIC: /home/runner/work/_temp/n2-public/40185099189/1
+CI-FUNC-ARM64-01	Activate frozen pnpm	2026-10-25T10:31:17.3470093Z   TMPDIR: /home/runner/work/_temp/idp-n2-ci-40185099189-1/tmp
+CI-FUNC-ARM64-01	Activate frozen pnpm	2026-10-25T10:31:17.3470513Z   PLAYWRIGHT_BROWSERS_PATH: /home/runner/work/_temp/idp-n2-ci-40185099189-1/browsers
+CI-FUNC-ARM64-01	Activate frozen pnpm	2026-10-25T10:31:17.3470884Z ##[endgroup]
+CI-FUNC-ARM64-01	Activate frozen pnpm	2026-10-25T10:31:17.4438288Z Preparing pnpm@10.30.1 for immediate activation...
+CI-FUNC-ARM64-01	Validate tooling offline	﻿2026-10-25T10:31:18.5363034Z ##[group]Run python3 -B scripts/test_management_n2_tools.py
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:18.5363530Z ^[[36;1mpython3 -B scripts/test_management_n2_tools.py^[[0m
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:18.5363899Z ^[[36;1mpython3 -B scripts/test_management_n2_linux_tools.py^[[0m
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:18.5364248Z ^[[36;1mpython3 -B scripts/test_management_n2_ci.py^[[0m
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:18.5364595Z ^[[36;1mpython3 -B scripts/test_n2_ci_processes.py^[[0m
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:18.5364942Z ^[[36;1mnode scripts/test_management_functional.mjs^[[0m
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:18.5401226Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:18.5401566Z env:
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:18.5401772Z   PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT: 30000
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:18.5402034Z   CARGO_BUILD_JOBS: 2
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:18.5402213Z   CI: true
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:18.5402454Z   N2_WORK: /home/runner/work/_temp/idp-n2-ci-40185099189-1
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:18.5402795Z   N2_PUBLIC: /home/runner/work/_temp/n2-public/40185099189/1
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:18.5403175Z   TMPDIR: /home/runner/work/_temp/idp-n2-ci-40185099189-1/tmp
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:18.5403630Z   PLAYWRIGHT_BROWSERS_PATH: /home/runner/work/_temp/idp-n2-ci-40185099189-1/browsers
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:18.5404002Z ##[endgroup]
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:18.6866118Z .....
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:18.8211257Z ----------------------------------------------------------------------
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:18.8211744Z Ran 5 tests in 0.040s
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:18.8211876Z 
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:18.8211956Z OK
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:18.8212144Z ............................
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:18.8212497Z ----------------------------------------------------------------------
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:18.8212918Z Ran 28 tests in 0.037s
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:18.8213060Z 
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:18.8213135Z OK
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:18.9454433Z test_all_six_functional_suites_exact_mapping (__main__.DriverTests.test_all_six_functional_suites_exact_mapping) ... ok
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:18.9937292Z test_browser_metadata_resolves_core_from_nonhoisted_playwright (__main__.DriverTests.test_browser_metadata_resolves_core_from_nonhoisted_playwright) ... ok
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:18.9958198Z test_budget_exhaustion_writes_explicit_not_executed_summary (__main__.DriverTests.test_budget_exhaustion_writes_explicit_not_executed_summary) ... ok
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:18.9980323Z test_ci_entry_rejects_nonprivate_roots_before_external_operations (__main__.DriverTests.test_ci_entry_rejects_nonprivate_roots_before_external_operations) ... usage: test_management_n2_ci.py [-h] --work WORK --output OUTPUT
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:18.9981304Z                                 {prepare,run,finalize,verify}
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:18.9982048Z test_management_n2_ci.py: error: CI private/public roots require owner-only permissions
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:18.9983778Z ok
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.0013738Z test_create_failure_is_recorded_without_cleanup_guess (__main__.DriverTests.test_create_failure_is_recorded_without_cleanup_guess) ... ok
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.0043806Z test_finalize_cannot_trust_state_without_complete_suite_evidence (__main__.DriverTests.test_finalize_cannot_trust_state_without_complete_suite_evidence) ... ok
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.0069776Z test_finalize_secret_pattern_failure_does_not_copy_secret (__main__.DriverTests.test_finalize_secret_pattern_failure_does_not_copy_secret) ... ok
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.0779916Z test_finalize_success_requires_private_cleanup (__main__.DriverTests.test_finalize_success_requires_private_cleanup) ... ok
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1007117Z test_functional_result_and_excluded_metadata_cannot_false_pass (__main__.DriverTests.test_functional_result_and_excluded_metadata_cannot_false_pass) ... ok
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1031192Z test_job_budget_reserves_cleanup_and_rejects_invalid_clock (__main__.DriverTests.test_job_budget_reserves_cleanup_and_rejects_invalid_clock) ... ok
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1060868Z test_jwt_uri_and_private_key_are_rejected (__main__.DriverTests.test_jwt_uri_and_private_key_are_rejected) ... ok
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1080223Z test_known_secrets_are_replaced_before_publication (__main__.DriverTests.test_known_secrets_are_replaced_before_publication) ... ok
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1107579Z test_main_finalize_exception_leaves_safe_public_failure_summary (__main__.DriverTests.test_main_finalize_exception_leaves_safe_public_failure_summary) ... ok
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1136802Z test_main_prepare_failure_records_class_without_exception_secret (__main__.DriverTests.test_main_prepare_failure_records_class_without_exception_secret) ... ok
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1152904Z test_main_rejects_symlink_roots_and_private_control_paths_without_mutating_target (__main__.DriverTests.test_main_rejects_symlink_roots_and_private_control_paths_without_mutating_target) ... usage: test_management_n2_ci.py [-h] --work WORK --output OUTPUT
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1153992Z                                 {prepare,run,finalize,verify}
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1154438Z test_management_n2_ci.py: error: CI path ancestor symlink rejected
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1171747Z usage: test_management_n2_ci.py [-h] --work WORK --output OUTPUT
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1172319Z                                 {prepare,run,finalize,verify}
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1172787Z test_management_n2_ci.py: error: CI path ancestor symlink rejected
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1173270Z usage: test_management_n2_ci.py [-h] --work WORK --output OUTPUT
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1173661Z                                 {prepare,run,finalize,verify}
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1174090Z test_management_n2_ci.py: error: CI private path symlink rejected
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1174556Z usage: test_management_n2_ci.py [-h] --work WORK --output OUTPUT
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1174941Z                                 {prepare,run,finalize,verify}
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1175558Z test_management_n2_ci.py: error: CI private path symlink rejected
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1183742Z usage: test_management_n2_ci.py [-h] --work WORK --output OUTPUT
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1184190Z                                 {prepare,run,finalize,verify}
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1184626Z test_management_n2_ci.py: error: CI private path symlink rejected
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1188131Z usage: test_management_n2_ci.py [-h] --work WORK --output OUTPUT
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1188568Z                                 {prepare,run,finalize,verify}
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1188999Z test_management_n2_ci.py: error: CI private path symlink rejected
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1195015Z usage: test_management_n2_ci.py [-h] --work WORK --output OUTPUT
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1195516Z                                 {prepare,run,finalize,verify}
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1195948Z test_management_n2_ci.py: error: CI private path symlink rejected
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1202493Z usage: test_management_n2_ci.py [-h] --work WORK --output OUTPUT
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1202895Z                                 {prepare,run,finalize,verify}
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1203330Z test_management_n2_ci.py: error: CI private path symlink rejected
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1210153Z usage: test_management_n2_ci.py [-h] --work WORK --output OUTPUT
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1210566Z                                 {prepare,run,finalize,verify}
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1211011Z test_management_n2_ci.py: error: CI private path symlink rejected
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1218218Z usage: test_management_n2_ci.py [-h] --work WORK --output OUTPUT
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1218635Z                                 {prepare,run,finalize,verify}
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1219067Z test_management_n2_ci.py: error: CI private path symlink rejected
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1226144Z usage: test_management_n2_ci.py [-h] --work WORK --output OUTPUT
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1226604Z                                 {prepare,run,finalize,verify}
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1227088Z test_management_n2_ci.py: error: CI private path symlink rejected
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1234323Z ok
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1250602Z test_main_rejects_wrong_paths_before_creating_or_touching_them (__main__.DriverTests.test_main_rejects_wrong_paths_before_creating_or_touching_them) ... usage: test_management_n2_ci.py [-h] --work WORK --output OUTPUT
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1251511Z                                 {prepare,run,finalize,verify}
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1252372Z test_management_n2_ci.py: error: CI paths do not match this run and attempt
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1254254Z ok
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1276331Z test_only_allowed_decoded_files_are_published (__main__.DriverTests.test_only_allowed_decoded_files_are_published) ... ok
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1308187Z test_owned_label_readback_nonempty_or_unknown_fails (__main__.DriverTests.test_owned_label_readback_nonempty_or_unknown_fails) ... ok
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1352495Z test_pending_browser_profiles_preserve_fixture_dependencies (__main__.DriverTests.test_pending_browser_profiles_preserve_fixture_dependencies) ... ok
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1397119Z test_prepare_accepts_only_complete_matching_mocked_environment (__main__.DriverTests.test_prepare_accepts_only_complete_matching_mocked_environment) ... ok
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1756043Z test_prepare_mismatches_or_bounded_build_failure_never_mark_prepared (__main__.DriverTests.test_prepare_mismatches_or_bounded_build_failure_never_mark_prepared) ... ok
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1786695Z test_private_directory_failure_cannot_publish_pass (__main__.DriverTests.test_private_directory_failure_cannot_publish_pass) ... ok
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1846751Z test_run_pending_browser_profile_skips_fixture_cleanup (__main__.DriverTests.test_run_pending_browser_profile_skips_fixture_cleanup) ... ok
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1935922Z test_run_prepare_checker_and_cleanup_failures_are_recorded (__main__.DriverTests.test_run_prepare_checker_and_cleanup_failures_are_recorded) ... ok
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.1967607Z test_runtime_coverage_exact_mapping (__main__.DriverTests.test_runtime_coverage_exact_mapping) ... ok
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.2067427Z test_runtime_unknown_duplicate_missing_or_incomplete_rejected (__main__.DriverTests.test_runtime_unknown_duplicate_missing_or_incomplete_rejected) ... ok
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.2732079Z test_six_suite_unknown_duplicate_missing_and_wrong_mode_rejected (__main__.DriverTests.test_six_suite_unknown_duplicate_missing_and_wrong_mode_rejected) ... ok
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.2770672Z test_timeout_stops_remaining_suites (__main__.DriverTests.test_timeout_stops_remaining_suites) ... ok
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.2790602Z test_unknown_files_and_symlinks_are_rejected (__main__.DriverTests.test_unknown_files_and_symlinks_are_rejected) ... ok
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.9170043Z test_verify_rejects_missing_or_tampered_seal_and_resealed_incomplete_suites (__main__.DriverTests.test_verify_rejects_missing_or_tampered_seal_and_resealed_incomplete_suites) ... ok
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.9417156Z test_verify_rejects_unknown_file_and_symlink (__main__.DriverTests.test_verify_rejects_unknown_file_and_symlink) ... ok
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:19.9931385Z test_verify_requires_all_delivery_gates (__main__.DriverTests.test_verify_requires_all_delivery_gates) ... ok
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:20.1004918Z test_verify_step_summary_records_existing_action_metadata_and_pending_expiry (__main__.DriverTests.test_verify_step_summary_records_existing_action_metadata_and_pending_expiry) ... ok
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:20.3041225Z test_workflow_finalize_failure_fallback_is_safe_and_preserves_status (__main__.DriverTests.test_workflow_finalize_failure_fallback_is_safe_and_preserves_status) ... ok
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:20.3996806Z test_workflow_finalize_symlink_fails_without_upload_path (__main__.DriverTests.test_workflow_finalize_symlink_fails_without_upload_path) ... ok
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:20.6089050Z test_workflow_initialization_exports_only_validated_owned_paths (__main__.DriverTests.test_workflow_initialization_exports_only_validated_owned_paths) ... ok
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:20.9144706Z test_workflow_initialization_validates_identity_and_paths_before_writing (__main__.DriverTests.test_workflow_initialization_validates_identity_and_paths_before_writing) ... ok
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.3712576Z test_workflow_nonzero_finalizer_preserves_only_complete_sealed_failure_evidence (__main__.DriverTests.test_workflow_nonzero_finalizer_preserves_only_complete_sealed_failure_evidence) ... ok
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.3731335Z test_workflow_runner_paths_are_scoped_to_initialization_step (__main__.DriverTests.test_workflow_runner_paths_are_scoped_to_initialization_step) ... ok
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.3732411Z 
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.3732628Z ----------------------------------------------------------------------
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.3732954Z Ran 39 tests in 2.445s
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.3733083Z 
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.3733151Z OK
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.4728243Z .....................
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.4728675Z ----------------------------------------------------------------------
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.4729002Z Ran 21 tests in 0.021s
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.4729133Z 
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.4729207Z OK
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.5117746Z PASS CI uses the paired full headless Chromium channel
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.5120727Z PASS CI refuses headed and layout conflicts
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.5121218Z PASS default browser options preserve the existing executable and headed flag
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.5121717Z PASS only the exact explicit profile enables CI selection
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.5127945Z PASS default desktop reporter does not write or reject legacy cases
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.5153126Z PASS initial and incremental coverage cannot claim completion
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.5160441Z PASS reject and persist unknown cases
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.5178506Z PASS reject and persist excluded cases
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.5188330Z PASS reject and persist duplicate cases
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.5198632Z PASS reject and persist missing cases
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.5210094Z PASS reject and persist late cases
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.5217009Z PASS reject unknown suite and malformed duplicate manifest
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.5346954Z PASS navigation: every selected concrete case completes; exclusions remain explicit
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.5531924Z PASS clients: every selected concrete case completes; exclusions remain explicit
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.5915700Z PASS authorization: every selected concrete case completes; exclusions remain explicit
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.6202502Z PASS security: every selected concrete case completes; exclusions remain explicit
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.6367666Z PASS n1: every selected concrete case completes; exclusions remain explicit
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.6975668Z PASS console: every selected concrete case completes; exclusions remain explicit
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.6979888Z PASS case mapping rejects a name that only points at a PASS line
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.6998706Z PASS all cases plus a business or page error remain failed after cleanup
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.7011007Z PASS context-close failure does not skip other contexts or browser close and fails the run
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.7022124Z PASS browser-close failure fails coverage and preserves result evidence
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.7034573Z PASS page errors delivered during cleanup cannot finalize passed coverage
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.7045445Z PASS only successful assertions and all cleanup produce passed coverage
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.7056834Z PASS navigation: exact visual blocks are unreachable in CI
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.7065660Z PASS clients: exact visual blocks are unreachable in CI
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.7074265Z PASS authorization: exact visual blocks are unreachable in CI
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.7091769Z PASS security: exact visual blocks are unreachable in CI
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.7095163Z PASS n1: exact visual blocks are unreachable in CI
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.7106150Z PASS console: exact visual blocks are unreachable in CI
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.7110560Z PASS F keeps desktop keyboard main flow plus all four functional modules
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.7119019Z PASS security transmitted modules mask visual calls and retain functional cancellation
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.7419977Z PASS two-tab refresh probe waits for both real reload completions
+CI-FUNC-ARM64-01	Validate tooling offline	2026-10-25T10:31:21.7420877Z {"mode":"offline-mocks-and-source-branches","checks":33,"suites":["navigation","clients","authorization","security","n1","console"],"actualBrowserRuns":0}
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	﻿2026-10-25T10:31:21.7517786Z ##[group]Run pnpm --dir scripts/n2-ci install --frozen-lockfile --ignore-scripts --config.engine-strict=true --config.fetch-retries=1 --config.fetch-timeout=30000
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:21.7518909Z ^[[36;1mpnpm --dir scripts/n2-ci install --frozen-lockfile --ignore-scripts --config.engine-strict=true --config.fetch-retries=1 --config.fetch-timeout=30000^[[0m
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:21.7519879Z ^[[36;1mpnpm --dir scripts/n2-ci exec playwright install --with-deps --no-shell chromium^[[0m
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:21.7554669Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:21.7554980Z env:
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:21.7555177Z   PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT: 30000
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:21.7555731Z   CARGO_BUILD_JOBS: 2
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:21.7555923Z   CI: true
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:21.7556139Z   N2_WORK: /home/runner/work/_temp/idp-n2-ci-40185099189-1
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:21.7556477Z   N2_PUBLIC: /home/runner/work/_temp/n2-public/40185099189/1
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:21.7556824Z   TMPDIR: /home/runner/work/_temp/idp-n2-ci-40185099189-1/tmp
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:21.7557300Z   PLAYWRIGHT_BROWSERS_PATH: /home/runner/work/_temp/idp-n2-ci-40185099189-1/browsers
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:21.7557667Z ##[endgroup]
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:22.0230866Z Lockfile is up to date, resolution step is skipped
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:22.0284997Z Progress: resolved 1, reused 0, downloaded 0, added 0
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:22.0346530Z Packages: +2
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:22.0366659Z ++
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:22.2444415Z Progress: resolved 2, reused 0, downloaded 2, added 2, done
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:22.3268738Z 
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:22.3269777Z dependencies:
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:22.3270181Z + playwright 1.64.1
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:22.3270419Z 
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:22.3325047Z Done in 529ms using pnpm v10.30.1
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:23.0102032Z Installing dependencies...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:23.0161046Z Switching to root user to install dependencies...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:23.0914372Z Get:1 https://packages.microsoft.com/ubuntu/24.04/prod noble InRelease [3600 B]
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:23.1424535Z Get:2 https://packages.microsoft.com/ubuntu/24.04/prod noble/main armhf Packages [12.4 kB]
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:23.1512734Z Get:3 https://packages.microsoft.com/ubuntu/24.04/prod noble/main arm64 Packages [598 kB]
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:23.1575032Z Get:4 https://packages.microsoft.com/ubuntu/24.04/prod noble/main amd64 Packages [660 kB]
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:23.4819075Z Hit:5 http://ports.ubuntu.com/ubuntu-ports noble InRelease
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:23.5933697Z Get:6 http://ports.ubuntu.com/ubuntu-ports noble-updates InRelease [126 kB]
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:24.0743375Z Get:7 http://ports.ubuntu.com/ubuntu-ports noble-backports InRelease [126 kB]
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:24.3019963Z Get:8 http://ports.ubuntu.com/ubuntu-ports noble-security InRelease [126 kB]
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:24.4561449Z Get:9 http://ports.ubuntu.com/ubuntu-ports noble-updates/main arm64 Packages [1455 kB]
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:24.9818139Z Get:10 http://ports.ubuntu.com/ubuntu-ports noble-updates/main Translation-en [310 kB]
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:25.1161901Z Get:11 http://ports.ubuntu.com/ubuntu-ports noble-updates/universe arm64 Packages [1748 kB]
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:25.3935477Z Get:12 http://ports.ubuntu.com/ubuntu-ports noble-updates/universe Translation-en [342 kB]
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:25.5183128Z Get:13 http://ports.ubuntu.com/ubuntu-ports noble-updates/restricted arm64 Packages [2678 kB]
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:25.7673031Z Get:14 http://ports.ubuntu.com/ubuntu-ports noble-updates/restricted Translation-en [411 kB]
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:25.8862232Z Get:15 http://ports.ubuntu.com/ubuntu-ports noble-security/main arm64 Packages [1206 kB]
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:26.0206218Z Get:16 http://ports.ubuntu.com/ubuntu-ports noble-security/main Translation-en [231 kB]
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:26.1358356Z Get:17 http://ports.ubuntu.com/ubuntu-ports noble-security/universe arm64 Packages [1298 kB]
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:26.2718420Z Get:18 http://ports.ubuntu.com/ubuntu-ports noble-security/universe Translation-en [246 kB]
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:26.5396775Z Get:19 http://ports.ubuntu.com/ubuntu-ports noble-security/restricted arm64 Packages [2573 kB]
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:26.7007241Z Get:20 http://ports.ubuntu.com/ubuntu-ports noble-security/restricted Translation-en [392 kB]
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:29.8429421Z Fetched 14.5 MB in 4s (3874 kB/s)
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:30.9887119Z Reading package lists...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.0135633Z Reading package lists...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.2896463Z Building dependency tree...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.2926126Z Reading state information...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5152100Z libasound2t64 is already the newest version (1.2.11-1ubuntu0.3).
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5152600Z libasound2t64 set to manually installed.
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5153065Z libatk-bridge2.0-0t64 is already the newest version (2.52.0-1build1).
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5153491Z libatk-bridge2.0-0t64 set to manually installed.
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5153894Z libatk1.0-0t64 is already the newest version (2.52.0-1build1).
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5154258Z libatk1.0-0t64 set to manually installed.
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5154652Z libatspi2.0-0t64 is already the newest version (2.52.0-1build1).
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5155034Z libatspi2.0-0t64 set to manually installed.
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5155673Z libcairo2 is already the newest version (1.18.0-3build1).
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5156027Z libcairo2 set to manually installed.
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5156410Z libcups2t64 is already the newest version (2.4.7-1.2ubuntu7.14).
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5156794Z libcups2t64 set to manually installed.
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5157173Z libdbus-1-3 is already the newest version (1.14.10-4ubuntu4.1).
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5157601Z libdbus-1-3 set to manually installed.
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5157989Z libdrm2 is already the newest version (2.4.125-1ubuntu0.1~24.04.2).
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5158355Z libdrm2 set to manually installed.
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5158724Z libgbm1 is already the newest version (25.2.8-0ubuntu0.24.04.4).
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5159080Z libgbm1 set to manually installed.
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5159443Z libnspr4 is already the newest version (2:4.35-1.1build1).
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5159790Z libnspr4 set to manually installed.
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5160169Z libpango-1.0-0 is already the newest version (1.52.1+ds-1build1).
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5160554Z libpango-1.0-0 set to manually installed.
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5160933Z libx11-6 is already the newest version (2:1.8.7-1ubuntu0.1).
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5161279Z libx11-6 set to manually installed.
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5161625Z libxcb1 is already the newest version (1.15-1ubuntu2).
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5161954Z libxcb1 set to manually installed.
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5162329Z libxcomposite1 is already the newest version (1:0.4.5-1build3).
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5162712Z libxcomposite1 set to manually installed.
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5163092Z libxdamage1 is already the newest version (1:1.1.6-1build1).
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5163451Z libxdamage1 set to manually installed.
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5163810Z libxext6 is already the newest version (2:1.3.4-1build2).
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5164152Z libxext6 set to manually installed.
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5164510Z libxfixes3 is already the newest version (1:6.0.0-2build1).
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5164863Z libxfixes3 set to manually installed.
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5165360Z libxkbcommon0 is already the newest version (1.6.0-1build1).
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5165743Z libxkbcommon0 set to manually installed.
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5166116Z libxrandr2 is already the newest version (2:1.5.2-2build1).
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5166476Z libxrandr2 set to manually installed.
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5166921Z fonts-noto-color-emoji is already the newest version (2.047-0ubuntu0.24.04.1).
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5167437Z libfontconfig1 is already the newest version (2.15.0-1.1ubuntu2).
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5167824Z libfontconfig1 set to manually installed.
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5168241Z libfreetype6 is already the newest version (2.13.2+dfsg-1ubuntu0.2).
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5168953Z libfreetype6 set to manually installed.
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5169313Z The following additional packages will be installed:
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5169718Z   gir1.2-glib-2.0 libglib2.0-bin libglib2.0-data libnss3-tools
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5170083Z   xfonts-encodings xfonts-utils xserver-common
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5171079Z Suggested packages:
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5171278Z   low-memory-monitor
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5171486Z Recommended packages:
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5171822Z   fonts-ipafont-mincho fonts-liberation-sans-narrow fonts-tlwg-loma
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5172490Z   xfonts-base
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5374513Z The following NEW packages will be installed:
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5375106Z   fonts-freefont-ttf fonts-ipafont-gothic fonts-liberation fonts-tlwg-loma-otf
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5381860Z   fonts-unifont fonts-wqy-zenhei xfonts-cyrillic xfonts-encodings
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5382244Z   xfonts-scalable xfonts-utils
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5386582Z The following packages will be upgraded:
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5388584Z   gir1.2-glib-2.0 libglib2.0-0t64 libglib2.0-bin libglib2.0-data libnss3
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.5394052Z   libnss3-tools xserver-common xvfb
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.8694044Z 8 upgraded, 10 newly installed, 0 to remove and 92 not upgraded.
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.8694517Z Need to get 27.5 MB of archives.
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.8695646Z After this operation, 84.1 MB of additional disk space will be used.
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:31.8696369Z Get:1 http://ports.ubuntu.com/ubuntu-ports noble/universe arm64 fonts-ipafont-gothic all 00303-21ubuntu1 [3513 kB]
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:33.2057018Z Get:2 http://ports.ubuntu.com/ubuntu-ports noble-updates/main arm64 libglib2.0-data all 2.80.0-6ubuntu3.10 [50.2 kB]
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:33.3151673Z Get:3 http://ports.ubuntu.com/ubuntu-ports noble-updates/main arm64 libglib2.0-bin arm64 2.80.0-6ubuntu3.10 [97.1 kB]
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:33.4264757Z Get:4 http://ports.ubuntu.com/ubuntu-ports noble-updates/main arm64 gir1.2-glib-2.0 arm64 2.80.0-6ubuntu3.10 [182 kB]
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:33.5408705Z Get:5 http://ports.ubuntu.com/ubuntu-ports noble-updates/main arm64 libglib2.0-0t64 arm64 2.80.0-6ubuntu3.10 [1533 kB]
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:33.7040453Z Get:6 http://ports.ubuntu.com/ubuntu-ports noble/main arm64 fonts-freefont-ttf all 20211204+svn4273-2 [5641 kB]
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:34.0495715Z Get:7 http://ports.ubuntu.com/ubuntu-ports noble/main arm64 fonts-liberation all 1:2.1.5-3 [1603 kB]
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:34.1754295Z Get:8 http://ports.ubuntu.com/ubuntu-ports noble/universe arm64 fonts-tlwg-loma-otf all 1:0.7.3-1 [107 kB]
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:34.2845759Z Get:9 http://ports.ubuntu.com/ubuntu-ports noble/universe arm64 fonts-unifont all 1:15.1.01-1build1 [2993 kB]
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:34.4260273Z Get:10 http://ports.ubuntu.com/ubuntu-ports noble/universe arm64 fonts-wqy-zenhei all 0.9.45-8 [7472 kB]
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:34.6588117Z Get:11 http://ports.ubuntu.com/ubuntu-ports noble-updates/main arm64 libnss3 arm64 2:3.98-1ubuntu0.3 [1407 kB]
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:34.7760925Z Get:12 http://ports.ubuntu.com/ubuntu-ports noble-updates/main arm64 libnss3-tools arm64 2:3.98-1ubuntu0.3 [598 kB]
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:34.8879322Z Get:13 http://ports.ubuntu.com/ubuntu-ports noble/main arm64 xfonts-encodings all 1:1.0.5-0ubuntu2 [578 kB]
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:34.9997455Z Get:14 http://ports.ubuntu.com/ubuntu-ports noble/main arm64 xfonts-utils arm64 1:7.7+6build3 [93.1 kB]
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:35.1089527Z Get:15 http://ports.ubuntu.com/ubuntu-ports noble/universe arm64 xfonts-cyrillic all 1:1.0.5+nmu1 [384 kB]
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:35.2195552Z Get:16 http://ports.ubuntu.com/ubuntu-ports noble/main arm64 xfonts-scalable all 1:1.0.3-1.3 [304 kB]
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:35.3299046Z Get:17 http://ports.ubuntu.com/ubuntu-ports noble-updates/main arm64 xserver-common all 2:21.1.12-1ubuntu1.9 [35.0 kB]
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:35.4387023Z Get:18 http://ports.ubuntu.com/ubuntu-ports noble-updates/universe arm64 xvfb arm64 2:21.1.12-1ubuntu1.9 [873 kB]
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:35.6978673Z Fetched 27.5 MB in 4s (7051 kB/s)
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:35.7183713Z Selecting previously unselected package fonts-ipafont-gothic.
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:35.7365665Z (Reading database ... 
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:35.7365980Z (Reading database ... 5%
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:35.7366215Z (Reading database ... 10%
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:35.7366445Z (Reading database ... 15%
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:35.7366665Z (Reading database ... 20%
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:35.7367403Z (Reading database ... 25%
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:35.7368599Z (Reading database ... 30%
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:35.7368895Z (Reading database ... 35%
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:35.7369129Z (Reading database ... 40%
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:35.7369351Z (Reading database ... 45%
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:35.7369929Z (Reading database ... 50%
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:35.7462821Z (Reading database ... 55%
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:35.8425926Z (Reading database ... 60%
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:36.0447754Z (Reading database ... 65%
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:36.2362777Z (Reading database ... 70%
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:36.3966914Z (Reading database ... 75%
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:36.5358770Z (Reading database ... 80%
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:36.7569206Z (Reading database ... 85%
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:36.8920516Z (Reading database ... 90%
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:37.1392957Z (Reading database ... 95%
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:37.1393294Z (Reading database ... 100%
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:37.1393691Z (Reading database ... 203258 files and directories currently installed.)
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:37.1438260Z Preparing to unpack .../00-fonts-ipafont-gothic_00303-21ubuntu1_all.deb ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:37.1579751Z Unpacking fonts-ipafont-gothic (00303-21ubuntu1) ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:37.3628931Z Preparing to unpack .../01-libglib2.0-data_2.80.0-6ubuntu3.10_all.deb ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:37.3651697Z Unpacking libglib2.0-data (2.80.0-6ubuntu3.10) over (2.80.0-6ubuntu3.9) ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:37.4039835Z Preparing to unpack .../02-libglib2.0-bin_2.80.0-6ubuntu3.10_arm64.deb ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:37.4099642Z Unpacking libglib2.0-bin (2.80.0-6ubuntu3.10) over (2.80.0-6ubuntu3.9) ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:37.4594102Z Preparing to unpack .../03-gir1.2-glib-2.0_2.80.0-6ubuntu3.10_arm64.deb ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:37.4616102Z Unpacking gir1.2-glib-2.0:arm64 (2.80.0-6ubuntu3.10) over (2.80.0-6ubuntu3.9) ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:37.5043749Z Preparing to unpack .../04-libglib2.0-0t64_2.80.0-6ubuntu3.10_arm64.deb ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:37.5111497Z Unpacking libglib2.0-0t64:arm64 (2.80.0-6ubuntu3.10) over (2.80.0-6ubuntu3.9) ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:37.5549702Z Selecting previously unselected package fonts-freefont-ttf.
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:37.5713427Z Preparing to unpack .../05-fonts-freefont-ttf_20211204+svn4273-2_all.deb ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:37.5724488Z Unpacking fonts-freefont-ttf (20211204+svn4273-2) ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:37.6526852Z Selecting previously unselected package fonts-liberation.
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:37.6685425Z Preparing to unpack .../06-fonts-liberation_1%3a2.1.5-3_all.deb ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:37.6695979Z Unpacking fonts-liberation (1:2.1.5-3) ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:37.7055692Z Selecting previously unselected package fonts-tlwg-loma-otf.
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:37.7211857Z Preparing to unpack .../07-fonts-tlwg-loma-otf_1%3a0.7.3-1_all.deb ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:37.7227448Z Unpacking fonts-tlwg-loma-otf (1:0.7.3-1) ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:37.7420085Z Selecting previously unselected package fonts-unifont.
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:37.7606151Z Preparing to unpack .../08-fonts-unifont_1%3a15.1.01-1build1_all.deb ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:37.7616637Z Unpacking fonts-unifont (1:15.1.01-1build1) ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:37.8924762Z Selecting previously unselected package fonts-wqy-zenhei.
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:37.9106883Z Preparing to unpack .../09-fonts-wqy-zenhei_0.9.45-8_all.deb ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:37.9198912Z Unpacking fonts-wqy-zenhei (0.9.45-8) ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.3484350Z Preparing to unpack .../10-libnss3_2%3a3.98-1ubuntu0.3_arm64.deb ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.3507213Z Unpacking libnss3:arm64 (2:3.98-1ubuntu0.3) over (2:3.98-1ubuntu0.2) ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.4089897Z Preparing to unpack .../11-libnss3-tools_2%3a3.98-1ubuntu0.3_arm64.deb ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.4115205Z Unpacking libnss3-tools (2:3.98-1ubuntu0.3) over (2:3.98-1ubuntu0.2) ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.4628604Z Selecting previously unselected package xfonts-encodings.
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.4804988Z Preparing to unpack .../12-xfonts-encodings_1%3a1.0.5-0ubuntu2_all.deb ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.4814615Z Unpacking xfonts-encodings (1:1.0.5-0ubuntu2) ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.5085677Z Selecting previously unselected package xfonts-utils.
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.5252105Z Preparing to unpack .../13-xfonts-utils_1%3a7.7+6build3_arm64.deb ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.5261425Z Unpacking xfonts-utils (1:7.7+6build3) ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.5519499Z Selecting previously unselected package xfonts-cyrillic.
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.5692834Z Preparing to unpack .../14-xfonts-cyrillic_1%3a1.0.5+nmu1_all.deb ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.5702557Z Unpacking xfonts-cyrillic (1:1.0.5+nmu1) ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.5948792Z Selecting previously unselected package xfonts-scalable.
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.6107348Z Preparing to unpack .../15-xfonts-scalable_1%3a1.0.3-1.3_all.deb ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.6117358Z Unpacking xfonts-scalable (1:1.0.3-1.3) ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.6478875Z Preparing to unpack .../16-xserver-common_2%3a21.1.12-1ubuntu1.9_all.deb ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.6498518Z Unpacking xserver-common (2:21.1.12-1ubuntu1.9) over (2:21.1.12-1ubuntu1.8) ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.6855752Z Preparing to unpack .../17-xvfb_2%3a21.1.12-1ubuntu1.9_arm64.deb ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.6875682Z Unpacking xvfb (2:21.1.12-1ubuntu1.9) over (2:21.1.12-1ubuntu1.8) ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.7416708Z Setting up fonts-wqy-zenhei (0.9.45-8) ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.7511233Z Setting up fonts-freefont-ttf (20211204+svn4273-2) ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.7522366Z Setting up libnss3:arm64 (2:3.98-1ubuntu0.3) ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.7534550Z Setting up libglib2.0-0t64:arm64 (2.80.0-6ubuntu3.10) ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.7684274Z Setting up libglib2.0-data (2.80.0-6ubuntu3.10) ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.7702393Z Setting up fonts-tlwg-loma-otf (1:0.7.3-1) ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.7718377Z Setting up xfonts-encodings (1:1.0.5-0ubuntu2) ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.7732147Z Setting up gir1.2-glib-2.0:arm64 (2.80.0-6ubuntu3.10) ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.7745353Z Setting up fonts-ipafont-gothic (00303-21ubuntu1) ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.7794900Z update-alternatives: using /usr/share/fonts/opentype/ipafont-gothic/ipag.ttf to provide /usr/share/fonts/truetype/fonts-japanese-gothic.ttf (fonts-japanese-gothic.ttf) in auto mode
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.7808659Z Setting up fonts-liberation (1:2.1.5-3) ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.7823469Z Setting up xserver-common (2:21.1.12-1ubuntu1.9) ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.7836978Z Setting up libnss3-tools (2:3.98-1ubuntu0.3) ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.7851157Z Setting up fonts-unifont (1:15.1.01-1build1) ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.7863173Z Setting up xvfb (2:21.1.12-1ubuntu1.9) ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.7877301Z Setting up libglib2.0-bin (2.80.0-6ubuntu3.10) ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.7889688Z Setting up xfonts-utils (1:7.7+6build3) ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.7925073Z Setting up xfonts-cyrillic (1:1.0.5+nmu1) ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.8441771Z Setting up xfonts-scalable (1:1.0.3-1.3) ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.8712941Z Processing triggers for libc-bin (2.39-0ubuntu8.9) ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.8909666Z Processing triggers for man-db (2.12.0-4build2) ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.8929305Z Not building database; man-db/auto-update is not 'true'.
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:38.8940613Z Processing triggers for fontconfig (2.15.0-1.1ubuntu2) ...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:41.0782566Z 
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:41.0783353Z Running kernel seems to be up-to-date.
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:41.0783588Z 
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:41.0783690Z Restarting services...
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:41.1145665Z  systemctl restart packagekit.service php8.3-fpm.service polkit.service udisks2.service
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:41.2037489Z 
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:41.2038338Z Service restarts being deferred:
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:41.2039192Z  systemctl restart ModemManager.service
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:41.2039571Z  systemctl restart networkd-dispatcher.service
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:41.2039784Z 
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:41.2039925Z No containers need to be restarted.
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:41.2040092Z 
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:41.2040265Z No user sessions are running outdated binaries.
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:41.2040466Z 
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:41.2040729Z No VM guests are running outdated hypervisor (qemu) binaries on this host.
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:42.3390861Z Downloading Chrome for Testing 156.0.8078.4 (playwright chromium v1248) from https://cdn.playwright.dev/builds/cft/156.0.8078.4/linux-arm64/chrome-linux-arm64.zip
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:42.6988299Z |                                                                                |   0% of 190.5 MiB
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:42.8963043Z |■■■■■■■■                                                                        |  10% of 190.5 MiB
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:43.0022137Z |■■■■■■■■■■■■■■■■                                                                |  20% of 190.5 MiB
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:43.0841818Z |■■■■■■■■■■■■■■■■■■■■■■■■                                                        |  30% of 190.5 MiB
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:43.1694553Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                                |  40% of 190.5 MiB
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:43.2643774Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                        |  50% of 190.5 MiB
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:43.3572762Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                |  60% of 190.5 MiB
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:43.4469517Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                        |  70% of 190.5 MiB
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:43.5346092Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                |  80% of 190.5 MiB
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:43.6194517Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■        |  90% of 190.5 MiB
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:43.7084665Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 190.5 MiB
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:45.7652318Z Chrome for Testing 156.0.8078.4 (playwright chromium v1248) downloaded to /home/runner/work/_temp/idp-n2-ci-40185099189-1/browsers/chromium-1248
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:45.7655008Z Downloading FFmpeg (playwright ffmpeg v1013) from https://cdn.playwright.dev/dbazure/download/playwright/builds/ffmpeg/1013/ffmpeg-linux-arm64.zip
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:46.1132168Z |                                                                                |   0% of 1.9 MiB
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:46.1200136Z |■■■■■■■■                                                                        |  10% of 1.9 MiB
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:46.1243363Z |■■■■■■■■■■■■■■■■                                                                |  20% of 1.9 MiB
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:46.1273786Z |■■■■■■■■■■■■■■■■■■■■■■■■                                                        |  30% of 1.9 MiB
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:46.1286212Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                                |  40% of 1.9 MiB
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:46.1409045Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                        |  50% of 1.9 MiB
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:46.1425803Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                |  60% of 1.9 MiB
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:46.1441900Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                        |  70% of 1.9 MiB
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:46.1456464Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                |  80% of 1.9 MiB
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:46.1472475Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■        |  90% of 1.9 MiB
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:46.1477690Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 1.9 MiB
+CI-FUNC-ARM64-01	Install locked tools and paired full Chromium	2026-10-25T10:31:46.1895813Z FFmpeg (playwright ffmpeg v1013) downloaded to /home/runner/work/_temp/idp-n2-ci-40185099189-1/browsers/ffmpeg-1013
+CI-FUNC-ARM64-01	Preflight and build isolated arm64 images	﻿2026-10-25T10:31:46.2076393Z ##[group]Run python3 -B scripts/run_management_n2_ci.py prepare --work "$N2_WORK" --output "$N2_PUBLIC"
+CI-FUNC-ARM64-01	Preflight and build isolated arm64 images	2026-10-25T10:31:46.2077118Z ^[[36;1mpython3 -B scripts/run_management_n2_ci.py prepare --work "$N2_WORK" --output "$N2_PUBLIC"^[[0m
+CI-FUNC-ARM64-01	Preflight and build isolated arm64 images	2026-10-25T10:31:46.2111697Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+CI-FUNC-ARM64-01	Preflight and build isolated arm64 images	2026-10-25T10:31:46.2112010Z env:
+CI-FUNC-ARM64-01	Preflight and build isolated arm64 images	2026-10-25T10:31:46.2112208Z   PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT: 30000
+CI-FUNC-ARM64-01	Preflight and build isolated arm64 images	2026-10-25T10:31:46.2112469Z   CARGO_BUILD_JOBS: 2
+CI-FUNC-ARM64-01	Preflight and build isolated arm64 images	2026-10-25T10:31:46.2112645Z   CI: true
+CI-FUNC-ARM64-01	Preflight and build isolated arm64 images	2026-10-25T10:31:46.2112860Z   N2_WORK: /home/runner/work/_temp/idp-n2-ci-40185099189-1
+CI-FUNC-ARM64-01	Preflight and build isolated arm64 images	2026-10-25T10:31:46.2113200Z   N2_PUBLIC: /home/runner/work/_temp/n2-public/40185099189/1
+CI-FUNC-ARM64-01	Preflight and build isolated arm64 images	2026-10-25T10:31:46.2113548Z   TMPDIR: /home/runner/work/_temp/idp-n2-ci-40185099189-1/tmp
+CI-FUNC-ARM64-01	Preflight and build isolated arm64 images	2026-10-25T10:31:46.2113966Z   PLAYWRIGHT_BROWSERS_PATH: /home/runner/work/_temp/idp-n2-ci-40185099189-1/browsers
+CI-FUNC-ARM64-01	Preflight and build isolated arm64 images	2026-10-25T10:31:46.2114335Z ##[endgroup]
+CI-FUNC-ARM64-01	Run eight isolated functional suites	﻿2026-10-25T10:36:32.1309282Z ##[group]Run python3 -B scripts/run_management_n2_ci.py run --work "$N2_WORK" --output "$N2_PUBLIC"
+CI-FUNC-ARM64-01	Run eight isolated functional suites	2026-10-25T10:36:32.1310043Z ^[[36;1mpython3 -B scripts/run_management_n2_ci.py run --work "$N2_WORK" --output "$N2_PUBLIC"^[[0m
+CI-FUNC-ARM64-01	Run eight isolated functional suites	2026-10-25T10:36:32.1344611Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+CI-FUNC-ARM64-01	Run eight isolated functional suites	2026-10-25T10:36:32.1345082Z env:
+CI-FUNC-ARM64-01	Run eight isolated functional suites	2026-10-25T10:36:32.1345572Z   PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT: 30000
+CI-FUNC-ARM64-01	Run eight isolated functional suites	2026-10-25T10:36:32.1345917Z   CARGO_BUILD_JOBS: 2
+CI-FUNC-ARM64-01	Run eight isolated functional suites	2026-10-25T10:36:32.1346188Z   CI: true
+CI-FUNC-ARM64-01	Run eight isolated functional suites	2026-10-25T10:36:32.1346446Z   N2_WORK: /home/runner/work/_temp/idp-n2-ci-40185099189-1
+CI-FUNC-ARM64-01	Run eight isolated functional suites	2026-10-25T10:36:32.1346855Z   N2_PUBLIC: /home/runner/work/_temp/n2-public/40185099189/1
+CI-FUNC-ARM64-01	Run eight isolated functional suites	2026-10-25T10:36:32.1347253Z   TMPDIR: /home/runner/work/_temp/idp-n2-ci-40185099189-1/tmp
+CI-FUNC-ARM64-01	Run eight isolated functional suites	2026-10-25T10:36:32.1347739Z   PLAYWRIGHT_BROWSERS_PATH: /home/runner/work/_temp/idp-n2-ci-40185099189-1/browsers
+CI-FUNC-ARM64-01	Run eight isolated functional suites	2026-10-25T10:36:32.1348174Z ##[endgroup]
+CI-FUNC-ARM64-01	Run eight isolated functional suites	2026-10-25T10:42:31.8393467Z ##[error]Process completed with exit code 1.
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	﻿2026-10-25T10:42:31.8451677Z ##[group]Run if test -f scripts/run_management_n2_ci.py; then
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8452362Z ^[[36;1mif test -f scripts/run_management_n2_ci.py; then^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8452951Z ^[[36;1m  if python3 -B scripts/run_management_n2_ci.py finalize --work "$N2_WORK" --output "$N2_PUBLIC"; then^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8453527Z ^[[36;1m    printf 'public-path=%s\n' "$N2_PUBLIC" >> "$GITHUB_OUTPUT"^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8454001Z ^[[36;1m    exit 0^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8454246Z ^[[36;1m  else^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8454495Z ^[[36;1m    n2_finalize_status=$?^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8454792Z ^[[36;1m  fi^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8455001Z ^[[36;1melse^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8455629Z ^[[36;1m  n2_finalize_status=1^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8455907Z ^[[36;1mfi^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8456239Z ^[[36;1m# Preserve a failed run's sealed, sanitized publication; otherwise create^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8456813Z ^[[36;1m# only a constant failure marker in this exact run's public root.^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8457217Z ^[[36;1mpython3 -B - <<'PY'^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8457608Z ^[[36;1mimport hashlib^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8457852Z ^[[36;1mimport json^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8458151Z ^[[36;1mimport os^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8458374Z ^[[36;1mimport re^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8458590Z ^[[36;1mimport shutil^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8458859Z ^[[36;1mimport stat^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8459130Z ^[[36;1mfrom pathlib import Path, PurePosixPath^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8459498Z ^[[36;1mrun_id = os.environ['GITHUB_RUN_ID']^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8459845Z ^[[36;1mattempt = os.environ['GITHUB_RUN_ATTEMPT']^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8460282Z ^[[36;1mif not all(re.fullmatch(r'[1-9][0-9]*', value) for value in [run_id, attempt]):^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8460865Z ^[[36;1m    raise RuntimeError('Invalid run identity for safe failure artifact')^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8461323Z ^[[36;1mroot = Path(os.environ['RUNNER_TEMP']).resolve()^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8461733Z ^[[36;1mpublic = root / 'n2-public' / run_id / attempt^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8462377Z ^[[36;1mif Path(os.environ['N2_PUBLIC']) != public:^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8462792Z ^[[36;1m    raise RuntimeError('Public failure artifact root mismatch')^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8463294Z ^[[36;1mif any(path.is_symlink() for path in [public, *public.parents]):^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8463803Z ^[[36;1m    raise RuntimeError('Public failure artifact ancestor symlink rejected')^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8464394Z ^[[36;1mfor directory in [root / 'n2-public', root / 'n2-public' / run_id, public]:^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8464823Z ^[[36;1m    if directory.is_symlink():^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8465210Z ^[[36;1m        raise RuntimeError('Public failure artifact symlink rejected')^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8465889Z ^[[36;1m    directory.mkdir(exist_ok=True, mode=0o700)^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8466271Z ^[[36;1m    if not stat.S_ISDIR(directory.lstat().st_mode):^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8466724Z ^[[36;1m        raise RuntimeError('Public failure artifact directory required')^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8467172Z ^[[36;1mos.chmod(public, 0o700)^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8467463Z ^[[36;1mdef valid_publication():^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8467767Z ^[[36;1m    try:^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8468037Z ^[[36;1m        marker = public / 'publication.json'^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8468419Z ^[[36;1m        if marker.is_symlink() or not marker.is_file():^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8468808Z ^[[36;1m            return False^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8469158Z ^[[36;1m        manifest = json.loads(marker.read_text(encoding='utf-8'))^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8469571Z ^[[36;1m        if not isinstance(manifest, dict):^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8469927Z ^[[36;1m            return False^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8470463Z ^[[36;1m        if type(manifest.get('schemaVersion')) is not int or manifest['schemaVersion'] != 1 or manifest.get('sanitized') is not True:^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8471091Z ^[[36;1m            return False^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8471377Z ^[[36;1m        files = manifest.get('files')^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8471734Z ^[[36;1m        if not isinstance(files, dict) or not files:^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8472327Z ^[[36;1m            return False^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8472631Z ^[[36;1m        for relative, digest in files.items():^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8473027Z ^[[36;1m            path = PurePosixPath(relative)^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8473617Z ^[[36;1m            if path.is_absolute() or str(path) != relative or any(part in ['.', '..'] for part in path.parts) or relative == 'publication.json':^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8474203Z ^[[36;1m                return False^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8474651Z ^[[36;1m            if not isinstance(digest, str) or not re.fullmatch(r'[a-f0-9]{64}', digest):^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8475081Z ^[[36;1m                return False^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8475582Z ^[[36;1m        actual = set()^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8475879Z ^[[36;1m        for path in public.rglob('*'):^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8476305Z ^[[36;1m            if path.is_symlink() or not (path.is_file() or path.is_dir()):^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8476720Z ^[[36;1m                return False^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8477095Z ^[[36;1m            if path.is_file() and path != public / 'publication.json':^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8477555Z ^[[36;1m                actual.add(path.relative_to(public).as_posix())^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8477915Z ^[[36;1m        if actual != set(files):^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8478191Z ^[[36;1m            return False^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8478773Z ^[[36;1m        if not all(hashlib.sha256((public / relative).read_bytes()).hexdigest() == digest for relative, digest in files.items()):^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8479351Z ^[[36;1m            return False^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8479729Z ^[[36;1m        # A later journal/write failure must not preserve a misleading^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8480186Z ^[[36;1m        # passing pack from a finalizer that returned nonzero.^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8480697Z ^[[36;1m        summary = json.loads((public / 'final-summary.json').read_text(encoding='utf-8'))^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8481317Z ^[[36;1m        return isinstance(summary, dict) and summary.get('status') == 'failed'^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8481996Z ^[[36;1m    except (OSError, ValueError, TypeError, UnicodeError):^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8482405Z ^[[36;1m        return False^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8482669Z ^[[36;1mif not valid_publication():^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8482956Z ^[[36;1m    for child in public.iterdir():^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8483348Z ^[[36;1m        if child.is_symlink() or not child.is_dir():^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8483680Z ^[[36;1m            child.unlink()^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8483953Z ^[[36;1m        else:^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8484210Z ^[[36;1m            shutil.rmtree(child)^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8484546Z ^[[36;1m    evidence = public / 'bootstrap-failure.json'^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8484942Z ^[[36;1m    evidence.write_text(json.dumps({^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8485441Z ^[[36;1m        'status': 'failed',^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8485797Z ^[[36;1m        'phase': 'checkout_or_finalize_unavailable',^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8486180Z ^[[36;1m        'functional_execution': 'not_completed',^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8486561Z ^[[36;1m        'cleanup_status': 'unknown',^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8486913Z ^[[36;1m        'evidence_complete': False,^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8487233Z ^[[36;1m    }, indent=2) + '\n', encoding='utf-8')^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8487537Z ^[[36;1m    os.chmod(evidence, 0o600)^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8487981Z ^[[36;1mwith open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as stream:^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8488446Z ^[[36;1m    stream.write(f'public-path={public}\n')^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8488777Z ^[[36;1mPY^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8488999Z ^[[36;1mexit "$n2_finalize_status"^[[0m
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8523702Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8524079Z env:
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8524444Z   PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT: 30000
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8524753Z   CARGO_BUILD_JOBS: 2
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8524967Z   CI: true
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8525471Z   N2_WORK: /home/runner/work/_temp/idp-n2-ci-40185099189-1
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8525900Z   N2_PUBLIC: /home/runner/work/_temp/n2-public/40185099189/1
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8526581Z   TMPDIR: /home/runner/work/_temp/idp-n2-ci-40185099189-1/tmp
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8527054Z   PLAYWRIGHT_BROWSERS_PATH: /home/runner/work/_temp/idp-n2-ci-40185099189-1/browsers
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8527470Z   IDP_N2_JOB_STATUS: failure
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:31.8527775Z ##[endgroup]
+CI-FUNC-ARM64-01	Finalize cleanup and sanitized evidence	2026-10-25T10:42:32.1339106Z ##[error]Process completed with exit code 1.
+CI-FUNC-ARM64-01	Upload public evidence whitelist	﻿2026-10-25T10:42:32.1430309Z ##[group]Run actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+CI-FUNC-ARM64-01	Upload public evidence whitelist	2026-10-25T10:42:32.1430790Z with:
+CI-FUNC-ARM64-01	Upload public evidence whitelist	2026-10-25T10:42:32.1431283Z   name: n2-functional-de50eb9d02fe977ec60932c0e7072aba514c6f69-40185099189-1-arm64
+CI-FUNC-ARM64-01	Upload public evidence whitelist	2026-10-25T10:42:32.1431772Z   path: /home/runner/work/_temp/n2-public/40185099189/1
+CI-FUNC-ARM64-01	Upload public evidence whitelist	2026-10-25T10:42:32.1432149Z   if-no-files-found: error
+CI-FUNC-ARM64-01	Upload public evidence whitelist	2026-10-25T10:42:32.1432416Z   include-hidden-files: false
+CI-FUNC-ARM64-01	Upload public evidence whitelist	2026-10-25T10:42:32.1432698Z   retention-days: 30
+CI-FUNC-ARM64-01	Upload public evidence whitelist	2026-10-25T10:42:32.1432963Z   overwrite: false
+CI-FUNC-ARM64-01	Upload public evidence whitelist	2026-10-25T10:42:32.1433215Z   compression-level: 6
+CI-FUNC-ARM64-01	Upload public evidence whitelist	2026-10-25T10:42:32.1433446Z   archive: true
+CI-FUNC-ARM64-01	Upload public evidence whitelist	2026-10-25T10:42:32.1433690Z env:
+CI-FUNC-ARM64-01	Upload public evidence whitelist	2026-10-25T10:42:32.1433927Z   PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT: 30000
+CI-FUNC-ARM64-01	Upload public evidence whitelist	2026-10-25T10:42:32.1434272Z   CARGO_BUILD_JOBS: 2
+CI-FUNC-ARM64-01	Upload public evidence whitelist	2026-10-25T10:42:32.1434526Z   CI: true
+CI-FUNC-ARM64-01	Upload public evidence whitelist	2026-10-25T10:42:32.1434772Z   N2_WORK: /home/runner/work/_temp/idp-n2-ci-40185099189-1
+CI-FUNC-ARM64-01	Upload public evidence whitelist	2026-10-25T10:42:32.1435189Z   N2_PUBLIC: /home/runner/work/_temp/n2-public/40185099189/1
+CI-FUNC-ARM64-01	Upload public evidence whitelist	2026-10-25T10:42:32.1435971Z   TMPDIR: /home/runner/work/_temp/idp-n2-ci-40185099189-1/tmp
+CI-FUNC-ARM64-01	Upload public evidence whitelist	2026-10-25T10:42:32.1436507Z   PLAYWRIGHT_BROWSERS_PATH: /home/runner/work/_temp/idp-n2-ci-40185099189-1/browsers
+CI-FUNC-ARM64-01	Upload public evidence whitelist	2026-10-25T10:42:32.1436922Z ##[endgroup]
+CI-FUNC-ARM64-01	Upload public evidence whitelist	2026-10-25T10:42:32.2728604Z With the provided path, there will be 37 files uploaded
+CI-FUNC-ARM64-01	Upload public evidence whitelist	2026-10-25T10:42:32.2733146Z Artifact name is valid!
+CI-FUNC-ARM64-01	Upload public evidence whitelist	2026-10-25T10:42:32.2733852Z Root directory input is valid!
+CI-FUNC-ARM64-01	Upload public evidence whitelist	2026-10-25T10:42:32.4944429Z Uploading artifact: n2-functional-de50eb9d02fe977ec60932c0e7072aba514c6f69-40185099189-1-arm64.zip
+CI-FUNC-ARM64-01	Upload public evidence whitelist	2026-10-25T10:42:32.4975669Z Beginning upload of artifact content to blob storage
+CI-FUNC-ARM64-01	Upload public evidence whitelist	2026-10-25T10:42:32.7033014Z Uploaded bytes 65421
+CI-FUNC-ARM64-01	Upload public evidence whitelist	2026-10-25T10:42:32.7344340Z Finished uploading artifact content to blob storage!
+CI-FUNC-ARM64-01	Upload public evidence whitelist	2026-10-25T10:42:32.7345111Z SHA256 digest of uploaded artifact is 79c522e41599168844b61e9b898a2a91fef271b33777ea8b30bb8b7161701278
+CI-FUNC-ARM64-01	Upload public evidence whitelist	2026-10-25T10:42:32.7346122Z Finalizing artifact upload
+CI-FUNC-ARM64-01	Upload public evidence whitelist	2026-10-25T10:42:33.1680114Z Artifact n2-functional-de50eb9d02fe977ec60932c0e7072aba514c6f69-40185099189-1-arm64 successfully finalized. Artifact ID 12595952792
+CI-FUNC-ARM64-01	Upload public evidence whitelist	2026-10-25T10:42:33.1681814Z Artifact n2-functional-de50eb9d02fe977ec60932c0e7072aba514c6f69-40185099189-1-arm64 has been successfully uploaded! Final size is 65421 bytes. Artifact ID is 12595952792
+CI-FUNC-ARM64-01	Upload public evidence whitelist	2026-10-25T10:42:33.1683267Z Artifact download URL: https://github.com/ooctoo/rust-embedded-idp/actions/runs/40185099189/artifacts/12595952792
+CI-FUNC-ARM64-01	Verify functional and delivery gates	﻿2026-10-25T10:42:33.1811119Z ##[group]Run test -f scripts/run_management_n2_ci.py
+CI-FUNC-ARM64-01	Verify functional and delivery gates	2026-10-25T10:42:33.1811743Z ^[[36;1mtest -f scripts/run_management_n2_ci.py^[[0m
+CI-FUNC-ARM64-01	Verify functional and delivery gates	2026-10-25T10:42:33.1812150Z ^[[36;1mtest "$IDP_N2_ARTIFACT_OUTCOME" = success^[[0m
+CI-FUNC-ARM64-01	Verify functional and delivery gates	2026-10-25T10:42:33.1812479Z ^[[36;1mtest -n "$IDP_N2_ARTIFACT_ID"^[[0m
+CI-FUNC-ARM64-01	Verify functional and delivery gates	2026-10-25T10:42:33.1813002Z ^[[36;1mpython3 -B scripts/run_management_n2_ci.py verify --work "$N2_WORK" --output "$N2_PUBLIC"^[[0m
+CI-FUNC-ARM64-01	Verify functional and delivery gates	2026-10-25T10:42:33.1850186Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+CI-FUNC-ARM64-01	Verify functional and delivery gates	2026-10-25T10:42:33.1850574Z env:
+CI-FUNC-ARM64-01	Verify functional and delivery gates	2026-10-25T10:42:33.1850992Z   PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT: 30000
+CI-FUNC-ARM64-01	Verify functional and delivery gates	2026-10-25T10:42:33.1851318Z   CARGO_BUILD_JOBS: 2
+CI-FUNC-ARM64-01	Verify functional and delivery gates	2026-10-25T10:42:33.1851606Z   CI: true
+CI-FUNC-ARM64-01	Verify functional and delivery gates	2026-10-25T10:42:33.1851908Z   N2_WORK: /home/runner/work/_temp/idp-n2-ci-40185099189-1
+CI-FUNC-ARM64-01	Verify functional and delivery gates	2026-10-25T10:42:33.1852303Z   N2_PUBLIC: /home/runner/work/_temp/n2-public/40185099189/1
+CI-FUNC-ARM64-01	Verify functional and delivery gates	2026-10-25T10:42:33.1852753Z   TMPDIR: /home/runner/work/_temp/idp-n2-ci-40185099189-1/tmp
+CI-FUNC-ARM64-01	Verify functional and delivery gates	2026-10-25T10:42:33.1853220Z   PLAYWRIGHT_BROWSERS_PATH: /home/runner/work/_temp/idp-n2-ci-40185099189-1/browsers
+CI-FUNC-ARM64-01	Verify functional and delivery gates	2026-10-25T10:42:33.1853781Z   IDP_N2_JOB_STATUS: failure
+CI-FUNC-ARM64-01	Verify functional and delivery gates	2026-10-25T10:42:33.1854054Z   IDP_N2_ARTIFACT_OUTCOME: success
+CI-FUNC-ARM64-01	Verify functional and delivery gates	2026-10-25T10:42:33.1854360Z   IDP_N2_ARTIFACT_ID: 12595952792
+CI-FUNC-ARM64-01	Verify functional and delivery gates	2026-10-25T10:42:33.1854908Z   IDP_N2_ARTIFACT_URL: https://github.com/ooctoo/rust-embedded-idp/actions/runs/40185099189/artifacts/12595952792
+CI-FUNC-ARM64-01	Verify functional and delivery gates	2026-10-25T10:42:33.1855868Z   IDP_N2_ARTIFACT_DIGEST: 79c522e41599168844b61e9b898a2a91fef271b33777ea8b30bb8b7161701278
+CI-FUNC-ARM64-01	Verify functional and delivery gates	2026-10-25T10:42:33.1856380Z ##[endgroup]
+CI-FUNC-ARM64-01	Verify functional and delivery gates	2026-10-25T10:42:33.2582851Z ##[error]Process completed with exit code 1.
+CI-FUNC-ARM64-01	Post Checkout reviewed ref	﻿2026-10-25T10:42:33.2692328Z Post job cleanup.
+CI-FUNC-ARM64-01	Post Checkout reviewed ref	2026-10-25T10:42:33.3418069Z [command]/usr/bin/git version
+CI-FUNC-ARM64-01	Post Checkout reviewed ref	2026-10-25T10:42:33.3476221Z git version 2.55.0
+CI-FUNC-ARM64-01	Post Checkout reviewed ref	2026-10-25T10:42:33.3494899Z Temporarily overriding HOME='/home/runner/work/_temp/2d67412a-c502-4e40-8e6b-c53444e85ed7' before making global git config changes
+CI-FUNC-ARM64-01	Post Checkout reviewed ref	2026-10-25T10:42:33.3496214Z Adding repository directory to the temporary git global config as a safe directory
+CI-FUNC-ARM64-01	Post Checkout reviewed ref	2026-10-25T10:42:33.3500544Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/rust-embedded-idp/rust-embedded-idp
+CI-FUNC-ARM64-01	Post Checkout reviewed ref	2026-10-25T10:42:33.3531329Z Removing SSH command configuration
+CI-FUNC-ARM64-01	Post Checkout reviewed ref	2026-10-25T10:42:33.3538693Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+CI-FUNC-ARM64-01	Post Checkout reviewed ref	2026-10-25T10:42:33.3571443Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+CI-FUNC-ARM64-01	Post Checkout reviewed ref	2026-10-25T10:42:33.3777841Z Removing HTTP extra header
+CI-FUNC-ARM64-01	Post Checkout reviewed ref	2026-10-25T10:42:33.3788947Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+CI-FUNC-ARM64-01	Post Checkout reviewed ref	2026-10-25T10:42:33.3812865Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+CI-FUNC-ARM64-01	Post Checkout reviewed ref	2026-10-25T10:42:33.4010013Z Removing includeIf entries pointing to credentials config files
+CI-FUNC-ARM64-01	Post Checkout reviewed ref	2026-10-25T10:42:33.4017767Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+CI-FUNC-ARM64-01	Post Checkout reviewed ref	2026-10-25T10:42:33.4054634Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+CI-FUNC-ARM64-01	Complete job	﻿2026-10-25T10:42:33.4389770Z Cleaning up orphan processes

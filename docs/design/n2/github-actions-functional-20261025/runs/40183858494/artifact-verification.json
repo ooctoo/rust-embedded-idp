@@ -12,7 +12,7 @@
   "expiresAt": "2026-11-24T10:21:04Z",
   "rawLogSha256": "3f659da06b80f0762b3b0d0d5d209a8fcd0e6669ddf038379bf30af40682f0b5",
   "logSanitizationChanged": false,
-  "payloadArchived": "all extracted artifact files in artifact/; original archive SHA256 verified",
+  "payloadArchived": "all extracted files and exact digest-verified original ZIP are retained locally",
   "functionalSummary": {
     "scope": "CI-FUNC-ARM64-01",
     "source": {
@@ -35,5 +35,6 @@
     "artifactEffectiveExpiry": null,
     "expiryVerification": "pending_first_actual_run_review",
     "evidenceComplete": false
-  }
+  },
+  "originalArchiveArchived": "artifact-original.zip"
 }

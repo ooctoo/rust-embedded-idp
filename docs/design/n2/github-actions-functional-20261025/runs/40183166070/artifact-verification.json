@@ -9,9 +9,10 @@
   "downloadedExpired": false,
   "createdAt": "2026-10-25T10:03:46Z",
   "expiresAt": "2026-11-24T10:03:45Z",
-  "payloadArchived": "all extracted artifact files in artifact/; original archive SHA256 verified",
+  "payloadArchived": "all extracted files and exact digest-verified original ZIP are retained locally",
   "rawLogSha256": "b4c781ac05ef9702d418fba8693ddc2ddd19b001da94928881b4a513ed67e85b",
   "logSanitizationChanged": false,
   "functionalSuitesExecuted": 0,
-  "cleanup": "confirmed; failed before fixture creation; not evidence of eight-suite cleanup"
+  "cleanup": "confirmed; failed before fixture creation; not evidence of eight-suite cleanup",
+  "originalArchiveArchived": "artifact-original.zip"
 }

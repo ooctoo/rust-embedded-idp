@@ -1,0 +1,103 @@
+{
+  "suite": "navigation",
+  "profile": "ci-functional",
+  "status": "passed",
+  "exitCode": 0,
+  "headed": false,
+  "channel": "chromium",
+  "viewport": [
+    1440,
+    1000
+  ],
+  "freshFixture": true,
+  "n2Layout": false,
+  "commands": [
+    {
+      "tool": "scripts/check_management_navigation.mjs",
+      "exitCode": 0,
+      "diagnostic": {
+        "sourceFrames": []
+      }
+    }
+  ],
+  "cleanup": {
+    "objects": [
+      {
+        "name": "idp-n2-linux-e0a0e66b8569-prepare-6487ba",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-e0a0e66b8569-prepare-ae3dd1",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-e0a0e66b8569-prepare-307348",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-e0a0e66b8569-prepare-82c699",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-e0a0e66b8569-enabled",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-e0a0e66b8569-prepare-1dc045",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-e0a0e66b8569-prepare-b34a76",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-e0a0e66b8569-prepare-1cb043",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-e0a0e66b8569-disabled",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-e0a0e66b8569-prepare-c74965",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-e0a0e66b8569-fixed",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-e0a0e66b8569-prepare-5283b2",
+        "absent": true
+      },
+      {
+        "name": "idp-n2-linux-e0a0e66b8569-choose",
+        "exitCode": 143,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-ui-b-e0a0e66b8569",
+        "exitCode": 0,
+        "oomKilled": false
+      },
+      {
+        "name": "idp-n2-linux-e0a0e66b8569-data",
+        "removedOrAbsent": true
+      },
+      {
+        "name": "idp-n2-linux-e0a0e66b8569-secrets",
+        "removedOrAbsent": true
+      },
+      {
+        "name": "idp-n2-linux-e0a0e66b8569",
+        "removedOrAbsent": true
+      }
+    ],
+    "errors": [],
+    "privateDirectoryRemoved": true
+  },
+  "durationSeconds": 45.61
+}

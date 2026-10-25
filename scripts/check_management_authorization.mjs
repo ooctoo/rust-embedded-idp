@@ -21,7 +21,7 @@ const output = process.env.IDP_UI_OUTPUT_DIR ?? fixture.dir;
 await mkdir(output, { recursive: true });
 const coverage = createFunctionalCoverage('authorization', output);
 const contexts = [], cases = [], pageErrors = [], held = new Set(), dialogAnswers = new WeakMap();
-let failure;
+let failure, failureDiagnostics;
 function bounded(promise, stage) {
   let timer;
   return Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`Timed out: ${stage}`)), 15000); })]).finally(() => clearTimeout(timer));
@@ -1167,14 +1167,34 @@ try {
   assert.deepEqual(pageErrors, []);
 } catch (error) {
   failure = error;
+  // Persist only fixed flags and control geometry, never exception text or input values.
+  const detail = String(error?.message ?? '');
+  failureDiagnostics = {
+    disabled: /element is not enabled/.test(detail), hidden: /element is not visible/.test(detail),
+    moving: /element is not stable/.test(detail), intercepted: /intercepts pointer events/.test(detail),
+    outsideViewport: /outside of the viewport/.test(detail), pages: [],
+  };
   for (const release of held) release();
   console.error(`UI-D failed after: ${cases.at(-1) ?? 'startup'}`);
   for (const [index, context] of contexts.entries()) for (const page of context.pages()) {
+    const controls = await page.locator('[role="dialog"] .ant-modal-footer button').evaluateAll(buttons => buttons.slice(0, 20).map(button => {
+      const name = button.textContent.replace(/\s/g, '');
+      const rect = button.getBoundingClientRect();
+      const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+      return {
+        name: ['核对', '确认', '取消', '关闭', '保存'].includes(name) ? name : 'other',
+        disabled: button.disabled, visible: !!rect.width && !!rect.height && getComputedStyle(button).visibility === 'visible',
+        top: Math.round(rect.top), bottom: Math.round(rect.bottom), viewportHeight: innerHeight,
+        ownsCenter: !!hit && (hit === button || button.contains(hit)),
+        anotherModalAtCenter: !!hit?.closest('.ant-modal-wrap') && hit.closest('.ant-modal-wrap') !== button.closest('.ant-modal-wrap'),
+      };
+    })).catch(() => null);
+    failureDiagnostics.pages.push({ context: index, controls });
     if (!functionalOnly) await page.screenshot({ path: `${output}/ui-d-failure-${index}.png`, animations: 'disabled', mask: [page.locator('input, textarea, [contenteditable=true]')] }).catch(() => {});
   }
   throw error;
 } finally {
   for (const release of held) release();
   await finalizeFunctionalRun({ coverage, contexts, browser, failure,
-    resultPath: `${output}/ui-d-results.json`, result: { cases, pageErrors, evidence: 'isolated real UI-B hosts; screenshots mask inputs; empty, 401, 403, malformed, 409, lost response and readback failure explicitly injected; held responses and cross-tab logout use real hosts' } });
+    resultPath: `${output}/ui-d-results.json`, result: { cases, pageErrors, failureDiagnostics, evidence: 'isolated real UI-B hosts; screenshots mask inputs; empty, 401, 403, malformed, 409, lost response and readback failure explicitly injected; held responses and cross-tab logout use real hosts' } });
 }
