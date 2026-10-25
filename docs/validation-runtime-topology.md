@@ -24,12 +24,14 @@ R02优先说明执行位置、当前Mac批次和生产运行方向；原有产�
 
 功能和安全合同跨环境保持统一；差异记录用于说明证据在哪个组合上成立，而不是另做Windows/Mac两套业务实现。Rust服务OS、自动化运行机OS、被测浏览器OS分别登记，三者不要求相同。
 
+2026-10-25后续方案：[N2 Linux Docker最小执行方案](management-console-n2-linux-docker-execution-plan.md)提出先以Linux arm64、Debian/glibc及Mac Chrome验证H01参考宿主的容器运行链路。完整复审修正准备依赖、布局开关、容器重建及清理边界，按新增授权仅四份相关文档本地归档、不推送。架构/镜像为下一批推荐，未冻结生产参数；未准备环境、打包或执行，不改产品/工具/CI、不部署、不启动M1-03–06，不改变本文R02的证据边界。
+
 ## 当前交付边界
 
 N2 Mac代码、复验及证据已在本地提交`e2c997524a1b8d516894591a3f6aeb54d4d93f9c`归档。当前生产浏览器范围、未来N2 CI组合、Linux镜像的具体运行验收及真实嵌入消费者仍单列；不能把这些待定项改成失败或通过，也不据此否定已完成的Mac限定结果。
 
 旁白仍按需求方决定不测。本次仅补充拓扑决策和文档入口，不改产品、测试脚本、CI或既有证据。按最新授权，完整复审与提交前静态核对后，仅本轮相关文档随本地提交归档；不推送、不部署，不启动M1-03–06。
 
-## 本次文档复审范围
+## 2026-10-24拓扑文档复审范围（历史批次）
 
 复审包含本文、[README入口](../README.md)、[交付总结](management-console-delivery-summary-and-plan.md)、[N0支持基线](management-console-n0-support-baseline-design.md)、[N2补验设计](management-console-n2-target-validation-design.md)及[首批计划](management-console-n2-options-and-first-batch-plan.md)的新增说明，共六份相关文档。核对最新范围、R01/R02关系、现有CI配置、相对链接及差异/提交范围；原修订2正文和N2 Mac运行证据保留，不把静态文档复审记为新产品验收。无关的`docs/m1-02-code-review.md`工作区修改不纳入本次提交。

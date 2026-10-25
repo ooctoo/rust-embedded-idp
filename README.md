@@ -116,6 +116,7 @@ cargo test --workspace --locked
 - [M1-02 显式配置与仅管理启动实施结果](docs/m1-02-implementation-result.md)（旧参考行为保留；含示例、验收范围与后续边界）
 - [M1-02 修订 3 收尾与验收回传](docs/m1-02-closure-result.md)（可选 browser/UI、完整管理生命周期及归一偏差修复；保留旧参考行为；M1-03–06、试点与部署待定）
 - [开发、自动化与生产运行拓扑 R02](docs/validation-runtime-topology.md)（当前工具/浏览器及Rust开发服务在Mac；未来自动化接入GitHub Actions；生产Rust目标为Linux Docker，生产浏览器范围待定；不要求Windows执行器或Windows服务作为当前前提）
+- [N2 Linux Docker 补验最小执行方案](docs/management-console-n2-linux-docker-execution-plan.md)（2026-10-25：推荐先做Linux arm64、Debian/glibc、release默认features及Mac Chrome的H01隔离补验；完整复审后补齐准备依赖顺序、布局开关、容器重建及清理边界，仅四份相关文档本地归档、未推送。未准备环境或执行，不改产品/工具/CI，不部署，M1-03–06未启动）
 - [N2 Mac 子批执行与补验](docs/n2-mac-execution-result.md) / [独立证据](docs/design/n2/mac-20261024/README.md)（2026-10-24：桌面Chrome实际补验，含提交前复审的三项产品修复及复验；真实中文IME与执行者视觉复核完成；旁白按用户决定移出，需求方视觉签认单列，不扩大为完整N2或生产验收；本地归档，不推送、不部署，M1-03–06未启动）
 - [M1-02 实现审查调整交接说明](docs/m1-02-implementation-adjustments-handoff.md) / [A01–A05 静态核对与调整计划回传](docs/m1-02-implementation-adjustments-result.md)（实施前计划；后续处置与运行证据见收尾回传）
 - [M1-02 实际代码完整审查](docs/m1-02-code-review.md) / [原设计修订 2 固定快照](docs/m1-02-configuration-composition-design-r2.md)（修复前审查与固定基线；问题处置与运行证据见收尾回传）
