@@ -206,5 +206,37 @@ try {
     assert.match(sessions, /await detail\.getByLabel\('审计变更内容'\)\.waitFor\(\); if \(!functionalOnly\) await detail\.screenshot/);
     for (const source of [devices, sessions]) for (const line of source.split('\n').filter(l => l.includes('.screenshot('))) assert.match(line, /if \(!functionalOnly\) await [^;]*\.screenshot/);
   });
+  await asyncCheck('two-tab refresh probe waits for both real reload completions', async () => {
+    const source = await readFile(new URL('./check_management_n2_mac.mjs', import.meta.url), 'utf8');
+    const start = source.indexOf('  await Promise.all([first, second].map(', source.indexOf('Date.now = () => originalNow() + 280000'));
+    const end = source.indexOf('  for (const t of [first, second]) assert.equal', start);
+    assert.ok(start >= 0 && end > start);
+    const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+    await new AsyncFunction('assert', `
+      let rotations = 0, maximum = 1; const refreshResponses = [], timers = [];
+      function tab(delay) {
+        const page = { delay, listeners: [], waitForFunction: async () => true };
+        page.waitForResponse = predicate => new Promise(resolve => {
+          page.listeners.push(response => { if (predicate(response)) resolve(response); });
+        });
+        return { page, host: { mount: '/identity' } };
+      }
+      const first = tab(10), second = tab(30);
+      const button = page => ({ click: async (options = {}) => {
+        if (options.trial) return;
+        timers.push(setTimeout(() => {
+          rotations++; refreshResponses.push(200);
+          const response = path => ({ request: () => ({ method: () => 'GET' }),
+            url: () => 'http://127.0.0.1' + path, status: () => 200 });
+          for (const listener of page.listeners) {
+            listener(response('/unrelated'));
+            listener(response('/identity/admin/clients?limit=20'));
+          }
+        }, page.delay));
+      } });
+      try { ${source.slice(start, end)} }
+      finally { timers.forEach(clearTimeout); }
+    `)(assert);
+  });
   console.log(JSON.stringify({ mode: 'offline-mocks-and-source-branches', checks, suites: Object.keys(functionalManifest.suites), actualBrowserRuns: 0 }));
 } finally { await rm(root, { recursive: true, force: true }); }

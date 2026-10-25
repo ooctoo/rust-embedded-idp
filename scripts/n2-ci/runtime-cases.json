@@ -173,7 +173,7 @@
           "case": "two real tabs serialize actual refresh rotations under Web Locks",
           "source": {
             "path": "scripts/check_management_n2_mac.mjs",
-            "line": 147
+            "line": 156
           },
           "resultFile": "results.json"
         }

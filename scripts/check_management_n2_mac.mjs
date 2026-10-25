@@ -139,7 +139,16 @@ try {
     finally { active--; }
   });
   for (const t of [first, second]) await t.page.evaluate(() => { const originalNow = Date.now.bind(Date); Date.now = () => originalNow() + 280000; });
-  await Promise.all([first, second].map(t => button(t.page, '刷新客户端').click()));
+  await Promise.all([first, second].map(async t => {
+    const refresh = button(t.page, '刷新客户端');
+    await refresh.click({ trial: true });
+    const [reloaded] = await Promise.all([
+      t.page.waitForResponse(response => response.request().method() === 'GET' &&
+        new URL(response.url()).pathname === t.host.mount + '/admin/clients'),
+      refresh.click(),
+    ]);
+    assert.equal(reloaded.status(), 200);
+  }));
   await Promise.all([first, second].map(t => t.page.waitForFunction(() => !document.querySelector('.ant-spin-spinning, .ant-spin-blur'))));
   assert.equal(rotations, 2); assert.equal(maximum, 1);
   assert.deepEqual(refreshResponses, [200, 200]);

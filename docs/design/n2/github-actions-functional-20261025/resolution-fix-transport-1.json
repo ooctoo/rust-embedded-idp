@@ -1,0 +1,17 @@
+{
+  "requestedAt": "2026-10-25T10:11:41.163797+00:00",
+  "method": "POST",
+  "body": {
+    "ref": "codex/management-console-ui-b"
+  },
+  "expectedHeadSha": "d7214815dd168c97532495b884fea8f4fedfac7d",
+  "predecessorFailureRun": 40183166070,
+  "scope": "fresh eight-suite revalidation after reviewed metadata resolution fix",
+  "automaticDispatchRetries": 0,
+  "acknowledged": false,
+  "error": "actions/workflows/395805707/dispatches: Post \"https://api.github.com/repos/ooctoo/rust-embedded-idp/actions/workflows/395805707/dispatches\": net/http: TLS handshake timeout\n",
+  "reconciliation": {
+    "matchingWorkflowDispatchRecords": 0,
+    "readQueriesAfterFailure": 6
+  }
+}

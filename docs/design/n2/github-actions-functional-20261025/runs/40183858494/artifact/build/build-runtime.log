@@ -1,0 +1,1419 @@
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 2.25kB 0.0s done
+#1 WARN: InvalidDefaultArgInFrom: Default value for ARG ${NODE_IMAGE} results in empty or invalid base image name (line 4)
+#1 WARN: InvalidDefaultArgInFrom: Default value for ARG ${RUST_IMAGE} results in empty or invalid base image name (line 18)
+#1 WARN: InvalidDefaultArgInFrom: Default value for ARG ${RUNTIME_IMAGE} results in empty or invalid base image name (line 33)
+#1 WARN: InvalidDefaultArgInFrom: Default value for ARG ${RUNTIME_IMAGE} results in empty or invalid base image name (line 44)
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/node@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/rust@sha256:d0a4aa3ca2e1088ac0c81690914a0d810f2eee188197034edf366ed010a2b382
+#3 DONE 0.0s
+
+#4 [internal] load metadata for docker.io/library/debian@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
+#4 DONE 0.0s
+
+#5 [runtime 1/3] FROM docker.io/library/debian@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
+#5 DONE 0.0s
+
+#6 [web-build 1/5] FROM docker.io/library/node@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d
+#6 DONE 0.0s
+
+#7 [rust-build 1/6] FROM docker.io/library/rust@sha256:d0a4aa3ca2e1088ac0c81690914a0d810f2eee188197034edf366ed010a2b382
+#7 DONE 0.1s
+
+#8 [rust-build 2/6] WORKDIR /workspace
+#8 DONE 0.1s
+
+#9 [internal] load build context
+#9 transferring context: 4.21MB 0.1s done
+#9 DONE 0.1s
+
+#10 [web-build 2/5] WORKDIR /workspace
+#10 DONE 0.1s
+
+#11 [runtime 2/3] RUN apt-get update     && apt-get install -y --no-install-recommends libssl3 ca-certificates     && rm -rf /var/lib/apt/lists/*     && groupadd --gid 10001 idp     && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin idp
+#11 0.156 Get:1 http://deb.debian.org/debian bookworm InRelease [151 kB]
+#11 0.186 Get:2 http://deb.debian.org/debian bookworm-updates InRelease [55.4 kB]
+#11 ...
+
+#12 [web-build 3/5] COPY . .
+#12 DONE 0.1s
+
+#13 [web-build 4/5] WORKDIR /workspace/web
+#13 DONE 0.0s
+
+#11 [runtime 2/3] RUN apt-get update     && apt-get install -y --no-install-recommends libssl3 ca-certificates     && rm -rf /var/lib/apt/lists/*     && groupadd --gid 10001 idp     && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin idp
+#11 0.189 Get:3 http://deb.debian.org/debian-security bookworm-security InRelease [34.8 kB]
+#11 0.252 Get:4 http://deb.debian.org/debian bookworm/main arm64 Packages [8689 kB]
+#11 0.310 Get:5 http://deb.debian.org/debian bookworm-updates/main arm64 Packages [6936 B]
+#11 0.353 Get:6 http://deb.debian.org/debian-security bookworm-security/main arm64 Packages [355 kB]
+#11 0.983 Fetched 9293 kB in 1s (11.1 MB/s)
+#11 0.983 Reading package lists...
+#11 1.426 Reading package lists...
+#11 1.864 Building dependency tree...
+#11 2.014 Reading state information...
+#11 2.181 The following additional packages will be installed:
+#11 2.181   openssl
+#11 2.213 The following NEW packages will be installed:
+#11 2.214   ca-certificates libssl3 openssl
+#11 2.234 0 upgraded, 3 newly installed, 0 to remove and 1 not upgraded.
+#11 2.234 Need to get 3399 kB of archives.
+#11 2.234 After this operation, 8940 kB of additional disk space will be used.
+#11 2.234 Get:1 http://deb.debian.org/debian-security bookworm-security/main arm64 libssl3 arm64 3.0.22-1~deb12u1 [1828 kB]
+#11 2.259 Get:2 http://deb.debian.org/debian-security bookworm-security/main arm64 openssl arm64 3.0.22-1~deb12u1 [1410 kB]
+#11 2.265 Get:3 http://deb.debian.org/debian-security bookworm-security/main arm64 ca-certificates all 20250419~deb12u2 [161 kB]
+#11 2.377 debconf: delaying package configuration, since apt-utils is not installed
+#11 2.403 Fetched 3399 kB in 0s (77.2 MB/s)
+#11 2.430 Selecting previously unselected package libssl3:arm64.
+#11 2.430 (Reading database ... 
+(Reading database ... 5%
+(Reading database ... 10%
+(Reading database ... 15%
+(Reading database ... 20%
+(Reading database ... 25%
+(Reading database ... 30%
+(Reading database ... 35%
+(Reading database ... 40%
+(Reading database ... 45%
+(Reading database ... 50%
+(Reading database ... 55%
+(Reading database ... 60%
+(Reading database ... 65%
+(Reading database ... 70%
+(Reading database ... 75%
+(Reading database ... 80%
+(Reading database ... 85%
+(Reading database ... 90%
+(Reading database ... 95%
+(Reading database ... 100%
+(Reading database ... 6090 files and directories currently installed.)
+#11 2.438 Preparing to unpack .../libssl3_3.0.22-1~deb12u1_arm64.deb ...
+#11 2.441 Unpacking libssl3:arm64 (3.0.22-1~deb12u1) ...
+#11 2.553 Selecting previously unselected package openssl.
+#11 2.554 Preparing to unpack .../openssl_3.0.22-1~deb12u1_arm64.deb ...
+#11 2.555 Unpacking openssl (3.0.22-1~deb12u1) ...
+#11 2.653 Selecting previously unselected package ca-certificates.
+#11 2.654 Preparing to unpack .../ca-certificates_20250419~deb12u2_all.deb ...
+#11 2.655 Unpacking ca-certificates (20250419~deb12u2) ...
+#11 2.716 Setting up libssl3:arm64 (3.0.22-1~deb12u1) ...
+#11 2.725 Setting up openssl (3.0.22-1~deb12u1) ...
+#11 2.733 Setting up ca-certificates (20250419~deb12u2) ...
+#11 2.806 debconf: unable to initialize frontend: Dialog
+#11 2.806 debconf: (TERM is not set, so the dialog frontend is not usable.)
+#11 2.806 debconf: falling back to frontend: Readline
+#11 2.807 debconf: unable to initialize frontend: Readline
+#11 2.807 debconf: (Can't locate Term/ReadLine.pm in @INC (you may need to install the Term::ReadLine module) (@INC contains: /etc/perl /usr/local/lib/aarch64-linux-gnu/perl/5.36.0 /usr/local/share/perl/5.36.0 /usr/lib/aarch64-linux-gnu/perl5/5.36 /usr/share/perl5 /usr/lib/aarch64-linux-gnu/perl-base /usr/lib/aarch64-linux-gnu/perl/5.36 /usr/share/perl/5.36 /usr/local/lib/site_perl) at /usr/share/perl5/Debconf/FrontEnd/Readline.pm line 7.)
+#11 2.807 debconf: falling back to frontend: Teletype
+#11 3.319 Updating certificates in /etc/ssl/certs...
+#11 4.289 148 added, 0 removed; done.
+#11 4.332 Processing triggers for libc-bin (2.36-9+deb12u14) ...
+#11 4.345 Processing triggers for ca-certificates (20250419~deb12u2) ...
+#11 4.352 Updating certificates in /etc/ssl/certs...
+#11 4.929 0 added, 0 removed; done.
+#11 4.929 Running hooks in /etc/ca-certificates/update.d...
+#11 4.929 done.
+#11 DONE 6.0s
+
+#14 [rust-build 3/6] RUN apt-get update     && apt-get install -y --no-install-recommends build-essential pkg-config libssl-dev ca-certificates     && rm -rf /var/lib/apt/lists/*
+#14 0.146 Get:1 http://deb.debian.org/debian bookworm InRelease [151 kB]
+#14 0.155 Get:2 http://deb.debian.org/debian bookworm-updates InRelease [55.4 kB]
+#14 0.155 Get:3 http://deb.debian.org/debian-security bookworm-security InRelease [34.8 kB]
+#14 0.215 Get:4 http://deb.debian.org/debian bookworm/main arm64 Packages [8689 kB]
+#14 0.272 Get:5 http://deb.debian.org/debian bookworm-updates/main arm64 Packages [6936 B]
+#14 0.321 Get:6 http://deb.debian.org/debian-security bookworm-security/main arm64 Packages [355 kB]
+#14 0.918 Fetched 9293 kB in 1s (11.9 MB/s)
+#14 0.918 Reading package lists...
+#14 1.350 Reading package lists...
+#14 1.782 Building dependency tree...
+#14 1.947 Reading state information...
+#14 2.112 pkg-config is already the newest version (1.8.1-1).
+#14 2.112 pkg-config set to manually installed.
+#14 2.112 The following additional packages will be installed:
+#14 2.113   libssl3 openssl
+#14 2.113 Suggested packages:
+#14 2.113   libssl-doc
+#14 2.164 The following NEW packages will be installed:
+#14 2.165   build-essential
+#14 2.166 The following packages will be upgraded:
+#14 2.167   ca-certificates libssl-dev libssl3 openssl
+#14 2.193 4 upgraded, 1 newly installed, 0 to remove and 109 not upgraded.
+#14 2.193 Need to get 5724 kB of archives.
+#14 2.193 After this operation, 124 kB disk space will be freed.
+#14 2.193 Get:1 http://deb.debian.org/debian-security bookworm-security/main arm64 libssl-dev arm64 3.0.22-1~deb12u1 [2318 kB]
+#14 2.216 Get:2 http://deb.debian.org/debian-security bookworm-security/main arm64 libssl3 arm64 3.0.22-1~deb12u1 [1828 kB]
+#14 2.224 Get:3 http://deb.debian.org/debian-security bookworm-security/main arm64 openssl arm64 3.0.22-1~deb12u1 [1410 kB]
+#14 2.231 Get:4 http://deb.debian.org/debian-security bookworm-security/main arm64 ca-certificates all 20250419~deb12u2 [161 kB]
+#14 2.232 Get:5 http://deb.debian.org/debian bookworm/main arm64 build-essential arm64 12.9 [7704 B]
+#14 2.382 debconf: delaying package configuration, since apt-utils is not installed
+#14 2.420 Fetched 5724 kB in 0s (98.8 MB/s)
+#14 2.437 (Reading database ... 
+(Reading database ... 5%
+(Reading database ... 10%
+(Reading database ... 15%
+(Reading database ... 20%
+(Reading database ... 25%
+(Reading database ... 30%
+(Reading database ... 35%
+(Reading database ... 40%
+(Reading database ... 45%
+(Reading database ... 50%
+(Reading database ... 55%
+(Reading database ... 60%
+(Reading database ... 65%
+(Reading database ... 70%
+(Reading database ... 75%
+(Reading database ... 80%
+(Reading database ... 85%
+(Reading database ... 90%
+(Reading database ... 95%
+(Reading database ... 100%
+(Reading database ... 23281 files and directories currently installed.)
+#14 2.454 Preparing to unpack .../libssl-dev_3.0.22-1~deb12u1_arm64.deb ...
+#14 2.458 Unpacking libssl-dev:arm64 (3.0.22-1~deb12u1) over (3.0.18-1~deb12u2) ...
+#14 2.920 Preparing to unpack .../libssl3_3.0.22-1~deb12u1_arm64.deb ...
+#14 2.930 Unpacking libssl3:arm64 (3.0.22-1~deb12u1) over (3.0.18-1~deb12u2) ...
+#14 3.112 Preparing to unpack .../openssl_3.0.22-1~deb12u1_arm64.deb ...
+#14 3.116 Unpacking openssl (3.0.22-1~deb12u1) over (3.0.18-1~deb12u2) ...
+#14 3.620 Preparing to unpack .../ca-certificates_20250419~deb12u2_all.deb ...
+#14 3.625 Unpacking ca-certificates (20250419~deb12u2) over (20230311+deb12u1) ...
+#14 3.952 Selecting previously unselected package build-essential.
+#14 3.958 Preparing to unpack .../build-essential_12.9_arm64.deb ...
+#14 3.963 Unpacking build-essential (12.9) ...
+#14 4.020 Setting up libssl3:arm64 (3.0.22-1~deb12u1) ...
+#14 4.029 Setting up libssl-dev:arm64 (3.0.22-1~deb12u1) ...
+#14 4.032 Setting up build-essential (12.9) ...
+#14 4.037 Setting up openssl (3.0.22-1~deb12u1) ...
+#14 4.044 Setting up ca-certificates (20250419~deb12u2) ...
+#14 4.137 debconf: unable to initialize frontend: Dialog
+#14 4.137 debconf: (TERM is not set, so the dialog frontend is not usable.)
+#14 4.137 debconf: falling back to frontend: Readline
+#14 4.142 debconf: unable to initialize frontend: Readline
+#14 4.142 debconf: (This frontend requires a controlling tty.)
+#14 4.142 debconf: falling back to frontend: Teletype
+#14 6.028 Updating certificates in /etc/ssl/certs...
+#14 6.744 rehash: warning: skipping ca-certificates.crt,it does not contain exactly one certificate or CRL
+#14 6.749 21 added, 15 removed; done.
+#14 6.765 Processing triggers for libc-bin (2.36-9+deb12u13) ...
+#14 6.780 Processing triggers for ca-certificates (20250419~deb12u2) ...
+#14 6.783 Updating certificates in /etc/ssl/certs...
+#14 ...
+
+#15 [web-build 5/5] RUN corepack enable     && corepack prepare pnpm@10.30.1 --activate     && node --version     && pnpm --version     && pnpm install --frozen-lockfile     && pnpm test     && pnpm build     && pnpm test:embedded-bundle
+#15 0.225 Preparing pnpm@10.30.1 for immediate activation...
+#15 1.130 v22.23.4
+#15 1.461 10.30.1
+#15 1.797 Lockfile is up to date, resolution step is skipped
+#15 1.820 Progress: resolved 1, reused 0, downloaded 0, added 0
+#15 1.856 Packages: +142
+#15 1.856 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+#15 2.098 
+#15 2.098    ╭───────────────────────────────────────────────╮
+#15 2.098    │                                               │
+#15 2.098    │     Update available! 10.30.1 → 12.15.0.      │
+#15 2.098    │     Changelog: https://pnpm.io/v/12.15.0      │
+#15 2.098    │   To update, run: corepack use pnpm@12.15.0   │
+#15 2.098    │                                               │
+#15 2.098    ╰───────────────────────────────────────────────╯
+#15 2.098 
+#15 2.823 Progress: resolved 142, reused 0, downloaded 36, added 12
+#15 3.825 Progress: resolved 142, reused 0, downloaded 41, added 12
+#15 4.829 Progress: resolved 142, reused 0, downloaded 139, added 43
+#15 4.998 Progress: resolved 142, reused 0, downloaded 142, added 142, done
+#15 5.170 
+#15 5.170 dependencies:
+#15 5.170 + @ant-design/v5-patch-for-react-19 1.0.3
+#15 5.170 + antd 5.29.3
+#15 5.170 + jsbarcode 3.11.6
+#15 5.170 + react 19.2.8
+#15 5.170 + react-dom 19.2.8
+#15 5.170 
+#15 5.170 devDependencies:
+#15 5.170 + @types/node 22.20.1
+#15 5.170 + @types/react 19.2.17
+#15 5.170 + @types/react-dom 19.2.3
+#15 5.170 + @vitejs/plugin-react 4.7.0
+#15 5.170 + typescript 5.9.3
+#15 5.170 + vite 6.4.3
+#15 5.170 
+#15 5.182 ╭ Warning ─────────────────────────────────────────────────────────────────────╮
+#15 5.182 │                                                                              │
+#15 5.182 │   Ignored build scripts: esbuild@0.25.12.                                    │
+#15 5.182 │   Run "pnpm approve-builds" to pick which dependencies should be allowed     │
+#15 5.182 │   to run scripts.                                                            │
+#15 5.182 │                                                                              │
+#15 5.182 ╰──────────────────────────────────────────────────────────────────────────────╯
+#15 5.197 Done in 3.6s using pnpm v10.30.1
+#15 5.494 
+#15 5.494 > @embedded-idp/admin-web@3.0.0 test /workspace/web
+#15 5.494 > node --test management/client.test.mjs management/navigation.test.mjs embedded/client.test.mjs
+#15 5.494 
+#15 5.541 TAP version 13
+#15 6.485 # Subtest: business Cookie login refuses unreadable or silently discarded coordination storage before HTTP
+#15 6.486 ok 1 - business Cookie login refuses unreadable or silently discarded coordination storage before HTTP
+#15 6.486   ---
+#15 6.486   duration_ms: 26.089438
+#15 6.486   type: 'test'
+#15 6.486   ...
+#15 6.487 # Subtest: cookie mode restores without page refresh tokens and serializes shared session operations
+#15 6.487 ok 2 - cookie mode restores without page refresh tokens and serializes shared session operations
+#15 6.488   ---
+#15 6.488   duration_ms: 6.370986
+#15 6.488   type: 'test'
+#15 6.488   ...
+#15 6.488 # Subtest: business queued refresh rechecks storage and recovers after a preflight failure
+#15 6.488 ok 3 - business queued refresh rechecks storage and recovers after a preflight failure
+#15 6.488   ---
+#15 6.488   duration_ms: 4.050519
+#15 6.488   type: 'test'
+#15 6.488   ...
+#15 6.488 # Subtest: expired Cookie access tokens refresh under one shared Web Lock
+#15 6.489 ok 4 - expired Cookie access tokens refresh under one shared Web Lock
+#15 6.489   ---
+#15 6.489   duration_ms: 2.607228
+#15 6.489   type: 'test'
+#15 6.489   ...
+#15 6.528 # Subtest: same-client restore is single-flight and sends expected identity when a session already exists
+#15 6.528 ok 5 - same-client restore is single-flight and sends expected identity when a session already exists
+#15 6.528   ---
+#15 6.528   duration_ms: 9.384792
+#15 6.528   type: 'test'
+#15 6.528   ...
+#15 6.528 # Subtest: stale 409 does not block a replacement Cookie login
+#15 6.529 ok 6 - stale 409 does not block a replacement Cookie login
+#15 6.529   ---
+#15 6.529   duration_ms: 2.474931
+#15 6.529   type: 'test'
+#15 6.529   ...
+#15 6.529 # Subtest: same-document clients detect marker replacement even when storage events are missed
+#15 6.530 ok 7 - same-document clients detect marker replacement even when storage events are missed
+#15 6.532   ---
+#15 6.532   duration_ms: 2.631299
+#15 6.532   type: 'test'
+#15 6.532   ...
+#15 6.536 # Subtest: cookie coordination rejects stale tenant refreshes, keeps delayed events from clearing newer restore, and requires login after uncertain restore
+#15 6.536 ok 8 - cookie coordination rejects stale tenant refreshes, keeps delayed events from clearing newer restore, and requires login after uncertain restore
+#15 6.536   ---
+#15 6.536   duration_ms: 3.387778
+#15 6.536   type: 'test'
+#15 6.536   ...
+#15 6.536 # Subtest: cookie logout clears local identity before an in-flight refresh completes
+#15 6.536 ok 9 - cookie logout clears local identity before an in-flight refresh completes
+#15 6.536   ---
+#15 6.536   duration_ms: 1.813959
+#15 6.536   type: 'test'
+#15 6.536   ...
+#15 6.536 # Subtest: disabled and fixed login use public routes and keep tokens out of snapshots
+#15 6.536 ok 10 - disabled and fixed login use public routes and keep tokens out of snapshots
+#15 6.536   ---
+#15 6.536   duration_ms: 1.825078
+#15 6.536   type: 'test'
+#15 6.536   ...
+#15 6.536 # Subtest: choose login pages using ticket, enters selected tenant, then switches without changing subject
+#15 6.536 ok 11 - choose login pages using ticket, enters selected tenant, then switches without changing subject
+#15 6.536   ---
+#15 6.536   duration_ms: 3.113641
+#15 6.536   type: 'test'
+#15 6.536   ...
+#15 6.536 # Subtest: my roles use the business session and reject another tenant's roles
+#15 6.536 ok 12 - my roles use the business session and reject another tenant's roles
+#15 6.536   ---
+#15 6.536   duration_ms: 1.414124
+#15 6.536   type: 'test'
+#15 6.536   ...
+#15 6.536 # Subtest: one refresh serves concurrent checks and an uncertain refresh clears local credentials
+#15 6.537 ok 13 - one refresh serves concurrent checks and an uncertain refresh clears local credentials
+#15 6.537   ---
+#15 6.537   duration_ms: 3.628989
+#15 6.537   type: 'test'
+#15 6.537   ...
+#15 6.539 # Subtest: logout prevents a pending refresh from returning an access token
+#15 6.540 ok 14 - logout prevents a pending refresh from returning an access token
+#15 6.540   ---
+#15 6.540   duration_ms: 0.89584
+#15 6.540   type: 'test'
+#15 6.540   ...
+#15 6.541 # Subtest: logout clears local state before sending the refresh-token form
+#15 6.541 ok 15 - logout clears local state before sending the refresh-token form
+#15 6.542   ---
+#15 6.542   duration_ms: 1.05352
+#15 6.542   type: 'test'
+#15 6.542   ...
+#15 6.542 # Subtest: invalid tenant or cross-domain session response is rejected
+#15 6.542 ok 16 - invalid tenant or cross-domain session response is rejected
+#15 6.543   ---
+#15 6.543   duration_ms: 0.825451
+#15 6.543   type: 'test'
+#15 6.543   ...
+#15 6.543 # Subtest: Cookie mode rejects cross-origin endpoints and leaked refresh credentials
+#15 6.544 ok 17 - Cookie mode rejects cross-origin endpoints and leaked refresh credentials
+#15 6.544   ---
+#15 6.544   duration_ms: 1.075054
+#15 6.544   type: 'test'
+#15 6.544   ...
+#15 6.546 # Subtest: private HTTP requires explicit trusted descriptor; canonical address and mode validation fail closed
+#15 6.546 ok 18 - private HTTP requires explicit trusted descriptor; canonical address and mode validation fail closed
+#15 6.546   ---
+#15 6.546   duration_ms: 3.702969
+#15 6.546   type: 'test'
+#15 6.546   ...
+#15 6.547 # Subtest: development login without locks or randomUUID expires locally and never restores or refreshes
+#15 6.549 ok 19 - development login without locks or randomUUID expires locally and never restores or refreshes
+#15 6.549   ---
+#15 6.549   duration_ms: 1.245717
+#15 6.549   type: 'test'
+#15 6.549   ...
+#15 6.550 # Subtest: development logout sends exact identity and cannot adopt another tab's account
+#15 6.550 ok 20 - development logout sends exact identity and cannot adopt another tab's account
+#15 6.551   ---
+#15 6.551   duration_ms: 1.313738
+#15 6.551   type: 'test'
+#15 6.551   ...
+#15 6.551 # Subtest: development late login cannot replace a newer explicit login
+#15 6.552 ok 21 - development late login cannot replace a newer explicit login
+#15 6.552   ---
+#15 6.552   duration_ms: 1.105077
+#15 6.552   type: 'test'
+#15 6.552   ...
+#15 6.553 # Subtest: development tenant selection completes through Cookie endpoint without Web Locks
+#15 6.553 ok 22 - development tenant selection completes through Cookie endpoint without Web Locks
+#15 6.554   ---
+#15 6.554   duration_ms: 1.07399
+#15 6.554   type: 'test'
+#15 6.554   ...
+#15 6.769 # Subtest: management Cookie login refuses unreadable or silently discarded coordination storage before HTTP
+#15 6.771 ok 23 - management Cookie login refuses unreadable or silently discarded coordination storage before HTTP
+#15 6.771   ---
+#15 6.771   duration_ms: 21.931374
+#15 6.771   type: 'test'
+#15 6.771   ...
+#15 6.771 # Subtest: management cookie mode restores without refresh tokens and keeps path namespaces isolated
+#15 6.771 ok 24 - management cookie mode restores without refresh tokens and keeps path namespaces isolated
+#15 6.772   ---
+#15 6.772   duration_ms: 5.152531
+#15 6.772   type: 'test'
+#15 6.772   ...
+#15 6.772 # Subtest: management queued refresh rechecks storage and recovers after a preflight failure
+#15 6.772 ok 25 - management queued refresh rechecks storage and recovers after a preflight failure
+#15 6.772   ---
+#15 6.772   duration_ms: 3.761805
+#15 6.772   type: 'test'
+#15 6.772   ...
+#15 6.772 # Subtest: disabled and fixed login obey server capabilities, keep credentials out of snapshots
+#15 6.772 ok 26 - disabled and fixed login obey server capabilities, keep credentials out of snapshots
+#15 6.772   ---
+#15 6.772   duration_ms: 2.520345
+#15 6.772   type: 'test'
+#15 6.772   ...
+#15 6.772 # Subtest: choose pagination uses selection ticket only; switch can cancel to source session
+#15 6.772 ok 27 - choose pagination uses selection ticket only; switch can cancel to source session
+#15 6.772   ---
+#15 6.772   duration_ms: 2.700367
+#15 6.772   type: 'test'
+#15 6.772   ...
+#15 6.772 # Subtest: concurrent session checks rotate refresh once and use only the new access token
+#15 6.772 ok 28 - concurrent session checks rotate refresh once and use only the new access token
+#15 6.773   ---
+#15 6.773   duration_ms: 1.677158
+#15 6.773   type: 'test'
+#15 6.773   ...
+#15 6.773 # Subtest: lost refresh response clears credentials and is never retried
+#15 6.773 ok 29 - lost refresh response clears credentials and is never retried
+#15 6.773   ---
+#15 6.773   duration_ms: 1.286939
+#15 6.773   type: 'test'
+#15 6.773   ...
+#15 6.774 # Subtest: logout prevents a late refresh from restoring the session
+#15 6.774 ok 30 - logout prevents a late refresh from restoring the session
+#15 6.774   ---
+#15 6.774   duration_ms: 1.350824
+#15 6.774   type: 'test'
+#15 6.774   ...
+#15 6.774 # Subtest: cancelled login and tenant completion cannot restore credentials
+#15 6.775 ok 31 - cancelled login and tenant completion cannot restore credentials
+#15 6.775   ---
+#15 6.775   duration_ms: 1.559948
+#15 6.775   type: 'test'
+#15 6.775   ...
+#15 6.775 # Subtest: 401 ends a session without retry; failed logout still clears local credentials
+#15 6.776 ok 32 - 401 ends a session without retry; failed logout still clears local credentials
+#15 6.776   ---
+#15 6.776   duration_ms: 1.728235
+#15 6.776   type: 'test'
+#15 6.776   ...
+#15 6.777 # Subtest: invalid capabilities, cross-domain identity and external API prefixes fail closed
+#15 6.777 ok 33 - invalid capabilities, cross-domain identity and external API prefixes fail closed
+#15 6.779   ---
+#15 6.779   duration_ms: 1.311761
+#15 6.779   type: 'test'
+#15 6.779   ...
+#15 6.779 # Subtest: selection expiry returns to login; an unexpected target cannot become the current tenant
+#15 6.779 ok 34 - selection expiry returns to login; an unexpected target cannot become the current tenant
+#15 6.779   ---
+#15 6.779   duration_ms: 1.188448
+#15 6.779   type: 'test'
+#15 6.779   ...
+#15 6.779 # Subtest: session revalidation must match all three identity fields
+#15 6.780 ok 35 - session revalidation must match all three identity fields
+#15 6.780   ---
+#15 6.780   duration_ms: 2.150444
+#15 6.780   type: 'test'
+#15 6.780   ...
+#15 6.780 # Subtest: business administrator creation and assignment preserve the selected business
+#15 6.780 ok 36 - business administrator creation and assignment preserve the selected business
+#15 6.780   ---
+#15 6.780   duration_ms: 3.208396
+#15 6.780   type: 'test'
+#15 6.780   ...
+#15 6.780 # Subtest: platform target selection sends a target only to scoped role APIs and preserves actor 0
+#15 6.780 ok 37 - platform target selection sends a target only to scoped role APIs and preserves actor 0
+#15 6.780   ---
+#15 6.780   duration_ms: 2.137837
+#15 6.780   type: 'test'
+#15 6.780   ...
+#15 6.780 # Subtest: disabled and tenant sessions reject out-of-domain role requests and tenant discovery locally
+#15 6.781 ok 38 - disabled and tenant sessions reject out-of-domain role requests and tenant discovery locally
+#15 6.781   ---
+#15 6.781   duration_ms: 1.822046
+#15 6.781   type: 'test'
+#15 6.781   ...
+#15 6.781 # Subtest: role writes send exact versioned contracts, never protection kind or permissions
+#15 6.782 ok 39 - role writes send exact versioned contracts, never protection kind or permissions
+#15 6.782   ---
+#15 6.782   duration_ms: 1.815455
+#15 6.782   type: 'test'
+#15 6.782   ...
+#15 6.782 # Subtest: conflicting, forbidden and uncertain writes are not replayed; 401 clears authentication
+#15 6.782 ok 40 - conflicting, forbidden and uncertain writes are not replayed; 401 clears authentication
+#15 6.782   ---
+#15 6.782   duration_ms: 2.289461
+#15 6.782   type: 'test'
+#15 6.782   ...
+#15 6.782 # Subtest: cross-domain role payloads and responses arriving after logout are rejected
+#15 6.783 ok 41 - cross-domain role payloads and responses arriving after logout are rejected
+#15 6.783   ---
+#15 6.783   duration_ms: 1.177705
+#15 6.783   type: 'test'
+#15 6.783   ...
+#15 6.783 # Subtest: permission catalog is scoped, business-only, enabled-only and cursor-paginated
+#15 6.783 ok 42 - permission catalog is scoped, business-only, enabled-only and cursor-paginated
+#15 6.784   ---
+#15 6.784   duration_ms: 1.040312
+#15 6.784   type: 'test'
+#15 6.784   ...
+#15 6.784 # Subtest: permission directory reads stay inside the selected tenant
+#15 6.784 ok 43 - permission directory reads stay inside the selected tenant
+#15 6.784   ---
+#15 6.784   duration_ms: 2.109879
+#15 6.784   type: 'test'
+#15 6.784   ...
+#15 6.784 # Subtest: permission directory rejects a different tenant's rows
+#15 6.785 ok 44 - permission directory rejects a different tenant's rows
+#15 6.785   ---
+#15 6.785   duration_ms: 0.810044
+#15 6.785   type: 'test'
+#15 6.785   ...
+#15 6.785 # Subtest: tenant list reads can span businesses without sending a business header
+#15 6.785 ok 45 - tenant list reads can span businesses without sending a business header
+#15 6.785   ---
+#15 6.785   duration_ms: 1.618298
+#15 6.785   type: 'test'
+#15 6.785   ...
+#15 6.785 # Subtest: optional business filters reject invalid values and mismatched rows
+#15 6.785 ok 46 - optional business filters reject invalid values and mismatched rows
+#15 6.786   ---
+#15 6.786   duration_ms: 2.223784
+#15 6.786   type: 'test'
+#15 6.786   ...
+#15 6.786 # Subtest: permission definitions support manual create, read, edit, toggle and archive
+#15 6.786 ok 47 - permission definitions support manual create, read, edit, toggle and archive
+#15 6.786   ---
+#15 6.786   duration_ms: 2.747804
+#15 6.786   type: 'test'
+#15 6.786   ...
+#15 6.786 # Subtest: role permissions replace the complete versioned set, allow empty set, reject duplicate and excessive sets
+#15 6.786 ok 48 - role permissions replace the complete versioned set, allow empty set, reject duplicate and excessive sets
+#15 6.786   ---
+#15 6.786   duration_ms: 1.86158
+#15 6.786   type: 'test'
+#15 6.786   ...
+#15 6.786 # Subtest: member and binding reads retain tenant and subject identity without per-row role lookups
+#15 6.787 ok 49 - member and binding reads retain tenant and subject identity without per-row role lookups
+#15 6.787   ---
+#15 6.787   duration_ms: 1.403789
+#15 6.787   type: 'test'
+#15 6.787   ...
+#15 6.787 # Subtest: grants require explicit type or nonempty instance scope and send the exact immutable assignment
+#15 6.787 ok 50 - grants require explicit type or nonempty instance scope and send the exact immutable assignment
+#15 6.787   ---
+#15 6.787   duration_ms: 1.52079
+#15 6.787   type: 'test'
+#15 6.787   ...
+#15 6.787 # Subtest: revocation uses only the binding ID, has no body, and excludes protected roles
+#15 6.787 ok 51 - revocation uses only the binding ID, has no body, and excludes protected roles
+#15 6.787   ---
+#15 6.787   duration_ms: 0.907319
+#15 6.787   type: 'test'
+#15 6.787   ...
+#15 6.788 # Subtest: unexpected member, permission and assignment projections fail closed
+#15 6.788 ok 52 - unexpected member, permission and assignment projections fail closed
+#15 6.788   ---
+#15 6.788   duration_ms: 1.507927
+#15 6.788   type: 'test'
+#15 6.788   ...
+#15 6.788 # Subtest: permission and binding writes do not retry conflicts or unknown results
+#15 6.788 ok 53 - permission and binding writes do not retry conflicts or unknown results
+#15 6.788   ---
+#15 6.788   duration_ms: 2.07944
+#15 6.788   type: 'test'
+#15 6.788   ...
+#15 6.788 # Subtest: all permission and membership operations reject another tenant before fetching
+#15 6.788 ok 54 - all permission and membership operations reject another tenant before fetching
+#15 6.788   ---
+#15 6.788   duration_ms: 0.708946
+#15 6.788   type: 'test'
+#15 6.788   ...
+#15 6.788 # Subtest: tenant creation and settings use platform scope, explicit initial admin and optimistic versions
+#15 6.788 ok 55 - tenant creation and settings use platform scope, explicit initial admin and optimistic versions
+#15 6.789   ---
+#15 6.789   duration_ms: 1.972278
+#15 6.789   type: 'test'
+#15 6.789   ...
+#15 6.789 # Subtest: dot-only managed tenant IDs use an exact filtered page and require one visible match
+#15 6.789 ok 56 - dot-only managed tenant IDs use an exact filtered page and require one visible match
+#15 6.793   ---
+#15 6.793   duration_ms: 1.382782
+#15 6.793   type: 'test'
+#15 6.793   ...
+#15 6.793 # Subtest: dot-only managed tenant lookup rejects empty, ambiguous, different and malformed pages
+#15 6.793 ok 57 - dot-only managed tenant lookup rejects empty, ambiguous, different and malformed pages
+#15 6.793   ---
+#15 6.793   duration_ms: 1.546236
+#15 6.793   type: 'test'
+#15 6.793   ...
+#15 6.793 # Subtest: existing account discovery is platform-only, paginated and distinct from scoped membership
+#15 6.793 ok 58 - existing account discovery is platform-only, paginated and distinct from scoped membership
+#15 6.793   ---
+#15 6.793   duration_ms: 0.935958
+#15 6.793   type: 'test'
+#15 6.793   ...
+#15 6.793 # Subtest: bind uses an empty object; status uses current membership version and never shared credentials
+#15 6.793 ok 59 - bind uses an empty object; status uses current membership version and never shared credentials
+#15 6.793   ---
+#15 6.793   duration_ms: 1.437651
+#15 6.793   type: 'test'
+#15 6.793   ...
+#15 6.793 # Subtest: disabled hides relationship mutations and tenant sessions cannot search or bind across tenants
+#15 6.793 ok 60 - disabled hides relationship mutations and tenant sessions cannot search or bind across tenants
+#15 6.793   ---
+#15 6.793   duration_ms: 1.499392
+#15 6.793   type: 'test'
+#15 6.793   ...
+#15 6.793 # Subtest: tenant and membership responses reject wrong domain, subject and missing version
+#15 6.803 ok 61 - tenant and membership responses reject wrong domain, subject and missing version
+#15 6.804   ---
+#15 6.804   duration_ms: 2.420494
+#15 6.804   type: 'test'
+#15 6.804   ...
+#15 6.804 # Subtest: tenant and member writes do not replay conflicts, last-member refusal or uncertain results
+#15 6.804 ok 62 - tenant and member writes do not replay conflicts, last-member refusal or uncertain results
+#15 6.805   ---
+#15 6.805   duration_ms: 2.603564
+#15 6.805   type: 'test'
+#15 6.805   ...
+#15 6.806 # Subtest: late member updates cannot resurrect a logged-out management session
+#15 6.813 ok 63 - late member updates cannot resurrect a logged-out management session
+#15 6.813   ---
+#15 6.813   duration_ms: 0.775759
+#15 6.813   type: 'test'
+#15 6.813   ...
+#15 6.814 # Subtest: new tenant administrator sends explicit credentials only in its creation request
+#15 6.814 ok 64 - new tenant administrator sends explicit credentials only in its creation request
+#15 6.814   ---
+#15 6.814   duration_ms: 0.840363
+#15 6.814   type: 'test'
+#15 6.814   ...
+#15 6.814 # Subtest: administrator snapshots and bodyless writes use dedicated platform or explicit tenant targets
+#15 6.814 ok 65 - administrator snapshots and bodyless writes use dedicated platform or explicit tenant targets
+#15 6.814   ---
+#15 6.814   duration_ms: 2.879549
+#15 6.814   type: 'test'
+#15 6.814   ...
+#15 6.814 # Subtest: administrator snapshot decoder rejects wrong subject/domain/kind/scope and missing membership
+#15 6.814 ok 66 - administrator snapshot decoder rejects wrong subject/domain/kind/scope and missing membership
+#15 6.814   ---
+#15 6.814   duration_ms: 2.42783
+#15 6.814   type: 'test'
+#15 6.814   ...
+#15 6.814 # Subtest: administrator operations reject tenant actors, invalid target modes and ineligible appointments locally
+#15 6.814 ok 67 - administrator operations reject tenant actors, invalid target modes and ineligible appointments locally
+#15 6.814   ---
+#15 6.814   duration_ms: 1.306426
+#15 6.814   type: 'test'
+#15 6.814   ...
+#15 6.814 # Subtest: administrator revocation permits inactive target cleanup and rejects incorrect write projections
+#15 6.814 ok 68 - administrator revocation permits inactive target cleanup and rejects incorrect write projections
+#15 6.814   ---
+#15 6.814   duration_ms: 1.275748
+#15 6.814   type: 'test'
+#15 6.814   ...
+#15 6.814 # Subtest: last-administrator conflicts, forbidden requests and lost responses never replay security writes
+#15 6.814 ok 69 - last-administrator conflicts, forbidden requests and lost responses never replay security writes
+#15 6.814   ---
+#15 6.814   duration_ms: 1.41422
+#15 6.814   type: 'test'
+#15 6.814   ...
+#15 6.814 # Subtest: platform administrator search includes disabled accounts so existing authority can be revoked
+#15 6.814 ok 70 - platform administrator search includes disabled accounts so existing authority can be revoked
+#15 6.815   ---
+#15 6.815   duration_ms: 0.765191
+#15 6.815   type: 'test'
+#15 6.815   ...
+#15 6.815 # Subtest: platform account security reads and writes preserve projections, initial tenant, and platform scope
+#15 6.815 ok 71 - platform account security reads and writes preserve projections, initial tenant, and platform scope
+#15 6.815   ---
+#15 6.815   duration_ms: 1.475929
+#15 6.815   type: 'test'
+#15 6.815   ...
+#15 6.815 # Subtest: account listing allows platform actor in both modes, rejects tenant actors, and strips null membership
+#15 6.815 ok 72 - account listing allows platform actor in both modes, rejects tenant actors, and strips null membership
+#15 6.815   ---
+#15 6.815   duration_ms: 1.569308
+#15 6.815   type: 'test'
+#15 6.815   ...
+#15 6.815 # Subtest: device lifecycle sends target headers, exact filters and cursors, and rejects mismatched responses
+#15 6.815 ok 73 - device lifecycle sends target headers, exact filters and cursors, and rejects mismatched responses
+#15 6.815   ---
+#15 6.815   duration_ms: 2.304036
+#15 6.815   type: 'test'
+#15 6.815   ...
+#15 6.815 # Subtest: device binding administration targets the exact binding and validates the result
+#15 6.815 ok 74 - device binding administration targets the exact binding and validates the result
+#15 6.815   ---
+#15 6.815   duration_ms: 3.248369
+#15 6.815   type: 'test'
+#15 6.815   ...
+#15 6.816 # Subtest: device status recovers a committed operation after its response is lost
+#15 6.816 ok 75 - device status recovers a committed operation after its response is lost
+#15 6.816   ---
+#15 6.816   duration_ms: 1.050231
+#15 6.816   type: 'test'
+#15 6.816   ...
+#15 6.816 # Subtest: session lifecycle uses target filters and exact projections, including empty mutation bodies
+#15 6.816 ok 76 - session lifecycle uses target filters and exact projections, including empty mutation bodies
+#15 6.816   ---
+#15 6.816   duration_ms: 1.598706
+#15 6.816   type: 'test'
+#15 6.816   ...
+#15 6.816 # Subtest: self account and session mutations clear auth, while stale responses cannot restore it
+#15 6.816 ok 77 - self account and session mutations clear auth, while stale responses cannot restore it
+#15 6.817   ---
+#15 6.817   duration_ms: 1.6392
+#15 6.817   type: 'test'
+#15 6.817   ...
+#15 6.817 # Subtest: account and session writes do not retry conflicts, forbidden responses, or lost responses
+#15 6.817 ok 78 - account and session writes do not retry conflicts, forbidden responses, or lost responses
+#15 6.817   ---
+#15 6.817   duration_ms: 1.664783
+#15 6.817   type: 'test'
+#15 6.817   ...
+#15 6.817 # Subtest: session projection accepts absent OIDC scope and rejects malformed or cross-subject results
+#15 6.817 ok 79 - session projection accepts absent OIDC scope and rejects malformed or cross-subject results
+#15 6.817   ---
+#15 6.817   duration_ms: 2.207537
+#15 6.817   type: 'test'
+#15 6.817   ...
+#15 6.817 # Subtest: lifecycle guards reject tenant account mutations and terminal devices before issuing a request
+#15 6.818 ok 80 - lifecycle guards reject tenant account mutations and terminal devices before issuing a request
+#15 6.818   ---
+#15 6.818   duration_ms: 0.723265
+#15 6.818   type: 'test'
+#15 6.818   ...
+#15 6.818 # Subtest: self bulk revocation clears credentials and late lifecycle results cannot modify a new login
+#15 6.818 ok 81 - self bulk revocation clears credentials and late lifecycle results cannot modify a new login
+#15 6.818   ---
+#15 6.818   duration_ms: 1.202456
+#15 6.818   type: 'test'
+#15 6.818   ...
+#15 6.818 # Subtest: client reads use platform session 0 in both modes and encode filters and cursors
+#15 6.818 ok 82 - client reads use platform session 0 in both modes and encode filters and cursors
+#15 6.818   ---
+#15 6.818   duration_ms: 2.132845
+#15 6.818   type: 'test'
+#15 6.818   ...
+#15 6.818 # Subtest: client lookup uses the fixed query address for every valid ID and distinguishes null from an unconfirmed route
+#15 6.819 ok 83 - client lookup uses the fixed query address for every valid ID and distinguishes null from an unconfirmed route
+#15 6.819   ---
+#15 6.819   duration_ms: 3.816275
+#15 6.819   type: 'test'
+#15 6.819   ...
+#15 6.820 # Subtest: new lookup and tenant collection patch require confirmed 200 JSON projections
+#15 6.820 ok 84 - new lookup and tenant collection patch require confirmed 200 JSON projections
+#15 6.820   ---
+#15 6.820   duration_ms: 2.976264
+#15 6.820   type: 'test'
+#15 6.820   ...
+#15 6.820 # Subtest: lookup rejects every non-200 or malformed success while accepting charset JSON
+#15 6.820 ok 85 - lookup rejects every non-200 or malformed success while accepting charset JSON
+#15 6.820   ---
+#15 6.820   duration_ms: 1.873652
+#15 6.820   type: 'test'
+#15 6.820   ...
+#15 6.821 # Subtest: lookup preserves authentication and maps transport failures without returning null
+#15 6.821 ok 86 - lookup preserves authentication and maps transport failures without returning null
+#15 6.821   ---
+#15 6.821   duration_ms: 1.420331
+#15 6.821   type: 'test'
+#15 6.821   ...
+#15 6.821 # Subtest: tenant collection patch rejects unsafe versions and mismatched confirmed results
+#15 6.821 ok 87 - tenant collection patch rejects unsafe versions and mismatched confirmed results
+#15 6.821   ---
+#15 6.821   duration_ms: 1.766081
+#15 6.821   type: 'test'
+#15 6.821   ...
+#15 6.821 # Subtest: client platform guard rejects tenant sessions before fetching in both modes
+#15 6.821 ok 88 - client platform guard rejects tenant sessions before fetching in both modes
+#15 6.822   ---
+#15 6.822   duration_ms: 1.235814
+#15 6.822   type: 'test'
+#15 6.822   ...
+#15 6.822 # Subtest: client upsert sends only the versionless contract and preserves omitted secrets
+#15 6.822 ok 89 - client upsert sends only the versionless contract and preserves omitted secrets
+#15 6.822   ---
+#15 6.822   duration_ms: 1.173921
+#15 6.822   type: 'test'
+#15 6.822   ...
+#15 6.822 # Subtest: client projections strip metadata and never expose returned secrets or hashes
+#15 6.822 ok 90 - client projections strip metadata and never expose returned secrets or hashes
+#15 6.822   ---
+#15 6.822   duration_ms: 0.942773
+#15 6.822   type: 'test'
+#15 6.822   ...
+#15 6.822 # Subtest: client responses reject mismatched IDs, filters, metadata and write results
+#15 6.822 ok 91 - client responses reject mismatched IDs, filters, metadata and write results
+#15 6.822   ---
+#15 6.822   duration_ms: 1.583235
+#15 6.822   type: 'test'
+#15 6.822   ...
+#15 6.822 # Subtest: client upsert validates fields locally without fetching
+#15 6.822 ok 92 - client upsert validates fields locally without fetching
+#15 6.822   ---
+#15 6.822   duration_ms: 1.586123
+#15 6.822   type: 'test'
+#15 6.822   ...
+#15 6.823 # Subtest: client writes do not retry and late responses after logout are rejected
+#15 6.823 ok 93 - client writes do not retry and late responses after logout are rejected
+#15 6.823   ---
+#15 6.823   duration_ms: 6.624796
+#15 6.823   type: 'test'
+#15 6.823   ...
+#15 6.823 # Subtest: permission write preflight rejects protected or cross-tenant definitions
+#15 6.823 ok 94 - permission write preflight rejects protected or cross-tenant definitions
+#15 6.823   ---
+#15 6.823   duration_ms: 0.545963
+#15 6.823   type: 'test'
+#15 6.823   ...
+#15 6.823 # Subtest: audit reads keep platform and selected tenant separate and load detail only on demand
+#15 6.823 ok 95 - audit reads keep platform and selected tenant separate and load detail only on demand
+#15 6.823   ---
+#15 6.823   duration_ms: 2.241687
+#15 6.823   type: 'test'
+#15 6.823   ...
+#15 6.823 # Subtest: audit projections reject cross-domain, mismatched filters and missing detail changes
+#15 6.824 ok 96 - audit projections reject cross-domain, mismatched filters and missing detail changes
+#15 6.824   ---
+#15 6.824   duration_ms: 1.528453
+#15 6.824   type: 'test'
+#15 6.824   ...
+#15 6.824 # Subtest: diagnosis sends only the selected query and rejects mismatched or uncertain results
+#15 6.824 ok 97 - diagnosis sends only the selected query and rejects mismatched or uncertain results
+#15 6.824   ---
+#15 6.824   duration_ms: 1.661063
+#15 6.824   type: 'test'
+#15 6.824   ...
+#15 6.824 # Subtest: management lists preserve server time order across opaque cursor pages
+#15 6.824 ok 98 - management lists preserve server time order across opaque cursor pages
+#15 6.824   ---
+#15 6.824   duration_ms: 0.939117
+#15 6.824   type: 'test'
+#15 6.824   ...
+#15 6.825 # Subtest: management list sort order defaults to descending, forwards cursors, and rejects invalid values locally
+#15 6.825 ok 99 - management list sort order defaults to descending, forwards cursors, and rejects invalid values locally
+#15 6.826   ---
+#15 6.826   duration_ms: 1.072622
+#15 6.826   type: 'test'
+#15 6.826   ...
+#15 6.826 # Subtest: management development mode validates trusted configuration and private HTTP
+#15 6.827 ok 100 - management development mode validates trusted configuration and private HTTP
+#15 6.827   ---
+#15 6.827   duration_ms: 0.985155
+#15 6.827   type: 'test'
+#15 6.827   ...
+#15 6.827 # Subtest: management private HTTP login needs no secure-context APIs and expiry never rotates
+#15 6.827 ok 101 - management private HTTP login needs no secure-context APIs and expiry never rotates
+#15 6.828   ---
+#15 6.828   duration_ms: 1.071838
+#15 6.828   type: 'test'
+#15 6.828   ...
+#15 6.828 # Subtest: management development logout asserts identity and mismatch clears page
+#15 6.828 ok 102 - management development logout asserts identity and mismatch clears page
+#15 6.828   ---
+#15 6.828   duration_ms: 1.358191
+#15 6.828   type: 'test'
+#15 6.828   ...
+#15 6.829 # Subtest: management development late login cannot restore cleared identity
+#15 6.829 ok 103 - management development late login cannot restore cleared identity
+#15 6.829   ---
+#15 6.829   duration_ms: 0.712346
+#15 6.829   type: 'test'
+#15 6.829   ...
+#15 6.829 # Subtest: management development tenant selection retains trusted ticket and uses Cookie endpoint
+#15 6.829 ok 104 - management development tenant selection retains trusted ticket and uses Cookie endpoint
+#15 6.829   ---
+#15 6.829   duration_ms: 1.086878
+#15 6.829   type: 'test'
+#15 6.829   ...
+#15 6.829 # Subtest: navigation activity observes overlapping writes without credentials or read/auth traffic
+#15 6.830 ok 105 - navigation activity observes overlapping writes without credentials or read/auth traffic
+#15 6.830   ---
+#15 6.830   duration_ms: 26.585076
+#15 6.830   type: 'test'
+#15 6.830   ...
+#15 6.831 # Subtest: navigation write activity settles failed and invalid responses without retrying
+#15 6.831 ok 106 - navigation write activity settles failed and invalid responses without retrying
+#15 6.831   ---
+#15 6.831   duration_ms: 0.946653
+#15 6.831   type: 'test'
+#15 6.831   ...
+#15 6.831 # Subtest: navigation write activity covers a shared token refresh and sends one request after it
+#15 6.832 ok 107 - navigation write activity covers a shared token refresh and sends one request after it
+#15 6.832   ---
+#15 6.832   duration_ms: 0.921711
+#15 6.832   type: 'test'
+#15 6.832   ...
+#15 6.832 # Subtest: cookie write activity waits for refresh and suppresses stale writes after refresh failure
+#15 6.832 ok 108 - cookie write activity waits for refresh and suppresses stale writes after refresh failure
+#15 6.833   ---
+#15 6.833   duration_ms: 1.42506
+#15 6.833   type: 'test'
+#15 6.833   ...
+#15 6.833 # Subtest: cookie write activity shares one refresh across writes and settles both requests
+#15 6.833 ok 109 - cookie write activity shares one refresh across writes and settles both requests
+#15 6.833   ---
+#15 6.833   duration_ms: 1.490496
+#15 6.833   type: 'test'
+#15 6.833   ...
+#15 6.835 # Subtest: cookie logout during refresh suppresses the old write and settles activity
+#15 6.835 ok 110 - cookie logout during refresh suppresses the old write and settles activity
+#15 6.835   ---
+#15 6.835   duration_ms: 1.136763
+#15 6.835   type: 'test'
+#15 6.835   ...
+#15 6.837 # Subtest: all legacy task menu entries remain addressable in their permitted scope
+#15 6.839 ok 111 - all legacy task menu entries remain addressable in their permitted scope
+#15 6.839   ---
+#15 6.839   duration_ms: 2.591029
+#15 6.839   type: 'test'
+#15 6.839   ...
+#15 6.839 # Subtest: defaults select the actual authenticated scope
+#15 6.839 ok 112 - defaults select the actual authenticated scope
+#15 6.839   ---
+#15 6.839   duration_ms: 0.330031
+#15 6.839   type: 'test'
+#15 6.839   ...
+#15 6.839 # Subtest: encoded valid tenant IDs and pages decode once
+#15 6.839 ok 113 - encoded valid tenant IDs and pages decode once
+#15 6.839   ---
+#15 6.839   duration_ms: 0.256562
+#15 6.839   type: 'test'
+#15 6.839   ...
+#15 6.839 # Subtest: malformed, unknown, traversal and ambiguous locators are 404
+#15 6.839 ok 114 - malformed, unknown, traversal and ambiguous locators are 404
+#15 6.839   ---
+#15 6.839   duration_ms: 0.322095
+#15 6.839   type: 'test'
+#15 6.839   ...
+#15 6.839 # Subtest: scope access follows mode and authenticated tenant
+#15 6.839 ok 115 - scope access follows mode and authenticated tenant
+#15 6.839   ---
+#15 6.839   duration_ms: 0.295496
+#15 6.839   type: 'test'
+#15 6.839   ...
+#15 6.839 1..115
+#15 6.839 # tests 115
+#15 6.839 # suites 0
+#15 6.839 # pass 115
+#15 6.839 # fail 0
+#15 6.839 # cancelled 0
+#15 6.839 # skipped 0
+#15 6.839 # todo 0
+#15 6.839 # duration_ms 1316.353108
+#15 7.101 
+#15 7.101 > @embedded-idp/admin-web@3.0.0 build /workspace/web
+#15 7.101 > tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json && vite build --config vite.management.config.ts && vite build --config vite.scan-code.config.ts && vite build --config vite.embedded.config.ts && tsc -p tsconfig.embedded.json && vite build --config vite.embedded-admin.config.ts && tsc -p tsconfig.embedded-admin.json
+#15 7.101 
+#15 ...
+
+#14 [rust-build 3/6] RUN apt-get update     && apt-get install -y --no-install-recommends build-essential pkg-config libssl-dev ca-certificates     && rm -rf /var/lib/apt/lists/*
+#14 7.205 0 added, 0 removed; done.
+#14 7.205 Running hooks in /etc/ca-certificates/update.d...
+#14 7.206 done.
+#14 DONE 7.2s
+
+#16 [rust-build 4/6] COPY . .
+#16 DONE 0.1s
+
+#15 [web-build 5/5] RUN corepack enable     && corepack prepare pnpm@10.30.1 --activate     && node --version     && pnpm --version     && pnpm install --frozen-lockfile     && pnpm test     && pnpm build     && pnpm test:embedded-bundle
+#15 12.00 vite v6.4.3 building for production...
+#15 12.06 transforming...
+#15 16.14 ✓ 1485 modules transformed.
+#15 16.55 rendering chunks...
+#15 16.65 computing gzip size...
+#15 16.67 ../dist/management/index.html                   0.55 kB │ gzip:   0.36 kB
+#15 16.67 ../dist/management/assets/index-LRLCzfuy.css    9.09 kB │ gzip:   1.99 kB
+#15 16.67 ../dist/management/assets/shell-BuEropm1.js   514.47 kB │ gzip: 152.58 kB
+#15 16.67 ../dist/management/assets/index-C5aH7j2B.js   800.28 kB │ gzip: 253.54 kB
+#15 16.67 
+#15 16.67 (!) Some chunks are larger than 500 kB after minification. Consider:
+#15 16.67 - Using dynamic import() to code-split the application
+#15 16.67 - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+#15 16.67 - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+#15 16.67 ✓ built in 4.64s
+#15 16.86 vite v6.4.3 building for production...
+#15 16.89 transforming...
+#15 20.05 ✓ 1533 modules transformed.
+#15 20.28 rendering chunks...
+#15 20.28 computing gzip size...
+#15 20.30 dist/scan-code/scan-code.js  667.64 kB │ gzip: 163.13 kB
+#15 20.30 ✓ built in 3.42s
+#15 20.49 vite v6.4.3 building for production...
+#15 20.52 transforming...
+#15 20.67 ✓ 5 modules transformed.
+#15 20.70 rendering chunks...
+#15 20.73 computing gzip size...
+#15 20.73 embedded/dist/embedded-idp.css   2.80 kB │ gzip:  0.99 kB
+#15 20.73 embedded/dist/embedded-idp.js   35.96 kB │ gzip: 10.01 kB
+#15 20.73 ✓ built in 234ms
+#15 21.94 vite v6.4.3 building for production...
+#15 21.97 transforming...
+#15 22.15 ✓ 7 modules transformed.
+#15 22.19 rendering chunks...
+#15 22.19 computing gzip size...
+#15 22.19 embedded/dist/admin.css   1.08 kB │ gzip:  0.42 kB
+#15 22.19 embedded/dist/admin.js   83.28 kB │ gzip: 20.86 kB
+#15 22.19 ✓ built in 244ms
+#15 24.13 
+#15 24.13 > @embedded-idp/admin-web@3.0.0 test:embedded-bundle /workspace/web
+#15 24.13 > node --test embedded/bundle.test.mjs
+#15 24.13 
+#15 24.17 TAP version 13
+#15 25.58 # Subtest: embedded bundle uses host React and contains no management interface
+#15 25.58 ok 1 - embedded bundle uses host React and contains no management interface
+#15 25.58   ---
+#15 25.58   duration_ms: 8.144746
+#15 25.58   type: 'test'
+#15 25.58   ...
+#15 25.72 # Subtest: admin subpath exports a mountable permission directory without changing the identity entry
+#15 25.72 ok 2 - admin subpath exports a mountable permission directory without changing the identity entry
+#15 25.72   ---
+#15 25.72   duration_ms: 138.957235
+#15 25.72   type: 'test'
+#15 25.72   ...
+#15 25.73 # Subtest: two embedded forms have separate labels, language and theme roots
+#15 25.73 ok 3 - two embedded forms have separate labels, language and theme roots
+#15 25.73   ---
+#15 25.73   duration_ms: 1.998083
+#15 25.73   type: 'test'
+#15 25.73   ...
+#15 25.76 1..3
+#15 25.76 # tests 3
+#15 25.76 # suites 0
+#15 25.76 # pass 3
+#15 25.76 # fail 0
+#15 25.76 # cancelled 0
+#15 25.76 # skipped 0
+#15 25.76 # todo 0
+#15 25.76 # duration_ms 1602.375951
+#15 DONE 25.9s
+
+#17 [rust-build 5/6] COPY --from=web-build /workspace/web/dist/ /workspace/web/dist/
+#17 DONE 0.0s
+
+#18 [rust-build 6/6] RUN rustc --version && cargo --version     && if [ -n "2" ]; then export CARGO_BUILD_JOBS; else unset CARGO_BUILD_JOBS; fi     && cargo build -p embedded-idp-app --release --locked     && cargo build -p embedded-idp-storage-postgres --example bootstrap_local_postgres --release --locked
+#18 0.129 rustc 1.93.0 (254b59607 2026-01-19)
+#18 0.163 cargo 1.93.0 (083ac5135 2025-12-15)
+#18 0.224     Updating crates.io index
+#18 0.676  Downloading crates ...
+#18 0.745   Downloaded atomic-waker v1.1.2
+#18 0.746   Downloaded bitflags v2.11.0
+#18 0.750   Downloaded rustversion v1.0.22
+#18 0.753   Downloaded ryu v1.0.23
+#18 0.756   Downloaded scopeguard v1.2.0
+#18 0.758   Downloaded digest v0.11.2
+#18 0.760   Downloaded serde_core v1.0.228
+#18 0.763   Downloaded futures-core v0.3.32
+#18 0.765   Downloaded digest v0.10.7
+#18 0.768   Downloaded tinystr v0.8.3
+#18 0.770   Downloaded sha2 v0.10.9
+#18 0.773   Downloaded version_check v0.9.5
+#18 0.774   Downloaded phf_shared v0.13.1
+#18 0.776   Downloaded rustls-webpki v0.103.13
+#18 0.779   Downloaded subtle v2.6.1
+#18 0.780   Downloaded percent-encoding v2.3.2
+#18 0.782   Downloaded tower-service v0.3.3
+#18 0.784   Downloaded zerofrom v0.1.7
+#18 0.785   Downloaded rand_core v0.10.0
+#18 0.787   Downloaded zerofrom-derive v0.1.7
+#18 0.789   Downloaded zerovec-derive v0.11.3
+#18 0.791   Downloaded serde_urlencoded v0.7.1
+#18 0.793   Downloaded tokio-macros v2.7.0
+#18 0.795   Downloaded zeroize v1.8.2
+#18 0.797   Downloaded zmij v1.0.21
+#18 0.799   Downloaded unicode-properties v0.1.4
+#18 0.801   Downloaded uuid v1.23.0
+#18 0.804   Downloaded unicode-ident v1.0.24
+#18 0.807   Downloaded zerotrie v0.2.4
+#18 0.810   Downloaded url v2.5.8
+#18 0.813   Downloaded tower v0.5.3
+#18 0.820   Downloaded zerovec v0.11.6
+#18 0.825   Downloaded tokio-util v0.7.18
+#18 0.831   Downloaded serde_json v1.0.149
+#18 0.837   Downloaded openssl v0.10.76
+#18 0.845   Downloaded webpki-roots v1.0.7
+#18 0.848   Downloaded unicode-normalization v0.1.25
+#18 0.851   Downloaded vcpkg v0.2.15
+#18 0.886   Downloaded tokio-postgres v0.7.18
+#18 0.891   Downloaded syn v2.0.117
+#18 0.899   Downloaded rustls v0.23.39
+#18 0.909   Downloaded futures-util v0.3.32
+#18 0.918   Downloaded typenum v1.19.0
+#18 0.921   Downloaded lettre v0.11.22
+#18 0.927   Downloaded hyper v1.9.0
+#18 0.932   Downloaded nom v8.0.0
+#18 0.937   Downloaded unicode-bidi v0.3.18
+#18 0.939   Downloaded tinyvec v1.11.0
+#18 0.941   Downloaded socket2 v0.6.3
+#18 0.943   Downloaded serde_derive v1.0.228
+#18 0.945   Downloaded rand v0.10.1
+#18 0.948   Downloaded icu_properties_data v2.2.0
+#18 0.956   Downloaded slab v0.4.12
+#18 0.957   Downloaded shlex v1.3.0
+#18 0.958   Downloaded idna v1.1.0
+#18 0.961   Downloaded http v1.4.0
+#18 0.964   Downloaded bytes v1.11.1
+#18 0.967   Downloaded yoke v0.8.2
+#18 0.969   Downloaded writeable v0.6.3
+#18 0.970   Downloaded whoami v2.1.1
+#18 0.972   Downloaded tokio-native-tls v0.3.1
+#18 0.974   Downloaded serde v1.0.228
+#18 0.976   Downloaded mio v1.2.0
+#18 0.981   Downloaded memchr v2.8.0
+#18 0.985   Downloaded icu_collections v2.2.0
+#18 0.990   Downloaded libc v0.2.184
+#18 1.018   Downloaded hyper-util v0.1.20
+#18 1.023   Downloaded smallvec v1.15.1
+#18 1.024   Downloaded openssl-sys v0.9.112
+#18 1.028   Downloaded icu_provider v2.2.0
+#18 1.031   Downloaded icu_properties v2.2.0
+#18 1.033   Downloaded icu_normalizer_data v2.2.0
+#18 1.035   Downloaded icu_normalizer v2.2.0
+#18 1.038   Downloaded icu_locale_core v2.2.0
+#18 1.042   Downloaded tokio v1.51.0
+#18 1.074   Downloaded synstructure v0.13.2
+#18 1.075   Downloaded stringprep v0.1.5
+#18 1.076   Downloaded serde_path_to_error v0.1.20
+#18 1.078   Downloaded log v0.4.29
+#18 1.080   Downloaded hybrid-array v0.4.10
+#18 1.081   Downloaded getrandom v0.4.2
+#18 1.084   Downloaded futures-channel v0.3.32
+#18 1.086   Downloaded proc-macro2 v1.0.106
+#18 1.088   Downloaded postgres-protocol v0.6.12
+#18 1.090   Downloaded postgres v0.19.13
+#18 1.092   Downloaded getrandom v0.2.17
+#18 1.094   Downloaded postgres-types v0.2.14
+#18 1.096   Downloaded parking_lot_core v0.9.12
+#18 1.097   Downloaded parking_lot v0.12.5
+#18 1.099   Downloaded once_cell v1.21.4
+#18 1.101   Downloaded httparse v1.10.1
+#18 1.103   Downloaded hmac v0.13.0
+#18 1.105   Downloaded find-msvc-tools v0.1.9
+#18 1.106   Downloaded cc v1.2.59
+#18 1.108   Downloaded siphasher v1.0.2
+#18 1.110   Downloaded pin-project-lite v0.2.17
+#18 1.113   Downloaded matchit v0.7.3
+#18 1.115   Downloaded litemap v0.8.2
+#18 1.117   Downloaded fallible-iterator v0.2.0
+#18 1.118   Downloaded rand_core v0.6.4
+#18 1.119   Downloaded r2d2 v0.8.10
+#18 1.120   Downloaded potential_utf v0.1.5
+#18 1.121   Downloaded pkg-config v0.3.32
+#18 1.122   Downloaded ring v0.17.14
+#18 1.155   Downloaded phf v0.13.1
+#18 1.156   Downloaded native-tls v0.2.18
+#18 1.157   Downloaded generic-array v0.14.7
+#18 1.158   Downloaded fastrand v2.4.1
+#18 1.159   Downloaded email_address v0.2.9
+#18 1.160   Downloaded displaydoc v0.2.5
+#18 1.163   Downloaded yoke-derive v0.8.2
+#18 1.163   Downloaded untrusted v0.9.0
+#18 1.165   Downloaded stable_deref_trait v1.2.1
+#18 1.165   Downloaded quote v1.0.45
+#18 1.167   Downloaded postgres-native-tls v0.5.3
+#18 1.168   Downloaded password-hash v0.5.0
+#18 1.170   Downloaded md-5 v0.11.0
+#18 1.171   Downloaded lock_api v0.4.14
+#18 1.172   Downloaded itoa v1.0.18
+#18 1.173   Downloaded http-body-util v0.1.3
+#18 1.174   Downloaded cpufeatures v0.3.0
+#18 1.175   Downloaded block-buffer v0.12.0
+#18 1.176   Downloaded tower-layer v0.3.3
+#18 1.177   Downloaded tinyvec_macros v0.1.1
+#18 1.177   Downloaded sync_wrapper v1.0.2
+#18 1.178   Downloaded openssl-macros v0.1.1
+#18 1.179   Downloaded idna_adapter v1.2.1
+#18 1.179   Downloaded r2d2_postgres v0.18.2
+#18 1.180   Downloaded quoted_printable v0.5.2
+#18 1.181   Downloaded futures-task v0.3.32
+#18 1.182   Downloaded utf8_iter v1.0.4
+#18 1.182   Downloaded sha2 v0.11.0
+#18 1.185   Downloaded http-body v1.0.1
+#18 1.186   Downloaded openssl-probe v0.2.1
+#18 1.186   Downloaded mime v0.3.17
+#18 1.187   Downloaded httpdate v1.0.3
+#18 1.188   Downloaded rustls-pki-types v1.14.0
+#18 1.190   Downloaded futures-sink v0.3.32
+#18 1.191   Downloaded email-encoding v0.4.1
+#18 1.192   Downloaded cpufeatures v0.2.17
+#18 1.193   Downloaded crypto-common v0.2.1
+#18 1.194   Downloaded cmov v0.5.3
+#18 1.195   Downloaded cfg-if v1.0.4
+#18 1.196   Downloaded form_urlencoded v1.2.2
+#18 1.197   Downloaded foreign-types-shared v0.1.1
+#18 1.198   Downloaded ctutils v0.4.2
+#18 1.199   Downloaded scheduled-thread-pool v0.2.7
+#18 1.200   Downloaded const-oid v0.10.2
+#18 1.202   Downloaded byteorder v1.5.0
+#18 1.203   Downloaded foreign-types v0.3.2
+#18 1.203   Downloaded crypto-common v0.1.7
+#18 1.204   Downloaded chacha20 v0.10.0
+#18 1.206   Downloaded block-buffer v0.10.4
+#18 1.207   Downloaded axum v0.7.9
+#18 1.213   Downloaded base64 v0.22.1
+#18 1.216   Downloaded argon2 v0.5.3
+#18 1.217   Downloaded blake2 v0.10.6
+#18 1.219   Downloaded base64ct v1.8.3
+#18 1.221   Downloaded axum-core v0.4.5
+#18 1.222   Downloaded async-trait v0.1.89
+#18 1.287    Compiling proc-macro2 v1.0.106
+#18 1.287    Compiling quote v1.0.45
+#18 1.417    Compiling unicode-ident v1.0.24
+#18 1.476    Compiling libc v0.2.184
+#18 2.103    Compiling syn v2.0.117
+#18 2.309    Compiling cfg-if v1.0.4
+#18 2.334    Compiling typenum v1.19.0
+#18 3.001    Compiling shlex v1.3.0
+#18 3.099    Compiling find-msvc-tools v0.1.9
+#18 3.229    Compiling bytes v1.11.1
+#18 3.961    Compiling cc v1.2.59
+#18 4.970    Compiling smallvec v1.15.1
+#18 5.124    Compiling synstructure v0.13.2
+#18 5.554    Compiling pin-project-lite v0.2.17
+#18 5.589    Compiling futures-core v0.3.32
+#18 5.658    Compiling socket2 v0.6.3
+#18 6.049    Compiling zerofrom-derive v0.1.7
+#18 6.496    Compiling yoke-derive v0.8.2
+#18 7.033    Compiling zerofrom v0.1.7
+#18 7.089    Compiling futures-sink v0.3.32
+#18 7.131    Compiling stable_deref_trait v1.2.1
+#18 7.157    Compiling rand_core v0.10.0
+#18 7.239    Compiling memchr v2.8.0
+#18 7.335    Compiling getrandom v0.4.2
+#18 7.439    Compiling yoke v0.8.2
+#18 7.550    Compiling tokio-macros v2.7.0
+#18 7.798    Compiling hybrid-array v0.4.10
+#18 8.048    Compiling mio v1.2.0
+#18 8.196    Compiling itoa v1.0.18
+#18 8.340    Compiling version_check v0.9.5
+#18 8.515    Compiling generic-array v0.14.7
+#18 8.597    Compiling tokio v1.51.0
+#18 8.741    Compiling zerovec-derive v0.11.3
+#18 9.531    Compiling cmov v0.5.3
+#18 9.673    Compiling ctutils v0.4.2
+#18 9.826    Compiling zerovec v0.11.6
+#18 10.34    Compiling block-buffer v0.12.0
+#18 10.43    Compiling crypto-common v0.2.1
+#18 11.63    Compiling displaydoc v0.2.5
+#18 12.15    Compiling getrandom v0.2.17
+#18 12.27    Compiling subtle v2.6.1
+#18 12.35    Compiling percent-encoding v2.3.2
+#18 12.52    Compiling const-oid v0.10.2
+#18 12.72    Compiling digest v0.11.2
+#18 13.28    Compiling vcpkg v0.2.15
+#18 13.74    Compiling serde_core v1.0.228
+#18 13.89    Compiling log v0.4.29
+#18 14.02    Compiling parking_lot_core v0.9.12
+#18 14.12    Compiling tinyvec_macros v0.1.1
+#18 14.15    Compiling slab v0.4.12
+#18 14.25    Compiling futures-task v0.3.32
+#18 14.33    Compiling pkg-config v0.3.32
+#18 14.67    Compiling openssl-sys v0.9.112
+#18 15.02    Compiling futures-util v0.3.32
+#18 16.72    Compiling tinyvec v1.11.0
+#18 17.01    Compiling uuid v1.23.0
+#18 17.05    Compiling futures-channel v0.3.32
+#18 17.21    Compiling base64 v0.22.1
+#18 17.57    Compiling scopeguard v1.2.0
+#18 17.58    Compiling unicode-normalization v0.1.25
+#18 17.61    Compiling lock_api v0.4.14
+#18 18.21    Compiling block-buffer v0.10.4
+#18 18.28    Compiling crypto-common v0.1.7
+#18 18.34    Compiling tinystr v0.8.3
+#18 18.45    Compiling chacha20 v0.10.0
+#18 18.61    Compiling async-trait v0.1.89
+#18 19.39    Compiling cpufeatures v0.3.0
+#18 19.42    Compiling litemap v0.8.2
+#18 19.55    Compiling unicode-bidi v0.3.18
+#18 19.58    Compiling writeable v0.6.3
+#18 19.73    Compiling unicode-properties v0.1.4
+#18 19.86    Compiling stringprep v0.1.5
+#18 20.59    Compiling icu_locale_core v2.2.0
+#18 21.66    Compiling sha2 v0.11.0
+#18 22.89    Compiling rand v0.10.1
+#18 23.22    Compiling digest v0.10.7
+#18 23.37    Compiling parking_lot v0.12.5
+#18 23.50    Compiling hmac v0.13.0
+#18 23.59    Compiling md-5 v0.11.0
+#18 23.75    Compiling zerotrie v0.2.4
+#18 24.07    Compiling potential_utf v0.1.5
+#18 24.09    Compiling http v1.4.0
+#18 24.15    Compiling ring v0.17.14
+#18 24.49    Compiling icu_normalizer_data v2.2.0
+#18 24.58    Compiling once_cell v1.21.4
+#18 24.72    Compiling siphasher v1.0.2
+#18 24.84    Compiling utf8_iter v1.0.4
+#18 24.91    Compiling byteorder v1.5.0
+#18 25.08    Compiling icu_properties_data v2.2.0
+#18 25.17    Compiling fallible-iterator v0.2.0
+#18 25.41    Compiling zmij v1.0.21
+#18 25.55    Compiling postgres-protocol v0.6.12
+#18 25.65    Compiling icu_collections v2.2.0
+#18 26.22    Compiling phf_shared v0.13.1
+#18 26.43    Compiling http-body v1.0.1
+#18 26.72    Compiling icu_provider v2.2.0
+#18 27.22    Compiling rand_core v0.6.4
+#18 27.32    Compiling foreign-types-shared v0.1.1
+#18 27.35    Compiling base64ct v1.8.3
+#18 27.56    Compiling serde v1.0.228
+#18 27.72    Compiling openssl v0.10.76
+#18 27.82    Compiling httparse v1.10.1
+#18 28.00    Compiling serde_json v1.0.149
+#18 28.13    Compiling password-hash v0.5.0
+#18 28.84    Compiling foreign-types v0.3.2
+#18 28.90    Compiling phf v0.13.1
+#18 28.99    Compiling postgres-types v0.2.14
+#18 30.00    Compiling blake2 v0.10.6
+#18 30.84    Compiling form_urlencoded v1.2.2
+#18 31.00    Compiling tokio-util v0.7.18
+#18 31.06    Compiling serde_derive v1.0.228
+#18 31.75    Compiling openssl-macros v0.1.1
+#18 32.00    Compiling whoami v2.1.1
+#18 32.71    Compiling cpufeatures v0.2.17
+#18 32.75    Compiling untrusted v0.9.0
+#18 32.80    Compiling rustversion v1.0.22
+#18 32.98    Compiling native-tls v0.2.18
+#18 33.07    Compiling httpdate v1.0.3
+#18 33.30    Compiling bitflags v2.11.0
+#18 33.31    Compiling zeroize v1.8.2
+#18 33.40    Compiling tower-service v0.3.3
+#18 33.53    Compiling rustls-pki-types v1.14.0
+#18 38.34    Compiling sha2 v0.10.9
+#18 38.50    Compiling tokio-postgres v0.7.18
+#18 39.04    Compiling argon2 v0.5.3
+#18 42.29    Compiling icu_properties v2.2.0
+#18 43.66    Compiling icu_normalizer v2.2.0
+#18 45.00    Compiling openssl-probe v0.2.1
+#18 45.07    Compiling atomic-waker v1.1.2
+#18 45.12    Compiling mime v0.3.17
+#18 45.18    Compiling sync_wrapper v1.0.2
+#18 45.22    Compiling tower-layer v0.3.3
+#18 45.37    Compiling hyper v1.9.0
+#18 46.01    Compiling idna_adapter v1.2.1
+#18 46.06    Compiling embedded-idp-core v3.0.0 (/workspace/crates/embedded-idp-core)
+#18 48.34    Compiling http-body-util v0.1.3
+#18 48.51    Compiling scheduled-thread-pool v0.2.7
+#18 49.04    Compiling ryu v1.0.23
+#18 49.23    Compiling rustls v0.23.39
+#18 49.32    Compiling serde_urlencoded v0.7.1
+#18 49.48    Compiling r2d2 v0.8.10
+#18 49.61    Compiling axum-core v0.4.5
+#18 51.69    Compiling idna v1.1.0
+#18 52.14    Compiling hyper-util v0.1.20
+#18 52.38    Compiling tokio-native-tls v0.3.1
+#18 52.46    Compiling tower v0.5.3
+#18 52.76    Compiling postgres v0.19.13
+#18 53.52    Compiling rustls-webpki v0.103.13
+#18 55.80    Compiling serde_path_to_error v0.1.20
+#18 56.14    Compiling matchit v0.7.3
+#18 56.49    Compiling axum v0.7.9
+#18 61.45    Compiling r2d2_postgres v0.18.2
+#18 61.50    Compiling postgres-native-tls v0.5.3
+#18 61.57    Compiling url v2.5.8
+#18 63.67    Compiling webpki-roots v1.0.7
+#18 63.71    Compiling email-encoding v0.4.1
+#18 64.10    Compiling nom v8.0.0
+#18 66.60    Compiling email_address v0.2.9
+#18 66.93    Compiling embedded-idp-app v3.0.0 (/workspace/crates/embedded-idp-app)
+#18 67.09    Compiling quoted_printable v0.5.2
+#18 67.37    Compiling embedded-idp-email v3.0.0 (/workspace/crates/embedded-idp-email)
+#18 67.49    Compiling fastrand v2.4.1
+#18 67.66    Compiling lettre v0.11.22
+#18 73.75    Compiling embedded-idp-axum v3.0.0 (/workspace/crates/embedded-idp-axum)
+#18 78.54    Compiling embedded-idp-storage-postgres v3.0.0 (/workspace/crates/embedded-idp-storage-postgres)
+#18 96.18    Compiling embedded-idp-security v3.0.0 (/workspace/crates/embedded-idp-security)
+#18 149.1     Finished `release` profile [optimized] target(s) in 2m 28s
+#18 149.3    Compiling syn v2.0.117
+#18 151.6    Compiling tokio-macros v2.7.0
+#18 151.6    Compiling async-trait v0.1.89
+#18 152.1    Compiling tokio v1.51.0
+#18 152.4    Compiling serde_derive v1.0.228
+#18 154.7    Compiling openssl-macros v0.1.1
+#18 154.9    Compiling openssl v0.10.76
+#18 159.5    Compiling tokio-util v0.7.18
+#18 160.1    Compiling tokio-postgres v0.7.18
+#18 160.3    Compiling serde v1.0.228
+#18 160.8    Compiling native-tls v0.2.18
+#18 161.3    Compiling hyper v1.9.0
+#18 164.0    Compiling hyper-util v0.1.20
+#18 164.3    Compiling postgres v0.19.13
+#18 166.8    Compiling tokio-native-tls v0.3.1
+#18 166.9    Compiling serde_urlencoded v0.7.1
+#18 167.0    Compiling tower v0.5.3
+#18 167.3    Compiling axum-core v0.4.5
+#18 169.5    Compiling axum v0.7.9
+#18 172.0    Compiling postgres-native-tls v0.5.3
+#18 172.1    Compiling r2d2_postgres v0.18.2
+#18 172.1    Compiling embedded-idp-storage-postgres v3.0.0 (/workspace/crates/embedded-idp-storage-postgres)
+#18 174.3    Compiling embedded-idp-axum v3.0.0 (/workspace/crates/embedded-idp-axum)
+#18 188.5    Compiling embedded-idp-security v3.0.0 (/workspace/crates/embedded-idp-security)
+#18 231.9     Finished `release` profile [optimized] target(s) in 1m 22s
+#18 DONE 232.1s
+
+#19 [runtime 3/3] COPY --from=rust-build /workspace/target/release/embedded-idp-app /app/embedded-idp-app
+#19 DONE 0.1s
+
+#20 exporting to image
+#20 exporting layers
+#20 exporting layers 0.4s done
+#20 writing image sha256:ae334403a36805ff4985d2750f748efd70c52f9d779e987c9f33a67398b5b855 done
+#20 naming to docker.io/library/idp-n2-linux:0b03c5220af9-runtime done
+#20 DONE 0.4s
+
+ [33m4 warnings found (use docker --debug to expand):
+[0m - InvalidDefaultArgInFrom: Default value for ARG ${NODE_IMAGE} results in empty or invalid base image name (line 4)
+ - InvalidDefaultArgInFrom: Default value for ARG ${RUST_IMAGE} results in empty or invalid base image name (line 18)
+ - InvalidDefaultArgInFrom: Default value for ARG ${RUNTIME_IMAGE} results in empty or invalid base image name (line 33)
+ - InvalidDefaultArgInFrom: Default value for ARG ${RUNTIME_IMAGE} results in empty or invalid base image name (line 44)

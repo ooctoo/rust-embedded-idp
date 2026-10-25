@@ -1,0 +1,25 @@
+{
+  "total_count": 1,
+  "artifacts": [
+    {
+      "id": 12595486707,
+      "node_id": "MDg6QXJ0aWZhY3QxMjU5NTQ4NjcwNw==",
+      "name": "n2-functional-d7214815dd168c97532495b884fea8f4fedfac7d-40183858494-1-arm64",
+      "size_in_bytes": 52132,
+      "url": "https://api.github.com/repos/ooctoo/rust-embedded-idp/actions/artifacts/12595486707",
+      "archive_download_url": "https://api.github.com/repos/ooctoo/rust-embedded-idp/actions/artifacts/12595486707/zip",
+      "expired": false,
+      "digest": "sha256:2520d81c8474a00b795bd2384b28a5749941777847e387c23fdfb006b770815a",
+      "created_at": "2026-10-25T10:21:05Z",
+      "updated_at": "2026-10-25T10:21:05Z",
+      "expires_at": "2026-11-24T10:21:04Z",
+      "workflow_run": {
+        "id": 40183858494,
+        "repository_id": 1309595431,
+        "head_repository_id": 1309595431,
+        "head_branch": "codex/management-console-ui-b",
+        "head_sha": "d7214815dd168c97532495b884fea8f4fedfac7d"
+      }
+    }
+  ]
+}
