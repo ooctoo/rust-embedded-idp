@@ -1,6 +1,6 @@
 # N2退役范围与覆盖映射
 
-N2原有八套检查器和手动workflow面向完整管理界面巡检。当前仓库的CI目标收敛为UT、真实集成和六组关键浏览器E2E，因此删除旧workflow、套件驱动、全量manifest、Docker补验准备器及仅服务旧套件的检查器。历史执行报告和证据目录保持原样，继续作为各自SHA/环境的历史记录。
+N2原有八套检查器和手动workflow面向完整管理界面巡检。当前仓库的CI目标收敛为UT、真实集成和六组关键浏览器E2E，因此删除旧workflow、套件驱动、全量manifest、Docker补验准备器及仅服务旧套件的检查器。历史执行报告保留；旧大体积附件已按后续授权移出工作树，通过[Git历史](n2-evidence-archive.md)追溯各自SHA/环境。
 
 ## 合同处置
 
@@ -27,4 +27,4 @@ N2原有八套检查器和手动workflow面向完整管理界面巡检。当前�
 - `scripts/prepare_management_navigation.py` 为日常E2E准备隔离参考宿主fixture，继续保留。
 - `scripts/test_management_n2_tools.py` 保留四项fixture/清理测试，仅移除N2专属日志脱敏与Mac profile finalizer测试。
 
-旧manifest和套件脚本不是当前回归入口。删除不触碰 `docs/design/n2/` 下的历史日志、清单、附件或执行报告，也不据此改写旧结果。
+旧manifest和套件脚本不是当前回归入口。后续清理已删除当前工作树的 `docs/design/n2/` 附件，原字节仍可从Git历史读取；历史执行结论不改写。

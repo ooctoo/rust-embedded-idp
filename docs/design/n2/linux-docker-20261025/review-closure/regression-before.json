@@ -1,8 +1,0 @@
-{
-  "baselineSourceSha256": "3018d3e3e7eedfbf316b24a1e07fecf5c0ed5aa5f8715a831cc66dbbf4e56dd7",
-  "scope": "pre-review sql and cleanup methods reconstructed in memory only",
-  "mocked": true,
-  "expectedFailuresOrErrors": 2,
-  "actualFailures": 1,
-  "actualErrors": 1
-}

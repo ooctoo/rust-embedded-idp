@@ -1,7 +1,0 @@
-{
-  "stage": "local synthetic probe build, before browser launch",
-  "error": "Vite HTML emitted asset path rejected because /tmp symlink was not canonicalized",
-  "productChanged": false,
-  "temporaryDirectoryRemoved": true,
-  "correction": "realpath temporary root before Vite build"
-}

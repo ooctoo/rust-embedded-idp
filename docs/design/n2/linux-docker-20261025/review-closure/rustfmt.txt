@@ -1,2 +1,0 @@
-cargo fmt --all -- --check
-exitCode: 0

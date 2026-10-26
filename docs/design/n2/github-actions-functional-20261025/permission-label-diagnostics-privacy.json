@@ -1,9 +1,0 @@
-{
-  "mode": "offline extracted diagnostic code only",
-  "checks": 3,
-  "sourceSha256": "0174b6f75fb05a3d9b2561f4540ed774698b6818d0ab351dd1d8d1ac7d94f760",
-  "flagsOnly": true,
-  "labelAllowlist": true,
-  "inputValuesNeverRead": true,
-  "actualBrowserRuns": 0
-}

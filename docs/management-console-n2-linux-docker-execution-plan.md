@@ -7,7 +7,7 @@
 | 版本 / 日期 | 修订1，2026-10-25 |
 | 状态 | 完整复审及提交前静态核对完成，仅相关文档随本轮本地提交归档、未推送；推荐组合待后续执行批次确认，未准备环境、未构建镜像、未执行补验 |
 | 编写与复审起点 | `codex/management-console-ui-b`，`8527b67ae9c1b32b6372f5bf5592bd16e6d606eb`；N2 Mac产品及证据提交 `e2c997524a1b8d516894591a3f6aeb54d4d93f9c`；本文最终归档提交以Git记录为准 |
-| 依据 | [R02运行拓扑](validation-runtime-topology.md)、[N2设计](management-console-n2-target-validation-design.md)、[Mac报告](n2-mac-execution-result.md)与[最终复审](design/n2/mac-20261024/review-closure/README.md) |
+| 依据 | [R02运行拓扑](validation-runtime-topology.md)、[N2设计](management-console-n2-target-validation-design.md)、[Mac报告](n2-mac-execution-result.md)与[最终复审（历史附件）](n2-evidence-archive.md) |
 | 本轮边界 | 按最新授权仅完整复审、修正文档及本地提交；不改产品、工具、Dockerfile或CI，不安装、不拉取镜像、不启动容器/服务/浏览器、不运行补验、不推送、不部署，不启动N3–N5及M1-03–06 |
 
 ## 1 目标与结论范围

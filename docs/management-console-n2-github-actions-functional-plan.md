@@ -8,11 +8,11 @@
 
 开源交付边界澄清（2026-10-25）：本仓库负责模块、适配器、接入契约和参考应用自洽；参考单体用于查看/理解配置与验证装配，生产配置、集成和部署由下游仓库承担。[CI边界复审与提速最小方案](ci-speed-minimal-implementation-plan.md)将N2保留为手动专项，`release/x.y.z`仅作为未来上游版本质量入口，不默认绑定H01全套或生产CD。本轮仅文档与既有N2收尾本地归档；CI/CD随后暂停，未实现新触发/缓存、未执行补验或部署。以下历史拓扑中的Linux生产方向不表示本仓库负责生产部署。
 
-N2 GitHub Actions实际补验进展（2026-10-25）：[执行报告](n2-github-actions-functional-execution-result.md)及[独立证据](design/n2/github-actions-functional-20261025/README.md)记录从原冻结SHA的失败、修复与完整复验。最终SHA `14dd9199094464a1f7368e9c95f5c29e7a5354c7`、run `40191248439`在Ubuntu arm64＋Debian/glibc release默认features＋headless Chromium的H01组合，八套264组通过，清理及artifact保全完成独立核对；127项离线工具检查通过。修复提交已签名推送验收分支，收尾报告/最终证据随本轮本地提交归档，未新增推送；不部署，不测试缩放/旁白，不启动M1-03–06，不扩大为整体N2、生产或真实消费者通过。以下为各阶段历史记录。
+N2 GitHub Actions实际补验进展（2026-10-25）：[执行报告](n2-github-actions-functional-execution-result.md)及[独立证据（历史附件）](n2-evidence-archive.md)记录从原冻结SHA的失败、修复与完整复验。最终SHA `14dd9199094464a1f7368e9c95f5c29e7a5354c7`、run `40191248439`在Ubuntu arm64＋Debian/glibc release默认features＋headless Chromium的H01组合，八套264组通过，清理及artifact保全完成独立核对；127项离线工具检查通过。修复提交已签名推送验收分支，收尾报告/最终证据随本轮本地提交归档，未新增推送；不部署，不测试缩放/旁白，不启动M1-03–06，不扩大为整体N2、生产或真实消费者通过。以下为各阶段历史记录。
 
 N2远端就绪与workflow同步进展（2026-10-25）：截至`8fd9f46`的验收内容已按前序授权推送；main仅纳入N2 workflow并修正上下文。本轮将main `4ce8adec`的workflow精确同步到验收分支，完整复审及124项离线工具检查通过；[同步报告](n2-ci-workflow-sync-result.md)记录证据和新执行SHA的冻结规则。本轮仅相关同步、测试和文档/证据提交并推送，264项功能断言组尚未在CI实际执行。下文原阶段记录保留；本轮不触发实际补验、不部署，不测缩放/旁白，M1-03–06未启动。
 
-后续工具实施进展（2026-10-25）：需求方已另行授权功能选集、CI驱动和workflow适配及离线工具验证，结果见[实施回传](n2-functional-ci-tooling-result.md)和[证据](design/n2/ci-functional-tooling-20261025/README.md)。已实现工具并完成122项离线检查；264项功能断言只登记未实跑，仍未执行实际CI补验或改产品。下文保留本方案归档时的阶段边界；当前实现完成复审后仅本地提交归档，实际SHA以包含本文的Git记录为准；未推送/部署，缩放与旁白不测，M1-03–06未启动。
+后续工具实施进展（2026-10-25）：需求方已另行授权功能选集、CI驱动和workflow适配及离线工具验证，结果见[实施回传](n2-functional-ci-tooling-result.md)和[证据（历史附件）](n2-evidence-archive.md)。已实现工具并完成122项离线检查；264项功能断言只登记未实跑，仍未执行实际CI补验或改产品。下文保留本方案归档时的阶段边界；当前实现完成复审后仅本地提交归档，实际SHA以包含本文的Git记录为准；未推送/部署，缩放与旁白不测，M1-03–06未启动。
 
 日期：2026-10-25。编写基线为本地`cc0456118a5c795347cf1d6eb142392df570fe7a`，当前分支`codex/management-console-ui-b`。依据[R02运行拓扑](validation-runtime-topology.md)、[Linux Docker补验报告](n2-linux-docker-execution-result.md)、[Mac报告](n2-mac-execution-result.md)及需求方随后“先关注功能”“不再测试缩放和旁白”的范围调整。
 
@@ -65,7 +65,7 @@ Playwright1.64.1来自[官方稳定发布](https://github.com/microsoft/playwrig
 | runtime/prepare基础 | `debian@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8` |
 | PG | `postgres@sha256:bbf83594798e144bff365a9c191c5d779f181fb3135902064ab8ff11918020fc` |
 
-digest及arm64子manifest的原记录见[镜像输入](design/n2/linux-docker-20261025/images/frozen.json)。后续预拉取并验证平台，再由现有构建入口使用digest；本轮不拉取。托管VM软件和Dockerfile中的apt仓库会变化，因此还要记录实际系统/动态库/包清单，不承诺仅凭镜像基础digest实现位级重现。
+digest及arm64子manifest的原记录见[镜像输入（历史附件）](n2-evidence-archive.md)。后续预拉取并验证平台，再由现有构建入口使用digest；本轮不拉取。托管VM软件和Dockerfile中的apt仓库会变化，因此还要记录实际系统/动态库/包清单，不承诺仅凭镜像基础digest实现位级重现。
 
 ## 3 工作流、构建与最小工具适配
 
@@ -80,7 +80,7 @@ digest及arm64子manifest的原记录见[镜像输入](design/n2/linux-docker-20
 
 构建顺序：冻结checkout/工具输入 → 检查本机Unix Docker endpoint及原生arm64 daemon、可用CPU/内存/磁盘 → 预拉取上述基础镜像 → 干净白名单上下文 → Web测试/构建/bundle → release app及bootstrap → 本地runtime/prepare → 实际ELF/链接/嵌入资源核对。复用现有Dockerfile（历史源码：`git show a3fcd72:scripts/n2-linux/Dockerfile`）和构建器（历史源码：`git show a3fcd72:scripts/build_management_n2_linux.py`），不复制`.env`、`.local`、`.git`、旧dist/target、证据或无关文档；不从缓存凭空宣称测试已执行，构建步骤若命中缓存须记录复用来源或强制执行本次要求的测试层。
 
-标准runner并不保证与本地构建资源相同。首批建议以`CARGO_BUILD_JOBS=2`限制构建并发，传入构建阶段并记录；跟踪浏览器、基础镜像、BuildKit中间层和证据的峰值空间，不能只用[既有镜像摘要](design/n2/linux-docker-20261025/review-closure/build-focus-fix/image-summary.json)中约123/126MB的最终runtime/prepare大小估算。预检或运行中资源不足时，记录准备阻塞或构建失败并有界收尾，不自动改架构、换更大付费runner或全局删除预装软件/缓存；实际耗时和峰值用于首跑后调整预算。
+标准runner并不保证与本地构建资源相同。首批建议以`CARGO_BUILD_JOBS=2`限制构建并发，传入构建阶段并记录；跟踪浏览器、基础镜像、BuildKit中间层和证据的峰值空间，不能只用[既有镜像摘要（历史附件）](n2-evidence-archive.md)中约123/126MB的最终runtime/prepare大小估算。预检或运行中资源不足时，记录准备阻塞或构建失败并有界收尾，不自动改架构、换更大付费runner或全局删除预装软件/缓存；实际耗时和峰值用于首跑后调整预算。
 
 后续获准实施时，最小改动限定为以下工具面，本轮均不修改：
 

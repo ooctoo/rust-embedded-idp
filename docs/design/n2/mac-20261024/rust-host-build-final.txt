@@ -1,2 +1,0 @@
-   Compiling embedded-idp-app v3.0.0 (<repo>/crates/embedded-idp-app)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 7.74s

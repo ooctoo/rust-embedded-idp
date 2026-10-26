@@ -1,6 +1,8 @@
 # N2 Mac 子批执行与补验报告
 
-日期：2026-10-24。B03/H01的功能、会话安全、布局与原生缩放补验已完成；首轮修复两项问题，提交前复审另发现并修复一项Cookie刷新恢复问题。真实中文IME组合及执行者视觉复核已完成。当前复审结论与最终快照见[提交前复审收尾](design/n2/mac-20261024/review-closure/README.md)。需求方最终视觉签认单列，不作Windows、完整N2或生产支持声明。
+> 附件清理（2026-10-26）：按后续授权移除旧N2大体积附件，验收结论保留为历史记录；附件请通过[Git历史检索](n2-evidence-archive.md)追溯。下文附件链接指向检索说明。
+
+日期：2026-10-24。B03/H01的功能、会话安全、布局与原生缩放补验已完成；首轮修复两项问题，提交前复审另发现并修复一项Cookie刷新恢复问题。真实中文IME组合及执行者视觉复核已完成。当前复审结论与最终快照见[提交前复审收尾（历史附件）](n2-evidence-archive.md)。需求方最终视觉签认单列，不作Windows、完整N2或生产支持声明。
 
 ## 授权与冻结范围
 
@@ -37,9 +39,9 @@
 
 ### N2-MAC-02：真实400%缩放下确认内容高度归零
 
-原生Chrome菜单确认400%，从1280×600基准得到320×150 CSS px、DPR4，页面CSS zoom仍为1。客户端确认的`max-height: calc(100dvh - 260px)`导致完整配置/后果区域clientHeight=0，scrollHeight=912；说明无法阅读。[原生失败记录](design/n2/mac-20261024/native-before-fix.json)及[失败截图](design/n2/mac-20261024/assets/native-confirm-400-short.png)保留。
+原生Chrome菜单确认400%，从1280×600基准得到320×150 CSS px、DPR4，页面CSS zoom仍为1。客户端确认的`max-height: calc(100dvh - 260px)`导致完整配置/后果区域clientHeight=0，scrollHeight=912；说明无法阅读。[原生失败记录（历史附件）](n2-evidence-archive.md)及[失败截图（历史附件）](n2-evidence-archive.md)保留。
 
-客户端确认CSS和共享`SafeConfirm`改为`max(120px, calc(100dvh - 260px))`，短视口时由现有Modal外层滚动承载总高度。保留说明区键盘滚动、取消优先和危险确认，没有删除后果文案或缩小字体。新增两类320×150回归通过；原生400%复验确认height=120、scrollWidth=clientWidth=256，PageDown达到scrollTop792.25，说明区可完整进入150高视口；Tab到返回/保存的按钮边界均在视口内。见[原生最终记录](design/n2/mac-20261024/native-final.json)。
+客户端确认CSS和共享`SafeConfirm`改为`max(120px, calc(100dvh - 260px))`，短视口时由现有Modal外层滚动承载总高度。保留说明区键盘滚动、取消优先和危险确认，没有删除后果文案或缩小字体。新增两类320×150回归通过；原生400%复验确认height=120、scrollWidth=clientWidth=256，PageDown达到scrollTop792.25，说明区可完整进入150高视口；Tab到返回/保存的按钮边界均在视口内。见[原生最终记录（历史附件）](n2-evidence-archive.md)。
 
 ## 首轮检查结果（复审前快照）
 
@@ -57,7 +59,7 @@
 | 回读与制品 | 原生草稿/取消/刷新后独立API回读客户端名称未改；四个最终宿主实际服务JS/CSS均匹配最终磁盘哈希 |
 | 静态核对 | Rust fmt、Node语法、Python AST与diff通过；Rust源码未改，不冒称重跑workspace或全部ignored/live测试 |
 
-[构建/单测记录](design/n2/mac-20261024/build-and-unit-checks.json)、[首轮源码与制品摘要](design/n2/mac-20261024/source-manifest-final.json)、[实际资源和独立回读](design/n2/mac-20261024/native-readback-and-served-assets.json)。首轮核对时HEAD仍为c41f060，修复为本地未提交差异，以文件哈希绑定；当前提交以Git记录及复审收尾为准，不虚构包含自身的提交SHA。
+[构建/单测记录（历史附件）](n2-evidence-archive.md)、[首轮源码与制品摘要（历史附件）](n2-evidence-archive.md)、[实际资源和独立回读（历史附件）](n2-evidence-archive.md)。首轮核对时HEAD仍为c41f060，修复为本地未提交差异，以文件哈希绑定；当前提交以Git记录及复审收尾为准，不虚构包含自身的提交SHA。
 
 ## 运行环境与证据层次
 
@@ -129,30 +131,30 @@ Windows Chrome/Edge仍为后续核心子批；Safari/Firefox、实体移动端�
 
 ## 追加：真实中文IME与最终视觉复核
 
-用户继续授权补齐中文IME和最终视觉检查，发现问题先修复后复验，原限制不变。另建[追加证据目录](design/n2/mac-20261024/ime-visual-followup/README.md)，沿用最终43项源码/制品，重新验证四入口实际JS/CSS匹配；本次没有产品代码或依赖变更，没有重建或冒称重新执行上一轮113/3及七套专项。
+用户继续授权补齐中文IME和最终视觉检查，发现问题先修复后复验，原限制不变。另建[追加证据目录（历史附件）](n2-evidence-archive.md)，沿用最终43项源码/制品，重新验证四入口实际JS/CSS匹配；本次没有产品代码或依赖变更，没有重建或冒称重新执行上一轮113/3及七套专项。
 
 本机输入法已安装ABC/简体拼音；系统设置显示切换快捷键为⌘空格。自动切换未生效、输入菜单代理读取超时后，用户手动切到简体拼音并回复“已切换”。随后使用CUA原生Chrome应用逐键输入，观察到带下划线的`ce shi`，Space落字为“测试”。没有派发合成composition事件；系统候选窗未进入页面截图，也未抓取DOM composition事件流，不虚称这些记录已取得。
 
-[9组结果](design/n2/mac-20261024/ime-visual-followup/results.json)全部通过：单行组合/空格选字；组合Return不误触发保存或筛选；Escape仅取消组合；退格修正与连续落字；textarea组合；显式中文查询与无匹配状态；必填错误与中文恢复；显式保存/回读；320窄屏组合与下拉。此输入法的Return实际确认拼音字母，Space选中中文，报告按真实行为记录。“测试客户端”显式保存后，列表、重新读取及[独立数据库只读回读](design/n2/mac-20261024/ime-visual-followup/database-readback.json)一致；回调/type/PKCE保持原值，未丢字或重复。多行输入中的临时中文在保存前恢复，最后校验草稿已放弃。
+[9组结果（历史附件）](n2-evidence-archive.md)全部通过：单行组合/空格选字；组合Return不误触发保存或筛选；Escape仅取消组合；退格修正与连续落字；textarea组合；显式中文查询与无匹配状态；必填错误与中文恢复；显式保存/回读；320窄屏组合与下拉。此输入法的Return实际确认拼音字母，Space选中中文，报告按真实行为记录。“测试客户端”显式保存后，列表、重新读取及[独立数据库只读回读（历史附件）](n2-evidence-archive.md)一致；回调/type/PKCE保持原值，未丢字或重复。多行输入中的临时中文在保存前恢复，最后校验草稿已放弃。
 
-[视觉复核](design/n2/mac-20261024/ime-visual-followup/visual-review.json)预览上一轮31张最终任务截图、重新打开重点原图，并检查本轮原生界面及20张新截图，覆盖作用域/稳定ID、危险后果、长标识、焦点、下拉、错误恢复、保存成功、无匹配与窄屏。320抽屉稳定后宽320、无全局横溢；960默认窗口中表格为局部横向滚动，首列可滚回，不能把滚动位置当内容缺失。未发现新的阻断产品问题；执行者复核完成，需求方最终审美/交付签认仍不代签，也不扩大为全部状态或完整WCAG认证。
+[视觉复核（历史附件）](n2-evidence-archive.md)预览上一轮31张最终任务截图、重新打开重点原图，并检查本轮原生界面及20张新截图，覆盖作用域/稳定ID、危险后果、长标识、焦点、下拉、错误恢复、保存成功、无匹配与窄屏。320抽屉稳定后宽320、无全局横溢；960默认窗口中表格为局部横向滚动，首列可滚回，不能把滚动位置当内容缺失。未发现新的阻断产品问题；执行者复核完成，需求方最终审美/交付签认仍不代签，也不扩大为全部状态或完整WCAG认证。
 
-本次额外1套临时夹具的4个宿主、PG容器/匿名卷及私有目录已核对清理；当前fixture标签查询为空。测试会话已退出、密码框为空，专用tab/group关闭，viewport override恢复960×727/DPR2。没有调整原生缩放或旁白，系统键盘配置未改；输入源保留用户手动选择的简体拼音。自动化故障与[清理记录](design/n2/mac-20261024/ime-visual-followup/cleanup.json)一并归档。
+本次额外1套临时夹具的4个宿主、PG容器/匿名卷及私有目录已核对清理；当前fixture标签查询为空。测试会话已退出、密码框为空，专用tab/group关闭，viewport override恢复960×727/DPR2。没有调整原生缩放或旁白，系统键盘配置未改；输入源保留用户手动选择的简体拼音。自动化故障与[清理记录（历史附件）](n2-evidence-archive.md)一并归档。
 
-![真实拼音组合](design/n2/mac-20261024/ime-visual-followup/assets/name-composing-320.png)
-![中文显式保存后的最终列表](design/n2/mac-20261024/ime-visual-followup/assets/final-native-chinese.png)
+[真实拼音组合（历史截图）](n2-evidence-archive.md)
+[中文显式保存后的最终列表（历史截图）](n2-evidence-archive.md)
 
 ## 首轮清理与复核
 
-[清理记录](design/n2/mac-20261024/cleanup.json)核对16套自动化夹具和4套手工/原生夹具，共20套：所有已验证宿主SIGTERM后退出，容器/匿名卷与私有目录删除；最终按fixture标签查询无容器。普通profile专项的6个私有profile删除。Chrome测试会话已退出、临时tab/group关闭，浏览器缩放100%及viewport override恢复；旁白为off，临时偏好设置窗口关闭。
+[清理记录（历史附件）](n2-evidence-archive.md)核对16套自动化夹具和4套手工/原生夹具，共20套：所有已验证宿主SIGTERM后退出，容器/匿名卷与私有目录删除；最终按fixture标签查询无容器。普通profile专项的6个私有profile删除。Chrome测试会话已退出、临时tab/group关闭，浏览器缩放100%及viewport override恢复；旁白为off，临时偏好设置窗口关闭。
 
-[机器汇总](design/n2/mac-20261024/summary.json)明确各轮采用的成功套件、失败及未执行项。首轮当时43项源码/锁文件/制品哈希匹配；原无关审查文档内容对象为`4ef4907646970f1cd06ec80cf51a9516497244d6`，当时index为空。这些是复审前固定记录；后续发现的刷新问题、修复/复验和当前提交边界另见复审收尾，不以旧快照代替当前源码检查。
+[机器汇总（历史附件）](n2-evidence-archive.md)明确各轮采用的成功套件、失败及未执行项。首轮当时43项源码/锁文件/制品哈希匹配；原无关审查文档内容对象为`4ef4907646970f1cd06ec80cf51a9516497244d6`，当时index为空。这些是复审前固定记录；后续发现的刷新问题、修复/复验和当前提交边界另见复审收尾，不以旧快照代替当前源码检查。
 
 实际默认Chrome窗口截图：
 
-![Mac Chrome参考后台实际运行](design/n2/mac-20261024/assets/native-clients-default-final.png)
+[Mac Chrome参考后台实际运行（历史截图）](n2-evidence-archive.md)
 
 真实400%下说明区与动作区分别可到达：
 
-![400%后果说明可滚动阅读](design/n2/mac-20261024/assets/native-consequences-400-after.png)
-![400%确认按钮可到达](design/n2/mac-20261024/assets/native-confirm-400-after.png)
+[400%后果说明可滚动阅读（历史截图）](n2-evidence-archive.md)
+[400%确认按钮可到达（历史截图）](n2-evidence-archive.md)

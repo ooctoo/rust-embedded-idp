@@ -1,8 +1,10 @@
 # N2 workflow同步、离线复验与执行版本冻结
 
+> 附件清理（2026-10-26）：按后续授权移除旧N2大体积附件，验收结论保留为历史记录；附件请通过[Git历史检索](n2-evidence-archive.md)追溯。下文附件链接指向检索说明。
+
 日期：2026-10-25。验收分支为`codex/management-console-ui-b`，本轮起点为`8fd9f46da55eaa6fa47b5247b9ddd7a71e1d9606`。需求方授权将已合入main的workflow修正同步到验收分支，完整复审、离线复验后，仅提交并推送相关改动并冻结新的执行SHA。实际N2补验未获本轮授权。
 
-本轮已完成同步和离线复验：workflow与main的`4ce8adec3c5f501be75e31d0c0df779d76016713`逐字节一致；124项离线工具检查、actionlint语义检查及相关静态检查通过。[独立证据](design/n2/ci-workflow-sync-20261025/README.md)保留修前失败、整合失败及修后结果。没有运行实际浏览器、Docker、PG、HTTP产品验收或N2 job；264项功能断言组仍仅为计划选集，不能宣布CI功能验收通过。
+本轮已完成同步和离线复验：workflow与main的`4ce8adec3c5f501be75e31d0c0df779d76016713`逐字节一致；124项离线工具检查、actionlint语义检查及相关静态检查通过。[独立证据（历史附件）](n2-evidence-archive.md)保留修前失败、整合失败及修后结果。没有运行实际浏览器、Docker、PG、HTTP产品验收或N2 job；264项功能断言组仍仅为计划选集，不能宣布CI功能验收通过。
 
 ## 来源与最小同步范围
 
