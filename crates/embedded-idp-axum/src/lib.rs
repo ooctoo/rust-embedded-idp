@@ -113,7 +113,10 @@ pub use tenant_auth::tenant_auth_router;
 pub use tenant_device_admin::tenant_device_admin_router;
 pub use tenant_device_auth::{tenant_device_auth_router, TenantDeviceAuthHttpConfig};
 pub use tenant_devices::{tenant_device_router, TenantDeviceHttpConfig};
-pub use tenant_oidc_authorization::{tenant_oidc_authorization_router, TenantOidcHttpConfig};
+pub use tenant_oidc_authorization::{
+    tenant_oidc_authorization_router, tenant_oidc_authorization_router_with_profiles,
+    TenantOidcHttpConfig,
+};
 pub use tenant_oidc_resource::{
     tenant_logout_router, tenant_oidc_protocol_resource_router, tenant_oidc_resource_router,
 };

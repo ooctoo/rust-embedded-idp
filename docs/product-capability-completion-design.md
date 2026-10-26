@@ -1,5 +1,7 @@
 # 剩余产品能力技术设计
 
+> 当前状态（2026-10-26）：A01、A02A、A02B-B1/B2/B3、A04-A～D和A05基础示例已有实现及局部证据；A03本批合同已同步。A04原生平台交付、S01、O01a、S02/S03及按需X/O/U增强仍待推进。完整状态、证据链接及依赖顺序以[实施方案进度快照](product-capability-completion-plan.md#当前进度快照2026-10-26)为准。下文修订4设计基线与历史审查记录不表示所有候选能力已经实现，亦不代表完整验收或部署完成。
+
 | 项目 | 内容 |
 | --- | --- |
 | 标识 / 修订 | IDP-PRODUCT-COMPLETION，修订 4，2026-10-25；完成开源适配、许可、依赖与现有代码的完整复审 |
@@ -19,7 +21,7 @@
 
 修订4收尾时并行任务已将HEAD推进至`6442583`；再次核对相对`d721481`的crates/web/examples无差异，产品审查基线仍有效。新增N2提交、未提交文档和诊断证据均由所属任务维护，本轮不改写其结论。
 
-实施记录：A01见[第一批](a01-implementation-result.md)，A02A普通业务组合及A03本批合同见[第二批](a02a-implementation-result.md)。A02B-B1配置v2与共享OIDC见[第三批](a02b-b1-implementation-result.md)。下文保留修订4设计基线；实施范围与局部验证以对应记录为准。
+实施记录：A01见[第一批](a01-implementation-result.md)，A02A普通业务组合及A03本批合同见[第二批](a02a-implementation-result.md)。A02B-B1配置v2与共享OIDC见[第三批](a02b-b1-implementation-result.md)。A02B-B2设备 proof/admission 的配置、受限准入文件适配器与验证边界见[第四批](a02b-b2-implementation-result.md)。A02B-B3扫码组合的细化方案与实现见[B3设计](a02b-b3-technical-design.md)、[B3方案及复核](a02b-b3-implementation-plan.md)、[第五批实施记录](a02b-b3-implementation-result.md)。下文保留修订4设计基线；实施范围与局部验证以对应记录为准。
 
 ## 1 范围、结论与提案效力
 
@@ -37,7 +39,7 @@
 | A02 / M1-04 | 新配置业务入口、多入口与协议组合 | JSON 可解析非空集合，当前构建拒绝运行；旧参考组合可用 | §5，分普通认证与协议组合完成 |
 | A03 / M1-05 | 接口合同制品与漂移约束 | 未交付该工作包 | §6，覆盖清单先行，合同随代码演进 |
 | A04 | 设备自助登记、密钥轮换与结果恢复 UI | 领域及接口已有，缺持钥端自助闭环 | §7，复用协议，不重造设备身份 |
-| A05 | 带租户嵌入示例；设备/扫码为可选扩展 | 登录组件已有；真实示例仅 Disabled；扫码 H5 已有 | §8，基础退出条件与可选接入分开 |
+| A05 | 带租户嵌入示例；设备/扫码为可选扩展 | Enabled/Disabled示例均已有本地实施；扫码 H5 已有 | §8，基础退出条件与可选接入分开 |
 | S01 / C10 | 密码入口防滥用 | 扫码有专用限流，网络准入主要由宿主负责 | §9，宿主准入与领域尝试计数分开 |
 | S02 / C05 | MFA 与 step-up | 无通用因子、登录挑战、敏感操作授权票据 | §10，WebAuthn优先完成管理/高权限闭环，TOTP为后续兼容子批 |
 | S03 / C06 | 自助安全中心与账号恢复 | 有管理员改密和撤销基础，无自助恢复流程 | §11，普通账号与管理身份恢复分开 |
@@ -254,6 +256,8 @@ M1 新增/改动接口必须完整建模；既有接口先完整清单，再按�
 
 ## 7 A04：设备自助与持钥端交互
 
+2026-10-26实施状态：A04-A已推进不依赖signer的本人列表/详情/公开key信息、解绑及原回执恢复，见[细化设计](a04-a-technical-design.md)和[实施记录](a04-a-implementation-result.md)。A04-B登记、宿主signer/admission/store及未知写入恢复已按[细化设计](a04-b-technical-design.md)和[局部记录](a04-b-implementation-result.md)推进。A04-C双签轮换及本人元数据恢复已按[细化设计](a04-c-technical-design.md)和[局部记录](a04-c-implementation-result.md)完成本批实施。A04-D可选扫码已按[详细设计](a04-d-technical-design.md)和[局部记录](a04-d-implementation-result.md)完成本批实施。扫码的宿主安全适配与原生持钥接入仍以本节边界为准，不能以A04-A/B/C/D局部完成代替整个持钥端能力。
+
 ### 7.1 已有合同与新增界面
 
 复用 `TenantDeviceService` 的 provision/registration_result/complete/rotate/devices/device/key_metadata/unbind/self_operation_result；本人解绑走 `/devices/unbind` 和 `/devices/operations/:operation_id`。后者是当前有效本人、当前租户的自助操作回执，不是管理端device_operation_result。管理设备界面继续承担管理员启停/撤销/绑定处置，不获得代替设备持有者更换私钥的能力。
@@ -301,6 +305,8 @@ complete 前重新获取有效 challenge，签署既有规范字节；未知结�
 示例初始化只操作有明确标记的隔离数据；真实宿主不执行示例 seed。嵌入包先保持本地消费，不把 npm 发布当作开发完成条件。公开 exports 增量、CSS 命名空间、宿主 React 版本与无 UI 用法须记录；真实第三方消费者组合验收另列。
 
 A05基础交付为Enabled登录/选择/业务资源与独立管理组件示例；设备和扫码接入是依赖A04及A02B对应子批的可选扩展，不作为基础示例的隐含退出条件。
+
+2026-10-26：A05基础Enabled示例已按[细化设计](a05-technical-design.md)、[实施方案](a05-implementation-plan.md)完成本批实施及局部验证，见[实施记录](a05-implementation-result.md)。完整验收、部署及外部宿主组合保持未执行。
 
 ## 9 S01：密码与匿名入口防滥用
 

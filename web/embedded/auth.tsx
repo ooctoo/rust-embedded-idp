@@ -33,11 +33,15 @@ export interface EmbeddedAuthProps {
   language?: Language;
   className?: string;
   style?: CSSProperties;
+  /** Confirm or preserve host state before a tenant switch or logout. Defaults to allowing the change. */
+  beforeSessionChange?: () => boolean | Promise<boolean>;
 }
 
 /** Public, host-embeddable sign-in UI. It never imports management routes or styles. */
-export function EmbeddedAuth({ client, businessId, language = "zh-CN", className, style }: EmbeddedAuthProps) {
+export function EmbeddedAuth({ client, businessId, language = "zh-CN", className, style, beforeSessionChange }: EmbeddedAuthProps) {
   const t = copy[language];
+  const activeClient = useRef(client);
+  activeClient.current = client;
   const state = useSyncExternalStore(client.subscribe, client.getSnapshot, client.getSnapshot);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -170,8 +174,16 @@ export function EmbeddedAuth({ client, businessId, language = "zh-CN", className
       {verified && <p className={styles.success} role="status">{t.verified}</p>}
       <div className={styles.actions}>
         <button type="button" disabled={busy} onClick={() => void run(async () => { await client.verifySession(); setVerified(true); })}>{t.verify}</button>
-        {client.canChoose() && <button type="button" disabled={busy} onClick={() => void run(() => client.beginSwitch())}>{t.switch}</button>}
-        <button type="button" className={styles.secondary} disabled={busy} onClick={() => void run(() => client.logout())}>{t.logout}</button>
+        {client.canChoose() && <button type="button" disabled={busy} onClick={() => void run(async () => {
+          if (beforeSessionChange && !await beforeSessionChange()) return;
+          if (activeClient.current !== client) return;
+          await client.beginSwitch();
+        })}>{t.switch}</button>}
+        <button type="button" className={styles.secondary} disabled={busy} onClick={() => void run(async () => {
+          if (beforeSessionChange && !await beforeSessionChange()) return;
+          if (activeClient.current !== client) return;
+          await client.logout();
+        })}>{t.logout}</button>
       </div>
     </div> : <div>
       <h2>{t.login}</h2>

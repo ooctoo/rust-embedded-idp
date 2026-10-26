@@ -9,7 +9,7 @@
     "dev": "vite --config vite.management.config.ts",
     "preview": "vite preview --config vite.management.config.ts",
     "test:embedded-bundle": "node --test embedded/bundle.test.mjs",
-    "test": "node --test management/client.test.mjs management/navigation.test.mjs embedded/client.test.mjs"
+    "test": "node --test management/client.test.mjs management/navigation.test.mjs embedded/client.test.mjs embedded/device-client.test.mjs embedded/device-registration-client.test.mjs embedded/device-key-rotation-client.test.mjs embedded/scan-login-protocol.test.mjs embedded/device-scan-client.test.mjs"
   },
   "dependencies": {
     "@ant-design/v5-patch-for-react-19": "^1.0.3",

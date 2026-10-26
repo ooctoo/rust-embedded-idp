@@ -51,12 +51,9 @@ impl TenantOidcAuthorizationService for OidcDispatch {
         command: TenantCodeExchange,
         proof: Option<TenantAuthenticationProof>,
     ) -> Result<TenantCodeExchangeResult, TenantAuthError> {
-        if proof.is_some() {
-            return Err(TenantAuthError::DeviceProofRequired);
-        }
         self.entry(&command.client_id)?
             .authorization
-            .exchange(command, None)
+            .exchange(command, proof)
     }
 }
 impl TenantOidcResourceService for OidcDispatch {

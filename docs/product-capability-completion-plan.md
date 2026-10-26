@@ -9,7 +9,39 @@
 
 修订4收尾复核HEAD为`6442583`，crates/web/examples相对产品基线`d721481`仍无差异；并行N2提交和诊断证据不纳入本轮产物。
 
-实施进度（2026-10-25）：A01代码与局部验证见[第一批实施记录](a01-implementation-result.md)；A02A普通业务入口与A03本批合同/漂移检查见[第二批实施记录](a02a-implementation-result.md)。第二批复审另补受限browser票据用途隔离、短会话切换期限保护，以及并发/回滚和17操作合同负例验证（详见第二批记录）。第三批按依赖推进A02B-B1（配置v2、共享OIDC分派），见[第三批实施记录](a02b-b1-implementation-result.md)。以下仍保留修订4的计划基线；A02B-B2/B3、A03历史全量schema及完整验收未因此完成。
+实施进度（2026-10-25）：A01代码与局部验证见[第一批实施记录](a01-implementation-result.md)；A02A普通业务入口与A03本批合同/漂移检查见[第二批实施记录](a02a-implementation-result.md)。第二批复审另补受限browser票据用途隔离、短会话切换期限保护，以及并发/回滚和17操作合同负例验证（详见第二批记录）。第三批按依赖推进A02B-B1（配置v2、共享OIDC分派），见[第三批实施记录](a02b-b1-implementation-result.md)。第四批推进 A02B-B2设备 proof/admission，配置与局部测试见[第四批实施记录](a02b-b2-implementation-result.md)。第五批按先设计、双重复核、再实现推进B3扫码组合，见[B3技术设计](a02b-b3-technical-design.md)、[B3实施方案](a02b-b3-implementation-plan.md)和[实施记录](a02b-b3-implementation-result.md)。以下仍保留修订4的计划基线；A03历史全量schema及完整验收未因此完成。
+
+## 当前进度快照（2026-10-26）
+
+本节是当前状态；下文保留修订4的设计与依赖基线。这里的“已完成”仅指所列切片实现及局部验证，不代表整个产品、完整验收或生产部署完成。本次将此前未提交的 A02B-B2/B3、A04-A～D、A05 与合同更新一并归档到本地提交；不推送。
+
+| 能力 | 当前状态与证据 | 剩余边界 |
+| --- | --- | --- |
+| A01 管理client显式准备 | 已完成，见[记录](a01-implementation-result.md) | 生产配置与运行验收另列 |
+| A02A 普通业务与多入口组合 | 已完成，见[记录](a02a-implementation-result.md) | 完整宿主组合矩阵另列 |
+| A02B-B1 配置v2与OIDC分派 | 已完成，见[记录](a02b-b1-implementation-result.md) | 不等于外部OIDC身份联邦 |
+| A02B-B2 设备proof/admission | 已完成本批接线，见[记录](a02b-b2-implementation-result.md) | 真实平台可信准入由宿主提供 |
+| A02B-B3 扫码组合 | 已完成本批，见[记录](a02b-b3-implementation-result.md) | 实体设备及完整场景验收另列 |
+| A03 接口合同与漂移检查 | 本轮新增/修改接口已同步，路由清单及生成检查已落地 | 随后续切片持续维护；历史所有接口schema全集为可选扩展 |
+| A04-A 本人设备与解绑 | 已完成，见[记录](a04-a-implementation-result.md) | 局部验证范围以记录为准 |
+| A04-B 登记、signer/admission与恢复 | 已完成组件及真实协议局部接线，见[记录](a04-b-implementation-result.md) | 不代表原生安全持钥完成 |
+| A04-C 双签轮换 | 已完成本批，见[记录](a04-c-implementation-result.md) | 原生keystore、持久操作状态及跨进程锁待目标宿主适配 |
+| A04-D 可选扫码交互 | 已完成本批，见[记录](a04-d-implementation-result.md) | A04整体平台交付仍未完成 |
+| A05 Enabled嵌入示例 | 基础示例已完成，见[记录](a05-implementation-result.md) | 不是生产宿主；不包含全部设备接入组合 |
+
+### 待推进及实施顺序
+
+1. **S01 防滥用**：下一批优先；先详细设计和double check，完成入口清单、可信来源、累计预算、容量与密码计算并发控制，再接线和局部测试。
+2. **O01a 最小安全事件与邮件outbox**：补类型化投递结果、加密payload、事务事件、租约及重试，为S02/S03/X01提供前置能力。
+3. **S02a–c WebAuthn/MFA/step-up闭环**：依赖S01与O01a，包含旧入口保护及最低因子丢失恢复后才能开放；S02d TOTP按需后置。
+4. **S03 自助安全中心与恢复**：本人会话、改密、匿名恢复及因子管理；不涉及MFA的本人会话子集可独立推进，完整恢复按依赖实施。
+5. **A04 原生平台适配**：目标平台确定后推进真实keystore、持久状态和跨进程协调；与上述安全切片分别交付。
+6. **按真实消费者选择**：X01邀请（依赖S01+O01a）、X02a外部OIDC（依赖S02c）、X02b LDAP/SCIM、X03机器身份、X04组与委派、O01b外部Webhook。不是首版必须全部实现的清单。
+7. **O02/U01 软件增强**：密钥快照/热装载、运行诊断与恢复屏障、管理端client CAS等逐项立项；软件实现与实际运维演练分开。
+
+S/X/O/U以上新增切片尚未按本方案完成，不把现有密码登录、邮件发送、审计或密钥配置等基础代码等同这些增量能力已交付。A03随每批同步。完整验收、生产部署、实体设备验证、容量与灾备演练仍单列，不在本次提交范围。
+
+局部测试证据沿用各切片实施记录；另有[CI迁移与退役记录](n2-retirement-implementation-result.md)记录本机集成与关键浏览器回归，其历史通过结果不替代目标Linux/远端CI或完整产品验收。
 
 ## 1 交付范围与完成口径
 
@@ -153,6 +185,8 @@ M1-05既定退出：新改接口完整描述、全量路由清单、代表性既
 
 ### 4.5 A04：设备自助
 
+2026-10-26：第一子批A04-A本人设备/解绑回执已按[详细设计](a04-a-technical-design.md)和[复核方案](a04-a-implementation-plan.md)实施，局部结果见[实施记录](a04-a-implementation-result.md)。无持钥依赖的本人操作先行；A04-B随后已完成独立登记client、显式signer/admission/store及原请求恢复，见[设计](a04-b-technical-design.md)、[复核实施方案](a04-b-implementation-plan.md)和[局部记录](a04-b-implementation-result.md)。A04-C双签轮换已按[设计](a04-c-technical-design.md)和[局部记录](a04-c-implementation-result.md)完成本批实施；A04-D可选扫码已按[详细设计](a04-d-technical-design.md)、[复核方案](a04-d-implementation-plan.md)完成本批实施，见[局部记录](a04-d-implementation-result.md)；原生keystore/跨进程持久锁依宿主接入，A04整体未完成。
+
 按以下顺序实施：薄client DTO/响应校验 → 宿主signer与可信admission合同及测试adapter → 本人设备列表/本人绑定投影/自助回执 → 登记状态机 → 双签轮换与恢复 → 可选嵌入扫码状态。拟落点 `web/embedded/device-client.ts`、`device-self-service.tsx` 等；不另建全局状态框架。真实宿主须注入有期限且有所有权约束的TrustedDeviceAdmission，并挂载tenant_device_auth_router的proof challenge，不能只挂tenant_device_router。本人方法复用memory access token/Bearer，registration-result重查准入而非要求尚未存在的session。
 
 签名由宿主保管密钥并限制签名用途。测试 adapter 只能使用固定测试密钥，正式 UI 未注入 signer 时禁用持钥操作。已有管理设备组件仅共享安全展示部件，不混用管理员权限与本人接口。
@@ -162,6 +196,8 @@ M1-05既定退出：新改接口完整描述、全量路由清单、代表性既
 退出分层：组件/夹具完成仅表示UI开发；A04真实协议接线完成还须在隔离宿主的真实API上验证signer、admission、challenge、本人认证与失败恢复，可用明确标识的测试signer，不作为平台持钥安全证据。原生端adapter及可选扫码子批各自单列；未指定真实平台前不宣称全部设备产品体验完成。
 
 ### 4.6 A05：Enabled 嵌入示例
+
+2026-10-26：已按[详细设计](a05-technical-design.md)与[复核方案](a05-implementation-plan.md)完成本批基础示例，局部证据见[实施记录](a05-implementation-result.md)。未做完整验收或部署。
 
 单独新增 `examples/tenant-host`，复用既有库和组件；示例只管理其自己的配置、fixtures、业务报告与启动命令，不修改 Disabled 示例语义。实现 Fixed/Choose、真实会话恢复、本人角色、两个租户同报告 ID 的资源校验、受限列表过滤和可选独立管理组件。
 

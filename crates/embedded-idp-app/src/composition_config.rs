@@ -36,6 +36,31 @@ pub(crate) struct EntryConfig {
     pub ui_base_path: Option<String>,
     pub registration_enabled: bool,
     pub oidc_enabled: bool,
+    pub device: Option<DeviceEntryConfig>,
+    pub scan: Option<crate::scan_composition::ScanConfig>,
+}
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DeviceEntryConfig {
+    pub admission_provider: String,
+    pub profile_provider: String,
+    pub audience: String,
+    pub paths: DevicePaths,
+}
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DevicePaths {
+    pub login: String,
+    pub selection: String,
+    pub refresh: String,
+    pub heartbeat: String,
+    pub oidc_token: String,
+}
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct AdmissionProviderReference {
+    pub id: String,
+    pub grants_file: String,
 }
 #[derive(Clone)]
 pub(crate) struct ReferenceBusinessConfig {
@@ -58,6 +83,7 @@ pub(crate) struct AppConfig {
     pub management: EntryConfig,
     pub business_entries: Vec<EntryConfig>,
     pub reference_business: Option<ReferenceBusinessConfig>,
+    pub device_admission_providers: Vec<AdmissionProviderReference>,
 }
 
 #[derive(Deserialize)]
@@ -71,6 +97,8 @@ struct Document {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Runtime {
+    #[serde(default)]
+    device_admission_providers: Vec<AdmissionProviderReference>,
     tenancy_mode: String,
     bind_addr: String,
     issuer: String,
@@ -229,6 +257,10 @@ struct Business {
     registration_enabled: bool,
     #[serde(default)]
     oidc: Option<OidcProtocol>,
+    #[serde(default)]
+    device: Option<DeviceEntryConfig>,
+    #[serde(default)]
+    scan: Option<crate::scan_composition::ScanConfig>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -284,7 +316,7 @@ struct Smtp {
 }
 
 // A recursive visitor catches duplicate keys even where serde Option normally accepts repeated null.
-struct Unique(serde_json::Value);
+pub(crate) struct Unique(pub(crate) serde_json::Value);
 impl<'de> Deserialize<'de> for Unique {
     fn deserialize<D: de::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         d.deserialize_any(UniqueVisitor)
@@ -368,6 +400,8 @@ impl AppConfig {
                 ui_base_path: Some(c.admin_ui_base_path.clone()),
                 registration_enabled: false,
                 oidc_enabled: false,
+                device: None,
+                scan: None,
             },
             business_entries: vec![EntryConfig {
                 login_entry: "business".into(),
@@ -382,7 +416,10 @@ impl AppConfig {
                 ui_base_path: None,
                 registration_enabled: c.embedded_idp.auth.allow_local_registration,
                 oidc_enabled: false,
+                device: None,
+                scan: None,
             }],
+            device_admission_providers: vec![],
             reference_business: Some(ReferenceBusinessConfig {
                 public_client: c.public_client.clone(),
                 confidential_client: c.confidential_client.clone(),
@@ -434,6 +471,13 @@ impl AppConfig {
         let unique: Unique = serde_json::from_slice(&bytes)
             .map_err(|_| "invalid JSON configuration structure".to_string())?;
         reject_nulls(&unique.0, None)?;
+        if unique.0["version"] == 1
+            && unique.0["runtime"]
+                .get("device_admission_providers")
+                .is_some()
+        {
+            return Err("device providers require version 2".into());
+        }
         let d: Document = serde_path_to_error::deserialize(unique.0.into_deserializer())
             .map_err(|e| format!("invalid JSON configuration field: {}", e.path()))?;
         if !matches!(d.version, 1 | 2) {
@@ -533,9 +577,17 @@ impl AppConfig {
             ui_base_path: d.management.ui.map(|x| x.base_path),
             registration_enabled: false,
             oidc_enabled: false,
+            device: None,
+            scan: None,
         };
-        if d.version == 1 && d.business_entries.iter().any(|b| b.oidc.is_some()) {
-            return Err("OIDC configuration requires version 2".into());
+        if d.version == 1
+            && (d
+                .business_entries
+                .iter()
+                .any(|b| b.oidc.is_some() || b.device.is_some() || b.scan.is_some())
+                || !d.runtime.device_admission_providers.is_empty())
+        {
+            return Err("protocol configuration requires version 2".into());
         }
         let mut business_entries = Vec::new();
         for b in d.business_entries {
@@ -552,6 +604,8 @@ impl AppConfig {
                 ui_base_path: None,
                 registration_enabled: b.registration_enabled,
                 oidc_enabled: b.oidc.is_some_and(|o| o.enabled),
+                device: b.device,
+                scan: b.scan,
             })
         }
         let absolute = if path.is_absolute() {
@@ -601,7 +655,23 @@ impl AppConfig {
             management,
             business_entries,
             reference_business: None,
+            device_admission_providers: d
+                .runtime
+                .device_admission_providers
+                .into_iter()
+                .map(|mut p| {
+                    p.grants_file = resolve_path(base, &p.grants_file)?;
+                    Ok(p)
+                })
+                .collect::<Result<Vec<_>, String>>()?,
         };
+        for entry in &mut c.business_entries {
+            if let Some(scan) = &mut entry.scan {
+                for key in &mut scan.result_keyring.keys {
+                    key.key_file = resolve_path(base, &key.key_file)?;
+                }
+            }
+        }
         c.validate_static(d.runtime.email.as_ref())?;
         c.postgres.connection.connection_uri = "postgres://placeholder".into();
         c.postgres
@@ -662,16 +732,32 @@ impl AppConfig {
         }
     }
     pub(crate) fn validate_for_startup(&self) -> Result<(), String> {
-        if self.reference_business.is_none()
-            && self.business_entries.iter().any(|e| e.require_device_proof)
-        {
-            return Err("business device proof is not supported by this build".into());
-        }
-        Ok(())
+        Ok(()) // All supported protocol combinations are checked before secret resolution.
     }
     fn validate_static(&mut self, email: Option<&Email>) -> Result<(), String> {
         if let Some(e) = email {
             e.validate()?;
+        }
+        if self
+            .business_entries
+            .iter()
+            .filter(|e| e.scan.is_some())
+            .count()
+            > 16
+        {
+            return Err("at most 16 scan entries are supported".into());
+        }
+        for entry in &self.business_entries {
+            if let Some(scan) = &entry.scan {
+                scan.validate(entry, self)?;
+            }
+        }
+        let mut providers = BTreeSet::new();
+        for provider in &self.device_admission_providers {
+            if !valid_id(&provider.id) || provider.id.len() > 48 || !providers.insert(&provider.id)
+            {
+                return Err("invalid or duplicate device admission provider".into());
+            }
         }
         let mut ids = BTreeSet::new();
         let mut clients = BTreeSet::new();
@@ -699,13 +785,51 @@ impl AppConfig {
             if !clients.insert(&e.client_id) {
                 return Err("duplicate client_id".into());
             }
-            if e.require_device_proof {
-                return Err(if management {
-                    "management_device_proof_unsupported"
-                } else {
-                    "business device proof is not supported by this build"
+            if management && e.require_device_proof {
+                return Err("management_device_proof_unsupported".into());
+            }
+            if e.require_device_proof && e.device.is_none() {
+                return Err("business device proof requires device configuration".into());
+            }
+            if e.require_device_proof && e.browser.is_some() {
+                return Err("required device proof cannot use browser sessions".into());
+            }
+            if let Some(device) = &e.device {
+                if !providers.contains(&device.admission_provider)
+                    || device.profile_provider != "ed25519-v2"
+                {
+                    return Err("missing or unsupported device admission/profile provider".into());
                 }
-                .into());
+                for (actual, suffix) in [
+                    (&device.paths.login, "/auth/login"),
+                    (&device.paths.selection, "/auth/tenant-selection/complete"),
+                    (&device.paths.refresh, "/auth/refresh"),
+                    (&device.paths.heartbeat, "/devices/heartbeat"),
+                ] {
+                    if actual != &format!("{}{suffix}", e.mount_prefix) {
+                        return Err("device external path must match mounted route".into());
+                    }
+                }
+                if device.paths.oidc_token != "/oidc/token" {
+                    return Err("device OIDC path must be /oidc/token".into());
+                }
+                embedded_idp_axum::TenantDeviceAuthHttpConfig::new(
+                    &device.audience,
+                    &device.paths.login,
+                    &device.paths.selection,
+                    &device.paths.refresh,
+                )
+                .map_err(|_| "invalid device proof profile")?;
+                let family = format!("{}/devices", e.mount_prefix);
+                for (owner, path) in &paths {
+                    if overlaps(&family, path) {
+                        return Err(format!(
+                            "route conflict between {owner} and {}",
+                            e.login_entry
+                        ));
+                    }
+                }
+                paths.push((e.login_entry.clone(), family));
             }
             if e.registration_enabled && !matches!(e.policy, LoginTenantPolicy::Fixed { .. }) {
                 return Err("registration requires a fixed tenant policy".into());
@@ -843,7 +967,7 @@ fn valid_env_name(n: &str) -> bool {
     matches!(b.next(),Some(x) if x.is_ascii_alphabetic()||x==b'_')
         && b.all(|x| x.is_ascii_alphanumeric() || x == b'_')
 }
-fn valid_id(s: &str) -> bool {
+pub(crate) fn valid_id(s: &str) -> bool {
     !s.is_empty()
         && s.len() <= 128
         && s.bytes()
@@ -1184,7 +1308,7 @@ mod tests {
         let err = AppConfig::from_file_with_lookup(&path, &BTreeSet::new(), true, true, &lookup)
             .err()
             .unwrap();
-        assert!(err.contains("not supported"));
+        assert!(err.contains("requires device configuration"));
         assert_eq!(calls.get(), 0);
         d["business_entries"][0]["require_device_proof"] = false.into();
         d["management"]["mount_prefix"] = "/invalid+".into();
@@ -1264,6 +1388,114 @@ mod tests {
             .unwrap()
             .email_delivery
             .is_none());
+    }
+    #[test]
+    fn device_v2_requires_providers_exact_paths_and_safe_combinations() {
+        let mut v = doc();
+        v["version"] = 2.into();
+        v["runtime"]["device_admission_providers"] =
+            serde_json::json!([{"id":"grants","grants_file":"grants.json"}]);
+        v["business_entries"] = serde_json::json!([{"login_entry":"one","client_id":"one","tenant_policy":{"kind":"choose"},"mount_prefix":"/one","require_device_proof":true,"device":{"admission_provider":"grants","profile_provider":"ed25519-v2","audience":"one-api","paths":{"login":"/one/auth/login","selection":"/one/auth/tenant-selection/complete","refresh":"/one/auth/refresh","heartbeat":"/one/devices/heartbeat","oidc_token":"/oidc/token"}}}]);
+        assert!(parse(&v, &envs()).is_ok());
+        for (key, value) in [
+            ("admission_provider", "missing"),
+            ("profile_provider", "untrusted"),
+        ] {
+            let mut bad = v.clone();
+            bad["business_entries"][0]["device"][key] = value.into();
+            assert!(parse(&bad, &envs()).err().unwrap().contains("provider"));
+        }
+        for path in ["login", "selection", "refresh", "heartbeat", "oidc_token"] {
+            let mut bad = v.clone();
+            bad["business_entries"][0]["device"]["paths"][path] = "/unbound".into();
+            assert!(parse(&bad, &envs()).is_err());
+        }
+        let mut bad = v.clone();
+        bad["business_entries"][0]["browser"] = serde_json::json!({"cookie_name":"device"});
+        assert!(parse(&bad, &envs()).err().unwrap().contains("browser"));
+        bad["business_entries"][0]["require_device_proof"] = false.into();
+        assert!(parse(&bad, &envs()).is_ok());
+        bad = v.clone();
+        bad["version"] = 1.into();
+        assert!(parse(&bad, &envs()).err().unwrap().contains("version 2"));
+        bad = v.clone();
+        bad["business_entries"].as_array_mut().unwrap().push(serde_json::json!({"login_entry":"two","client_id":"two","tenant_policy":{"kind":"choose"},"mount_prefix":"/one/devices"}));
+        assert!(parse(&bad, &envs()).err().unwrap().contains("conflict"));
+        bad = v;
+        bad["business_entries"][0]["scan"] = serde_json::json!({});
+        assert!(parse(&bad, &envs()).is_err());
+    }
+    #[test]
+    fn scan_v2_requires_explicit_dependencies_paths_keys_and_bounded_cleanup() {
+        let mut v = doc();
+        v["version"] = 2.into();
+        v["runtime"]["device_admission_providers"] =
+            serde_json::json!([{"id":"grants","grants_file":"grants.json"}]);
+        v["business_entries"] = serde_json::json!([{"login_entry":"one","client_id":"one","tenant_policy":{"kind":"choose"},"mount_prefix":"/one","browser":{"cookie_name":"one"},"device":{"admission_provider":"grants","profile_provider":"ed25519-v2","audience":"one-api","paths":{"login":"/one/auth/login","selection":"/one/auth/tenant-selection/complete","refresh":"/one/auth/refresh","heartbeat":"/one/devices/heartbeat","oidc_token":"/oidc/token"}},"scan":{"admission_provider":"reference-identity-only","presentation_provider":"registered-device","host_scope":"one-host","modes":["device_display","phone_display"],"audience":"one-scan","device_prefix":"/one/auth/device-scan","verification_uri":"https://idp.example.test/one/auth/browser/device-scan/ui","result_keyring":{"active_key_id":"new","keys":[{"key_id":"new","key_file":"new.key"},{"key_id":"old","key_file":"old.key"}]},"cleanup":{"interval_secs":30,"batch_size":100}}}]);
+        let parsed = parse(&v, &envs()).unwrap();
+        let entry = &parsed.business_entries[0];
+        let scan = entry.scan.as_ref().unwrap();
+        let core = scan.entry(entry).unwrap();
+        assert_eq!(core.entry_id, entry.login_entry);
+        assert_eq!(
+            core.allowed_source_client_ids,
+            vec![entry.client_id.clone()]
+        );
+        assert!(std::path::Path::new(&scan.result_keyring.keys[0].key_file).is_absolute());
+        for path in [
+            "admission_provider",
+            "presentation_provider",
+            "device_prefix",
+            "verification_uri",
+        ] {
+            let mut bad = v.clone();
+            bad["business_entries"][0]["scan"][path] = "unsupported".into();
+            assert!(parse(&bad, &envs()).is_err(), "{path}");
+        }
+        for (path, value) in [
+            ("/version", serde_json::json!(1)),
+            (
+                "/business_entries/0/require_device_proof",
+                serde_json::json!(true),
+            ),
+            ("/business_entries/0/scan/modes", serde_json::json!([])),
+            (
+                "/business_entries/0/scan/modes",
+                serde_json::json!(["device_display", "device_display"]),
+            ),
+            (
+                "/business_entries/0/scan/cleanup/interval_secs",
+                serde_json::json!(0),
+            ),
+            (
+                "/business_entries/0/scan/cleanup/batch_size",
+                serde_json::json!(101),
+            ),
+            (
+                "/business_entries/0/scan/result_keyring/active_key_id",
+                serde_json::json!("missing"),
+            ),
+            (
+                "/business_entries/0/scan/result_keyring/keys/1/key_id",
+                serde_json::json!("new"),
+            ),
+        ] {
+            let mut bad = v.clone();
+            if path.ends_with("require_device_proof") {
+                bad["business_entries"][0]["require_device_proof"] = value;
+            } else {
+                *bad.pointer_mut(path).unwrap() = value;
+            }
+            assert!(parse(&bad, &envs()).is_err(), "{path}");
+        }
+        for dependency in ["browser", "device"] {
+            let mut bad = v.clone();
+            bad["business_entries"][0]
+                .as_object_mut()
+                .unwrap()
+                .remove(dependency);
+            assert!(parse(&bad, &envs()).is_err());
+        }
     }
     #[test]
     fn oidc_v2_is_explicit_and_reserves_shared_routes() {

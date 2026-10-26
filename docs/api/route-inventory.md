@@ -58,6 +58,8 @@
 | POST `/devices/provision`, `/devices/registration-result`, `/devices/complete`, `/devices/rotate-key`, `/devices/unbind`, `/devices/heartbeat` | 租户设备注册/回执/完成/轮换/解绑/心跳；JSON；provision/result需可信admission；complete需登记公钥proof；rotate需本人身份和双签；unbind需本人身份/版本；heartbeat按设备proof合同 | [`tenant_devices.rs`](../../crates/embedded-idp-axum/src/tenant_devices.rs) |
 | GET `/devices`, `/devices/:device_id`, `/devices/:device_id/keys/:key_id`, `/devices/operations/:operation_id` | 本租户设备、密钥元数据与操作结果读取；Bearer subject及租户范围 | 同上 |
 
+第四批 B2 JSON v2 device-enabled entry有独立[设备合同](device-openapi.json)，不扩大原17项普通合同：host以显式device配置选择该路由族，device-auth替代同一入口普通`/auth/login`和`/auth/refresh`，不得同时merge以免路由冲突；Choose选择路由由Tenancy配置决定。设备proof头可选或按entry/session策略要求，存在时以原始请求字节、HTTP method、含嵌入host prefix的外部path、tenant和audience做proof校验；合同profile为现有`EMBEDDED-IDP-DEVICE-AUTH-V2`及`EMBEDDED-IDP-DEVICE-REQUEST-V2`。共享OIDC仍按B1全局只装配一次；只有显式启用device-bound OIDC的entry才向exchange启用真实proof能力。`x-embedded-idp-device-admission`为宿主签发的短期私有grant，仅provision/registration-result使用，不作为业务token或URL参数；host每次请求重新校验，服务端registration记录按tenant/client/scope/request_id寻址。registration scope必须保持稳定；entry_id不在B2 grant或Core admission上下文中，当前只可用于SDK本地target/journal隔离。完全相同的provision请求在相同scope/request_id下幂等，改动字段会冲突；registration-result须用同scope重新授权读取。`/devices/complete`不使用admission或Bearer，原子消费一次性challenge并完成登记，重复提交旧signature不幂等，未知响应后重新授权查询registration-result。`/devices/proof/challenges`返回HTTP 200不证明challenge已存入，也不证明登记可以完成。 `/devices/rotate-key`要求当前人员及active本人binding；旧/新key共同签署`DEVICE-KEY-ROTATION-V2`规范消息，expected key id/version执行CAS，单次rotation challenge、密钥切换及审计在Core事务内完成。没有idempotency key或操作receipt；未知结果结合相同binding、设备当前proof-key指针和key元数据恢复，不能把单个历史metadata当回执。
+
 ## 租户 OIDC
 
 | 方法与路径 | 用途 / 认证 | Body / 响应 / 来源 |
@@ -113,6 +115,8 @@
 | `/create`, `/claim`, `/status`, `/lookup`, `/cancel`, `/exchange`, `/recover`, `/acknowledge`, `/abort`, `/close-origin` | `/auth/device-scan`加左列各完整相对路径 | 同上及 [`bootstrap.rs`](../../crates/embedded-idp-app/src/bootstrap.rs) |
 | UI `/`, `/assets/:asset` | `/auth/browser/device-scan/ui/`及`/auth/browser/device-scan/ui/assets/:asset` | [`scan_ui.rs`](../../crates/embedded-idp-app/src/scan_ui.rs) |
 
+独立[scan-openapi.json](scan-openapi.json)覆盖以上18个POST JSON操作；`scan_profile(browser_prefix, device_prefix)`为browser和device操作分别设置宿主前缀。DTO为严格字段对象，body上限16 KiB，响应`Cache-Control: no-store`。browser guard联合要求精确Origin、固定`x-embedded-idp-browser: 1`，并拒绝tenant header；device proof使用`EMBEDDED-IDP-DEVICE-SCAN-V2`，签名绑定proof字段、原始body、POST、外部路径、tenant与audience，并追加 unpadded base64url 的`scan-context-sha256`。该值是`EMBEDDED-IDP-SCAN-CONTEXT-V1`域分隔符与长度前缀编码的`purpose_str`、可信`target_client_id`、`entry_id`的SHA-256；后三者来自host路由配置，不是请求值。create/claim遇到未知响应时以原始operation_id和相同请求重试；lookup的`scan_not_found` 404不是终态，客户端保留原始action、operation_id及delivery secret继续恢复。exchange/recover固定issuance_operation_id，响应可为进度或Pending bundle；acknowledge只回进度，`delivery_state=acknowledged`表示目标session已激活。abort返回409 `already_acknowledged`表示ACK已先提交，应保留bundle/session并查询或recover；close-origin的`already_activated`也表示已激活且不执行logout。UI与静态资源不属于JSON API合同。
+
 ## 探针、静态资源、redirect与宿主示例
 
 | 方法/路径 | 行为 | 来源 |
@@ -157,3 +161,13 @@ A03复审补充：roles/tenant列表的Query提取失败是text/plain 400；登�
 ## A02B-B1 共享 OIDC 合同
 
 [共享 OIDC 合同](shared-oidc-openapi.json) 与普通入口合同分开：新 v2 `business_entries[].oidc.enabled=true` 至少出现一项时，宿主只装配一次共享 `/oidc/*` 与 `/.well-known/openid-configuration`。authorize/token 复用租户 OIDC 授权处理器，userinfo/introspect/revoke 使用仅三项的 `tenant_oidc_protocol_resource_router`；不合并旧 resource router 所带的 `/auth/logout`。这七项包括 GET authorize（Bearer、S256）、POST token（authorization_code form）、GET userinfo、POST introspect/revoke、GET discovery/JWKS。v1 拒绝 `oidc` 配置字段，普通 `business_document()` 仍仅描述原17项。共享发现元数据不暴露设备端点；legacy/reference OIDC 路由语义仍按前文历史清单保留。
+
+## A04-A 前端消费（2026-10-26）
+
+`EmbeddedDeviceClient`/`DeviceSelfService`消费现有device合同的五个本人操作：GET /devices、GET /devices/:device_id、GET /devices/:device_id/keys/:key_id、POST /devices/unbind、GET /devices/operations/:operation_id。认证和入口沿用同一个EmbeddedIdentityClient的内存Bearer、base、transport及revision；不新增HTTP路由，不改变管理接口。前端intent绑定入口对象和tenant/account/client；现有服务端本人receipt按tenant/account/operation ID查询，不宣称新增client隔离。详见[A04-A设计](../a04-a-technical-design.md)。
+
+## A05 Enabled 示例宿主（非IdP库路由）
+
+`examples/tenant-host` 在 `/fixed` 和 `/choose` 下分别组合普通 Fixed tenant-a 与 Choose auth/refresh/logout/self/browser，固定入口不暴露选租户路由。模块本地根路径未改。每个入口另挂 `GET /api/reports` 和 `GET /api/reports/:id`，由宿主完成真实身份/精确授权和双列资源查询；列表受40候选预算及绑定scope/filter的签名游标约束。详情未授权403，授权后缺失404。示例有 `/`、`/fixed`、`/choose`、`/assets/:name`、`/example-config`、`/healthz`；可选 `/management` UI与 `/control/admin/auth/*`、`/control/admin/access/permissions*`、`/control/admin/platform/permissions`。管理router只组合权限目录，目录使用独立Management Bearer，Cookie仅用于认证生命周期。
+
+独立[示例合同](../../examples/tenant-host/api-contract.json)与 `scripts/check_tenant_host_contract.mjs`核对路由/query/响应字段和预算；已加入check_api_contracts.sh。它不扩充IdP business-openapi.json；真实响应和安全行为由示例限定live测试覆盖。

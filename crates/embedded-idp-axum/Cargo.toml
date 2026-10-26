@@ -35,3 +35,11 @@ required-features = ["openapi"]
 [[example]]
 name = "export_shared_oidc"
 required-features = ["openapi"]
+
+[[example]]
+name = "export_device_openapi"
+required-features = ["openapi"]
+
+[[example]]
+name = "export_scan_openapi"
+required-features = ["openapi"]

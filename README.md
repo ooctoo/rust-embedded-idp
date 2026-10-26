@@ -31,7 +31,7 @@
 
 3.0.0 两种模式均使用 `tenant_v6`；2.0.0 的历史基线为 `tenant_v3`。已接通注册与邮箱验证、登录与选租户、会话/refresh、OIDC、租户设备、角色与资源授权，以及租户/成员/角色/权限目录/设备/会话/客户端/审计管理。业务权限定义可按租户和业务标识创建、读取、修改、启停和归档，并与同租户同业务角色关联。React 管理后台接入真实 API；本地 `@embedded-idp/react` 主入口提供登录、租户选择和本人角色列表，`/admin` 子入口提供权限目录组件，React 19 由宿主提供。
 
-仓库提供[无租户嵌入宿主示例](examples/no-tenant-host/README.md)：另起 Axum 业务进程，复用 IdP 业务路由和 React 登录组件，并在宿主报告接口中检查 `report::read::<id>`。该示例的配置模板和启动命令均在 `examples/no-tenant-host` 内，不依赖根目录的开发环境脚本；带租户的嵌入体验留待后续。`web/embedded/demo.html` 仍只使用模拟响应。设备自助界面和性能验收仍未完成；管理后台本地整体验收及未覆盖环境见[UI-F报告](docs/ui-f-implementation-result.md)。
+仓库提供[无租户嵌入宿主示例](examples/no-tenant-host/README.md)：另起 Axum 业务进程，复用 IdP 业务路由和 React 登录组件，并在宿主报告接口中检查 `report::read::<id>`。该示例的配置模板和启动命令均在 `examples/no-tenant-host` 内，不依赖根目录的开发环境脚本；[Enabled嵌入宿主示例](examples/tenant-host/README.md)现已提供Fixed/Choose、租户报告隔离、授权过滤列表和独立管理组件，并完成局部验证。`web/embedded/demo.html` 仍只使用模拟响应。设备自助已提供[A04-A本人列表、详情、解绑和回执恢复组件](docs/a04-a-integration.md)；[A04-B登记、宿主signer/admission接入与恢复组件](docs/a04-b-integration.md)也已完成局部实施。[A04-C双签轮换与结果核对组件](docs/a04-c-integration.md)已完成局部实施。[A04-D双向扫码、交付确认及恢复组件](docs/a04-d-integration.md)已完成局部实施。原生持钥接入及性能验收仍未完成；管理后台本地整体验收及未覆盖环境见[UI-F报告](docs/ui-f-implementation-result.md)。
 
 业务权限目录已按租户隔离；内置管理权限受保护。宿主可调用 Core 服务或选装 Axum 管理路由。独立管理应用提供完整页面；本地 `@embedded-idp/react/admin` 入口提供可嵌入的权限目录组件，尚未发布到 npm。组件使用独立的管理会话与管理 API，不使用业务登录令牌；接入方式见 [React 集成说明](docs/react-ui-integration-design.md)。
 
@@ -153,6 +153,7 @@ cargo test --workspace --locked
 - [通用扫码授权设备登录设计](docs/device-scan-login-design-v1.md)（双向扫码、宿主准入、Pending 交付恢复、ACK 与原操作终止）
 - [扫码授权设备登录升级手册](docs/device-scan-login-upgrade.md)
 - [扫码授权设备登录验证记录](docs/device-scan-login-validation.md)
+- [JSON v2 多入口扫码组合设计与配置](docs/a02b-b3-technical-design.md) · [局部实施记录](docs/a02b-b3-implementation-result.md)
 - [私网 HTTP 开发接入](docs/development-private-http.md)及[验收记录](docs/development-private-http-validation.md)
 
 `docs/*-v1.md` 中的早期模型和切片文档保留作历史背景；以当前设计、执行计划、代码和测试为准，不把旧开发适配器示例用于生产接入。

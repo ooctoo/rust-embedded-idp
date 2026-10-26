@@ -85,7 +85,7 @@ impl ScanTargetPresentationProvider for RegisteredDevicePresentation {
 
 pub struct AppComposition {
     pub router: Router,
-    pub scan_cleanup: Option<Arc<dyn TenantDeviceScanLoginService>>,
+    pub scan_cleanup: Vec<crate::scan_cleanup::ScanCleanupJob>,
 }
 fn signing_key(path: &str) -> Result<RsaSigningKeyConfig, String> {
     let file = std::fs::File::open(path).map_err(|_| {
@@ -115,6 +115,22 @@ fn signing_key(path: &str) -> Result<RsaSigningKeyConfig, String> {
 
 pub fn build_composition(config: &AppConfig) -> Result<AppComposition, String> {
     config.validate_for_startup()?;
+    let mut admission_providers = std::collections::BTreeMap::new();
+    for provider in &config.device_admission_providers {
+        admission_providers.insert(
+            provider.id.clone(),
+            Arc::new(crate::device_admission::FileAdmission::load(
+                &provider.id,
+                &provider.grants_file,
+            )?),
+        );
+    }
+    let mut scan_ciphers = std::collections::BTreeMap::new();
+    for entry in &config.business_entries {
+        if let Some(scan) = &entry.scan {
+            scan_ciphers.insert(entry.login_entry.clone(), Arc::new(scan.load_cipher()?));
+        }
+    }
     let management_http = config
         .management
         .browser
@@ -316,11 +332,34 @@ pub fn build_composition(config: &AppConfig) -> Result<AppComposition, String> {
         router = router.merge(ui);
     }
     let Some(reference) = &config.reference_business else {
+        let mut scan_cleanup = Vec::new();
         let mut oidc_entries = std::collections::BTreeMap::new();
+        let mut oidc_profiles = std::collections::BTreeMap::new();
         for entry in &config.business_entries {
-            let (routes, oidc) = ordinary_business_routes(config, entry, &store, &catalog, &key)?;
+            let (routes, oidc, cleanup) = ordinary_business_routes(
+                config,
+                entry,
+                &store,
+                &catalog,
+                &key,
+                &admission_providers,
+                &scan_ciphers,
+            )?;
+            if let Some(job) = cleanup {
+                scan_cleanup.push(job);
+            }
             if let Some(oidc) = oidc {
                 oidc_entries.insert(entry.client_id.clone(), oidc);
+                let (audience, path) = entry
+                    .device
+                    .as_ref()
+                    .map(|d| (d.audience.as_str(), d.paths.oidc_token.as_str()))
+                    .unwrap_or((BUSINESS_AUDIENCE, "/oidc/token"));
+                oidc_profiles.insert(
+                    entry.client_id.clone(),
+                    TenantOidcHttpConfig::new(audience, path)
+                        .map_err(|_| "invalid OIDC device profile")?,
+                );
             }
             router = if entry.mount_prefix.is_empty() {
                 router.merge(routes)
@@ -335,17 +374,16 @@ pub fn build_composition(config: &AppConfig) -> Result<AppComposition, String> {
             });
             let (jwks, etag) = business_metadata.ok_or("missing OIDC metadata")?;
             router = router
-                .merge(tenant_oidc_authorization_router(
+                .merge(tenant_oidc_authorization_router_with_profiles(
                     dispatcher.clone(),
-                    TenantOidcHttpConfig::new(BUSINESS_AUDIENCE, "/oidc/token")
-                        .map_err(|_| "invalid shared token path")?,
+                    oidc_profiles,
                 ))
                 .merge(tenant_oidc_protocol_resource_router(dispatcher))
                 .merge(oidc_metadata_router(config, jwks, etag));
         }
         return Ok(AppComposition {
             router,
-            scan_cleanup: None,
+            scan_cleanup,
         });
     };
     // The old reference business composition remains opt-in through its legacy input.
@@ -592,7 +630,15 @@ pub fn build_composition(config: &AppConfig) -> Result<AppComposition, String> {
             .merge(oidc_metadata_router(config, jwks, etag))
             .merge(public)
             .merge(browser_business),
-        scan_cleanup: scan_service,
+        scan_cleanup: scan_service
+            .into_iter()
+            .map(|service| crate::scan_cleanup::ScanCleanupJob {
+                service,
+                host_scope: "reference-host".into(),
+                interval_secs: 30,
+                batch_size: 100,
+            })
+            .collect(),
     })
 }
 
@@ -631,7 +677,19 @@ fn ordinary_business_routes(
     store: &PostgresAccessStore,
     catalog: &PermissionCatalog,
     key: &RsaSigningKeyConfig,
-) -> Result<(Router, Option<crate::oidc_dispatch::OidcEntry>), String> {
+    admission_providers: &std::collections::BTreeMap<
+        String,
+        Arc<crate::device_admission::FileAdmission>,
+    >,
+    scan_ciphers: &std::collections::BTreeMap<String, Arc<RingScanResultCipher>>,
+) -> Result<
+    (
+        Router,
+        Option<crate::oidc_dispatch::OidcEntry>,
+        Option<crate::scan_cleanup::ScanCleanupJob>,
+    ),
+    String,
+> {
     let browser_http = entry
         .browser
         .as_ref()
@@ -640,7 +698,7 @@ fn ordinary_business_routes(
     let browser_ttl = browser_http
         .as_ref()
         .and_then(|http| http.client_config().session_ttl_secs);
-    let auth = |browser: bool| {
+    let auth_for = |browser: bool, require_device_proof: bool| {
         let ttl = if browser { browser_ttl } else { None };
         let tokens = Rs256JwtService::new(
             ProductionJwtConfig {
@@ -668,7 +726,7 @@ fn ordinary_business_routes(
                 client_id: entry.client_id.clone(),
                 login_entry: entry.login_entry.clone(),
                 policy: entry.policy.clone(),
-                require_device_proof: false,
+                require_device_proof,
             },
             store.clone(),
             tokens,
@@ -685,6 +743,58 @@ fn ordinary_business_routes(
             None => Ok(auth),
         }
     };
+    let auth = |browser| auth_for(browser, entry.require_device_proof);
+    let proofs = || {
+        let mut purposes = vec![
+            DEVICE_REGISTRATION_PURPOSE,
+            DEVICE_KEY_ROTATION_PURPOSE,
+            TENANT_DEVICE_LOGIN_PURPOSE,
+            TENANT_DEVICE_SELECTION_PURPOSE,
+            REFRESH_PURPOSE,
+            TENANT_DEVICE_HEARTBEAT_PURPOSE,
+        ];
+        if entry.oidc_enabled {
+            purposes.push(TENANT_OIDC_EXCHANGE_PURPOSE);
+        }
+        let mut allowed_purposes = purposes
+            .into_iter()
+            .map(|p| DeviceProofPurpose::new(p).expect("known purpose"))
+            .collect::<Vec<_>>();
+        if entry.scan.is_some() {
+            allowed_purposes.extend(
+                [
+                    ScanLoginAction::Create,
+                    ScanLoginAction::Claim,
+                    ScanLoginAction::Status,
+                    ScanLoginAction::Lookup,
+                    ScanLoginAction::Cancel,
+                    ScanLoginAction::Exchange,
+                    ScanLoginAction::Recover,
+                    ScanLoginAction::Acknowledge,
+                    ScanLoginAction::Abort,
+                    ScanLoginAction::CloseOrigin,
+                ]
+                .into_iter()
+                .map(ScanLoginAction::purpose),
+            );
+        }
+        CoreTenantDeviceProofService::new(
+            config.tenancy_mode,
+            TenantDeviceProofConfig {
+                client_id: entry.client_id.clone(),
+                allowed_purposes,
+                challenge_ttl_secs: config.embedded_idp.device.nonce_ttl_secs,
+                clock_skew_secs: config.embedded_idp.device.proof_clock_skew_secs,
+            },
+            store.clone(),
+            Ed25519PublicJwkParser,
+            RingEd25519Verifier,
+            SecureDeviceChallengeGenerator,
+            SystemClock,
+            UuidV7IdGenerator,
+        )
+        .map_err(|_| "invalid entry device proof configuration")
+    };
     let service = Arc::new(auth(false)?);
     let logout = CoreTenantOidcService::new(
         auth(false)?,
@@ -695,7 +805,7 @@ fn ordinary_business_routes(
     )
     .map_err(|_| "invalid business logout configuration")?;
     let oidc = if entry.oidc_enabled {
-        let protocol = Arc::new(
+        let protocol = || {
             CoreTenantOidcService::new(
                 auth(false)?,
                 config.embedded_idp.issuer.clone(),
@@ -703,18 +813,64 @@ fn ordinary_business_routes(
                 "openid profile email".into(),
                 PhcClientSecretCodec,
             )
-            .map_err(|_| "invalid business OIDC configuration")?
-            .with_required_s256_pkce(),
-        );
+            .map(|s| s.with_required_s256_pkce())
+            .map_err(|_| "invalid business OIDC configuration".to_string())
+        };
+        let authorization: Arc<dyn TenantOidcAuthorizationService> = if entry.device.is_some() {
+            Arc::new(CoreTenantOidcAuthorizationService::new(
+                protocol()?,
+                proofs()?,
+            ))
+        } else {
+            Arc::new(protocol()?)
+        };
         Some(crate::oidc_dispatch::OidcEntry {
-            authorization: protocol.clone(),
-            resource: protocol,
+            authorization,
+            resource: Arc::new(protocol()?),
         })
     } else {
         None
     };
-    let mut routes = tenant_auth_router(service.clone())
-        .merge(tenant_refresh_router(service.clone()))
+    let mut routes = if let Some(device) = &entry.device {
+        let devices = Arc::new(CoreTenantDeviceAuthenticationService::new(
+            auth(false)?,
+            proofs()?,
+        ));
+        let admission = admission_providers
+            .get(&device.admission_provider)
+            .ok_or("missing device admission provider")?
+            .clone();
+        let device_routes = tenant_device_router(
+            devices.clone(),
+            admission.clone(),
+            TenantDeviceHttpConfig::new(&device.audience, &device.paths.heartbeat)
+                .map_err(|_| "invalid device routes")?,
+        )
+        .layer(axum::middleware::from_fn_with_state(
+            crate::device_admission::AdmissionHttp {
+                provider: admission,
+                provider_id: device.admission_provider.clone(),
+                client: entry.client_id.clone(),
+                provision_path: format!("{}/devices/provision", entry.mount_prefix),
+                result_path: format!("{}/devices/registration-result", entry.mount_prefix),
+            },
+            crate::device_admission::inject,
+        ));
+        tenant_device_auth_router(
+            devices,
+            TenantDeviceAuthHttpConfig::new(
+                &device.audience,
+                &device.paths.login,
+                &device.paths.selection,
+                &device.paths.refresh,
+            )
+            .map_err(|_| "invalid device auth routes")?,
+        )
+        .merge(device_routes)
+    } else {
+        tenant_auth_router(service.clone()).merge(tenant_refresh_router(service.clone()))
+    };
+    routes = routes
         .merge(tenant_logout_router(Arc::new(logout)))
         .merge(tenant_self_router(
             service,
@@ -724,6 +880,70 @@ fn ordinary_business_routes(
                 store.clone(),
             )),
         ));
+    let mut cleanup = None;
+    if let Some(scan) = &entry.scan {
+        let service: Arc<dyn TenantDeviceScanLoginService> = Arc::new(
+            CoreTenantDeviceScanLoginService::new(
+                scan.entry(entry)?,
+                auth_for(false, true)?,
+                proofs()?,
+                Arc::new(IdentityOnlyScanAdmission),
+                Arc::new(RegisteredDevicePresentation),
+                scan_ciphers
+                    .get(&entry.login_entry)
+                    .ok_or("missing scan result cipher")?
+                    .clone(),
+            )
+            .map_err(|_| "invalid entry scan service configuration")?,
+        );
+        let identity: Arc<dyn BrowserSessionIdentityService> = match browser_ttl {
+            Some(ttl) => Arc::new(
+                auth(true)?
+                    .into_restricted_browser(ttl)
+                    .map_err(|_| "invalid scan browser lifetime")?,
+            ),
+            None => Arc::new(auth(false)?),
+        };
+        let http = browser_http
+            .as_ref()
+            .ok_or("scan requires browser configuration")?;
+        let browser = try_scan_browser_router(service.clone(), identity, http.clone())?.layer(
+            axum::middleware::from_fn_with_state(
+                scan.host_scope.clone(),
+                crate::scan_composition::host_context,
+            ),
+        );
+        let device = scan_device_router(
+            service.clone(),
+            ScanDeviceHttpConfig::new_with_transport_policy(
+                &scan.audience,
+                &scan.device_prefix,
+                &scan.verification_uri,
+                &config.transport_policy,
+            )
+            .map_err(|_| "invalid scan device routes")?,
+        )
+        .layer(axum::middleware::from_fn_with_state(
+            scan.host_scope.clone(),
+            crate::scan_composition::host_context,
+        ));
+        routes = routes
+            .nest("/auth/browser/device-scan", browser)
+            .nest(
+                "/auth/browser/device-scan/ui",
+                crate::scan_ui::scan_reference_ui_router_for_entry(
+                    http.client_config(),
+                    &entry.mount_prefix,
+                ),
+            )
+            .nest("/auth/device-scan", device);
+        cleanup = Some(crate::scan_cleanup::ScanCleanupJob {
+            service,
+            host_scope: scan.host_scope.clone(),
+            interval_secs: scan.cleanup.interval_secs,
+            batch_size: scan.cleanup.batch_size,
+        });
+    }
     if let Some(http) = browser_http {
         let browser_service: Arc<dyn BrowserSessionService> = match browser_ttl {
             Some(ttl) => Arc::new(
@@ -764,7 +984,7 @@ fn ordinary_business_routes(
                 .map_err(|_| "invalid registration routes")?,
         );
     }
-    Ok((routes, oidc))
+    Ok((routes, oidc, cleanup))
 }
 
 fn health_router(store: PostgresAccessStore, catalog: PermissionCatalog) -> Router {

@@ -1,0 +1,89 @@
+{
+  "contract_version": 1,
+  "host": "A05 Enabled tenant host example",
+  "identity_module_routes": "composed from embedded-idp-axum routers; see docs/api/business-openapi.json",
+  "business_routes": [
+    {
+      "method": "GET",
+      "path": "/{entry}/api/reports/{id}",
+      "entries": [
+        "fixed",
+        "choose"
+      ],
+      "auth": "Authorization: Bearer <business-purpose access token>",
+      "request": {
+        "path": {
+          "id": "1-128 ASCII characters matching [A-Za-z0-9_.-]+"
+        }
+      },
+      "responses": {
+        "200": "authorized report {tenant_id,report_id,title,body}",
+        "400": "invalid id",
+        "401": "missing or invalid session",
+        "403": "not authorized",
+        "404": "authorized report missing",
+        "503": "identity, authorization, or business store unavailable"
+      },
+      "cache_control": "no-store"
+    },
+    {
+      "method": "GET",
+      "path": "/{entry}/api/reports",
+      "entries": [
+        "fixed",
+        "choose"
+      ],
+      "auth": "Authorization: Bearer <business-purpose access token>",
+      "request": {
+        "query": {
+          "limit": "optional integer 1..20, default 10",
+          "cursor": "optional signed opaque cursor",
+          "prefix": "optional report id prefix"
+        },
+        "unknown_or_duplicate_parameters": "400"
+      },
+      "responses": {
+        "200": "{items:[authorized reports],has_more:boolean,next_cursor:string|null}; no total count",
+        "400": "invalid query, expired cursor, cursor signature/scope mismatch",
+        "401": "missing or invalid session",
+        "503": "identity, authorization, or business store unavailable"
+      },
+      "pagination": {
+        "order": "report_id ascending",
+        "max_candidates_checked_per_request": 40,
+        "cursor_position": "last checked candidate, including denied candidates",
+        "empty_page_may_have_more": true
+      },
+      "cache_control": "no-store"
+    }
+  ],
+  "response_fields": {
+    "report": [
+      "tenant_id",
+      "report_id",
+      "title",
+      "body"
+    ],
+    "page": [
+      "items",
+      "has_more",
+      "next_cursor"
+    ]
+  },
+  "errors": "Host-generated errors have empty bodies; Axum extractor rejections are text/plain. All report responses have Cache-Control: no-store.",
+  "cursor": {
+    "version": 1,
+    "ttl_secs": 900,
+    "integrity": "HMAC-SHA256",
+    "scope": [
+      "tenant_id",
+      "subject_id",
+      "session_id",
+      "business_id",
+      "entry_id",
+      "prefix",
+      "limit"
+    ],
+    "restart": "invalidated; restart from first page"
+  }
+}

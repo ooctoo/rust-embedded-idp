@@ -62,3 +62,7 @@ export function PermissionSettings({ client, tenantId, businessId }: {
 业务端使用 `new EmbeddedIdentityClient("/idp", undefined, { mode: "cookie" })`；管理端使用 `new ManagementClient("/api", { mode: "cookie" })`。默认不传选项时仍使用显式令牌模式。Cookie 模式只能连接同源端点，路径会规范化以避免同一接口使用不同跨标签页锁。宿主使用局域网 HTTP 开发模式时，应将服务端返回的 `client_config` 原样传给 Web 客户端并选择 `development_login`；页面不能通过 query 或 localStorage 自行启用该模式。
 
 完整 Cookie 模式下，`EmbeddedAuth` 和管理 Console 在读取 capabilities 后调用一次 `restore()`。开发登录模式不调用 restore，也不调用 refresh；401 的 `browser_session_expired`、403 的 `browser_restore_disabled`/`browser_refresh_disabled` 和 409 的 `browser_session_changed` 按[稳定错误契约](development-private-http.md)处理，要求清理当前页面状态并重新登录。自行构建界面的宿主应先 `loadCapabilities()`，再依据服务端模式决定是否 restore。已登录实例调用 restore 会发送完整预期身份；并发 restore 在实例内合并。订阅快照的 `sessionChanged` 时停止旧操作、清除业务数据并提示重新加载；`selecting` 期间不得继续操作旧业务上下文。设备证明宿主继续使用原显式令牌模式及自定义 transport。
+
+## A05 Enabled 示例增量
+
+真实本地Fixed/Choose宿主见[tenant-host](../examples/tenant-host/README.md)。`EmbeddedAuth.beforeSessionChange?: () => boolean | Promise<boolean>` 为可选宿主草稿确认钩子：切租户或退出前调用，返回false取消该操作，省略保持兼容；拒绝Promise按组件普通操作错误处理。它不阻止服务端撤销或其他标签引起的失效。宿主仍须清理业务cache并丢弃旧scope响应。示例build-web先构建本地包，显式载入主入口CSS，管理目录仍使用独立ManagementClient和admin CSS。

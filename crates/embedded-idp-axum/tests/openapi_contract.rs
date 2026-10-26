@@ -114,13 +114,27 @@ fn shared_oidc_contract_is_current_complete_and_separate_from_business_entries()
     assert!(value["components"]["schemas"]["Discovery"]["properties"]
         .get("device_provision_endpoint")
         .is_none());
+    let token = &value["paths"]["/oidc/token"]["post"];
+    assert!(token["description"]
+        .as_str()
+        .unwrap()
+        .contains("Device-bound authorization codes require matching proof"));
+    assert_eq!(token["parameters"].as_array().unwrap().len(), 5);
+    assert!(token["parameters"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|p| p["in"] == "header" && p["required"] == false));
 
     // Keep route declaration drift visible for the exact shared protocol
     // routers; the ordinary 17-operation document remains a separate catalog.
     let authorization = include_str!("../src/tenant_oidc_authorization.rs");
     let resource = include_str!("../src/tenant_oidc_resource.rs");
+    // Both public constructors delegate to this single router; delimit the
+    // source extractor at the private shared builder so route declarations
+    // cannot disappear from drift coverage when composition is refactored.
     let auth_routes = authorization
-        .split("\npub fn tenant_oidc_authorization_router")
+        .split("\nfn oidc_router(state: OidcState)")
         .nth(1)
         .unwrap()
         .split("#[derive")
@@ -179,6 +193,492 @@ fn shared_oidc_contract_is_current_complete_and_separate_from_business_entries()
         r#""kty":k.key_type,"alg":k.algorithm,"use":k.public_key_use,"n":k.modulus,"e":k.exponent"#
     ));
     assert!(host.contains("public, max-age=300"));
+}
+
+#[test]
+fn scan_contract_is_separate_complete_resolvable_and_route_aligned() {
+    use embedded_idp_axum::openapi::{scan_document, scan_profile};
+    let document = scan_document();
+    let value = serde_json::to_value(&document).unwrap();
+    let rendered = format!("{}\n", document.to_pretty_json().unwrap());
+    assert_eq!(
+        rendered,
+        include_str!("../../../docs/api/scan-openapi.json"),
+        "regenerate using export_scan_openapi"
+    );
+    assert_eq!(value["openapi"], "3.1.0");
+    let browser = BTreeSet::from([
+        "/auth/browser/device-scan/context",
+        "/auth/browser/device-scan/phone-codes",
+        "/auth/browser/device-scan/attach",
+        "/auth/browser/device-scan/inspect",
+        "/auth/browser/device-scan/approve",
+        "/auth/browser/device-scan/deny",
+        "/auth/browser/device-scan/cancel",
+        "/auth/browser/device-scan/status",
+    ]);
+    let device = BTreeSet::from([
+        "/auth/device-scan/create",
+        "/auth/device-scan/claim",
+        "/auth/device-scan/status",
+        "/auth/device-scan/lookup",
+        "/auth/device-scan/cancel",
+        "/auth/device-scan/exchange",
+        "/auth/device-scan/recover",
+        "/auth/device-scan/acknowledge",
+        "/auth/device-scan/abort",
+        "/auth/device-scan/close-origin",
+    ]);
+    let source = include_str!("../src/device_scan_login.rs");
+    let inventory = include_str!("../../../docs/api/route-inventory.md");
+    for path in &browser {
+        let suffix = path.strip_prefix("/auth/browser/device-scan").unwrap();
+        assert!(
+            source.contains(&format!(".route(\"{suffix}\", post(")),
+            "browser router drift: {path}"
+        );
+        assert!(inventory.contains(suffix), "route inventory missing {path}");
+    }
+    for path in &device {
+        let suffix = path.strip_prefix("/auth/device-scan").unwrap();
+        assert!(
+            source.contains(&format!(".route(\"{suffix}\", post(")),
+            "device router drift: {path}"
+        );
+        assert!(inventory.contains(suffix), "route inventory missing {path}");
+    }
+    let mut actual_browser = BTreeSet::new();
+    let mut actual_device = BTreeSet::new();
+    for (path, item) in value["paths"].as_object().unwrap() {
+        let op = &item["post"];
+        match op["x-scan-side"].as_str().unwrap() {
+            "browser" => {
+                actual_browser.insert(path.as_str());
+            }
+            "device" => {
+                actual_device.insert(path.as_str());
+            }
+            side => panic!("unexpected scan side {side}"),
+        }
+        assert_eq!(
+            op["requestBody"]["content"]["application/json"]["schema"]["$ref"]
+                .as_str()
+                .is_some(),
+            true
+        );
+    }
+    assert_eq!(actual_browser, browser);
+    assert_eq!(actual_device, device);
+    assert_eq!(actual_browser.len(), 8);
+    assert_eq!(actual_device.len(), 10);
+    let schemas = value["components"]["schemas"].as_object().unwrap();
+    for name in [
+        "ExpectedSession",
+        "PhoneCodesRequest",
+        "AttachRequest",
+        "GrantRequest",
+        "ReadGrantRequest",
+        "ApprovalRequest",
+        "CreateRequest",
+        "ClaimRequest",
+        "OperationAccessRequest",
+        "ReadAccessRequest",
+        "CloseOriginRequest",
+        "RecoverRequest",
+        "AcknowledgeRequest",
+        "AbortRequest",
+    ] {
+        let schema = &schemas[name];
+        let properties = schema["properties"].as_object().unwrap();
+        let required = schema["required"].as_array().unwrap();
+        assert_eq!(
+            properties.len(),
+            required.len(),
+            "required DTO drift: {name}"
+        );
+        assert_eq!(
+            schema["additionalProperties"], false,
+            "DTO must stay strict: {name}"
+        );
+    }
+    for name in ["BrowserOnly", "LookupRequest"] {
+        let schema = &schemas[name];
+        assert_eq!(
+            schema["required"].as_array().map_or(0, Vec::len) + 1,
+            schema["properties"].as_object().unwrap().len()
+        );
+    }
+    assert_eq!(
+        schemas["BrowserOnly"]["properties"]["expected_session"]["oneOf"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        schemas["LookupRequest"]["properties"]["origin_action"]["oneOf"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    for (schema, fields) in [
+        (
+            "CreateRequest",
+            [
+                "operation_id",
+                "entry_id",
+                "tenant_id",
+                "delivery_secret_hash",
+            ]
+            .as_slice(),
+        ),
+        (
+            "ClaimRequest",
+            [
+                "operation_id",
+                "entry_id",
+                "tenant_id",
+                "scan_code",
+                "delivery_secret_hash",
+            ]
+            .as_slice(),
+        ),
+        (
+            "LookupRequest",
+            [
+                "origin_action",
+                "origin_operation_id",
+                "entry_id",
+                "tenant_id",
+                "delivery_secret",
+            ]
+            .as_slice(),
+        ),
+        (
+            "RecoverRequest",
+            [
+                "issuance_operation_id",
+                "grant_id",
+                "delivery_secret",
+                "tenant_id",
+            ]
+            .as_slice(),
+        ),
+        (
+            "AcknowledgeRequest",
+            [
+                "operation_id",
+                "issuance_operation_id",
+                "grant_id",
+                "delivery_secret",
+                "receipt_nonce",
+                "tenant_id",
+            ]
+            .as_slice(),
+        ),
+        (
+            "AbortRequest",
+            [
+                "operation_id",
+                "issuance_operation_id",
+                "grant_id",
+                "delivery_secret",
+                "tenant_id",
+            ]
+            .as_slice(),
+        ),
+        (
+            "CloseOriginRequest",
+            [
+                "entry_id",
+                "tenant_id",
+                "origin_action",
+                "origin_operation_id",
+                "delivery_secret",
+            ]
+            .as_slice(),
+        ),
+    ] {
+        let actual = schemas[schema]["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            actual,
+            fields.iter().copied().collect(),
+            "DTO/schema drift: {schema}"
+        );
+    }
+    for (path, fragments) in [
+        (
+            "/create",
+            &["same operation_id", "delivery_secret_hash"][..],
+        ),
+        ("/claim", &["same operation_id", "delivery secret"][..]),
+        (
+            "/lookup",
+            &["404 is nonterminal", "retain the original"][..],
+        ),
+        (
+            "/exchange",
+            &[
+                "fixed issuance_operation_id",
+                "exchange_already_started",
+                "progress-only",
+            ][..],
+        ),
+        (
+            "/recover",
+            &["original issuance_operation_id", "progress-only"][..],
+        ),
+        (
+            "/acknowledge",
+            &["progress only", "delivery_state=acknowledged"][..],
+        ),
+        (
+            "/abort",
+            &["409 already_acknowledged", "Abort is not logout"][..],
+        ),
+        (
+            "/close-origin",
+            &["already_activated", "does not revoke or log out"][..],
+        ),
+    ] {
+        let path = format!("/auth/device-scan{path}");
+        let description = value["paths"][&path]["post"]["description"]
+            .as_str()
+            .unwrap();
+        for fragment in fragments {
+            assert!(description.contains(fragment), "{path} missing {fragment}");
+        }
+    }
+
+    fn walk_refs(
+        value: &Value,
+        root: &Value,
+        graph: &mut Vec<(String, String)>,
+        from: Option<&str>,
+    ) {
+        match value {
+            Value::Object(map) => {
+                if let Some(target) = map.get("$ref").and_then(Value::as_str) {
+                    let pointer = target.strip_prefix('#').expect("local reference");
+                    assert!(
+                        root.pointer(pointer).is_some(),
+                        "unresolved reference {target}"
+                    );
+                    if let Some(prefix) = "#/components/schemas/".strip_prefix('#') {
+                        if let Some(to) = pointer.strip_prefix(prefix) {
+                            if let Some(from) = from {
+                                graph.push((from.to_string(), to.to_string()));
+                            }
+                        }
+                    }
+                }
+                for child in map.values() {
+                    walk_refs(child, root, graph, from);
+                }
+            }
+            Value::Array(items) => {
+                for child in items {
+                    walk_refs(child, root, graph, from);
+                }
+            }
+            _ => {}
+        }
+    }
+    let schemas = value["components"]["schemas"].as_object().unwrap();
+    let mut graph = Vec::new();
+    for (name, schema) in schemas {
+        walk_refs(schema, &value, &mut graph, Some(name));
+    }
+    fn visit(
+        node: &str,
+        graph: &[(String, String)],
+        active: &mut BTreeSet<String>,
+        done: &mut BTreeSet<String>,
+    ) {
+        assert!(
+            active.insert(node.to_string()),
+            "schema reference cycle at {node}"
+        );
+        if done.insert(node.to_string()) {
+            for (_, target) in graph.iter().filter(|(source, _)| source == node) {
+                visit(target, graph, active, done);
+            }
+        }
+        active.remove(node);
+    }
+    let mut done = BTreeSet::new();
+    for name in schemas.keys() {
+        visit(name, &graph, &mut BTreeSet::new(), &mut done);
+    }
+
+    assert_eq!(
+        value["components"]["schemas"]["ScanProgress"]["required"]
+            .as_array()
+            .unwrap()
+            .len(),
+        14
+    );
+    assert_eq!(
+        value["components"]["schemas"]["DeliveryResponse"]["oneOf"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        value["components"]["schemas"]["ScanConfirmation"]["properties"]["source"]["properties"]
+            ["display_name"]["type"],
+        "string"
+    );
+    assert_eq!(
+        value["components"]["schemas"]["ScanConfirmation"]["properties"]["target"]["properties"]
+            ["context_label"]["type"],
+        json!(["string", "null"])
+    );
+    assert_eq!(
+        value["components"]["schemas"]["ScanProgress"]["properties"]["approved_until_unix_secs"]
+            ["type"],
+        json!(["integer", "null"])
+    );
+    assert_eq!(
+        value["components"]["schemas"]["ScanProgress"]["properties"]["delivery_state"]["enum"],
+        json!(["recoverable", "acknowledged", "revoked", null])
+    );
+    assert!(
+        value["paths"]["/auth/device-scan/exchange"]["post"]["description"]
+            .as_str()
+            .unwrap()
+            .contains("Pending until acknowledge")
+    );
+    assert!(
+        value["paths"]["/auth/device-scan/acknowledge"]["post"]["description"]
+            .as_str()
+            .unwrap()
+            .contains("activates")
+    );
+    assert!(
+        value["paths"]["/auth/browser/device-scan/phone-codes"]["post"]["responses"]
+            .get("201")
+            .is_some()
+    );
+    assert!(
+        value["paths"]["/auth/device-scan/create"]["post"]["responses"]
+            .get("201")
+            .is_some()
+    );
+    assert!(
+        value["paths"]["/auth/browser/device-scan/context"]["post"]["responses"]
+            .get("413")
+            .is_none()
+    );
+    assert!(
+        value["paths"]["/auth/browser/device-scan/context"]["post"]["responses"]
+            .get("415")
+            .is_none()
+    );
+    assert!(
+        value["paths"]["/auth/device-scan/status"]["post"]["responses"]
+            .get("413")
+            .is_some()
+    );
+    assert!(
+        value["paths"]["/auth/device-scan/status"]["post"]["responses"]
+            .get("415")
+            .is_some()
+    );
+    assert_eq!(
+        value["paths"]["/auth/browser/device-scan/context"]["post"]["security"][0]["BrowserCookie"],
+        json!([])
+    );
+    assert_eq!(
+        value["paths"]["/auth/device-scan/status"]["post"]["security"][0]["DeviceSignature"],
+        json!([])
+    );
+    let profile = serde_json::to_value(scan_profile("/browser/prefix", "/device/prefix")).unwrap();
+    assert!(profile["paths"].get("/browser/prefix/context").is_some());
+    assert!(profile["paths"].get("/device/prefix/create").is_some());
+    assert_eq!(profile["servers"][0]["url"], "/");
+    assert!(profile["paths"]["/browser/prefix/context"]["post"]
+        .get("x-scan-side")
+        .is_none());
+    for (path, item) in value["paths"].as_object().unwrap() {
+        let side = item["post"]["x-scan-side"].as_str().unwrap();
+        let responses = item["post"]["responses"].as_object().unwrap();
+        assert_eq!(
+            responses.contains_key("413"),
+            side == "device",
+            "413 drift at {path}"
+        );
+        assert_eq!(
+            responses.contains_key("415"),
+            side == "device",
+            "415 drift at {path}"
+        );
+        assert_eq!(item["post"]["security"].as_array().unwrap().len(), 1);
+        assert!(
+            item["post"]["security"][0].is_object(),
+            "invalid security requirement at {path}"
+        );
+        let header_names = item["post"]["parameters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|parameter| parameter["name"].as_str().unwrap())
+            .collect::<BTreeSet<_>>();
+        if side == "browser" {
+            assert!(header_names.contains("Origin"));
+            assert!(header_names.contains("x-embedded-idp-browser"));
+        } else {
+            assert_eq!(header_names.len(), 5);
+            for name in [
+                "x-device-id",
+                "x-device-key-id",
+                "x-device-challenge",
+                "x-device-signature",
+                "x-device-signed-at",
+            ] {
+                assert!(
+                    header_names.contains(name),
+                    "missing device proof header {name}"
+                );
+            }
+        }
+    }
+
+    // Compare representative public projection code to the schema field set;
+    // the adjacent device_scan_login unit tests exercise these same projections
+    // through actual Axum responses, including no-store and body/path proof binding.
+    for field in [
+        "grant_id",
+        "approved_until_unix_secs",
+        "delivery_state",
+        "issuance_operation_id",
+        "recover_until_unix_secs",
+        "next_action",
+    ] {
+        assert!(
+            source.contains(&format!("\"{field}\"")),
+            "wire projection field missing: {field}"
+        );
+        assert!(
+            value["components"]["schemas"]["ScanProgress"]["properties"]
+                .get(field)
+                .is_some(),
+            "schema field missing: {field}"
+        );
+    }
+    assert!(source.contains("\"receipt_nonce\""));
+    assert!(
+        value["components"]["schemas"]["DeliveryBundle"]["properties"]
+            .get("receipt_nonce")
+            .is_some()
+    );
 }
 struct Auth(bool);
 impl TenantAuthenticationService for Auth {
@@ -478,6 +978,317 @@ fn ordinary_route_declarations_and_contract_catalog_do_not_drift() {
         declared, documented,
         "ordinary route method/path declaration or contract coverage changed"
     );
+}
+
+#[test]
+fn device_contract_export_is_stable_and_profiles_are_conditional() {
+    use embedded_idp_axum::openapi::{device_document, device_profile};
+    let generated = serde_json::to_value(device_document()).unwrap();
+    let checked_in: Value =
+        serde_json::from_str(include_str!("../../../docs/api/device-openapi.json")).unwrap();
+    assert_eq!(
+        generated, checked_in,
+        "regenerate using export_device_openapi"
+    );
+    let paths = generated["paths"].as_object().unwrap();
+    assert_eq!(paths.len(), 14);
+    for required in [
+        "/auth/login",
+        "/auth/refresh",
+        "/devices/proof/challenges",
+        "/devices/provision",
+        "/devices/registration-result",
+        "/devices/complete",
+        "/devices/rotate-key",
+        "/devices",
+        "/devices/{device_id}",
+        "/devices/{device_id}/keys/{key_id}",
+        "/devices/unbind",
+        "/devices/operations/{operation_id}",
+        "/devices/heartbeat",
+        "/auth/tenant-selection/complete",
+    ] {
+        assert!(paths.contains_key(required), "missing {required}");
+    }
+    assert!(generated["paths"]
+        .as_object()
+        .unwrap()
+        .values()
+        .all(|item| !item.to_string().contains("scan")));
+    let rotate = &generated["paths"]["/devices/rotate-key"]["post"];
+    assert_eq!(rotate["security"], json!([{"Bearer":[]}]));
+    let rotation_description = rotate["description"].as_str().unwrap();
+    for contract in [
+        "signatures from both the current and proposed keys",
+        "DEVICE-KEY-ROTATION-V2",
+        "compare-and-swap",
+        "one-time",
+        "no idempotency key or receipt",
+        "current device pointer",
+        "same active binding",
+        "does not prove its nonce was persisted",
+    ] {
+        assert!(
+            rotation_description.contains(contract),
+            "rotation contract missing {contract}"
+        );
+    }
+    let rotate_body = &generated["components"]["schemas"]["Rotate"];
+    for required in [
+        "device_id",
+        "expected_key_id",
+        "expected_key_version",
+        "proposed_public_jwk",
+        "challenge",
+        "current_key_signature",
+        "proposed_key_signature",
+    ] {
+        assert!(
+            rotate_body["required"]
+                .as_array()
+                .unwrap()
+                .contains(&json!(required)),
+            "rotation request omits {required}"
+        );
+    }
+    assert_eq!(
+        rotate_body["properties"]["proposed_public_jwk"]["required"],
+        json!(["kty", "crv", "x", "kid"])
+    );
+    assert_eq!(
+        rotate["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/DeviceKey"
+    );
+    assert!(
+        rotate["responses"].get("409").is_some(),
+        "stale expected key version must have a conflict response"
+    );
+    let challenge = &generated["paths"]["/devices/proof/challenges"]["post"]["description"];
+    assert!(challenge
+        .as_str()
+        .unwrap()
+        .contains("does not prove it was stored"));
+    let fixed = serde_json::to_value(device_profile("/entry-a", false)).unwrap();
+    let choose = serde_json::to_value(device_profile("/entry-b", true)).unwrap();
+    assert_eq!(fixed["servers"][0]["url"], "/entry-a");
+    assert!(fixed["paths"]
+        .get("/auth/tenant-selection/complete")
+        .is_none());
+    assert!(choose["paths"]
+        .get("/auth/tenant-selection/complete")
+        .is_some());
+    assert_eq!(choose["servers"][0]["url"], "/entry-b");
+    assert_eq!(
+        generated["paths"]["/devices/{device_id}"]["get"]["parameters"][0]["name"],
+        "device_id"
+    );
+    assert_eq!(
+        generated["paths"]["/devices"]["get"]["parameters"][0]["schema"]["maximum"],
+        200
+    );
+    let provision = &generated["paths"]["/devices/provision"]["post"];
+    assert_eq!(provision["security"], json!([{"DeviceAdmission":[]} ]));
+    assert!(provision["description"]
+        .as_str()
+        .unwrap()
+        .contains("original registration_request_id and identical"));
+    let registration_result = &generated["paths"]["/devices/registration-result"]["post"];
+    for behavior in [
+        "every call",
+        "stable registration scope",
+        "not part of this server-side grant scope",
+    ] {
+        assert!(registration_result["description"]
+            .as_str()
+            .unwrap()
+            .contains(behavior));
+    }
+    let heartbeat = &generated["paths"]["/devices/heartbeat"]["post"]["description"];
+    for binding in [
+        "original raw JSON bytes",
+        "externally visible path",
+        "audience",
+    ] {
+        assert!(heartbeat.as_str().unwrap().contains(binding));
+    }
+    assert_eq!(
+        generated["components"]["securitySchemes"]["DeviceAdmission"]["name"],
+        "x-embedded-idp-device-admission"
+    );
+    let complete = &generated["paths"]["/devices/complete"]["post"]["description"];
+    assert!(complete.as_str().unwrap().contains("not idempotent"));
+    assert!(complete
+        .as_str()
+        .unwrap()
+        .contains("query registration-result"));
+    assert!(!complete.as_str().unwrap().contains("raw JSON bytes"));
+    let challenge = &generated["paths"]["/devices/proof/challenges"]["post"]["description"];
+    assert!(challenge
+        .as_str()
+        .unwrap()
+        .contains("does not prove it was stored"));
+    assert_eq!(
+        generated["components"]["schemas"]["Registration"]["properties"]["proof_key_id"]["type"],
+        json!(["string", "null"])
+    );
+    assert_eq!(
+        generated["components"]["schemas"]["Registration"]["properties"]["key_version"]["type"],
+        json!(["integer", "null"])
+    );
+    let heartbeat = &generated["paths"]["/devices/heartbeat"]["post"];
+    for scheme in [
+        "Bearer",
+        "DeviceId",
+        "DeviceKeyId",
+        "DeviceChallenge",
+        "DeviceSignature",
+        "DeviceSignedAt",
+    ] {
+        assert!(heartbeat["security"][0].get(scheme).is_some());
+    }
+    assert_eq!(
+        generated["paths"]["/devices/provision"]["post"]["responses"]["503"]["content"]
+            ["application/json"]["schema"]["$ref"],
+        "#/components/schemas/DeviceAdmissionBusy"
+    );
+    assert_eq!(
+        generated["paths"]["/devices/provision"]["post"]["responses"]["401"]["content"]
+            ["application/json"]["schema"]["oneOf"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    let jwk = &generated["components"]["schemas"]["Provision"]["properties"]["public_jwk"];
+    assert_eq!(jwk["required"], json!(["kty", "crv", "x", "kid"]));
+    assert_eq!(jwk["properties"]["kty"]["enum"], json!(["OKP"]));
+    assert_eq!(jwk["properties"]["crv"]["enum"], json!(["Ed25519"]));
+    assert!(jwk["description"]
+        .as_str()
+        .unwrap()
+        .contains("SHA-256 thumbprint"));
+    let device_auth = generated["paths"]["/auth/login"]["post"]["description"]
+        .as_str()
+        .unwrap();
+    for header in [
+        "x-embedded-idp-tenant-id",
+        "x-device-id",
+        "x-device-key-id",
+        "x-device-challenge",
+        "x-device-signature",
+        "x-device-signed-at",
+    ] {
+        assert!(
+            device_auth.contains(header),
+            "missing proof header description: {header}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn device_auth_reuses_resolvable_wire_schemas() {
+    let document = serde_json::to_value(embedded_idp_axum::openapi::device_document()).unwrap();
+    fn references(value: &Value, document: &Value, stack: &mut BTreeSet<String>) {
+        match value {
+            Value::Object(map) => {
+                if let Some(reference) = map.get("$ref").and_then(Value::as_str) {
+                    assert!(
+                        stack.insert(reference.into()),
+                        "cyclic schema reference: {reference}"
+                    );
+                    references(
+                        document
+                            .pointer(reference.strip_prefix('#').unwrap())
+                            .expect("unresolved reference"),
+                        document,
+                        stack,
+                    );
+                    stack.remove(reference);
+                }
+                for (key, item) in map {
+                    if key != "$ref" {
+                        references(item, document, stack);
+                    }
+                }
+            }
+            Value::Array(items) => {
+                for item in items {
+                    references(item, document, stack);
+                }
+            }
+            _ => {}
+        }
+    }
+    references(&document, &document, &mut BTreeSet::new());
+    // Device and ordinary authentication share the same session/token serializer.
+    let response = complete_router()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/auth/login")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"email":"x@example.test","password":"fixture"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    let value: Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), 65536).await.unwrap()).unwrap();
+    assert!(matches_schema(
+        &value,
+        &document["components"]["schemas"]["DeviceAuthResult"],
+        &document
+    ));
+    assert!(matches_schema(
+        &json!({"error":"device_admission_required","message":"valid device admission is required"}),
+        &document["components"]["schemas"]["DeviceAdmissionRequired"],
+        &document
+    ));
+    assert!(matches_schema(
+        &json!({"error":"device_admission_busy"}),
+        &document["components"]["schemas"]["DeviceAdmissionBusy"],
+        &document
+    ));
+}
+
+#[test]
+fn device_route_source_and_contract_paths_stay_aligned() {
+    let auth = include_str!("../src/tenant_device_auth.rs");
+    let devices = include_str!("../src/tenant_devices.rs");
+    let document = serde_json::to_value(embedded_idp_axum::openapi::device_document()).unwrap();
+    let mut declared = std::collections::BTreeSet::new();
+    for (source, prefix) in [(auth, ""), (devices, "")] {
+        for line in source.lines() {
+            let Some((_, rest)) = line.split_once(".route(\"") else {
+                continue;
+            };
+            let Some((path, _)) = rest.split_once('\"') else {
+                continue;
+            };
+            let method = if line.contains("get(") {
+                "get"
+            } else if line.contains("post(") {
+                "post"
+            } else {
+                continue;
+            };
+            let canonical = path
+                .replace(":device_id", "{device_id}")
+                .replace(":key_id", "{key_id}")
+                .replace(":operation_id", "{operation_id}");
+            declared.insert((format!("{prefix}{canonical}"), method.to_string()));
+        }
+    }
+    let mut contracted = std::collections::BTreeSet::new();
+    for (path, item) in document["paths"].as_object().unwrap() {
+        for method in item.as_object().unwrap().keys() {
+            contracted.insert((path.clone(), method.clone()));
+        }
+    }
+    assert_eq!(declared, contracted);
 }
 
 // Deliberately limited to the schema forms emitted by this contract (not a
