@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import signal
 import subprocess
+import sys
 import time
 
 
@@ -21,7 +22,7 @@ def command_timeout(default: float = 30) -> float:
     return min(default, remaining)
 
 
-def process_record(pid: int) -> dict | None:
+def process_record(pid: int, *, strict: bool = False) -> dict | None:
     """Read numeric ancestry/identity only; never inspect process arguments or secrets."""
     try:
         fields = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
@@ -37,7 +38,7 @@ def process_record(pid: int) -> dict | None:
     except (FileNotFoundError, ProcessLookupError):
         return None
     except (OSError, IndexError, ValueError) as error:
-        if ci_profile():
+        if strict or ci_profile():
             raise RuntimeError(f"CI process record unavailable for pid {pid}: {type(error).__name__}") from None
         return None
 
@@ -48,15 +49,27 @@ def process_identity(pid: int) -> str | None:
     return record["startTicks"] if record else None
 
 
-def process_snapshot() -> dict[int, dict]:
+def process_snapshot(*, strict: bool = False) -> dict[int, dict]:
     try:
         entries = list(Path("/proc").iterdir())
     except OSError:
-        if ci_profile():
+        if strict or ci_profile():
             raise RuntimeError("CI process inventory is unavailable") from None
         return {}
-    records = (process_record(int(entry.name)) for entry in entries if entry.name.isdecimal())
+    records = (process_record(int(entry.name), strict=strict) for entry in entries if entry.name.isdecimal())
     return {record["pid"]: record for record in records if record}
+
+
+def process_group_alive(pgid: int) -> bool:
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    if sys.platform == "linux":
+        # killpg(0) also sees zombies until their parent reaps them. They cannot
+        # execute or retain resources; unreadable procfs must still fail closed.
+        return any(record["pgid"] == pgid for record in process_snapshot(strict=True).values())
+    return True
 
 
 def register_identity(record: dict) -> None:
@@ -125,16 +138,12 @@ def stop_process_group(process: subprocess.Popen, grace: float = 2, identity: st
             os.kill(process.pid, 0)
         except ProcessLookupError:
             process.wait(timeout=grace)
-            try:
-                os.killpg(process.pid, 0)
-            except ProcessLookupError:
+            if not process_group_alive(process.pid):
                 return
             raise RuntimeError("Owned process group identity cannot be established")
         os.killpg(process.pid, signal.SIGKILL)
         process.wait(timeout=grace)
-        try:
-            os.killpg(process.pid, 0)
-        except ProcessLookupError:
+        if not process_group_alive(process.pid):
             return
         raise RuntimeError("Owned subprocess group exit could not be confirmed")
     for signum, wait in [(signal.SIGTERM, grace), (signal.SIGKILL, 1)]:
@@ -142,9 +151,7 @@ def stop_process_group(process: subprocess.Popen, grace: float = 2, identity: st
         if current is not None and current != identity:
             raise RuntimeError("Owned process group identity changed")
         if current is None:
-            try:
-                os.killpg(process.pid, 0)
-            except ProcessLookupError:
+            if not process_group_alive(process.pid):
                 process.wait(timeout=wait)
                 return
             raise RuntimeError("Owned process group leader exit cannot establish group ownership")
@@ -160,14 +167,10 @@ def stop_process_group(process: subprocess.Popen, grace: float = 2, identity: st
         # The parent may have exited while its Chromium child remains alive.
         end = time.monotonic() + wait
         while time.monotonic() < end:
-            try:
-                os.killpg(process.pid, 0)
-            except ProcessLookupError:
+            if not process_group_alive(process.pid):
                 return
             time.sleep(0.02)
-    try:
-        os.killpg(process.pid, 0)
-    except ProcessLookupError:
+    if not process_group_alive(process.pid):
         return
     raise RuntimeError("Owned subprocess group exit could not be confirmed")
 
@@ -238,12 +241,7 @@ def run_bounded(args, *, input=None, text=True, capture_output=True, check=False
     # A checker must not report success while owned children or its session remain.
     try:
         orphaned = bool(live_descendants(tracked))
-        try:
-            os.killpg(process.pid, 0)
-        except ProcessLookupError:
-            group_alive = False
-        else:
-            group_alive = True
+        group_alive = process_group_alive(process.pid)
     except BaseException:
         cleanup()
         raise

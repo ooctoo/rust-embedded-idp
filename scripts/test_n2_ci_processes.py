@@ -26,10 +26,42 @@ class ProcessOwnershipTests(unittest.TestCase):
 
     def test_dead_leader_with_surviving_group_is_not_signalled_without_identity(self):
         with patch.object(runtime, 'process_identity', return_value=None), \
+             patch.object(runtime, 'process_snapshot', return_value={30: record(30, 1, 20)}), \
              patch.object(runtime.os, 'killpg') as killpg:
             with self.assertRaisesRegex(RuntimeError, 'cannot establish group ownership'):
                 runtime.stop_process_group(Mock(pid=20), identity='original')
             killpg.assert_called_once_with(20, 0)
+
+    def test_linux_zombie_only_group_is_confirmed_without_signalling(self):
+        process = Mock(pid=20)
+        with patch.object(runtime.sys, 'platform', 'linux'), \
+             patch.object(runtime, 'process_identity', return_value=None), \
+             patch.object(runtime, 'process_snapshot', return_value={}) as snapshot, \
+             patch.object(runtime.os, 'killpg') as killpg:
+            runtime.stop_process_group(process, identity='original')
+        snapshot.assert_called_once_with(strict=True)
+        killpg.assert_called_once_with(20, 0)
+        process.wait.assert_called_once()
+
+    def test_linux_live_group_member_is_not_treated_as_exit(self):
+        with patch.object(runtime.sys, 'platform', 'linux'), \
+             patch.object(runtime, 'process_snapshot', return_value={30: record(30, 1, 20)}), \
+             patch.object(runtime.os, 'killpg'):
+            self.assertTrue(runtime.process_group_alive(20))
+
+    def test_linux_group_inventory_failure_cannot_confirm_exit(self):
+        with patch.object(runtime.sys, 'platform', 'linux'), \
+             patch.object(Path, 'iterdir', side_effect=PermissionError), \
+             patch.object(runtime.os, 'killpg'):
+            with self.assertRaisesRegex(RuntimeError, 'inventory is unavailable'):
+                runtime.process_group_alive(20)
+
+    def test_strict_process_record_rejects_unreadable_and_malformed_state(self):
+        for error in [PermissionError, ValueError]:
+            with self.subTest(error=error.__name__), \
+                 patch.object(Path, 'read_text', side_effect=error):
+                with self.assertRaisesRegex(RuntimeError, 'process record unavailable'):
+                    runtime.process_record(20, strict=True)
 
     def test_unknown_identity_kills_group_only_while_direct_child_pid_is_owned(self):
         process = Mock(pid=20)
