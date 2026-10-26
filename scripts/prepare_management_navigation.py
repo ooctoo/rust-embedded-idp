@@ -40,14 +40,14 @@ def cleanup(file):
         raise ValueError("Not an owned disposable UI-B fixture")
     inspected = subprocess.run([
         "docker", "inspect", "--format", '{{index .Config.Labels "idp.ui-b.fixture"}}', state["container"]
-    ], capture_output=True, text=True)
+    ], capture_output=True, text=True, timeout=10)
     container_missing = inspected.returncode != 0
     if container_missing:
         # Distinguish a confirmed absent container from a Docker outage. A
         # daemon failure here raises and retains the private recovery files.
         remaining = subprocess.check_output([
             "docker", "ps", "-aq", "--filter", "name=^/" + state["container"] + "$"
-        ], text=True).strip()
+        ], text=True, timeout=10).strip()
         if remaining:
             raise ValueError("Could not verify the existing container ownership label")
     elif inspected.stdout.strip() != str(directory):
@@ -56,16 +56,36 @@ def cleanup(file):
         config = pathlib.Path(host["config"]).resolve()
         if config.parent != directory:
             raise ValueError("Host configuration is outside the fixture directory")
-        command = subprocess.run(["ps", "-p", str(host["pid"]), "-o", "command="], capture_output=True, text=True).stdout
-        if not command:
-            continue
-        if str(BINARY) not in command or str(config) not in command:
-            raise ValueError("Host PID has been reused; refusing to terminate it")
-        os.kill(host["pid"], signal.SIGTERM)
+        # On Linux a pidfd pins the process while its command is checked; it
+        # prevents signalling a recycled PID. macOS retains the exact unique
+        # config-path check and refuses ambiguous ownership.
+        pidfd = None
+        try:
+            if hasattr(os, "pidfd_open") and hasattr(signal, "pidfd_send_signal"):
+                try:
+                    pidfd = os.pidfd_open(host["pid"])
+                except ProcessLookupError:
+                    continue
+            command = subprocess.run(["ps", "-p", str(host["pid"]), "-o", "command="],
+                                     capture_output=True, text=True, timeout=2).stdout
+            if not command:
+                continue
+            if str(BINARY) not in command or str(config) not in command:
+                raise ValueError("Host PID has been reused; refusing to terminate it")
+            try:
+                if pidfd is not None:
+                    signal.pidfd_send_signal(pidfd, signal.SIGTERM)
+                else:
+                    os.kill(host["pid"], signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+        finally:
+            if pidfd is not None:
+                os.close(pidfd)
     deadline = time.monotonic() + 10
     for host in state["hosts"].values():
         while True:
-            command = subprocess.run(["ps", "-p", str(host["pid"]), "-o", "command="], capture_output=True, text=True).stdout
+            command = subprocess.run(["ps", "-p", str(host["pid"]), "-o", "command="], capture_output=True, text=True, timeout=2).stdout
             if not command:
                 break
             if str(BINARY) not in command or host["config"] not in command:
@@ -74,7 +94,7 @@ def cleanup(file):
                 raise TimeoutError("Host has not exited; fixture retained for inspection")
             time.sleep(.1)
     if not container_missing:
-        subprocess.run(["docker", "rm", "-f", "-v", state["container"]], check=True, stdout=subprocess.DEVNULL)
+        subprocess.run(["docker", "rm", "-f", "-v", state["container"]], check=True, stdout=subprocess.DEVNULL, timeout=30)
     shutil.rmtree(directory)
     print("Removed disposable UI-B hosts, container and private fixture files")
 
@@ -84,7 +104,7 @@ if args.cleanup:
     raise SystemExit()
 if not args.image:
     parser.error("--image is required when preparing fixtures")
-subprocess.run(["docker", "image", "inspect", args.image], check=True, stdout=subprocess.DEVNULL)
+subprocess.run(["docker", "image", "inspect", args.image], check=True, stdout=subprocess.DEVNULL, timeout=30)
 os.umask(0o077)
 directory = pathlib.Path(tempfile.mkdtemp(prefix="idp-ui-b-")).resolve()
 container = "idp-ui-b-" + uuid.uuid4().hex[:10]
@@ -94,8 +114,21 @@ clean_env = {key: value for key, value in os.environ.items() if not key.startswi
 children = []
 
 
+def journal():
+    # Persist ownership before external effects and after each host starts so a
+    # caller can recover partial preparation after cancellation or timeout.
+    (directory / "state.json").write_text(json.dumps({
+        "dir": str(directory), "container": container,
+        "hosts": {str(index): {"pid": child.pid, "config": str(child.args[-1])}
+                  for index, child in enumerate(children)},
+    }))
+
+
+journal()
+
+
 def run(command, env=None, input=None):
-    result = subprocess.run(command, cwd=ROOT, env=env or clean_env, input=input, text=True, capture_output=True)
+    result = subprocess.run(command, cwd=ROOT, env=env or clean_env, input=input, text=True, capture_output=True, timeout=60)
     if result.returncode:
         raise RuntimeError("Fixture command failed: " + command[0] + "; " + result.stderr[-600:])
     return result.stdout.strip()
@@ -123,6 +156,7 @@ def start(mode, schema, label, policy, mount="/identity", ui="/console"):
                                  env={**clean_env, "UI_B_DATABASE_URI": uri}, stdin=subprocess.DEVNULL,
                                  stdout=log, stderr=log, start_new_session=True)
     children.append(child)
+    journal()
     for _ in range(200):
         if child.poll() is not None:
             raise RuntimeError("Host exited: " + label + "; see private fixture log")
@@ -157,7 +191,7 @@ try:
     for _ in range(100):
         # The image's temporary initialization server accepts Unix sockets before
         # CREATE DATABASE. Wait for the final TCP listener instead.
-        if subprocess.run(["docker", "exec", container, "pg_isready", "-h", "127.0.0.1", "-U", "uib", "-d", "uib"], capture_output=True).returncode == 0:
+        if subprocess.run(["docker", "exec", container, "pg_isready", "-h", "127.0.0.1", "-U", "uib", "-d", "uib"], capture_output=True, timeout=10).returncode == 0:
             break
         time.sleep(.2)
     version = run(["docker", "exec", container, "psql", "-At", "-U", "uib", "-d", "uib", "-c", "show server_version"])
@@ -216,10 +250,11 @@ except BaseException:
     # Keep ownership/configuration/logs when cleanup cannot be confirmed. Never
     # delete the database files while a fixture host may still be running.
     if children_stopped:
-        removed = subprocess.run(["docker", "rm", "-f", "-v", container], capture_output=True)
-        if removed.returncode == 0:
-            shutil.rmtree(directory)
-        else:
+        try:
+            # Even a failed docker run can mean a name collision: use the same
+            # ownership check as normal cleanup before removing any container.
+            cleanup(directory / "state.json")
+        except Exception:
             print("Fixture cleanup failed; private files retained at " + str(directory), file=sys.stderr)
     else:
         print("Fixture host did not exit; container and private files retained at " + str(directory), file=sys.stderr)

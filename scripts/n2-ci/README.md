@@ -1,6 +1,10 @@
 # N2 CI tool inputs
 
-This private package belongs only to the [N2 functional regression workflow](../../.github/workflows/n2-functional.yml). It adds no product dependency. The [approved plan](../../docs/management-console-n2-github-actions-functional-plan.md) defines the functional scope; zoom, VoiceOver, mobile layouts, visual grading and M1-03–06 remain excluded. This directory and workflow are implementation inputs, not evidence that CI or the product suites have passed.
+> **Current scope (2026-10-25):** N2 is temporarily retained as an optional manual diagnostic, not a mandatory CI layer; its unique coverage must be accounted for before retiring the old orchestration. The [execution report](../../docs/n2-github-actions-functional-execution-result.md) records the completed run; preparation-stage statements below describe their original evidence boundary. The [CI quality design](../../docs/ci-quality-design.md) and [implementation plan](../../docs/ci-quality-implementation-plan.md) define the ordinary CI scope. They do not make all eight N2 suites mandatory for PRs or releases. This documentation update does not change the driver or workflow.
+
+## Existing tool specification and preparation history
+
+This private package supplies locked browser tooling to ordinary critical E2E and the [N2 functional regression workflow](../../.github/workflows/n2-functional.yml). It adds no product dependency. The [approved plan](../../docs/management-console-n2-github-actions-functional-plan.md) defines the functional scope; zoom, VoiceOver, mobile layouts, visual grading and M1-03–06 remain excluded. This directory and workflow are implementation inputs, not evidence that CI or the product suites have passed.
 
 ## Frozen tools
 

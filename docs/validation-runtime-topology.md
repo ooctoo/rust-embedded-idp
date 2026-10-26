@@ -1,5 +1,9 @@
 # 开发、自动化与生产运行拓扑
 
+> **当前范围（2026-10-25）**：以[CI质量设计](ci-quality-design.md)及[实施计划](ci-quality-implementation-plan.md)为当前CI依据：构建/UT、真实PG/HTTP集成、关键浏览器E2E。新CI环境仅用于质量验证；下游仓库决定生产架构、镜像、配置与部署。既有Mac/Linux arm64组合是限定专项证据，不是生产支持承诺。过量编排和生产交付推进已撤出；本地实现及验证见[实施记录](ci-quality-implementation-result.md)。
+
+## 历史决策与执行记录
+
 开源交付边界澄清（2026-10-25）：本仓库负责模块、适配器、接入契约和参考应用自洽；参考单体用于查看/理解配置与验证装配，生产配置、集成和部署由下游仓库承担。[CI边界复审与提速最小方案](ci-speed-minimal-implementation-plan.md)将N2保留为手动专项，`release/x.y.z`仅作为未来上游版本质量入口，不默认绑定H01全套或生产CD。本轮仅文档与既有N2收尾本地归档；CI/CD随后暂停，未实现新触发/缓存、未执行补验或部署。以下历史拓扑中的Linux生产方向不表示本仓库负责生产部署。
 
 N2 GitHub Actions实际补验进展（2026-10-25）：[执行报告](n2-github-actions-functional-execution-result.md)及[独立证据](design/n2/github-actions-functional-20261025/README.md)记录从原冻结SHA的失败、修复与完整复验。最终SHA `14dd9199094464a1f7368e9c95f5c29e7a5354c7`、run `40191248439`在Ubuntu arm64＋Debian/glibc release默认features＋headless Chromium的H01组合，八套264组通过，清理及artifact保全完成独立核对；127项离线工具检查通过。修复提交已签名推送验收分支，收尾报告/最终证据随本轮本地提交归档，未新增推送；不部署，不测试缩放/旁白，不启动M1-03–06，不扩大为整体N2、生产或真实消费者通过。以下为各阶段历史记录。

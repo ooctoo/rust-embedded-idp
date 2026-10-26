@@ -666,6 +666,105 @@ fn scan_origin_closure_primary_key_damage_rejects_v6_readiness() {
 
 #[test]
 #[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
+fn schema_inspection_ignores_unrelated_concurrent_ddl() {
+    struct NoiseSchema {
+        adapter: PostgresStorageAdapter,
+        name: String,
+    }
+    impl Drop for NoiseSchema {
+        fn drop(&mut self) {
+            assert!(self.name.starts_with("idp_access_noise_it_"));
+            if let Ok(mut client) = self.adapter.connect() {
+                let _ = client.batch_execute(&format!("drop schema {} cascade", self.name));
+            }
+        }
+    }
+
+    let db = Db::new(TenancyMode::Enabled);
+    let noise = NoiseSchema {
+        adapter: db.adapter.clone(),
+        name: format!("idp_access_noise_it_{}", Uuid::now_v7().simple()),
+    };
+    noise
+        .adapter
+        .connect()
+        .unwrap()
+        .batch_execute(&format!("create schema {}", noise.name))
+        .unwrap();
+
+    let ready = Arc::new(Barrier::new(2));
+    let noise_adapter = noise.adapter.clone();
+    let noise_schema = noise.name.clone();
+    let noise_ready = ready.clone();
+    let ddl = std::thread::spawn(move || -> Result<(), String> {
+        noise_ready.wait();
+        let mut client = noise_adapter
+            .connect()
+            .map_err(|error| format!("{error:?}"))?;
+        for _ in 0..40 {
+            client
+                .batch_execute(&format!(
+                    "create table {noise_schema}.scan_login_origin_closures (\
+                     tenant_id text not null, host_scope text not null, entry_id text not null, \
+                     device_id uuid not null, origin_action text not null \
+                     check (origin_action in ('create','claim')), origin_operation_id text not null, \
+                     delivery_secret_hash bytea not null \
+                     check (octet_length(delivery_secret_hash)=32), \
+                     primary key (tenant_id, host_scope, entry_id, device_id, origin_action, origin_operation_id))"
+                ))
+                .map_err(|error| error.to_string())?;
+            std::thread::yield_now();
+            client
+                .batch_execute(&format!(
+                    "drop table {noise_schema}.scan_login_origin_closures"
+                ))
+                .map_err(|error| error.to_string())?;
+        }
+        Ok(())
+    });
+
+    let migration_sql = include_str!("../../../scripts/migrate_scan_login_origin_closures.sql");
+    let migration_start = migration_sql.find("do $$\ndeclare n text").unwrap();
+    let migration_end = migration_start
+        + migration_sql[migration_start..].find("end $$;").unwrap()
+        + "end $$;".len();
+    let migration_body = &migration_sql[migration_start..migration_end];
+    let mut migration_client = db.adapter.connect().unwrap();
+    ready.wait();
+    let mut inspection_errors = Vec::new();
+    for _ in 0..40 {
+        match db.adapter.inspect_access_schema(TenancyMode::Enabled) {
+            Ok(facts)
+                if facts.mode == TenancyMode::Enabled
+                    && facts.version == ACCESS_SCHEMA_VERSION
+                    && !facts.bootstrap_completed => {}
+            Ok(_) => inspection_errors.push("unexpected target schema facts".to_owned()),
+            Err(error) => {
+                inspection_errors.push(format!("target schema inspection failed: {error:?}"))
+            }
+        }
+        let migrated = (|| -> Result<(), postgres::Error> {
+            let mut transaction = migration_client.transaction()?;
+            transaction.execute(
+                "select set_config('embedded_idp.scan_origin_closure_schema',$1,true)",
+                &[&db.adapter.schema_name()],
+            )?;
+            transaction.batch_execute(migration_body)?;
+            transaction.commit()
+        })();
+        if let Err(error) = migrated {
+            inspection_errors.push(format!("target migration reentry failed: {error:?}"));
+        }
+        std::thread::yield_now();
+    }
+    let ddl_result = ddl.join();
+    assert!(ddl_result.is_ok(), "noise DDL worker panicked");
+    assert!(ddl_result.unwrap().is_ok(), "noise DDL worker failed");
+    assert!(inspection_errors.is_empty(), "{inspection_errors:?}");
+}
+
+#[test]
+#[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
 fn list_time_upgrade_preserves_unknown_history_and_is_repeatable() {
     let db = Db::new(TenancyMode::Enabled);
     let s = db.schema();

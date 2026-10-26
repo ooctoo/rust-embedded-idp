@@ -123,14 +123,22 @@ fn validate_layout(client: &mut impl GenericClient, schema: &str) -> Result<(), 
             "access device lifecycle layout is incomplete".into(),
         ));
     }
+    // Fence constraint deparsing behind the target relation filter. Otherwise
+    // the planner may call pg_get_constraintdef on another schema's relation
+    // while that unrelated relation is concurrently being dropped.
     let scan_layout: bool = client.query_one(
-        "select (select count(*) from information_schema.columns where table_schema=$1 and table_name='scan_login_grants' and column_name in ('tenant_id','host_scope','entry_id','id','state','version','source_session_id','target_device_id','delivery_secret_hash'))=9
+        "with origin_constraints as materialized (
+            select c.oid, c.contype from pg_constraint c
+            join pg_class r on r.oid=c.conrelid join pg_namespace n on n.oid=r.relnamespace
+            where n.nspname=$1 and r.relname='scan_login_origin_closures' and c.convalidated
+          )
+          select (select count(*) from information_schema.columns where table_schema=$1 and table_name='scan_login_grants' and column_name in ('tenant_id','host_scope','entry_id','id','state','version','source_session_id','target_device_id','delivery_secret_hash'))=9
           and (select count(*) from information_schema.columns where table_schema=$1 and table_name='scan_login_deliveries' and column_name in ('grant_id','session_id','state','binding_id','binding_version','recover_until_epoch'))=6
           and (select count(*) from information_schema.columns where table_schema=$1 and table_name='scan_login_origin_closures' and column_name in ('tenant_id','host_scope','entry_id','device_id','origin_action','origin_operation_id','delivery_secret_hash','grant_id','closed_by_key_id','closed_at_epoch'))=10
           and (select count(*) from information_schema.columns where table_schema=$1 and table_name='scan_login_origin_closures' and column_name in ('tenant_id','host_scope','entry_id','device_id','origin_action','origin_operation_id','delivery_secret_hash','closed_by_key_id','closed_at_epoch') and is_nullable='NO')=9
-          and exists(select 1 from pg_constraint c join pg_class r on r.oid=c.conrelid join pg_namespace n on n.oid=r.relnamespace where n.nspname=$1 and r.relname='scan_login_origin_closures' and c.convalidated and c.contype='p' and pg_get_constraintdef(c.oid)='PRIMARY KEY (tenant_id, host_scope, entry_id, device_id, origin_action, origin_operation_id)')
-          and exists(select 1 from pg_constraint c join pg_class r on r.oid=c.conrelid join pg_namespace n on n.oid=r.relnamespace where n.nspname=$1 and r.relname='scan_login_origin_closures' and c.convalidated and c.contype='c' and pg_get_constraintdef(c.oid) like '%octet_length%delivery_secret_hash%32%')
-          and exists(select 1 from pg_constraint c join pg_class r on r.oid=c.conrelid join pg_namespace n on n.oid=r.relnamespace where n.nspname=$1 and r.relname='scan_login_origin_closures' and c.convalidated and c.contype='c' and pg_get_constraintdef(c.oid) like '%origin_action%create%claim%')
+          and exists(select 1 from origin_constraints c where c.contype='p' and pg_get_constraintdef(c.oid)='PRIMARY KEY (tenant_id, host_scope, entry_id, device_id, origin_action, origin_operation_id)')
+          and exists(select 1 from origin_constraints c where c.contype='c' and pg_get_constraintdef(c.oid) like '%octet_length%delivery_secret_hash%32%')
+          and exists(select 1 from origin_constraints c where c.contype='c' and pg_get_constraintdef(c.oid) like '%origin_action%create%claim%')
           and exists(select 1 from pg_index i join pg_class c on c.oid=i.indrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname=$1 and c.relname='scan_login_deliveries' and i.indisunique)",
         &[&schema],
     ).map_err(access_db_error)?.get(0);

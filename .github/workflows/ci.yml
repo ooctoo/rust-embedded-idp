@@ -14,6 +14,7 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -23,6 +24,11 @@ jobs:
           node-version: 22
       - run: corepack enable
       - run: corepack prepare pnpm@10.30.1 --activate
+      - run: node --test scripts/test_ci_e2e.mjs
+      - run: python3 -B scripts/test_ci_e2e_runner.py
+      - run: python3 -B scripts/test_ci_integration.py
+      - run: python3 -B scripts/test_n2_ci_processes.py
+      - run: python3 -B scripts/test_management_n2_tools.py
       - run: node scripts/test_dev_env.mjs
       - run: node scripts/test_device_proof_vectors.mjs
       - run: node docs/examples/verify-device-scan-login-vectors.mjs
@@ -42,3 +48,75 @@ jobs:
 
       - run: cargo test -p embedded-idp-core -p embedded-idp-axum -p embedded-idp-app --features embedded-idp-app/development-private-network-http --locked
       - run: cargo test -p embedded-idp-axum --release --features development-private-network-http http_transport::tests --locked
+
+  integration:
+    needs: check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.23.4'
+      - run: corepack enable && corepack prepare pnpm@10.30.1 --activate
+      - run: pnpm --dir web install --frozen-lockfile
+      - name: Install disposable database image
+        timeout-minutes: 5
+        run: docker pull postgres:18.6-bookworm
+      - name: Run isolated real database and HTTP tests
+        timeout-minutes: 22
+        run: scripts/run_ci_integration.sh --output-dir "$RUNNER_TEMP/ci-integration"
+      - name: Preserve integration summary
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: integration-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ci-integration/integration-result.json
+          if-no-files-found: error
+          retention-days: 30
+
+  e2e:
+    needs: check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.23.4'
+      - run: corepack enable && corepack prepare pnpm@10.30.1 --activate
+      - run: pnpm --dir web install --frozen-lockfile
+      - name: Install disposable database image
+        timeout-minutes: 5
+        run: docker pull postgres:18.6-bookworm
+      - name: Install locked browser tools
+        timeout-minutes: 8
+        run: |
+          pnpm --dir scripts/n2-ci install --frozen-lockfile --ignore-scripts --config.engine-strict=true
+          pnpm --dir scripts/n2-ci exec playwright install --with-deps --no-shell chromium
+      - name: Build reference host and fixture preparation tool
+        timeout-minutes: 15
+        run: |
+          pnpm --dir web build
+          cargo build -p embedded-idp-app --bin embedded-idp-app --locked
+          cargo build -p embedded-idp-storage-postgres --example bootstrap_local_postgres --locked
+      - name: Run six critical browser groups
+        timeout-minutes: 18
+        run: |
+          python3 -B scripts/run_ci_e2e.py --image postgres:18.6-bookworm \
+            --playwright scripts/n2-ci/node_modules/playwright/index.mjs \
+            --output "$RUNNER_TEMP/ci-e2e"
+      - name: Preserve critical E2E summaries
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/ci-e2e/execution.json
+            ${{ runner.temp }}/ci-e2e/ci-e2e-results.json
+          if-no-files-found: error
+          retention-days: 30

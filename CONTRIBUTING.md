@@ -64,6 +64,52 @@ For optional live Postgres coverage, set
 scripts/run_live_postgres_checks.sh disabled
 ```
 
+## CI quality lanes
+
+Ordinary CI preserves build/static checks and UT in `check`, then runs independent
+`integration` and `e2e` jobs on Ubuntu 24.04 x64. The latter use disposable
+PostgreSQL 18.6 and synthetic identities; no development `.env` is loaded.
+Full N2 is temporarily retained as an optional manual diagnostic workflow, not a
+PR/release requirement. Its broader role/member/tenant coverage must be accounted
+for before retiring the old orchestration; see design section 4. Production configuration,
+images and deployment belong to downstream repositories.
+
+After installing Web dependencies, prepare the pinned database image explicitly:
+
+```bash
+docker pull postgres:18.6-bookworm
+scripts/run_ci_integration.sh --output-dir /tmp/idp-integration-new-run
+```
+
+The integration entry builds Web and invokes the existing live Postgres tests
+with generated private configuration. It requires all ten live targets to execute
+with nonzero passes, no ignored cases and confirmed resource cleanup.
+
+For the six critical browser groups, install the existing locked test tools with
+Node 22.23.4 / pnpm 10.30.1, then build the reference host and fixture tool:
+
+```bash
+pnpm --dir scripts/n2-ci install --frozen-lockfile --ignore-scripts --config.engine-strict=true
+pnpm --dir scripts/n2-ci exec playwright install --with-deps --no-shell chromium
+pnpm --dir web build
+cargo build -p embedded-idp-app --bin embedded-idp-app --locked
+cargo build -p embedded-idp-storage-postgres --example bootstrap_local_postgres --locked
+python3 -B scripts/run_ci_e2e.py --image postgres:18.6-bookworm \
+  --playwright scripts/n2-ci/node_modules/playwright/index.mjs \
+  --output /tmp/idp-e2e-new-run
+```
+
+Use a new output directory for each attempt. These entries create and clean only
+their own containers, host processes and private fixture data. If cleanup fails,
+the command fails and retains private recovery data; do not upload that data.
+CI artifacts contain only the result JSON whitelist, retained for 30 days subject
+to repository policy. Raw traces, database dumps and fixture credentials are not
+uploaded. Local execution does not prove the hosted Linux runner passed.
+
+The [design](docs/ci-quality-design.md), [coverage map](docs/ci-quality-coverage.md)
+and [implementation result](docs/ci-quality-implementation-result.md) define scope
+and verification limits. No new release trigger or deployment is included.
+
 ## Scope and Crate Boundaries
 
 Keep changes within the owning crate and preserve the existing boundaries:

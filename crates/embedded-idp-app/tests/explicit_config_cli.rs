@@ -2,7 +2,7 @@
 use std::{env, fs, process::Command};
 
 #[test]
-fn unsupported_business_fails_before_loading_secrets_or_keys() {
+fn business_and_management_missing_secrets_fail_before_loading_keys() {
     let dir = env::temp_dir().join(format!("m102-cli-support-{}", std::process::id()));
     fs::create_dir_all(&dir).unwrap();
     let path = dir.join("unsupported.json");
@@ -30,10 +30,9 @@ fn unsupported_business_fails_before_loading_secrets_or_keys() {
             "mount_prefix":"/product"
         }]
     });
-    for expected in [
-        "business entries are not supported by this build",
-        "missing secret",
-    ] {
+    // Both supported business and management-only configurations must reject
+    // missing secret references before attempting to load the signing key.
+    for _ in 0..2 {
         fs::write(&path, serde_json::to_vec(&config).unwrap()).unwrap();
         let output = Command::new(env!("CARGO_BIN_EXE_embedded-idp-app"))
             .env_clear()
@@ -43,7 +42,7 @@ fn unsupported_business_fails_before_loading_secrets_or_keys() {
             .unwrap();
         assert!(!output.status.success());
         let message = String::from_utf8_lossy(&output.stderr);
-        assert!(message.contains(expected), "{message}");
+        assert!(message.contains("missing secret"), "{message}");
         assert!(!message.contains("missing-key"));
         assert!(!message.contains("postgres://"));
         config["business_entries"] = serde_json::json!([]);
