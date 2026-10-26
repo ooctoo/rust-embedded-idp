@@ -1,5 +1,7 @@
 # 管理后台交付总结与后续实施计划
 
+> **N2退役（2026-10-26）**：旧workflow和专用编排已移除；必要合同由现有UT、真实集成和六组E2E承担，处置见[退役映射](n2-retirement-plan-and-mapping.md)。下文手动N2入口和旧脚本路径仅是历史记录；源码可从`a3fcd72`及更早提交追溯，历史附件不改写。
+
 > **当前CI计划（2026-10-25）**：后续按[CI质量设计](ci-quality-design.md)与[实施计划](ci-quality-implementation-plan.md)收敛为构建/UT、真实集成及关键E2E。完整N2保留手动专项，不绑定普通PR或版本发布；自动选套、复杂Docker缓存和生产CD已撤出当前待办。历史通过仅适用于原执行SHA。本地实现及验证见[实施记录](ci-quality-implementation-result.md)；不测试缩放/旁白，不启动M1-03–06。
 
 ## 历史交付与阶段计划

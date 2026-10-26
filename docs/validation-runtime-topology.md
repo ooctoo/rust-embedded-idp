@@ -1,5 +1,7 @@
 # 开发、自动化与生产运行拓扑
 
+> **N2退役（2026-10-26）**：旧workflow和专用编排已移除；必要合同由现有UT、真实集成和六组E2E承担，处置见[退役映射](n2-retirement-plan-and-mapping.md)。下文手动N2入口和旧脚本路径仅是历史记录；源码可从`a3fcd72`及更早提交追溯，历史附件不改写。
+
 > **当前范围（2026-10-25）**：以[CI质量设计](ci-quality-design.md)及[实施计划](ci-quality-implementation-plan.md)为当前CI依据：构建/UT、真实PG/HTTP集成、关键浏览器E2E。新CI环境仅用于质量验证；下游仓库决定生产架构、镜像、配置与部署。既有Mac/Linux arm64组合是限定专项证据，不是生产支持承诺。过量编排和生产交付推进已撤出；本地实现及验证见[实施记录](ci-quality-implementation-result.md)。
 
 ## 历史决策与执行记录

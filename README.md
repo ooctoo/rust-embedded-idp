@@ -119,7 +119,7 @@ cargo test --workspace --locked
 - [M1-02 修订 3 收尾与验收回传](docs/m1-02-closure-result.md)（可选 browser/UI、完整管理生命周期及归一偏差修复；保留旧参考行为；M1-03–06、试点与部署待定）
 - [开发、自动化与生产运行拓扑](docs/validation-runtime-topology.md)（Mac开发及既有Mac/Linux专项记录；当前CI按质量设计收敛，生产配置、架构和部署由下游仓库决定）
 - [N2 GitHub Actions实际功能补验](docs/n2-github-actions-functional-execution-result.md) / [完整证据](docs/design/n2/github-actions-functional-20261025/README.md)（2026-10-25：最终`14dd919`限定H01/arm64 CI组合八套264组通过，清理与artifact核对完成；失败历史保留，收尾材料随本轮本地归档、未新增推送，未部署，未扩大为整体N2/生产验收）
-- [开源仓库CI质量设计](docs/ci-quality-design.md)与[分阶段实施计划](docs/ci-quality-implementation-plan.md)（当前设计：构建/UT、真实集成、关键E2E；完整N2保留手动专项，生产配置与CD归下游；实现及验证见[实施记录](docs/ci-quality-implementation-result.md)）
+- [开源仓库CI质量设计](docs/ci-quality-design.md)、[分阶段实施计划](docs/ci-quality-implementation-plan.md)与[N2退役映射](docs/n2-retirement-plan-and-mapping.md)（当前设计：构建/UT、真实集成、关键E2E；旧N2编排已删除，选定断言迁入、全量逐页UI保证退出；生产配置与CD归下游；实现及验证见[实施记录](docs/ci-quality-implementation-result.md)）
 - [历史CI边界复审与提速方案](docs/ci-speed-minimal-implementation-plan.md)（已由上述设计替代，不作为当前待办）
 - [N2 workflow同步与执行版本冻结](docs/n2-ci-workflow-sync-result.md) / [本轮离线证据](docs/design/n2/ci-workflow-sync-20261025/README.md)（2026-10-25：main修正精确同步，124项离线工具检查通过；仅相关改动提交并推送验收分支并冻结新执行SHA，未触发实际N2补验、未部署，缩放/旁白不测，M1-03–06未启动）
 - [N2功能选集、CI驱动与workflow适配回传](docs/n2-functional-ci-tooling-result.md) / [离线证据](docs/design/n2/ci-functional-tooling-20261025/README.md)（工具实施阶段历史记录，2026-10-25：工具实现和122项离线检查通过，264项功能断言仅登记未实跑；缩放/旁白不测，未改产品、未执行实际补验、仅本地提交归档、未推送/部署，M1-03–06未启动）

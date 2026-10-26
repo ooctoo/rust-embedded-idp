@@ -10,7 +10,7 @@ import run_ci_e2e as runner
 
 class RunnerTests(unittest.TestCase):
     def report(self):
-        return {'groups': [{'id': f'E0{i}', 'status': 'passed'} for i in range(1, 7)],
+        return {'groups': [{'id': f'E0{i}', 'status': 'passed', 'checks': [{'id': f'E0{i}.example', 'status': 'passed'}]} for i in range(1, 7)],
                 'status': 'passed', 'complete': True, 'browser_closed': True,
                 'page_error_count': 0, 'cleanup_errors': []}
 
@@ -21,6 +21,10 @@ class RunnerTests(unittest.TestCase):
         mutations = [lambda r: r['groups'].pop(),
                      lambda r: r['groups'].__setitem__(5, r['groups'][0]),
                      lambda r: r['groups'][0].update(status='not_run'),
+                     lambda r: r['groups'][0].update(checks=[]),
+                     lambda r: r['groups'][0]['checks'][0].update(status='running'),
+                     lambda r: r['groups'][0]['checks'].append(r['groups'][0]['checks'][0]),
+                     lambda r: r['groups'][0]['checks'][0].update(id='E02.wrong_group'),
                      lambda r: r.update(complete=False),
                      lambda r: r.update(browser_closed=False),
                      lambda r: r.update(page_error_count=1),

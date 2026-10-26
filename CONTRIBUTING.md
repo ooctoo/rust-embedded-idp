@@ -69,10 +69,12 @@ scripts/run_live_postgres_checks.sh disabled
 Ordinary CI preserves build/static checks and UT in `check`, then runs independent
 `integration` and `e2e` jobs on Ubuntu 24.04 x64. The latter use disposable
 PostgreSQL 18.6 and synthetic identities; no development `.env` is loaded.
-Full N2 is temporarily retained as an optional manual diagnostic workflow, not a
-PR/release requirement. Its broader role/member/tenant coverage must be accounted
-for before retiring the old orchestration; see design section 4. Production configuration,
-images and deployment belong to downstream repositories.
+The legacy N2 workflow and its exhaustive UI orchestration have been retired.
+Selected unique regression contracts are represented in the six critical E2E
+groups; full page and configuration-matrix coverage is no longer a recurring
+acceptance guarantee. See the [coverage map](docs/ci-quality-coverage.md) and
+[retirement mapping](docs/n2-retirement-plan-and-mapping.md). Production
+configuration, images and deployment belong to downstream repositories.
 
 After installing Web dependencies, prepare the pinned database image explicitly:
 

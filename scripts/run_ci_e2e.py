@@ -36,7 +36,11 @@ def prepare(command, env):
 def validate_report(report):
     groups = report.get('groups', [])
     if ([group.get('id') for group in groups] != ['E01', 'E02', 'E03', 'E04', 'E05', 'E06']
-            or any(group.get('status') != 'passed' for group in groups)
+            or any(group.get('status') != 'passed' or not group.get('checks')
+                   or any(check.get('status') != 'passed' or not check.get('id', '').startswith(group['id'] + '.')
+                          for check in group['checks'])
+                   or len({check['id'] for check in group['checks']}) != len(group['checks'])
+                   for group in groups)
             or report.get('status') != 'passed' or report.get('complete') is not True
             or report.get('browser_closed') is not True
             or report.get('page_error_count') != 0 or report.get('cleanup_errors') != []):

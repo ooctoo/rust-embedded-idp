@@ -1,5 +1,7 @@
 # N2剩余功能缺口与GitHub Actions最小执行方案
 
+> **N2退役（2026-10-26）**：旧workflow和专用编排已移除；必要合同由现有UT、真实集成和六组E2E承担，处置见[退役映射](n2-retirement-plan-and-mapping.md)。下文手动N2入口和旧脚本路径仅是历史记录；源码可从`a3fcd72`及更早提交追溯，历史附件不改写。
+
 > **历史专项方案（2026-10-25）**：本方案的实际执行结果见[执行报告](n2-github-actions-functional-execution-result.md)。完整N2继续作为手动专项，不作为普通CI或release的必跑集合。当前日常CI依据为[CI质量设计](ci-quality-design.md)和[实施计划](ci-quality-implementation-plan.md)；下文“尚未执行”等表述均对应各历史阶段，不代表最新状态，也不构成新增执行授权。
 
 ## 历史方案与阶段记录
@@ -76,7 +78,7 @@ digest及arm64子manifest的原记录见[镜像输入](design/n2/linux-docker-20
 - 建议job总上限120分钟：预检5分钟、构建30分钟、八套各最多8分钟（含本套准备/执行/清理），另留15分钟作总清理、脱敏汇总与上传，共114分钟、余量6分钟。这些是待首跑校准的建议上限，不是已测CI耗时。各阶段均有有限等待，不让网络安装或Docker子命令无限挂住；总截止前停止启动新套，缺失项记未执行且本批失败。
 - 远端执行的ref必须实际包含获审阅的产品基线和后续工具改动，记录真实checkout SHA与tree。不能把本地`cc04561`直接视为远端已可执行；本轮不查询或更新远端ref，也不dispatch。
 
-构建顺序：冻结checkout/工具输入 → 检查本机Unix Docker endpoint及原生arm64 daemon、可用CPU/内存/磁盘 → 预拉取上述基础镜像 → 干净白名单上下文 → Web测试/构建/bundle → release app及bootstrap → 本地runtime/prepare → 实际ELF/链接/嵌入资源核对。复用[现有Dockerfile](../scripts/n2-linux/Dockerfile)和[构建器](../scripts/build_management_n2_linux.py)，不复制`.env`、`.local`、`.git`、旧dist/target、证据或无关文档；不从缓存凭空宣称测试已执行，构建步骤若命中缓存须记录复用来源或强制执行本次要求的测试层。
+构建顺序：冻结checkout/工具输入 → 检查本机Unix Docker endpoint及原生arm64 daemon、可用CPU/内存/磁盘 → 预拉取上述基础镜像 → 干净白名单上下文 → Web测试/构建/bundle → release app及bootstrap → 本地runtime/prepare → 实际ELF/链接/嵌入资源核对。复用现有Dockerfile（历史源码：`git show a3fcd72:scripts/n2-linux/Dockerfile`）和构建器（历史源码：`git show a3fcd72:scripts/build_management_n2_linux.py`），不复制`.env`、`.local`、`.git`、旧dist/target、证据或无关文档；不从缓存凭空宣称测试已执行，构建步骤若命中缓存须记录复用来源或强制执行本次要求的测试层。
 
 标准runner并不保证与本地构建资源相同。首批建议以`CARGO_BUILD_JOBS=2`限制构建并发，传入构建阶段并记录；跟踪浏览器、基础镜像、BuildKit中间层和证据的峰值空间，不能只用[既有镜像摘要](design/n2/linux-docker-20261025/review-closure/build-focus-fix/image-summary.json)中约123/126MB的最终runtime/prepare大小估算。预检或运行中资源不足时，记录准备阻塞或构建失败并有界收尾，不自动改架构、换更大付费runner或全局删除预装软件/缓存；实际耗时和峰值用于首跑后调整预算。
 

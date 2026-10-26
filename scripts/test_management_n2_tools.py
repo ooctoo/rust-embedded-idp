@@ -1,4 +1,4 @@
-"""Offline failure-path checks for the disposable N2 Mac tooling."""
+"""Offline failure-path checks for isolated management fixture tooling."""
 import ast
 import contextlib
 import io
@@ -14,7 +14,7 @@ from unittest.mock import Mock
 ROOT = Path(__file__).resolve().parent.parent
 
 
-class N2ToolTests(unittest.TestCase):
+class ManagementFixtureToolTests(unittest.TestCase):
     def run_preparation_failure(self, directory, children, cleanup_error=None):
         tree = ast.parse((ROOT / "scripts/prepare_management_navigation.py").read_text())
         handler = next(n for n in tree.body if isinstance(n, ast.Try)).handlers[0]
@@ -79,17 +79,6 @@ class N2ToolTests(unittest.TestCase):
             self.assertFalse(any(call.args[0][:2] == ["docker", "rm"] for call in docker.run.call_args_list))
             self.assertTrue(state_file.exists())
 
-    def test_diagnostics_redact_credentials_paths_and_data_modules(self):
-        tree = ast.parse((ROOT / "scripts/run_management_n2_mac.py").read_text())
-        function = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "redact")
-        env = {"ROOT": ROOT, "Path": Path, "tempfile": tempfile, "re": re}
-        exec(compile(ast.Module(body=[function], type_ignores=[]), "redact", "exec"), env)
-        original = f"{ROOT}/scripts/test.mjs {Path.home()}/.npm/cache {Path(tempfile.gettempdir()).resolve()}/idp-ui-b-owned secret-token data:text/javascript;base64,YWJj:42:1"
-        result = env["redact"](original, ["secret-token"])
-        self.assertNotIn(str(Path.home()), result); self.assertNotIn(str(ROOT), result)
-        self.assertNotIn("secret-token", result); self.assertNotIn("YWJj", result)
-        self.assertIn("[source omitted]:42:1", result)
-
     def test_standard_cleanup_recovers_absent_container_but_keeps_files_on_outage(self):
         tree = ast.parse((ROOT / "scripts/prepare_management_navigation.py").read_text())
         function = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "cleanup")
@@ -110,26 +99,6 @@ class N2ToolTests(unittest.TestCase):
             docker.check_output.return_value = ""
             with contextlib.redirect_stdout(io.StringIO()): env["cleanup"](state_file)
             self.assertFalse(directory.exists())
-
-    def test_profile_cleanup_continues_and_records_failures(self):
-        # Execute the real finalizer against owned-profile doubles; never launch
-        # Chrome, Docker or remove a real browser directory in this offline test.
-        result = subprocess.run(["node", "--input-type=module"], cwd=ROOT, text=True, capture_output=True, input=r'''
-import assert from 'node:assert/strict';
-import {readFile} from 'node:fs/promises';
-const source = await readFile('scripts/check_management_n2_mac.mjs', 'utf8');
-const body = source.slice(source.indexOf('} finally {\n  let profilesRemoved') + '} finally {'.length, source.lastIndexOf('}'));
-assert.ok(body.includes('cleanupErrors'));
-const run = new (Object.getPrototypeOf(async function(){}).constructor)('contexts', 'rm', 'writeFile', 'output', 'browserVersion', 'cases', 'pageErrors', 'refreshResponses', 'failure', 'console', body);
-let closed = [], removed = [], saved;
-const contexts = [0,1,2].map(index => ({profile:`owned-${index}`, context:{close: async()=>{closed.push(index); if(index===0)throw Error('close failed');}}}));
-await assert.rejects(run(contexts, async profile=>{removed.push(profile); if(profile==='owned-2')throw Error('remove failed');}, async(_p,data)=>{saved=JSON.parse(data);}, 'out', 'synthetic', Array(8).fill('case'), [], [], undefined, {error(){}}), /cleanup failed/);
-assert.deepEqual(closed,[0,1,2]); assert.deepEqual(removed,['owned-1','owned-2']);
-assert.equal(saved.profilesRemoved,1); assert.equal(saved.cleanupErrors.length,2); assert.equal(saved.complete,false);
-await run([], async()=>{}, async(_p,data)=>{saved=JSON.parse(data);}, 'out', 'synthetic', Array(8).fill('case'), [], [], undefined, {error(){}});
-assert.equal(saved.complete,true);
-''')
-        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 if __name__ == "__main__":

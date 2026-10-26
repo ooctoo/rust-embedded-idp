@@ -1,4 +1,4 @@
-// Fixed upstream browser regression groups. N2's full-suite contract is separate.
+// Fixed upstream browser regression groups, including retained browser-only contracts.
 // Credentials stay in memory; only fixed identifiers/statuses enter the result.
 import assert from 'node:assert/strict';
 import { readFile, mkdir, writeFile, realpath } from 'node:fs/promises';
@@ -7,9 +7,11 @@ import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
+import { runNavigationChecks, runLateLogoutCheck } from './ci_e2e_navigation.mjs';
+import { createAuthorizationChecks } from './ci_e2e_authorization.mjs';
 
 const groups = ['E01', 'E02', 'E03', 'E04', 'E05', 'E06'];
-const results = groups.map(id => ({ id, status: 'not_run' }));
+const results = groups.map(id => ({ id, status: 'not_run', checks: [] }));
 const contexts = [], pageErrors = [];
 const acceptedDialogs = new WeakSet();
 async function accepting(page, action) {
@@ -26,7 +28,12 @@ const dialog = (p, name) => p.getByRole('dialog', { name, exact: true });
 const drawer = p => dialog(p, '客户端配置');
 const confirmation = p => dialog(p, '确认保存客户端配置');
 const settle = p => p.waitForFunction(() => !document.querySelector('.management-client-loading, .ant-spin-spinning, .ant-spin-blur'));
-const checked = async (name, fn) => { stage = name; await fn(); };
+const checked = async (name, fn) => {
+  stage = name;
+  const result = { id: name, status: 'running' }; current.checks.push(result);
+  try { await fn(); result.status = 'passed'; }
+  catch (error) { result.status = 'failed'; throw error; }
+};
 async function group(id, fn) {
   current = results.find(result => result.id === id);
   current.status = 'running'; const start = Date.now();
@@ -44,7 +51,7 @@ try {
   assert.equal(execFileSync('docker', ['inspect', '--format', '{{index .Config.Labels "idp.ui-b.fixture"}}', fixture.container], { encoding: 'utf8', timeout: 15000 }).trim(), fixture.dir);
   assert.deepEqual(Object.keys(fixture.schemas).sort(), ['disabled', 'enabled']);
   for (const [mode, schema] of Object.entries(fixture.schemas)) assert.match(schema, new RegExp(`^uib_${mode}_[a-f0-9]+$`));
-  for (const key of ['enabled', 'disabled', 'fixed']) {
+  for (const key of ['enabled', 'disabled', 'fixed', 'choose']) {
     const host = fixture.hosts[key], url = new URL(host.origin);
     assert.equal(url.protocol, 'http:'); assert.equal(url.hostname, '127.0.0.1');
     assert.ok(host.mount.startsWith('/') && host.ui.startsWith('/'));
@@ -65,16 +72,18 @@ try {
     page.on('pageerror', () => pageErrors.push('pageerror'));
     page.on('dialog', d => acceptedDialogs.has(page) ? d.accept() : d.dismiss());
     page.on('request', r => { if (new URL(r.url()).pathname.startsWith(host.mount + '/admin/')) bearer = r.headers().authorization ?? bearer; });
-    const hash = key === 'disabled' ? '#/system/clients' : key === 'fixed' ? '#/tenants/tenant-a/home' : '#/platform/clients';
+    const hash = key === 'disabled' ? '#/system/clients' : ['fixed', 'choose'].includes(key) ? '#/tenants/tenant-a/home' : '#/platform/clients';
     await page.goto(host.origin + host.ui + '/' + hash);
     const t = { page, host, bearer: () => bearer };
-    if (login) await signIn(t, key === 'fixed' ? 'tenant-a@example.test' : 'admin@example.test', fixture.password);
+    if (login) await signIn(t, ['fixed', 'choose'].includes(key) ? 'tenant-a@example.test' : 'admin@example.test', fixture.password);
     return t;
   }
   async function signIn(t, email, password) {
     await t.page.getByLabel('邮箱', { exact: true }).fill(email);
     await t.page.getByLabel('密码', { exact: true }).fill(password);
-    await button(t.page, '登录').click(); await t.page.locator('.management-shell').waitFor(); await settle(t.page);
+    await button(t.page, '登录').click();
+    if (t.host.label === 'choose') await button(t.page, '进入 UI B tenant-a').click();
+    await t.page.locator('.management-shell').waitFor(); await settle(t.page);
   }
   async function request(t, path, headers = {}) {
     assert.ok(t.bearer()?.startsWith('Bearer '));
@@ -98,6 +107,16 @@ try {
     const response = p.waitForResponse(r => new URL(r.url()).pathname.endsWith('/clients/-/lookup'));
     await accepting(p, () => button(drawer(p), '重新读取配置').click()); assert.equal((await response).status(), 200); await settle(p);
   }
+  const helpers = { fixture, context, open, signIn, session, request, read, button, dialog, settle, accepting, checked };
+  const authorization = createAuthorizationChecks(helpers);
+  async function noStoredSecret(page, secret) {
+    assert.equal(page.url().includes(secret), false, 'secret in URL');
+    assert.equal(await page.evaluate(secret => Object.values(localStorage).concat(Object.values(sessionStorage)).some(value => value.includes(secret)), secret), false, 'secret in browser storage');
+  }
+  async function noSecret(page, secret) {
+    assert.equal((await confirmation(page).innerText()).includes(secret), false, 'secret in confirmation');
+    await noStoredSecret(page, secret);
+  }
   let operator;
   const clientId = 'ci-e2e-' + randomBytes(6).toString('hex');
   await group('E01', async () => {
@@ -108,6 +127,18 @@ try {
       const response = t.page.waitForResponse(r => r.url().endsWith('/admin/auth/browser/login'));
       await button(t.page, '登录').click(); assert.equal((await response).status(), 401);
       await t.page.getByRole('alert').waitFor(); assert.equal(await t.page.locator('.management-shell').count(), 0);
+    });
+    await checked('E01.coordination_failure_clears_password', async () => {
+      const c = await context();
+      await c.addInitScript(() => { Storage.prototype.setItem = () => {}; });
+      const denied = await open(c, 'enabled', false); let logins = 0;
+      denied.page.on('request', r => { if (r.method() === 'POST' && r.url().endsWith('/admin/auth/browser/login')) logins++; });
+      await denied.page.getByLabel('邮箱', { exact: true }).fill('admin@example.test');
+      await denied.page.getByLabel('密码', { exact: true }).fill(fixture.password);
+      await button(denied.page, '登录').click(); await denied.page.getByRole('alert').waitFor();
+      assert.equal(logins, 0); assert.equal(await denied.page.locator('.management-shell').count(), 0);
+      assert.equal(await denied.page.getByLabel('密码', { exact: true }).inputValue(), '');
+      assert.equal(await denied.page.getByLabel('邮箱', { exact: true }).inputValue(), 'admin@example.test');
     });
     await checked('E01.login_restore_logout', async () => {
       await signIn(t, 'admin@example.test', fixture.password); const before = await session(t);
@@ -131,18 +162,47 @@ try {
       assert.equal((await request(fixed, '/clients?limit=1', { 'x-embedded-idp-tenant-id': '0', 'x-embedded-idp-subject': 'synthetic-admin' })).status(), 403);
       const forged = await operator.page.request.get(operator.host.origin + operator.host.mount + '/admin/tenants', { headers: { 'x-embedded-idp-subject': 'synthetic-admin' } }); assert.equal(forged.status(), 401);
     });
+    await runNavigationChecks(helpers);
   });
   await group('E03', async () => {
     await checked('E03.create_and_readback', async () => {
       const p = operator.page; await locate(p, clientId); await drawer(p).getByText('此 ID 尚未登记', { exact: false }).waitFor();
       await drawer(p).getByLabel('名称', { exact: true }).fill('CI synthetic client');
-      await drawer(p).getByLabel('允许的回调地址（每行一个）', { exact: true }).fill('http://127.0.0.1/callback');
-      await review(p); const posted = p.waitForResponse(r => r.url().endsWith('/clients/upsert') && r.request().method() === 'POST');
+      await drawer(p).getByLabel('客户端类型', { exact: true }).focus(); await p.keyboard.press('ArrowDown');
+      await p.locator('.ant-select-dropdown:visible').getByText('机密 Web 客户端', { exact: true }).click();
+      await drawer(p).getByLabel('允许的回调地址（每行一个）', { exact: true }).fill('https://example.test/callback');
+      const secret = 'CI-synthetic-' + randomBytes(16).toString('hex');
+      await drawer(p).getByLabel('客户端密钥', { exact: true }).fill(secret);
+      await review(p); await noSecret(p, secret);
+      await button(confirmation(p), '返回修改').click();
+      assert.equal(await drawer(p).getByLabel('客户端密钥', { exact: true }).inputValue(), ''); await noStoredSecret(p, secret);
+      await drawer(p).getByLabel('客户端密钥', { exact: true }).fill(secret);
+      await review(p); await noSecret(p, secret); const posted = p.waitForResponse(r => r.url().endsWith('/clients/upsert') && r.request().method() === 'POST');
       await button(confirmation(p), '确认保存').click(); assert.equal((await posted).status(), 200);
-      await p.getByText(/配置已保存/).first().waitFor(); await settle(p); await close(p);
+      await p.getByText(/配置已保存/).first().waitFor(); await settle(p);
+      assert.equal(await drawer(p).getByLabel('客户端密钥', { exact: true }).inputValue(), ''); await noStoredSecret(p, secret); await close(p);
       await locate(p, clientId); assert.equal(await drawer(p).getByLabel('名称', { exact: true }).inputValue(), 'CI synthetic client');
-      assert.equal((await read(operator, '/clients/-/lookup?client_id=' + clientId)).client.client_name, 'CI synthetic client'); await close(p);
+      const actual = (await read(operator, '/clients/-/lookup?client_id=' + clientId)).client;
+      assert.equal(actual.client_name, 'CI synthetic client'); assert.equal(actual.client_type, 'confidential_web');
+      assert.equal(actual.client_secret_configured, true); await noStoredSecret(p, secret); await close(p);
     });
+    await checked('E03.cursor_reset', async () => {
+      const p = operator.page, base = operator.host.origin + operator.host.mount + '/admin/clients';
+      const actual = await read(operator, '/clients?limit=50'); assert.ok(actual.items.length >= 2);
+      const cursors = [], pattern = url => url.href.split('?')[0] === base;
+      const handler = route => {
+        const cursor = new URL(route.request().url()).searchParams.get('cursor'); cursors.push(cursor);
+        return route.fulfill({ json: { ...actual, items: [actual.items[cursor ? 1 : 0]], has_more: !cursor, next_cursor: cursor ? null : 'ci-next' } });
+      };
+      await p.route(pattern, handler);
+      try {
+        await button(p, '刷新客户端').click(); await p.getByText('第 1 页', { exact: true }).waitFor(); await settle(p);
+        await button(p, '下一页').click(); await p.getByText('第 2 页', { exact: true }).waitFor(); await settle(p);
+        await button(p, '重置筛选').click(); await p.getByText('第 1 页', { exact: true }).waitFor(); await settle(p);
+        assert.deepEqual(cursors, [null, 'ci-next', null]);
+      } finally { await p.unroute(pattern, handler); }
+    });
+    await authorization.writeAndReadback();
   });
   await group('E04', async () => {
     await checked('E04.revoke_cancel_confirm', async () => {
@@ -162,7 +222,7 @@ try {
       const endpoint = `/sessions/${a.session_id}/revoke`; let writes = 0;
       p.on('request', r => { if (r.method() === 'POST' && new URL(r.url()).pathname.endsWith(endpoint)) writes++; });
       stage = 'E04.cancel';
-      await button(detail, '撤销会话').click(); await button(dialog(p, '确认撤销会话'), '取消').click();
+      await button(detail, '撤销会话').click(); await button(dialog(p, '确认撤销会话'), '取消').focus(); await p.keyboard.press('Enter');
       stage = 'E04.verify_cancel';
       assert.equal(writes, 0); assert.equal((await read(operator, `/sessions/${a.session_id}`, { 'x-embedded-idp-tenant-id': 'tenant-a' })).status, 'active');
       stage = 'E04.confirm';
@@ -187,12 +247,30 @@ try {
       await p.getByText('读取客户端配置失败', { exact: true }).waitFor(); assert.equal(await p.getByText('尚无客户端配置，可按 ID 登记接入应用。', { exact: true }).count(), 0);
       await p.unroute(pattern); await button(p, '刷新客户端').click(); await settle(p);
     });
+    await checked('E05.saved_read_failure', async () => {
+      await locate(p, clientId); await drawer(p).getByLabel('名称', { exact: true }).fill('CI confirmed write');
+      let writes = 0;
+      const mark = r => { if (r.method() === 'POST' && r.url() === base + '/upsert') writes++; };
+      const pattern = url => url.pathname.endsWith('/clients/-/lookup') && url.searchParams.get('client_id') === clientId;
+      const fail = route => writes ? route.fulfill({ status: 503, json: {} }) : route.continue();
+      p.on('request', mark); await p.route(pattern, fail);
+      try {
+        await review(p); await button(confirmation(p), '确认保存').click();
+        await drawer(p).getByText('配置已保存，重新读取失败', { exact: true }).waitFor(); assert.equal(writes, 1);
+        await p.unroute(pattern, fail); await reread(p);
+        assert.equal(await drawer(p).getByLabel('名称', { exact: true }).inputValue(), 'CI confirmed write');
+        assert.equal(writes, 1); await close(p);
+      } finally { p.off('request', mark); await p.unroute(pattern, fail); }
+    });
     await checked('E05.real_write_lost_response', async () => {
       await locate(p, clientId); await drawer(p).getByLabel('名称', { exact: true }).fill('CI uncertain response');
       let writes = 0, verified = false, routeFailure = false;
+      const mark = r => { if (r.method() === 'POST' && r.url() === base + '/upsert') writes++; };
+      p.on('request', mark);
+      try {
       await p.route(base + '/upsert', async route => {
         try {
-          writes++; const response = await route.fetch(); assert.ok(response.ok());
+          const response = await route.fetch(); assert.ok(response.ok());
           assert.equal((await read(t, '/clients/-/lookup?client_id=' + clientId)).client.client_name, 'CI uncertain response'); verified = true;
         } catch { routeFailure = true; }
         await route.abort('failed');
@@ -200,10 +278,24 @@ try {
       await review(p); await button(confirmation(p), '确认保存').click();
       await drawer(p).getByText('保存结果未确认，请勿重复提交', { exact: true }).waitFor();
       assert.equal(routeFailure, false); assert.equal(verified, true); assert.equal(writes, 1); assert.equal(await button(drawer(p), '核对并保存').isDisabled(), true);
-      await p.unroute(base + '/upsert'); await reread(p);
+      await p.unroute(base + '/upsert');
+      const pattern = url => url.pathname.endsWith('/clients/-/lookup') && url.searchParams.get('client_id') === clientId;
+      for (const status of [200, 404]) {
+        stage = 'E05.recovery_read_' + status;
+        await p.route(pattern, route => route.fulfill({ status, json: status === 200 ? { client_id: clientId, client: null } : {} }));
+        await accepting(p, () => button(drawer(p), '重新读取配置').click()); await settle(p);
+        await drawer(p).getByText('读取客户端配置失败', { exact: true }).waitFor();
+        assert.equal(await drawer(p).getByText('此 ID 尚未登记', { exact: false }).count(), 0);
+        assert.equal(await button(drawer(p), '核对并保存').count(), 0); assert.equal(writes, 1);
+        await p.unroute(pattern);
+      }
+      await reread(p);
       assert.equal(await button(drawer(p), '核对并保存').isDisabled(), false);
       assert.equal(await drawer(p).getByLabel('名称', { exact: true }).inputValue(), 'CI uncertain response'); assert.equal(writes, 1); await close(p);
+      } finally { p.off('request', mark); await p.unroute(base + '/upsert'); }
     });
+    await authorization.recoverOriginalScope();
+    await authorization.tenantPartialSuccess();
     await checked('E05.injected_401_exits_session', async () => {
       await p.route(url => url.href.split('?')[0] === base, route => route.fulfill({ status: 401, json: {} }));
       await button(p, '刷新客户端').click(); await p.getByLabel('邮箱', { exact: true }).waitFor(); assert.equal(await p.locator('.management-shell').count(), 0);
@@ -234,11 +326,13 @@ try {
       await button(first.page, '退出登录').click(); await first.page.getByLabel('邮箱', { exact: true }).waitFor(); await second.page.getByLabel('邮箱', { exact: true }).waitFor();
       await other.page.reload(); await other.page.locator('.management-shell').waitFor(); assert.equal((await session(other)).session_id, otherSession.session_id);
     });
+    await runLateLogoutCheck(helpers);
   });
 } catch (error) {
   const allowed = ['AssertionError', 'TimeoutError', 'TypeError', 'SyntaxError', 'Error'];
-  const line = String(error.stack ?? '').match(/check_ci_e2e\.mjs:(\d+):\d+/)?.[1];
-  failureDiagnostic = { type: allowed.includes(error.name) ? error.name : 'Error', checker_line: line ? Number(line) : null };
+  const frame = String(error.stack ?? '').match(/(check_ci_e2e|ci_e2e_navigation|ci_e2e_authorization)\.mjs:(\d+):\d+/);
+  failureDiagnostic = { type: allowed.includes(error.name) ? error.name : 'Error', checker_file: frame ? frame[1] + '.mjs' : null, checker_line: frame ? Number(frame[2]) : null,
+    actual_number: Number.isSafeInteger(error.actual) ? error.actual : null, expected_number: Number.isSafeInteger(error.expected) ? error.expected : null };
   failed = true;
   if (current) { current.status = 'failed'; current.failed_stage = stage; }
   console.error(`FAIL ${stage}`); // Never print Playwright errors, URLs, response bodies or tokens.
@@ -249,7 +343,7 @@ try {
   const complete = !failed && cleanupErrors.length === 0 && results.every(r => r.status === 'passed') && pageErrors.length === 0;
   await writeFile(join(output, 'ci-e2e-results.json'), JSON.stringify({ schema_version: 1, suite: 'critical-e2e', status: complete ? 'passed' : 'failed', browser_version: browserVersion ?? null, playwright_version: playwrightVersion ?? null, groups: results,
     complete, failure_stage: failed ? stage : null, failure_diagnostic: failureDiagnostic ?? null, page_error_count: pageErrors.length, browser_closed: browserClosed, cleanup_errors: cleanupErrors,
-    viewport: { width: 1440, height: 1000 }, injections: ['E05: HTTP errors and lost response after real write/readback', 'E06: client expiry/clock and refresh response delay; real server rotations'],
+    viewport: { width: 1440, height: 1000 }, injections: ['E01: coordination storage denial', 'E02/E06: held real responses across target/logout', 'E03: injected cursor pages from real client projections', 'E05: HTTP errors and lost response after real write/readback', 'E06: client expiry/clock and refresh response delay; real server rotations'],
   }, null, 2) + '\n');
   if (!complete) process.exitCode = 1;
 }
