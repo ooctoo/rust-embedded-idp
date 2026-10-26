@@ -418,3 +418,251 @@ fn readiness_requires_prepared_catalog_and_effective_admin_without_mutating_stat
         Err(StoreError::Conflict("access.schema_mode_or_version"))
     ));
 }
+
+fn management_input(name: &str) -> PrepareManagementClient {
+    PrepareManagementClient {
+        client_id: "management-a01".into(),
+        client_name: name.into(),
+        redirect_uris: vec!["http://127.0.0.1:4200/callback".into()],
+        request_id: "a01-test".into(),
+    }
+}
+#[test]
+#[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
+fn management_preparation_prerequisites_matching_conflicts_and_atomic_audit() {
+    for mode in [TenancyMode::Enabled, TenancyMode::Disabled] {
+        let db = Db::new(mode);
+        let service = CoreManagementClientPreparationService::new(
+            mode,
+            db.adapter.clone(),
+            FixedClock,
+            FixedIds,
+        );
+        assert!(service.prepare(management_input("Management")).is_err());
+        db.adapter
+            .prepare_management_client_audit_schema(mode)
+            .unwrap();
+        db.adapter
+            .prepare_management_client_audit_schema(mode)
+            .unwrap();
+        assert!(service.prepare(management_input("Management")).is_err());
+        db.service()
+            .initialize(account(Uuid::now_v7(), "fixture-hash"), "bootstrap".into())
+            .unwrap();
+        assert_eq!(
+            service.prepare(management_input("Management")).unwrap(),
+            ManagementClientPreparationResult::Created
+        );
+        let mut input = management_input("Management");
+        input.redirect_uris.push(input.redirect_uris[0].clone());
+        assert_eq!(
+            service.prepare(input).unwrap(),
+            ManagementClientPreparationResult::AlreadyMatches
+        );
+        assert_eq!(
+            service.prepare(management_input("Other")).unwrap(),
+            ManagementClientPreparationResult::Conflict
+        );
+        assert_eq!(db.count("management_client_preparation_audit"), 1);
+        for mutation in [
+            "pkce_required=false",
+            "client_secret_hash='fixture-secret-hash'",
+            "client_type='confidential_web'",
+            "redirect_uris_json='[\"https://other.example/callback\"]'",
+        ] {
+            db.adapter
+                .connect()
+                .unwrap()
+                .batch_execute(&format!(
+                    "update {}.oidc_clients set {mutation}",
+                    db.schema()
+                ))
+                .unwrap();
+            assert_eq!(
+                service.prepare(management_input("Management")).unwrap(),
+                ManagementClientPreparationResult::Conflict
+            );
+            db.adapter.connect().unwrap().batch_execute(&format!("update {}.oidc_clients set pkce_required=true,client_type='public_desktop',client_secret_hash=null,redirect_uris_json='[\"http://127.0.0.1:4200/callback\"]'",db.schema())).unwrap();
+        }
+        let wrong = CoreManagementClientPreparationService::new(
+            if mode == TenancyMode::Enabled {
+                TenancyMode::Disabled
+            } else {
+                TenancyMode::Enabled
+            },
+            db.adapter.clone(),
+            FixedClock,
+            FixedIds,
+        );
+        assert!(wrong.prepare(management_input("Management")).is_err());
+        struct ReusedAuditId(String);
+        impl IdGenerator for ReusedAuditId {
+            fn next_id(&self, _: &str) -> String {
+                self.0.clone()
+            }
+        }
+        let audit_id: Uuid = db
+            .adapter
+            .connect()
+            .unwrap()
+            .query_one(
+                &format!(
+                    "select id from {}.management_client_preparation_audit",
+                    db.schema()
+                ),
+                &[],
+            )
+            .unwrap()
+            .get(0);
+        // Force a real audit insert failure after client insertion, without a
+        // custom trigger that the layout guard now correctly rejects upfront.
+        let failing = CoreManagementClientPreparationService::new(
+            mode,
+            db.adapter.clone(),
+            FixedClock,
+            ReusedAuditId(audit_id.to_string()),
+        );
+        let mut input = management_input("Second");
+        input.client_id = "other-client".into();
+        assert!(failing.prepare(input).is_err());
+        assert_eq!(db.count("oidc_clients"), 1);
+    }
+}
+#[test]
+#[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
+fn management_preparation_concurrent_same_and_different_definition() {
+    for different in [false, true] {
+        let db = Db::new(TenancyMode::Enabled);
+        db.adapter
+            .prepare_management_client_audit_schema(db.mode)
+            .unwrap();
+        db.service()
+            .initialize(account(Uuid::now_v7(), "fixture-hash"), "bootstrap".into())
+            .unwrap();
+        let barrier = Arc::new(Barrier::new(2));
+        let handles: Vec<_> = (0..2)
+            .map(|i| {
+                let adapter = db.adapter.clone();
+                let barrier = barrier.clone();
+                thread::spawn(move || {
+                    let service = CoreManagementClientPreparationService::new(
+                        TenancyMode::Enabled,
+                        adapter,
+                        FixedClock,
+                        FixedIds,
+                    );
+                    barrier.wait();
+                    service
+                        .prepare(management_input(if different && i == 1 {
+                            "Other"
+                        } else {
+                            "Management"
+                        }))
+                        .unwrap()
+                })
+            })
+            .collect();
+        let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+        assert_eq!(
+            results
+                .iter()
+                .filter(|r| **r == ManagementClientPreparationResult::Created)
+                .count(),
+            1
+        );
+        assert!(results.contains(&if different {
+            ManagementClientPreparationResult::Conflict
+        } else {
+            ManagementClientPreparationResult::AlreadyMatches
+        }));
+        assert_eq!(db.count("management_client_preparation_audit"), 1);
+    }
+}
+
+#[test]
+#[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
+fn management_preparation_rejects_conflicting_audit_layout_and_retired_admin() {
+    let db = Db::new(TenancyMode::Enabled);
+    let s = db.schema();
+    db.adapter.connect().unwrap().batch_execute(&format!("create table {s}.management_client_preparation_audit (id uuid not null,occurred_at_epoch bigint not null,client_id text not null,request_id text not null,configuration_digest text not null)")).unwrap();
+    assert!(db
+        .adapter
+        .prepare_management_client_audit_schema(db.mode)
+        .is_err());
+    db.adapter
+        .connect()
+        .unwrap()
+        .batch_execute(&format!(
+            "drop table {s}.management_client_preparation_audit"
+        ))
+        .unwrap();
+    db.adapter.connect().unwrap().batch_execute(&format!("create table {s}.management_client_preparation_audit (request_id text primary key,id uuid not null,occurred_at_epoch bigint not null,client_id text not null,configuration_digest text not null)")).unwrap();
+    assert!(db
+        .adapter
+        .prepare_management_client_audit_schema(db.mode)
+        .is_err());
+    db.adapter
+        .connect()
+        .unwrap()
+        .batch_execute(&format!(
+            "drop table {s}.management_client_preparation_audit"
+        ))
+        .unwrap();
+    db.adapter
+        .prepare_management_client_audit_schema(db.mode)
+        .unwrap();
+    db.service()
+        .initialize(account(Uuid::now_v7(), "fixture-hash"), "bootstrap".into())
+        .unwrap();
+    db.adapter
+        .connect()
+        .unwrap()
+        .batch_execute(&format!("update {s}.accounts set status='disabled'"))
+        .unwrap();
+    let service = CoreManagementClientPreparationService::new(
+        db.mode,
+        db.adapter.clone(),
+        FixedClock,
+        FixedIds,
+    );
+    assert!(service.prepare(management_input("Management")).is_err());
+    assert_eq!(db.count("oidc_clients"), 0);
+}
+
+#[test]
+#[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
+fn management_preparation_rejects_audit_swallowing_trigger_and_rule() {
+    let db = Db::new(TenancyMode::Enabled);
+    db.adapter
+        .prepare_management_client_audit_schema(db.mode)
+        .unwrap();
+    db.service()
+        .initialize(account(Uuid::now_v7(), "fixture-hash"), "bootstrap".into())
+        .unwrap();
+    let s = db.schema();
+    let service = CoreManagementClientPreparationService::new(
+        db.mode,
+        db.adapter.clone(),
+        FixedClock,
+        FixedIds,
+    );
+    for (install,remove) in [
+        (format!("create function {s}.swallow_audit() returns trigger language plpgsql as $$ begin return null; end $$; create trigger swallow_audit before insert on {s}.management_client_preparation_audit for each row execute function {s}.swallow_audit()"),format!("drop trigger swallow_audit on {s}.management_client_preparation_audit")),
+        (format!("create rule swallow_audit as on insert to {s}.management_client_preparation_audit do instead nothing"),format!("drop rule swallow_audit on {s}.management_client_preparation_audit")),
+    ] {
+        db.adapter.connect().unwrap().batch_execute(&install).unwrap();
+        assert!(db.adapter.prepare_management_client_audit_schema(db.mode).is_err());
+        assert!(service.prepare(management_input("Management")).is_err());
+        assert_eq!(db.count("oidc_clients"),0);
+        assert_eq!(db.count("management_client_preparation_audit"),0);
+        db.adapter.connect().unwrap().batch_execute(&remove).unwrap();
+    }
+    assert_eq!(
+        service.prepare(management_input("Management")).unwrap(),
+        ManagementClientPreparationResult::Created
+    );
+    // The additive table does not change the tenant_v6 readiness contract.
+    db.adapter
+        .initialize_access_schema(db.mode, &catalog())
+        .unwrap();
+}

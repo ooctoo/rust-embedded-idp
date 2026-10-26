@@ -1,0 +1,82 @@
+{
+  "date": "2026-10-23",
+  "stage": "UI-E",
+  "evidence": "isolated disposable PostgreSQL 18.3; existing tests; no production validation",
+  "checks": [
+    {
+      "name": "host",
+      "command": "cargo test -p embedded-idp-app --locked --offline -- --include-ignored --test-threads=1",
+      "exitCode": 0,
+      "groups": [
+        {
+          "passed": 33,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 13,
+          "failed": 0,
+          "ignored": 0
+        }
+      ],
+      "passed": 50,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "name": "devices",
+      "command": "cargo test -p embedded-idp-storage-postgres --test live_tenant_registration http_device_ --locked --offline -- --include-ignored --test-threads=1",
+      "exitCode": 0,
+      "groups": [
+        {
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0
+        }
+      ],
+      "passed": 6,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "name": "accounts",
+      "command": "cargo test -p embedded-idp-storage-postgres --test live_access_admin account_security:: --locked --offline -- --include-ignored --test-threads=1",
+      "exitCode": 0,
+      "groups": [
+        {
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        }
+      ],
+      "passed": 3,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "name": "sessions",
+      "command": "cargo test -p embedded-idp-storage-postgres --test live_access_admin sessions:: --locked --offline -- --include-ignored --test-threads=1",
+      "exitCode": 0,
+      "groups": [
+        {
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        }
+      ],
+      "passed": 3,
+      "failed": 0,
+      "ignored": 0
+    }
+  ]
+}

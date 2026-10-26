@@ -119,6 +119,9 @@ export class EmbeddedIdentityClient {
     }
   }
 
+  /** Normalized entry address; contains no credentials. Used to bind device journals. */
+  get deviceBaseUrl() { return this.base || "/"; }
+
   getSnapshot = () => this.snapshot;
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   private publish() {
@@ -298,10 +301,11 @@ export class EmbeddedIdentityClient {
         } catch (error) {
           this.browserFailure(error, revision);
           throw error;
-        } finally { if (revision === this.revision) this.refreshing = undefined; }
+        }
       });
       this.refreshing = pending;
-      return pending;
+      try { return await pending; }
+      finally { if (this.refreshing === pending) this.refreshing = undefined; }
     }
     if (this.refreshing) return this.refreshing;
     if (credentials.tokens.access_expires_at_unix_secs > Date.now() / 1000 + 30) return credentials;
@@ -332,18 +336,40 @@ export class EmbeddedIdentityClient {
     return credentials.tokens.access_token;
   }
 
-  private async authenticated(path: string, method = "GET") {
+  private async authenticated(path: string, method = "GET", body?: string) {
     const revision = this.revision;
     try {
       const credentials = await this.access();
       this.current(revision);
-      const result = await this.request(path, method, undefined, `Bearer ${credentials.tokens.access_token}`);
+      const result = await this.request(path, method, body, `Bearer ${credentials.tokens.access_token}`);
       this.current(revision);
       return result;
     } catch (error) {
       if (revision === this.revision && error instanceof IdentityError && error.status === 401) this.clear();
       throw error;
     }
+  }
+
+  /** Restricted bridge used by EmbeddedDeviceClient; retains this entry's transport and identity generation. */
+  async requestDevice(path: string, body?: unknown): Promise<{ session: IdentitySession; value: unknown }> {
+    const detail = /^\/devices\/([A-Za-z0-9_.-]{1,128})(?:\/keys\/[A-Za-z0-9_-]{43})?$/.exec(path);
+    const reserved = ["unbind", "provision", "registration-result", "complete", "rotate-key", "heartbeat", "operations", "proof"];
+    const read = /^\/devices(?:\?limit=50(?:&cursor=[A-Za-z0-9_-]{1,2048})?)?$/.test(path) ||
+      !!detail && !reserved.includes(detail[1]) ||
+      /^\/devices\/operations\/[a-f0-9-]{36}$/.test(path);
+    const rotationChallenge = path === "/devices/proof/challenges" && body !== null && typeof body === "object" &&
+      !Array.isArray(body) && Object.keys(body).sort().join(",") === "device_id,purpose,tenant_id" &&
+      (body as Record<string, unknown>).tenant_id === this.credentials?.session.tenant_id &&
+      (body as Record<string, unknown>).purpose === "device_key_rotation" &&
+      typeof (body as Record<string, unknown>).device_id === "string" &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test((body as Record<string, string>).device_id);
+    if (body === undefined ? !read : !["/devices/unbind", "/devices/rotate-key"].includes(path) && !rotationChallenge)
+      throw new IdentityError("无效的设备接口。", 400);
+    const original = this.credentials?.session;
+    if (!original) throw new IdentityError("请先登录。", 401);
+    const session = { ...original };
+    const value = await this.authenticated(path, body === undefined ? "GET" : "POST", body === undefined ? undefined : JSON.stringify(body));
+    return { session, value };
   }
 
   async verifySession() {

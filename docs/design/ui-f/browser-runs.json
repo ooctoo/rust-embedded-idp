@@ -1,0 +1,34 @@
+[
+  {
+    "stage": "b",
+    "command": "node scripts/check_management_navigation.mjs",
+    "exitCode": 0,
+    "durationSeconds": 37.7,
+    "postgresVersion": "18.6 (Debian 18.6-1.pgdg13+2)",
+    "passLines": 19
+  },
+  {
+    "stage": "c",
+    "command": "node scripts/check_management_clients.mjs",
+    "exitCode": 0,
+    "durationSeconds": 67.6,
+    "postgresVersion": "18.6 (Debian 18.6-1.pgdg13+2)",
+    "passLines": 27
+  },
+  {
+    "stage": "d",
+    "command": "node scripts/check_management_authorization.mjs",
+    "exitCode": 0,
+    "durationSeconds": 101.6,
+    "postgresVersion": "18.6 (Debian 18.6-1.pgdg13+2)",
+    "passLines": 42
+  },
+  {
+    "stage": "e",
+    "command": "node scripts/check_management_security.mjs",
+    "exitCode": 0,
+    "durationSeconds": 138.9,
+    "postgresVersion": "18.6 (Debian 18.6-1.pgdg13+2)",
+    "passLines": 47
+  }
+]

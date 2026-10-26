@@ -102,6 +102,7 @@ pub enum SmtpTlsMode {
 }
 
 impl EmbeddedIdpAppConfig {
+    #[cfg(test)]
     pub fn browser_http_config(
         &self,
         purpose: AccessTokenPurpose,

@@ -386,3 +386,57 @@ fn concurrent_client_updates_preserve_the_current_secret_and_audit_each_commit()
         .get(0);
     assert_eq!(count, 3);
 }
+
+#[test]
+#[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
+fn management_preparation_racing_online_upsert_never_reverts_online_definition() {
+    let db = Db::new(TenancyMode::Enabled);
+    db.adapter
+        .prepare_management_client_audit_schema(db.mode)
+        .unwrap();
+    let preparation = CoreManagementClientPreparationService::new(
+        db.mode,
+        db.adapter.clone(),
+        FixedClock,
+        UuidIds,
+    );
+    let input = PrepareManagementClient {
+        client_id: "a01-race".into(),
+        client_name: "Prepared".into(),
+        redirect_uris: vec!["http://127.0.0.1:4200/callback".into()],
+        request_id: "a01-race-request".into(),
+    };
+    let online = service(&db);
+    let context = db.context(db.actor_session.to_string());
+    let command = AdminUpsertClient {
+        client_id: input.client_id.clone(),
+        client_name: "Online".into(),
+        redirect_uris: input.redirect_uris.clone(),
+        client_type: OidcClientType::PublicDesktop,
+        pkce_required: true,
+        client_secret: None,
+    };
+    let barrier = Arc::new(Barrier::new(2));
+    let online_barrier = barrier.clone();
+    let join = thread::spawn(move || {
+        online_barrier.wait();
+        online.upsert_client(context, command).unwrap()
+    });
+    barrier.wait();
+    let result = preparation.prepare(input.clone()).unwrap();
+    join.join().unwrap();
+    assert!(matches!(
+        result,
+        ManagementClientPreparationResult::Created | ManagementClientPreparationResult::Conflict
+    ));
+    assert_eq!(
+        preparation.prepare(input).unwrap(),
+        ManagementClientPreparationResult::Conflict
+    );
+    let row=db.adapter.connect().unwrap().query_one(&format!("select client_name,(select count(*) from {}.management_client_preparation_audit) as audits from {}.oidc_clients where client_id='a01-race'",db.schema(),db.schema()),&[]).unwrap();
+    assert_eq!(row.get::<_, String>("client_name"), "Online");
+    assert_eq!(
+        row.get::<_, i64>("audits"),
+        i64::from(result == ManagementClientPreparationResult::Created)
+    );
+}

@@ -92,8 +92,15 @@ pub struct CoreTenantOidcService<S, T, G, D, C, I, V> {
     config: OidcConfig,
     allowed_scopes: String,
     client_secrets: V,
+    require_s256_pkce: bool,
 }
 impl<S, T, G, D, C, I, V> CoreTenantOidcService<S, T, G, D, C, I, V> {
+    /// Opt-in authorization-code policy for hosts requiring S256 for every client.
+    /// Applies to issuance and exchange, including codes issued before a restart.
+    pub fn with_required_s256_pkce(mut self) -> Self {
+        self.require_s256_pkce = true;
+        self
+    }
     pub fn new(
         auth: CoreTenantAuthenticationService<S, T, G, D, C, I>,
         issuer: String,
@@ -114,6 +121,7 @@ impl<S, T, G, D, C, I, V> CoreTenantOidcService<S, T, G, D, C, I, V> {
             config,
             allowed_scopes,
             client_secrets,
+            require_s256_pkce: false,
         })
     }
 }
@@ -134,7 +142,10 @@ where
         actor: AccessActor,
         request: TenantAuthorizationRequest,
     ) -> Result<TenantAuthorizationResult, TenantAuthError> {
-        if request.response_type != "code"
+        if (self.require_s256_pkce
+            && (request.code_challenge_method != Some(PkceChallengeMethod::S256)
+                || request.code_challenge.as_ref().is_none_or(|c| c.is_empty())))
+            || request.response_type != "code"
             || request.client_id != self.auth.entry.client_id
             || request.redirect_uri.len() > 2048
             || request.redirect_uri.contains('#')
@@ -178,6 +189,7 @@ where
                 &actor.subject_id,
                 self.auth.clock.now(),
             )?;
+            self.auth.require_switch_lifetime(&source)?;
             if source
                 .scope
                 .as_ref()
@@ -285,6 +297,8 @@ where
                 || code.login_entry != self.auth.entry.login_entry
                 || code.redirect_uri != command.redirect_uri
                 || code.consumed_at.is_some()
+                || (self.require_s256_pkce
+                    && code.code_challenge_method != Some(PkceChallengeMethod::S256))
             {
                 return Err(TenantAuthError::InvalidGrant);
             }
@@ -335,6 +349,7 @@ where
             {
                 return Err(TenantAuthError::InvalidGrant);
             }
+            self.auth.require_switch_lifetime(&source)?;
             verify(tx, &source)?;
             let now = self.auth.clock.now();
             if code.created_at > now || code.expires_at <= now || source.expires_at <= now {

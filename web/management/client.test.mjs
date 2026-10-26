@@ -57,6 +57,25 @@ function cookieEnvironment(t) {
   return { values, events, emitStorage() { while (events.length) { const event = events.shift(); listeners.forEach(listener => listener(event)); } } };
 }
 
+test("management Cookie login refuses unreadable or silently discarded coordination storage before HTTP", async t => {
+  const environment = cookieEnvironment(t);
+  let logins = 0;
+  t.mock.method(globalThis, "fetch", async url => {
+    if (String(url).endsWith("/capabilities")) return json(fixed);
+    logins++;
+    const value = authenticated(); delete value.tokens.refresh_token; return json(value);
+  });
+  for (const read of [() => { throw new DOMException("Denied", "SecurityError"); }, () => null]) {
+    const client = new ManagementClient("/host/idp", { mode: "cookie" });
+    await client.loadCapabilities();
+    globalThis.localStorage.getItem = read;
+    await assert.rejects(client.login("admin@example.test", "synthetic-password"));
+    assert.equal(logins, 0);
+    assert.equal(client.getSnapshot().session, undefined);
+    assert.equal(environment.values.size, 0);
+  }
+});
+
 test("management cookie mode restores without refresh tokens and keeps path namespaces isolated", async t => {
   const environment = cookieEnvironment(t);
   const calls = [];
@@ -83,6 +102,31 @@ test("management cookie mode restores without refresh tokens and keeps path name
   assert.equal(first.getSnapshot().session, undefined);
   await otherPath.loadCapabilities(); await otherPath.login("admin@example.test", "password");
   assert.equal(environment.values.size, 2);
+});
+
+test("management queued refresh rechecks storage and recovers after a preflight failure", async t => {
+  cookieEnvironment(t);
+  let refreshes = 0;
+  t.mock.method(globalThis, "fetch", async url => {
+    if (String(url).endsWith("/capabilities")) return json(fixed);
+    if (String(url).endsWith("/session")) return json(identity());
+    if (String(url).endsWith("/refresh")) refreshes++;
+    const value = authenticated("0", refreshes ? 3600 : 10); delete value.tokens.refresh_token; return json(value);
+  });
+  const client = new ManagementClient("/host/idp", { mode: "cookie" });
+  await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
+  const queued = deferred(), release = deferred(), request = navigator.locks.request;
+  t.mock.method(navigator.locks, "request", async (...args) => { queued.resolve(); await release.promise; return request(...args); });
+  const pending = client.verifySession();
+  await queued.promise;
+  const read = localStorage.getItem;
+  localStorage.getItem = () => { throw new DOMException("Denied while queued", "SecurityError"); };
+  release.resolve();
+  await assert.rejects(pending, /Denied while queued/);
+  assert.equal(refreshes, 0);
+  localStorage.getItem = read;
+  await client.verifySession();
+  assert.equal(refreshes, 1);
 });
 
 test("disabled and fixed login obey server capabilities, keep credentials out of snapshots", async t => {
@@ -631,7 +675,7 @@ test("tenant creation and settings use platform scope, explicit initial admin an
     if (path === "/capabilities") return json(platformCapabilities);
     if (path === "/login") return json(authenticated());
     if (init.method === "GET") return json(managedTenant());
-    return json({ tenant: managedTenant(), audit_id: "audit" });
+    return json({ tenant: managedTenant({ name: "New A", status: "suspended", allow_registration: true, version: 5 }), audit_id: "audit" });
   });
   await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
   const tenant = await client.getManagedTenant("a");
@@ -639,12 +683,56 @@ test("tenant creation and settings use platform scope, explicit initial admin an
   assert.deepEqual(JSON.parse(calls.at(-1).body), { tenant_id: "a", name: "A", allow_registration: false, administrator: { kind: "existing", subject_id: "member-1" } });
   await client.updateTenant(tenant, "New A", "suspended", true);
   assert.equal(calls.at(-1).method, "PATCH");
-  assert.deepEqual(JSON.parse(calls.at(-1).body), { name: "New A", status: "suspended", allow_registration: true, expected_version: 4 });
+  assert.deepEqual(JSON.parse(calls.at(-1).body), { tenant_id: "a", name: "New A", status: "suspended", allow_registration: true, expected_version: 4 });
   assert.ok(calls.slice(2).every(c => c.headers["X-Embedded-Idp-Tenant-Id"] === undefined));
   const count = calls.length;
   for (const id of ["0", "", "../a", "a b", "a".repeat(129)]) await assert.rejects(client.createTenant(id, "A", false, { kind: "existing", subject_id: "member-1" }));
   await assert.rejects(client.createTenant("a", "A", false, { kind: "existing", subject_id: "" }));
   assert.equal(calls.length, count);
+});
+
+test("dot-only managed tenant IDs use an exact filtered page and require one visible match", async t => {
+  const { client, calls } = setup(t, (path, init) => {
+    if (path === "/capabilities") return json(platformCapabilities);
+    if (path === "/login") return json(authenticated());
+    const url = new URL(path, "https://management.test");
+    assert.equal(url.pathname, "/tenants");
+    assert.equal(url.searchParams.get("limit"), "2");
+    const tenant = url.searchParams.get("tenant_id");
+    assert.ok([".", ".."].includes(tenant));
+    return json(page([managedTenant({ tenant_id: tenant })]));
+  });
+  await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
+  for (const tenant of [".", ".."]) {
+    const expected = managedTenant({ tenant_id: tenant });
+    const result = await client.getManagedTenant(tenant);
+    assert.deepEqual(result, expected);
+    assert.equal(calls.at(-1).path.includes("/tenants/."), false);
+    assert.equal(calls.at(-1).path.includes("/tenants/.."), false);
+  }
+  assert.equal(calls.filter(call => call.path === "/tenants/.").length, 0);
+  assert.equal(calls.filter(call => call.path === "/tenants/..").length, 0);
+});
+
+test("dot-only managed tenant lookup rejects empty, ambiguous, different and malformed pages", async t => {
+  let payload = page([]);
+  const { client, calls } = setup(t, path => {
+    if (path === "/capabilities") return json(platformCapabilities);
+    if (path === "/login") return json(authenticated());
+    return json(payload);
+  });
+  await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
+  for (const value of [
+    page([]),
+    page([managedTenant({ tenant_id: "other" })]),
+    page([managedTenant({ tenant_id: "." }), managedTenant({ tenant_id: "." })]),
+    { ...page([managedTenant({ tenant_id: "." })]), has_more: true },
+    { items: "not-a-list", has_more: false },
+  ]) {
+    payload = value;
+    await assert.rejects(client.getManagedTenant("."));
+  }
+  assert.equal(calls.every(call => !call.path.startsWith("/tenants/.")), true);
 });
 
 test("existing account discovery is platform-only, paginated and distinct from scoped membership", async t => {
@@ -1106,7 +1194,7 @@ test("client reads use platform session 0 in both modes and encode filters and c
       if (path === "/login") return json(authenticated("0"));
       const confidential = managedClient({ client_type: "confidential_web", pkce_required: false, client_secret_configured: true });
       if (path.startsWith("/clients?")) return json(page([confidential]));
-      return json(confidential);
+      return json(path.includes("/-/lookup") ? { client_id: "desktop-client", client: confidential } : confidential);
     });
     await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
     const result = await client.listClients({ client_type: "confidential_web", pkce_required: false }, "cursor+/=");
@@ -1119,7 +1207,135 @@ test("client reads use platform session 0 in both modes and encode filters and c
     assert.equal(url.searchParams.get("cursor"), "cursor+/=");
     assert.equal(calls.at(-1).headers["X-Embedded-Idp-Tenant-Id"], undefined);
     assert.deepEqual(await client.getClient("desktop-client"), managedClient({ client_type: "confidential_web", pkce_required: false, client_secret_configured: true }));
-    assert.equal(calls.at(-1).path, "/clients/desktop-client");
+    assert.equal(calls.at(-1).path, "/clients/-/lookup?client_id=desktop-client");
+  }
+});
+
+test("client lookup uses the fixed query address for every valid ID and distinguishes null from an unconfirmed route", async t => {
+  let mode = "present";
+  const seen = [];
+  const { client } = setup(t, (path, init) => {
+    if (path === "/capabilities") return json(platformCapabilities);
+    if (path === "/login") return json(authenticated("0"));
+    seen.push(path);
+    if (mode === "missing") return json({ client_id: new URL(path, "http://test").searchParams.get("client_id"), client: null });
+    if (mode === "route") return json({ error: "not mounted" }, 404);
+    if (mode === "method") return json({ error: "method" }, 405);
+    return json({ client_id: new URL(path, "http://test").searchParams.get("client_id"), client: managedClient({ client_id: new URL(path, "http://test").searchParams.get("client_id") }) });
+  });
+  await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
+  for (const id of [".", "..", "...", ".a", "a..", "-", "lookup", "upsert", "A".repeat(128)]) {
+    const result = await client.lookupClient(id);
+    assert.equal(result?.client_id, id);
+    assert.match(seen.at(-1), /^\/clients\/-\/lookup\?client_id=/);
+  }
+  mode = "missing";
+  assert.equal(await client.lookupClient("."), null);
+  await assert.rejects(client.getClient("."), error => error.status === 404 && error.code === "client_not_found");
+  mode = "route";
+  await assert.rejects(client.lookupClient("."), error => error.status === 0 && error.code === "client_lookup_unconfirmed");
+  await assert.rejects(client.getClient("."), error => error.status === 0 && error.code === "client_lookup_unconfirmed");
+  mode = "method";
+  await assert.rejects(client.lookupClient("."), error => error.status === 0 && error.code === "client_lookup_unconfirmed");
+});
+
+test("new lookup and tenant collection patch require confirmed 200 JSON projections", async t => {
+  let mode = "ok", status = 200;
+  const updated = { tenant: managedTenant({ name: "New", status: "suspended", allow_registration: true, version: 5 }), audit_id: "audit" };
+  const { client, calls } = setup(t, (path, init) => {
+    if (path === "/capabilities") return json(platformCapabilities);
+    if (path === "/login") return json(authenticated("0"));
+    if (mode === "read") return json(managedTenant());
+    const body = path.includes("/-/lookup") ? { client_id: "desktop-client", client: managedClient() } : updated;
+    if (mode === "status") return status === 204 ? new Response(null, { status }) : json(body, status);
+    if (mode === "type") return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "text/plain" } });
+    if (mode === "invalid") return new Response("{", { status: 200, headers: { "Content-Type": "application/json" } });
+    return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json; charset=utf-8" } });
+  });
+  await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
+  mode = "read";
+  const tenant = await client.getManagedTenant("a");
+  for (const operation of [() => client.lookupClient("desktop-client"), () => client.updateTenant(tenant, "New", "suspended", true)]) {
+    for (const invalidStatus of [201, 202, 206, 204]) {
+      mode = "status"; status = invalidStatus;
+      const before = calls.length;
+      await assert.rejects(operation(), error => error.status === 0);
+      assert.equal(calls.length, before + 1); // No retry of an unconfirmed write.
+      assert.equal(client.getMutationSnapshot().pending, 0);
+    }
+    for (const invalid of ["type", "invalid"]) {
+      mode = invalid; await assert.rejects(operation(), error => error.status === 0);
+    }
+    mode = "ok"; assert.ok(await operation());
+  }
+});
+
+test("lookup rejects every non-200 or malformed success while accepting charset JSON", async t => {
+  let response = new Response(JSON.stringify({ client_id: "desktop-client", client: managedClient() }), { status: 200, headers: { "Content-Type": "application/json; charset=utf-8" } });
+  const { client } = setup(t, path => {
+    if (path === "/capabilities") return json(platformCapabilities);
+    if (path === "/login") return json(authenticated("0"));
+    return response;
+  });
+  await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
+  assert.equal((await client.lookupClient("desktop-client"))?.client_id, "desktop-client");
+  for (const status of [201, 202, 206, 204]) {
+    response = status === 204 ? new Response(null, { status }) : new Response(JSON.stringify({ client_id: "desktop-client", client: managedClient() }), { status, headers: { "Content-Type": "application/json" } });
+    await assert.rejects(client.lookupClient("desktop-client"), error => error.status === 0);
+  }
+  for (const body of ["{", JSON.stringify({ client: managedClient() }), JSON.stringify({ client_id: "other-client", client: managedClient() })]) {
+    response = new Response(body, { status: 200, headers: { "Content-Type": "application/json" } });
+    await assert.rejects(client.lookupClient("desktop-client"), error => error.status === 0);
+  }
+  response = new Response(JSON.stringify({ client_id: "desktop-client", client: managedClient() }), { status: 200, headers: { "Content-Type": "text/plain" } });
+  await assert.rejects(client.lookupClient("desktop-client"), error => error.status === 0);
+});
+
+test("lookup preserves authentication and maps transport failures without returning null", async t => {
+  let mode = "forbidden";
+  const { client } = setup(t, path => {
+    if (path === "/capabilities") return json(platformCapabilities);
+    if (path === "/login") return json(authenticated("0"));
+    if (mode === "network") throw new Error("offline");
+    return json({ error: mode }, mode === "unauthorized" ? 401 : mode === "forbidden" ? 403 : mode === "method" ? 405 : 500);
+  });
+  await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
+  await assert.rejects(client.lookupClient("desktop-client"), error => error.status === 403);
+  assert.ok(client.getSnapshot().session);
+  mode = "unauthorized";
+  await assert.rejects(client.lookupClient("desktop-client"), error => error.status === 401);
+  assert.equal(client.getSnapshot().session, undefined);
+  await client.login("admin@example.test", "synthetic-password");
+  for (const next of ["network", "server"]) {
+    mode = next;
+    await assert.rejects(client.lookupClient("desktop-client"), error => error.status === 0 || error.status === 500);
+    assert.notEqual(client.getSnapshot().session, undefined);
+  }
+  mode = "method";
+  await assert.rejects(client.getClient("desktop-client"), error => error.status === 0 && error.code === "client_lookup_unconfirmed");
+});
+
+test("tenant collection patch rejects unsafe versions and mismatched confirmed results", async t => {
+  let mode = "ok";
+  const { client, calls } = setup(t, (path, init) => {
+    if (path === "/capabilities") return json(platformCapabilities);
+    if (path === "/login") return json(authenticated("0"));
+    if (init.method === "PATCH") {
+      const tenant = managedTenant({ name: mode === "bad-name" ? "Other" : "New A", status: mode === "bad-status" ? "active" : "suspended", allow_registration: mode === "bad-registration" ? false : true, version: mode === "bad-version" ? 7 : 5 });
+      return json({ tenant, ...(mode === "missing-audit" ? {} : { audit_id: "audit" }) });
+    }
+    return json(managedTenant());
+  });
+  await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
+  const tenant = await client.getManagedTenant("a");
+  const before = calls.length;
+  for (const version of [0, Number.MAX_SAFE_INTEGER + 1]) {
+    await assert.rejects(client.updateTenant({ ...tenant, version }, "New A", "suspended", true), error => error.status === 400);
+  }
+  assert.equal(calls.length, before);
+  for (const bad of ["bad-name", "bad-status", "bad-registration", "bad-version", "missing-audit"]) {
+    mode = bad;
+    await assert.rejects(client.updateTenant(tenant, "New A", "suspended", true), error => error.status === 0);
   }
 });
 
@@ -1163,7 +1379,7 @@ test("client upsert sends only the versionless contract and preserves omitted se
 test("client projections strip metadata and never expose returned secrets or hashes", async t => {
   const payload = { ...managedClient({ client_type: "confidential_web", pkce_required: false, client_secret_configured: true }),
     client_secret: "server-secret", client_secret_hash: "server-hash", tenant_id: "0", status: "active", version: 9, unknown: true };
-  const { client } = setup(t, path => json(path === "/capabilities" ? platformCapabilities : path === "/login" ? authenticated("0") : path.startsWith("/clients?") ? page([payload]) : payload));
+  const { client } = setup(t, path => json(path === "/capabilities" ? platformCapabilities : path === "/login" ? authenticated("0") : path.startsWith("/clients?") ? page([payload]) : { client_id: "desktop-client", client: payload }));
   await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
   assert.deepEqual((await client.listClients()).items[0], managedClient({ client_type: "confidential_web", pkce_required: false, client_secret_configured: true }));
   assert.deepEqual(await client.getClient("desktop-client"), managedClient({ client_type: "confidential_web", pkce_required: false, client_secret_configured: true }));
@@ -1174,7 +1390,7 @@ test("client responses reject mismatched IDs, filters, metadata and write result
   const { client } = setup(t, path => {
     if (path === "/capabilities") return json(platformCapabilities);
     if (path === "/login") return json(authenticated("0"));
-    if (mode === "wrong-id") return json(managedClient({ client_id: "other-client" }));
+    if (mode === "wrong-id") return json({ client_id: "desktop-client", client: managedClient({ client_id: "other-client" }) });
     if (mode === "filter-mismatch") return json(page([managedClient({ client_type: "confidential_web", pkce_required: false, client_secret_configured: true })]));
     if (mode === "bad-metadata") return json(page([{ ...managedClient(), pkce_required: "true", redirect_uris: [null] }]));
     if (mode === "missing-audit") return json({ client: managedClient() });
@@ -1465,4 +1681,159 @@ test("management development tenant selection retains trusted ticket and uses Co
   assert.deepEqual(JSON.parse(calls.at(-1).init.body), { tenant_id: "tenant-1" });
   assert.equal(calls.at(-1).init.headers.Authorization, "TenantSelection synthetic-ticket");
   assert.equal(calls.at(-1).init.credentials, "same-origin");
+});
+
+test("navigation activity observes overlapping writes without credentials or read/auth traffic", async t => {
+  const first = deferred(), second = deferred(); let writes = 0;
+  const { client } = setup(t, (path, init) => {
+    if (path === "/capabilities") return json(platformCapabilities);
+    if (path === "/login") return json(authenticated("0"));
+    if (init.method === "GET") return json(page([]));
+    return (++writes === 1 ? first : second).promise;
+  });
+  await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password"); await client.listClients();
+  assert.deepEqual(client.getMutationSnapshot(), { pending: 0, revision: 0 });
+  const input = { client_id: "desktop-client", client_name: "Desktop", redirect_uris: ["http://127.0.0.1/callback"], client_type: "public_desktop", pkce_required: true };
+  const a = client.upsertClient(input), b = client.upsertClient(input);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(client.getMutationSnapshot(), { pending: 2, revision: 2 });
+  first.resolve(json({ audit_id: "audit", client: managedClient(input) })); await a;
+  assert.deepEqual(client.getMutationSnapshot(), { pending: 1, revision: 2 });
+  second.resolve(json({ audit_id: "audit", client: managedClient(input) })); await b;
+  assert.deepEqual(client.getMutationSnapshot(), { pending: 0, revision: 2 });
+  assert.deepEqual(Object.keys(client.getMutationSnapshot()).sort(), ["pending", "revision"]);
+  await client.listClients(); assert.deepEqual(client.getMutationSnapshot(), { pending: 0, revision: 2 });
+});
+
+test("navigation write activity settles failed and invalid responses without retrying", async t => {
+  let writes = 0;
+  const { client } = setup(t, (path, init) => {
+    if (path === "/capabilities") return json(platformCapabilities);
+    if (path === "/login") return json(authenticated("0"));
+    writes++;
+    if (writes === 1) throw new Error("lost response");
+    return new Response("invalid JSON", { status: 200 });
+  });
+  await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
+  const input = { client_id: "desktop-client", client_name: "Desktop", redirect_uris: ["http://127.0.0.1/callback"], client_type: "public_desktop", pkce_required: true };
+  for (let count = 1; count <= 2; count++) {
+    await assert.rejects(client.upsertClient(input));
+    assert.deepEqual(client.getMutationSnapshot(), { pending: 0, revision: count });
+    assert.equal(writes, count);
+  }
+});
+
+test("navigation write activity covers a shared token refresh and sends one request after it", async t => {
+  const refresh = deferred();
+  const refreshStarted = deferred();
+  const writeStarted = deferred();
+  const { client, calls } = setup(t, (path, init) => {
+    if (path === "/capabilities") return json(platformCapabilities);
+    if (path === "/login") return json(authenticated("0", 1));
+    if (path === "/refresh") { refreshStarted.resolve(); return refresh.promise; }
+    if (path === "/clients/upsert") { writeStarted.resolve(); return json({ audit_id: "audit", client: managedClient(input) }); }
+    throw new Error(path);
+  });
+  await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
+  const input = { client_id: "desktop-client", client_name: "Desktop", redirect_uris: ["http://127.0.0.1/callback"], client_type: "public_desktop", pkce_required: true };
+  const pending = client.upsertClient(input);
+  await refreshStarted.promise;
+  assert.deepEqual(client.getMutationSnapshot(), { pending: 1, revision: 1 });
+  refresh.resolve(json(authenticated("0", 3600, "-rotated")));
+  await writeStarted.promise;
+  assert.deepEqual(client.getMutationSnapshot(), { pending: 1, revision: 1 });
+  await pending;
+  assert.deepEqual(client.getMutationSnapshot(), { pending: 0, revision: 1 });
+  assert.equal(calls.filter(call => call.path === "/refresh").length, 1);
+  assert.equal(calls.filter(call => call.path === "/clients/upsert").length, 1);
+});
+
+test("cookie write activity waits for refresh and suppresses stale writes after refresh failure", async t => {
+  const environment = cookieEnvironment(t);
+  const refresh = deferred();
+  const refreshStarted = deferred();
+  const calls = [];
+  t.mock.method(globalThis, "fetch", async (url, init) => {
+    const path = new URL(url, "https://host.test").pathname;
+    calls.push({ path, init });
+    if (path.endsWith("/auth/capabilities")) return json(platformCapabilities);
+    if (path.endsWith("/admin/auth/browser/login")) {
+      const value = authenticated("0", 1); delete value.tokens.refresh_token; return json(value);
+    }
+    if (path.endsWith("/admin/auth/browser/refresh")) { refreshStarted.resolve(); return refresh.promise; }
+    if (path.endsWith("/admin/clients/upsert")) throw new Error("stale write");
+    throw new Error(path);
+  });
+  const client = new ManagementClient("/host/idp", { mode: "cookie" });
+  await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
+  const input = { client_id: "desktop-client", client_name: "Desktop", redirect_uris: ["http://127.0.0.1/callback"], client_type: "public_desktop", pkce_required: true };
+  const pending = client.upsertClient(input);
+  await refreshStarted.promise;
+  assert.deepEqual(client.getMutationSnapshot(), { pending: 1, revision: 1 });
+  refresh.resolve(new Response(null, { status: 401 }));
+  await assert.rejects(pending);
+  assert.deepEqual(client.getMutationSnapshot(), { pending: 0, revision: 1 });
+  assert.equal(calls.filter(call => call.path.endsWith("/admin/clients/upsert")).length, 0);
+});
+
+test("cookie write activity shares one refresh across writes and settles both requests", async t => {
+  cookieEnvironment(t);
+  const refresh = deferred();
+  const refreshStarted = deferred();
+  const calls = [];
+  const input = { client_id: "desktop-client", client_name: "Desktop", redirect_uris: ["http://127.0.0.1/callback"], client_type: "public_desktop", pkce_required: true };
+  t.mock.method(globalThis, "fetch", async (url, init) => {
+    const path = new URL(url, "https://host.test").pathname;
+    calls.push({ path, init });
+    if (path.endsWith("/auth/capabilities")) return json(platformCapabilities);
+    if (path.endsWith("/admin/auth/browser/login")) {
+      const value = authenticated("0", 1); delete value.tokens.refresh_token; return json(value);
+    }
+    if (path.endsWith("/admin/auth/browser/refresh")) { refreshStarted.resolve(); return refresh.promise; }
+    if (path.endsWith("/admin/clients/upsert")) return json({ audit_id: "audit", client: managedClient(input) });
+    throw new Error(path);
+  });
+  const client = new ManagementClient("/host/idp", { mode: "cookie" });
+  await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
+  const first = client.upsertClient(input), second = client.upsertClient(input);
+  await refreshStarted.promise;
+  assert.deepEqual(client.getMutationSnapshot(), { pending: 2, revision: 2 });
+  const refreshed = authenticated("0", 3600, "-rotated"); delete refreshed.tokens.refresh_token;
+  refresh.resolve(json(refreshed));
+  await Promise.all([first, second]);
+  assert.deepEqual(client.getMutationSnapshot(), { pending: 0, revision: 2 });
+  assert.equal(calls.filter(call => call.path.endsWith("/admin/auth/browser/refresh")).length, 1);
+  assert.equal(calls.filter(call => call.path.endsWith("/admin/clients/upsert")).length, 2);
+});
+
+test("cookie logout during refresh suppresses the old write and settles activity", async t => {
+  cookieEnvironment(t);
+  const refresh = deferred();
+  const refreshStarted = deferred();
+  const calls = [];
+  const input = { client_id: "desktop-client", client_name: "Desktop", redirect_uris: ["http://127.0.0.1/callback"], client_type: "public_desktop", pkce_required: true };
+  t.mock.method(globalThis, "fetch", async (url, init) => {
+    const path = new URL(url, "https://host.test").pathname;
+    calls.push({ path, init });
+    if (path.endsWith("/auth/capabilities")) return json(platformCapabilities);
+    if (path.endsWith("/admin/auth/browser/login")) {
+      const value = authenticated("0", 1); delete value.tokens.refresh_token; return json(value);
+    }
+    if (path.endsWith("/admin/auth/browser/refresh")) { refreshStarted.resolve(); return refresh.promise; }
+    if (path.endsWith("/admin/auth/browser/logout")) return new Response(null, { status: 204 });
+    if (path.endsWith("/admin/clients/upsert")) throw new Error("stale write");
+    throw new Error(path);
+  });
+  const client = new ManagementClient("/host/idp", { mode: "cookie" });
+  await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
+  const pending = client.upsertClient(input);
+  await refreshStarted.promise;
+  assert.deepEqual(client.getMutationSnapshot(), { pending: 1, revision: 1 });
+  const loggedOut = client.logout();
+  const refreshed = authenticated("0", 3600, "-rotated"); delete refreshed.tokens.refresh_token;
+  refresh.resolve(json(refreshed));
+  await loggedOut;
+  await assert.rejects(pending);
+  assert.deepEqual(client.getMutationSnapshot(), { pending: 0, revision: 1 });
+  assert.equal(calls.filter(call => call.path.endsWith("/admin/clients/upsert")).length, 0);
 });

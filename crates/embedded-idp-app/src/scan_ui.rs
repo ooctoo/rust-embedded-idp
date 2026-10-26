@@ -13,10 +13,31 @@ include!(concat!(env!("OUT_DIR"), "/scan_code_assets.rs"));
 pub(crate) fn scan_reference_ui_router(
     config: embedded_idp_axum::BrowserSessionClientConfig,
 ) -> Router {
-    let page = PAGE.replace(
-        "<!--browser-config-->",
-        &crate::admin_ui::browser_config_meta(&config),
-    );
+    scan_reference_ui_router_for_entry(config, "")
+}
+
+pub(crate) fn scan_reference_ui_router_for_entry(
+    config: embedded_idp_axum::BrowserSessionClientConfig,
+    mount_prefix: &str,
+) -> Router {
+    let browser_root = format!("{mount_prefix}/auth/browser/device-scan");
+    let ui_root = format!("{browser_root}/ui");
+    let client_base = if mount_prefix.is_empty() {
+        "/"
+    } else {
+        mount_prefix
+    };
+    let page = PAGE
+        .replace(
+            "<!--browser-config-->",
+            &crate::admin_ui::browser_config_meta(&config),
+        )
+        .replace(
+            "__SCAN_ASSET_URL__",
+            &script_json_string(&format!("{ui_root}/assets/scan-code.js")),
+        )
+        .replace("__SCAN_BASE_URL__", &script_json_string(client_base))
+        .replace("__SCAN_BROWSER_ROOT__", &script_json_string(&browser_root));
     Router::new()
         .route(
             "/",
@@ -26,6 +47,16 @@ pub(crate) fn scan_reference_ui_router(
             }),
         )
         .route("/assets/:asset", get(asset))
+}
+
+fn script_json_string(value: &str) -> String {
+    serde_json::to_string(value)
+        .expect("string serialization is infallible")
+        .replace('<', "\\u003c")
+        .replace('>', "\\u003e")
+        .replace('&', "\\u0026")
+        .replace('\u{2028}', "\\u2028")
+        .replace('\u{2029}', "\\u2029")
 }
 
 async fn asset(Path(asset): Path<String>) -> Response {
@@ -56,11 +87,11 @@ const PAGE: &str = r#"<!doctype html>
 <section id="confirm" hidden><h2>Confirm target</h2><pre id="details"></pre><button id="approve">Approve this exact device</button><button id="deny">Deny</button><button id="cancel">Cancel this authorization</button><button id="status">Refresh status</button></section><section id="pending" hidden><button id="inspect">Check the scanned target, then confirm</button><button id="pendingCancel">Cancel this authorization</button></section>
 <div id="qr" aria-label="QR code"></div><div id="barcode" aria-label="Code 128 barcode"></div><pre id="result" aria-live="polite"></pre>
 <script type="module">
-import '/auth/browser/device-scan/ui/assets/scan-code.js';
+import __SCAN_ASSET_URL__;
 const {EmbeddedIdentityClient,secureRandomUuid:uuid}=window.EmbeddedIdpScanCode;
 const browserConfig=JSON.parse(document.querySelector('meta[name="idp-browser-config"]').content);
-const client=new EmbeddedIdentityClient('/',undefined,{mode:browserConfig.mode,browserConfig});
-const root='/auth/browser/device-scan', h={'content-type':'application/json','x-embedded-idp-browser':'1'};
+const client=new EmbeddedIdentityClient(__SCAN_BASE_URL__,undefined,{mode:browserConfig.mode,browserConfig});
+const root=__SCAN_BROWSER_ROOT__, h={'content-type':'application/json','x-embedded-idp-browser':'1'};
 let expected, confirmation, entryId, grantId, blocked=false;
 const out=x=>document.querySelector('#result').textContent=typeof x==='string'?x:JSON.stringify(x,null,2);
 function clearTarget(){confirmation=undefined;grantId=undefined;document.querySelector('#confirm').hidden=true;document.querySelector('#pending').hidden=true;for(const id of ['qr','barcode'])window.EmbeddedIdpScanCode.clear(document.querySelector('#'+id));for(const id of ['code','details'])document.querySelector('#'+id).replaceChildren();}
@@ -107,22 +138,42 @@ mod tests {
     use axum::{
         body::Body,
         http::{Request, StatusCode},
+        Router,
     };
     use tower::ServiceExt;
 
-    use super::scan_reference_ui_router;
+    use super::{scan_reference_ui_router, scan_reference_ui_router_for_entry};
 
-    #[tokio::test]
-    async fn reference_ui_serves_only_its_bundled_scan_renderer() {
-        let config = embedded_idp_axum::BrowserSessionHttpConfig::new(
+    fn browser_config() -> embedded_idp_axum::BrowserSessionClientConfig {
+        embedded_idp_axum::BrowserSessionHttpConfig::new(
             "http://localhost",
             "test",
             "/auth/browser",
             embedded_idp_core::AccessTokenPurpose::Business,
         )
         .unwrap()
-        .client_config();
-        let app = scan_reference_ui_router(config);
+        .client_config()
+    }
+
+    async fn get(app: Router, path: &str) -> axum::response::Response {
+        app.oneshot(Request::get(path).body(Body::empty()).unwrap())
+            .await
+            .unwrap()
+    }
+
+    async fn body(response: axum::response::Response) -> String {
+        String::from_utf8(
+            axum::body::to_bytes(response.into_body(), 1024 * 1024)
+                .await
+                .unwrap()
+                .to_vec(),
+        )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn reference_ui_serves_only_its_bundled_scan_renderer() {
+        let app = scan_reference_ui_router(browser_config());
         let response = app
             .clone()
             .oneshot(
@@ -142,5 +193,47 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn reference_ui_uses_each_entry_prefix_for_page_and_asset_urls() {
+        for prefix in ["/one", "/two"] {
+            let ui = scan_reference_ui_router_for_entry(browser_config(), prefix);
+            let app = Router::new().nest(&format!("{prefix}/auth/browser/device-scan/ui"), ui);
+            let page_path = format!("{prefix}/auth/browser/device-scan/ui");
+            let response = get(app.clone(), &page_path).await;
+            assert_eq!(response.status(), StatusCode::OK);
+            let page = body(response).await;
+            let expected_root = format!("{prefix}/auth/browser/device-scan");
+            assert!(page.contains(&format!(
+                "import \"{expected_root}/ui/assets/scan-code.js\""
+            )));
+            assert!(page.contains(&format!("EmbeddedIdentityClient(\"{prefix}\"")));
+            assert!(page.contains(&format!("const root=\"{expected_root}\"")));
+
+            let asset_path = format!("{prefix}/auth/browser/device-scan/ui/assets/scan-code.js");
+            assert_eq!(get(app, &asset_path).await.status(), StatusCode::OK);
+        }
+    }
+
+    #[tokio::test]
+    async fn legacy_prefix_and_dynamic_script_values_remain_safe() {
+        let legacy = scan_reference_ui_router(browser_config());
+        let legacy_page = body(get(legacy, "/").await).await;
+        assert!(legacy_page.contains("import \"/auth/browser/device-scan/ui/assets/scan-code.js\""));
+        assert!(legacy_page.contains("EmbeddedIdentityClient(\"/\","));
+        assert!(legacy_page.contains("const root=\"/auth/browser/device-scan\""));
+
+        let injected = "</script><script>alert(1)</script>";
+        let page = body(
+            get(
+                scan_reference_ui_router_for_entry(browser_config(), injected),
+                "/",
+            )
+            .await,
+        )
+        .await;
+        assert!(!page.contains(injected));
+        assert!(page.contains("\\u003c/script\\u003e\\u003cscript\\u003e"));
     }
 }

@@ -32,6 +32,34 @@ pub enum TenantRefreshOutcome {
         session_id: String,
     },
 }
+/// Optional ordinary-refresh boundary, without device challenge or proof services.
+/// ReuseDetected is a committed revocation outcome, not a transaction error.
+pub trait TenantRefreshService: Send + Sync {
+    /// Check current tenant, client, purpose and identity atomically; reject
+    /// device-bound sessions and entries requiring proof without rotating them.
+    fn refresh_ordinary(
+        &self,
+        refresh: SecretString,
+    ) -> Result<TenantRefreshOutcome, TenantAuthError>;
+}
+impl<S, T, G, D, C, I> TenantRefreshService for CoreTenantAuthenticationService<S, T, G, D, C, I>
+where
+    S: TenantAuthStore,
+    for<'a> S::Transaction<'a>: TenantRefreshTransaction,
+    T: TokenIssuer + AccessTokenValidator + ScopedAccessTokenIssuer + Send + Sync,
+    G: RefreshTokenGenerator + Send + Sync,
+    D: RefreshTokenDigester + Send + Sync,
+    C: Clock + Send + Sync,
+    I: IdGenerator + Send + Sync,
+{
+    fn refresh_ordinary(
+        &self,
+        refresh: SecretString,
+    ) -> Result<TenantRefreshOutcome, TenantAuthError> {
+        self.rotate_refresh(refresh)
+    }
+}
+
 pub trait TenantRefreshTransaction: TenantAuthTransaction {
     /// Non-locking routing hint only. Never authorizes rotation or reuse revocation.
     fn find_refresh(

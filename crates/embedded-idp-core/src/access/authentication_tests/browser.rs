@@ -584,6 +584,106 @@ fn long_browser_service(
 }
 
 #[test]
+fn isolated_restricted_selection_cannot_issue_or_switch_into_long_token_sessions() {
+    let store = seed();
+    let policy = LoginTenantPolicy::ChooseAfterAuthentication;
+    let token = long_browser_service(store.clone(), policy.clone())
+        .with_restricted_browser_isolation(120)
+        .unwrap();
+    let browser = long_browser_service(store.clone(), policy)
+        .with_restricted_browser_isolation(120)
+        .unwrap()
+        .into_restricted_browser(120)
+        .unwrap();
+    let TenantLoginOutcome::SelectionRequired(ticket) = browser.browser_login(login()).unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(
+        token.select_tenant(ticket.ticket.clone(), "t1".into()),
+        Err(TenantAuthError::InvalidSelection)
+    );
+    assert!(store.0.lock().unwrap().selections[0].consumed_at.is_none());
+    assert!(token
+        .list_tenants(ticket.ticket.clone(), AccessPageRequest::default())
+        .is_ok());
+    assert!(store.0.lock().unwrap().selections[0].consumed_at.is_none());
+    let restricted = browser.browser_select(ticket.ticket, "t1".into()).unwrap();
+    assert_eq!(
+        restricted.session.expires_at,
+        C.now() + Duration::from_secs(120)
+    );
+    assert_eq!(
+        token.begin_switch(restricted.tokens.access_token.clone()),
+        Err(TenantAuthError::InvalidSession)
+    );
+    // A source-bound ticket minted before isolation was enabled still cannot
+    // widen that short source session when consumed after the configuration change.
+    let legacy = long_browser_service(store.clone(), LoginTenantPolicy::ChooseAfterAuthentication);
+    let old_switch = legacy
+        .begin_switch(restricted.tokens.access_token.clone())
+        .unwrap();
+    assert_eq!(
+        token.select_tenant(old_switch.ticket.clone(), "t2".into()),
+        Err(TenantAuthError::InvalidSession)
+    );
+    assert!(store.0.lock().unwrap().selections.iter().any(|record| {
+        record.ticket_digest == digest_refresh_token(old_switch.ticket.expose_secret())
+            && record.consumed_at.is_none()
+    }));
+    // A lower browser bound must not make an older restricted session eligible
+    // for ordinary switching into the full lifetime.
+    let reconfigured =
+        long_browser_service(store.clone(), LoginTenantPolicy::ChooseAfterAuthentication)
+            .with_restricted_browser_isolation(60)
+            .unwrap();
+    assert_eq!(
+        reconfigured.begin_switch(restricted.tokens.access_token),
+        Err(TenantAuthError::InvalidSession)
+    );
+    assert_eq!(
+        reconfigured.select_tenant(old_switch.ticket.clone(), "t2".into()),
+        Err(TenantAuthError::InvalidSession)
+    );
+    assert!(store.0.lock().unwrap().selections.iter().any(|record| {
+        record.ticket_digest == digest_refresh_token(old_switch.ticket.expose_secret())
+            && record.consumed_at.is_none()
+    }));
+    let TenantLoginOutcome::SelectionRequired(ticket) = token.login(login()).unwrap() else {
+        panic!()
+    };
+    assert_eq!(
+        browser.browser_select(ticket.ticket.clone(), "t1".into()),
+        Err(TenantAuthError::InvalidSelection)
+    );
+    let full = token.select_tenant(ticket.ticket, "t1".into()).unwrap();
+    assert_eq!(
+        full.session.expires_at,
+        C.now() + Duration::from_secs(86400)
+    );
+    let switch = token.begin_switch(full.tokens.access_token).unwrap();
+    assert!(token.select_tenant(switch.ticket, "t2".into()).is_ok());
+}
+
+#[test]
+fn isolated_browser_bound_must_match_wrapper_and_be_valid() {
+    for bound in [0, 59, 3601, u64::MAX] {
+        assert!(
+            long_browser_service(seed(), LoginTenantPolicy::ChooseAfterAuthentication)
+                .with_restricted_browser_isolation(bound)
+                .is_err()
+        );
+    }
+    assert!(
+        long_browser_service(seed(), LoginTenantPolicy::ChooseAfterAuthentication)
+            .with_restricted_browser_isolation(120)
+            .unwrap()
+            .into_restricted_browser(240)
+            .is_err()
+    );
+}
+
+#[test]
 fn restricted_browser_issuance_is_persisted_bounded_and_cannot_refresh() {
     let store = seed();
     let policy = LoginTenantPolicy::Fixed {

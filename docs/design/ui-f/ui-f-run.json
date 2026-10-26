@@ -1,0 +1,8 @@
+{
+  "stage": "f",
+  "command": "node scripts/check_management_console.mjs",
+  "exitCode": 0,
+  "durationSeconds": 129.6,
+  "postgresVersion": "18.6 (Debian 18.6-1.pgdg13+2)",
+  "passLines": 82
+}

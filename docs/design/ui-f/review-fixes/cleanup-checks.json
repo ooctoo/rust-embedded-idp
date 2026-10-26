@@ -1,0 +1,53 @@
+{
+  "date": "2026-10-23",
+  "fixtures": [
+    {
+      "fixture": "f",
+      "directoryAbsent": true,
+      "ownedContainerLabelAbsent": true,
+      "originalConfigProcessesAbsent": true,
+      "recordedHostPids": [
+        {
+          "pid": 30241,
+          "absent": true
+        },
+        {
+          "pid": 30245,
+          "absent": true
+        },
+        {
+          "pid": 30260,
+          "absent": true
+        },
+        {
+          "pid": 30261,
+          "absent": true
+        }
+      ]
+    },
+    {
+      "fixture": "d",
+      "directoryAbsent": true,
+      "ownedContainerLabelAbsent": true,
+      "originalConfigProcessesAbsent": true,
+      "recordedHostPids": [
+        {
+          "pid": 30263,
+          "absent": true
+        },
+        {
+          "pid": 30267,
+          "absent": true
+        },
+        {
+          "pid": 30268,
+          "absent": true
+        },
+        {
+          "pid": 30269,
+          "absent": true
+        }
+      ]
+    }
+  ]
+}

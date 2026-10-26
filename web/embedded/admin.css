@@ -3,3 +3,14 @@
 .embedded-idp-permission-directory .management-filter { row-gap: 16px; margin-bottom: 24px; }
 .embedded-idp-permission-directory .management-pagination { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 20px; }
 .embedded-idp-permission-overlay { overflow-wrap: anywhere; }
+.embedded-idp-workflow-confirm .ant-modal-body { overflow-wrap: anywhere; }
+.embedded-idp-permission-directory .ant-typography-secondary { color: #58677c; }
+@media (max-width: 767px) {
+  .embedded-idp-permission-directory .management-filter { display: flex; flex-wrap: wrap; gap: 12px; }
+  .embedded-idp-permission-directory .management-filter .ant-form-item { margin-inline-end: 0; max-width: 100%; }
+  .embedded-idp-workflow-confirm .ant-modal-footer { display: flex; flex-direction: column; gap: 8px; }
+  .embedded-idp-workflow-confirm .ant-modal-footer > .ant-btn { margin-inline-start: 0; width: 100%; min-height: 40px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .embedded-idp-workflow-confirm * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}

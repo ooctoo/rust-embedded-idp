@@ -1,0 +1,163 @@
+{
+  "date": "2026-10-23",
+  "fixtures": [
+    {
+      "fixture": 1,
+      "directoryAbsent": true,
+      "ownedContainerLabelAbsent": true,
+      "originalConfigProcessesAbsent": true,
+      "recordedHostPids": []
+    },
+    {
+      "fixture": 2,
+      "directoryAbsent": true,
+      "ownedContainerLabelAbsent": true,
+      "originalConfigProcessesAbsent": true,
+      "recordedHostPids": []
+    },
+    {
+      "fixture": 3,
+      "directoryAbsent": true,
+      "ownedContainerLabelAbsent": true,
+      "originalConfigProcessesAbsent": true,
+      "recordedHostPids": []
+    },
+    {
+      "fixture": 4,
+      "directoryAbsent": true,
+      "ownedContainerLabelAbsent": true,
+      "originalConfigProcessesAbsent": true,
+      "recordedHostPids": [
+        {
+          "pid": 19750,
+          "absent": true
+        },
+        {
+          "pid": 19759,
+          "absent": true
+        },
+        {
+          "pid": 19760,
+          "absent": true
+        },
+        {
+          "pid": 19761,
+          "absent": true
+        }
+      ]
+    },
+    {
+      "fixture": 5,
+      "directoryAbsent": true,
+      "ownedContainerLabelAbsent": true,
+      "originalConfigProcessesAbsent": true,
+      "recordedHostPids": []
+    },
+    {
+      "fixture": 6,
+      "directoryAbsent": true,
+      "ownedContainerLabelAbsent": true,
+      "originalConfigProcessesAbsent": true,
+      "recordedHostPids": [
+        {
+          "pid": 20220,
+          "absent": true
+        },
+        {
+          "pid": 20224,
+          "absent": true
+        },
+        {
+          "pid": 20226,
+          "absent": true
+        },
+        {
+          "pid": 20228,
+          "absent": true
+        }
+      ]
+    },
+    {
+      "fixture": 7,
+      "directoryAbsent": true,
+      "ownedContainerLabelAbsent": true,
+      "originalConfigProcessesAbsent": true,
+      "recordedHostPids": []
+    },
+    {
+      "fixture": 8,
+      "directoryAbsent": true,
+      "ownedContainerLabelAbsent": true,
+      "originalConfigProcessesAbsent": true,
+      "recordedHostPids": [
+        {
+          "pid": 21985,
+          "absent": true
+        },
+        {
+          "pid": 21992,
+          "absent": true
+        },
+        {
+          "pid": 22008,
+          "absent": true
+        },
+        {
+          "pid": 22010,
+          "absent": true
+        }
+      ]
+    },
+    {
+      "fixture": 9,
+      "directoryAbsent": true,
+      "ownedContainerLabelAbsent": true,
+      "originalConfigProcessesAbsent": true,
+      "recordedHostPids": [
+        {
+          "pid": 22236,
+          "absent": true
+        },
+        {
+          "pid": 22243,
+          "absent": true
+        },
+        {
+          "pid": 22253,
+          "absent": true
+        },
+        {
+          "pid": 22254,
+          "absent": true
+        }
+      ]
+    },
+    {
+      "fixture": 10,
+      "directoryAbsent": true,
+      "ownedContainerLabelAbsent": true,
+      "originalConfigProcessesAbsent": true,
+      "recordedHostPids": [
+        {
+          "pid": 23168,
+          "absent": true
+        },
+        {
+          "pid": 23174,
+          "absent": true
+        },
+        {
+          "pid": 23189,
+          "absent": true
+        },
+        {
+          "pid": 23190,
+          "absent": true
+        }
+      ]
+    }
+  ],
+  "recordedFinalHostPids": 20,
+  "allChecksPassed": true,
+  "note": "All10 owned fixture directories/container labels/original config commands absent. Last5 fixture sets provide20 directly recorded current PIDs; earlier cleanup used the ownership-checked script, not invented historical PID records."
+}

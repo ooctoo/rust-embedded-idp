@@ -1,0 +1,33 @@
+{
+  "workspace": {
+    "passed": 483,
+    "failed": 0,
+    "ignored": 171,
+    "exitCode": 0
+  },
+  "web": {
+    "passed": 185,
+    "failed": 0
+  },
+  "offline": {
+    "integrationRunner": 8,
+    "e2eRunner": 7,
+    "e2eChecker": 2,
+    "fixture": 4,
+    "processes": 21
+  },
+  "actualExecution": "Mac arm64 dirty working tree based on a3fcd72",
+  "remoteActions": false,
+  "logSha256": {
+    "process-offline.log": "21ed40a98105fb8aa4f9ec4ef98e61107a0fdef21fb595765c96c7d8ff9279f0",
+    "fmt.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "fixture-offline.log": "256e590ba9183f73cc663d8cfa132c3c8611787f5bb806ea54e951f3d8a7d3ca",
+    "workspace.log": "80d73d26aa2e6a87fd2a69d52b0200dcc2887f424a9f4cd67fd851d82e648030",
+    "integration-offline.log": "ab1d92caaf4f39f96eed9df0ebe9a33c237860bda4954f7a0995676ffd02fa78",
+    "e2e-runner.log": "cbf73402ebd835e1d798f4dc1c6cea283fae18ce0cb886d47c36a5f2e17fca40",
+    "fmt-final.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "e2e-offline.log": "4c55539153fba4207bc36dcfd664f7d47830d695acc208e7e257b86ace834a50",
+    "web-test.log": "c5a4d5f65a4e770b54d691efc71c089e67a0c0759ad890533d5cb0084fd634bc",
+    "build.log": "e478a74ea08ad7f38b5cf7b3d7d423fc6eb68623c4936be6056550bd8b17f8cb"
+  }
+}

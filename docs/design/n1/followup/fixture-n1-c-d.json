@@ -1,0 +1,38 @@
+{
+  "postgresVersion": "18.6 (Debian 18.6-1.pgdg13+2)",
+  "ownershipLabelVerified": true,
+  "hosts": {
+    "enabled": {
+      "apiPrefix": "/identity",
+      "uiBasePath": "/console",
+      "assetSha256": {
+        "index-BX7Hoh6V.js": "060765a5601204e6c76866aa975c93262a7a63560acb4fd4ae695aa294bedd5a",
+        "index-DWB8AfL5.css": "22b6b856c4331e81442efa409a5283b16e1c64d288b4f12eead361347c79a9d2"
+      }
+    },
+    "disabled": {
+      "apiPrefix": "/gateway",
+      "uiBasePath": "/manage",
+      "assetSha256": {
+        "index-BX7Hoh6V.js": "060765a5601204e6c76866aa975c93262a7a63560acb4fd4ae695aa294bedd5a",
+        "index-DWB8AfL5.css": "22b6b856c4331e81442efa409a5283b16e1c64d288b4f12eead361347c79a9d2"
+      }
+    },
+    "fixed": {
+      "apiPrefix": "/identity",
+      "uiBasePath": "/console",
+      "assetSha256": {
+        "index-BX7Hoh6V.js": "060765a5601204e6c76866aa975c93262a7a63560acb4fd4ae695aa294bedd5a",
+        "index-DWB8AfL5.css": "22b6b856c4331e81442efa409a5283b16e1c64d288b4f12eead361347c79a9d2"
+      }
+    },
+    "choose": {
+      "apiPrefix": "/identity",
+      "uiBasePath": "/console",
+      "assetSha256": {
+        "index-BX7Hoh6V.js": "060765a5601204e6c76866aa975c93262a7a63560acb4fd4ae695aa294bedd5a",
+        "index-DWB8AfL5.css": "22b6b856c4331e81442efa409a5283b16e1c64d288b4f12eead361347c79a9d2"
+      }
+    }
+  }
+}

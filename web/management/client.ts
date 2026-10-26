@@ -362,6 +362,14 @@ export class ManagementClient {
   private readonly development: boolean;
   private restoring?: Promise<Session | undefined>;
   private deviceIntents = new Map<string, string>();
+  // Navigation observes the full authenticated write, including access/refresh
+  // waits; no credentials, bodies or authentication decisions enter this state.
+  private mutationSnapshot: Readonly<{ pending: number; revision: number }> = { pending: 0, revision: 0 };
+  getMutationSnapshot = () => this.mutationSnapshot;
+  private mutationActivity(delta: number) {
+    this.mutationSnapshot = { pending: this.mutationSnapshot.pending + delta,
+      revision: this.mutationSnapshot.revision + (delta > 0 ? 1 : 0) };
+  }
 
   constructor(basePath = "/api", options: { mode?: "token" | "cookie" | "development_login"; browserConfig?: BrowserClientConfig } = {}) {
     this.development = developmentBrowserMode(options.mode, options.browserConfig);
@@ -406,7 +414,8 @@ export class ManagementClient {
     this.publish();
   }
 
-  private async request(path: string, method = "GET", body?: unknown, authorization?: string, target?: string, business?: string): Promise<unknown> {
+  private async request(path: string, method = "GET", body?: unknown, authorization?: string, target?: string, business?: string,
+    success?: { status: number; json: boolean }): Promise<unknown> {
     let response: Response;
     try {
       response = await fetch(`${this.basePath}/admin${path}`, {
@@ -435,7 +444,12 @@ export class ManagementClient {
       };
       throw new ManagementError(messages[response.status] ?? "管理服务暂时不可用，请稍后重试。", response.status);
     }
+    if (success && response.status !== success.status) throw invalidResponse();
     if (response.status === 204) return undefined;
+    if (success?.json) {
+      const contentType = response.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase();
+      if (contentType !== "application/json") throw invalidResponse();
+    }
     try { return await response.json(); } catch { throw invalidResponse(); }
   }
 
@@ -585,10 +599,11 @@ export class ManagementClient {
         } catch (error) {
           this.browserFailure(error, revision);
           throw error;
-        } finally { if (revision === this.revision) this.refreshing = undefined; }
+        }
       });
       this.refreshing = pending;
-      return pending;
+      try { return await pending; }
+      finally { if (this.refreshing === pending) this.refreshing = undefined; }
     }
     if (this.refreshing) return this.refreshing;
     if (credentials.tokens.access_expires_at_unix_secs > Date.now() / 1000 + 30) return credentials;
@@ -613,17 +628,22 @@ export class ManagementClient {
     return pending;
   }
 
-  private async authenticated(path: string, method = "GET", body?: unknown, target?: string, business?: string) {
+  private async authenticated(path: string, method = "GET", body?: unknown, target?: string, business?: string,
+    success?: { status: number; json: boolean }) {
     const revision = this.revision;
+    const mutation = method !== "GET" && !path.startsWith("/auth/");
+    if (mutation) this.mutationActivity(1);
     try {
       const c = await this.access();
       this.current(revision);
-      const result = await this.request(path, method, body, `Bearer ${c.tokens.access_token}`, target, business);
+      const result = await this.request(path, method, body, `Bearer ${c.tokens.access_token}`, target, business, success);
       this.current(revision);
       return result;
     } catch (error) {
       if (revision === this.revision && error instanceof ManagementError && error.status === 401) this.clear();
       throw error;
+    } finally {
+      if (mutation) this.mutationActivity(-1);
     }
   }
 
@@ -663,6 +683,15 @@ export class ManagementClient {
 
   async getManagedTenant(tenant: string): Promise<TenantDetail> {
     this.requireTenantPlatform(); this.requireTarget(tenant);
+    // Dot-only IDs are valid domain identifiers, but URL parsers normalize them
+    // when used as HTTP path segments. Reuse the existing exact list filter.
+    if (tenant === "." || tenant === "..") {
+      const query = new URLSearchParams({ tenant_id: tenant, limit: "2" });
+      const page = pageFrom(await this.authenticated(`/tenants?${query}`), value => tenantDetailFrom(value, tenant));
+      if (page.has_more || page.items.length > 1) throw invalidResponse();
+      if (!page.items.length) throw new ManagementError("目标资源不存在或不可见，请重新加载。", 404);
+      return page.items[0];
+    }
     return tenantDetailFrom(await this.authenticated(`/tenants/${encodeURIComponent(tenant)}`), tenant);
   }
 
@@ -676,11 +705,15 @@ export class ManagementClient {
   }
 
   async updateTenant(tenant: TenantDetail, name: string, status: ManagedTenant["status"], allowRegistration: boolean): Promise<TenantDetail> {
-    this.requireTenantPlatform(); this.requireTarget(tenant.tenant_id);
-    const result = object(await this.authenticated(`/tenants/${encodeURIComponent(tenant.tenant_id)}`, "PATCH", {
-      name, status, allow_registration: allowRegistration, expected_version: tenant.version,
-    }));
-    return tenantDetailFrom(result.tenant, tenant.tenant_id);
+    this.requireTenantPlatform(); this.requireTarget(tenant.tenant_id); requireId(tenant.tenant_id);
+    if (!Number.isSafeInteger(tenant.version) || tenant.version < 1) throw new ManagementError("租户版本无效，请重新加载。", 400);
+    const result = object(await this.authenticated("/tenants", "PATCH", {
+      tenant_id: tenant.tenant_id, name, status, allow_registration: allowRegistration, expected_version: tenant.version,
+    }, undefined, undefined, { status: 200, json: true }));
+    if (typeof result.audit_id !== "string" || !result.audit_id) throw invalidResponse();
+    const updated = tenantDetailFrom(result.tenant, tenant.tenant_id);
+    if (updated.version !== tenant.version + 1 || updated.name !== name || updated.status !== status || updated.allow_registration !== allowRegistration) throw invalidResponse();
+    return updated;
   }
 
   async listPlatformAccounts(email: string, cursor?: string, activeOnly = true, sortOrder: SortOrder = "desc"): Promise<AdminPage<Account>> {
@@ -722,10 +755,23 @@ export class ManagementClient {
   }
 
   async getClient(id: string): Promise<ManagedClient> {
-    this.requirePlatform(); requireId(id);
-    const c = clientFrom(await this.authenticated(`/clients/${encodeURIComponent(id)}`));
-    if (c.client_id !== id) throw invalidResponse();
+    const c = await this.lookupClient(id);
+    if (c === null) throw new ManagementError("目标客户端不存在或不可见，请重新加载。", 404, "client_not_found");
     return c;
+  }
+
+  async lookupClient(id: string): Promise<ManagedClient | null> {
+    this.requirePlatform(); requireId(id);
+    try {
+      const result = object(await this.authenticated(`/clients/-/lookup?client_id=${encodeURIComponent(id)}`, "GET", undefined, undefined, undefined, { status: 200, json: true }));
+      if (result.client_id !== id || !(result.client === null || object(result.client).client_id === id)) throw invalidResponse();
+      return result.client === null ? null : clientFrom(result.client);
+    } catch (error) {
+      if (error instanceof ManagementError && (error.status === 404 || error.status === 405)) {
+        throw new ManagementError("客户端精确查询未确认，请核对服务版本与管理入口挂载。", 0, "client_lookup_unconfirmed");
+      }
+      throw error;
+    }
   }
 
   async upsertClient(input: ClientConfiguration): Promise<ManagedClient> {

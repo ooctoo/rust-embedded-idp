@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "suite": "critical-e2e",
+  "status": "passed",
+  "browser_version": "156.0.8078.4",
+  "playwright_version": "1.64.1",
+  "groups": [
+    {
+      "id": "E01",
+      "status": "passed",
+      "duration_ms": 3170
+    },
+    {
+      "id": "E02",
+      "status": "passed",
+      "duration_ms": 4162
+    },
+    {
+      "id": "E03",
+      "status": "passed",
+      "duration_ms": 734
+    },
+    {
+      "id": "E04",
+      "status": "passed",
+      "duration_ms": 3338
+    },
+    {
+      "id": "E05",
+      "status": "passed",
+      "duration_ms": 2418
+    },
+    {
+      "id": "E06",
+      "status": "passed",
+      "duration_ms": 7096
+    }
+  ],
+  "complete": true,
+  "failure_stage": null,
+  "failure_diagnostic": null,
+  "page_error_count": 0,
+  "browser_closed": true,
+  "cleanup_errors": [],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "injections": [
+    "E05: HTTP errors and lost response after real write/readback",
+    "E06: client expiry/clock and refresh response delay; real server rotations"
+  ]
+}

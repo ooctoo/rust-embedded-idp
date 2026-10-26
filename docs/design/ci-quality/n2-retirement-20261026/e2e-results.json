@@ -1,0 +1,144 @@
+{
+  "schema_version": 1,
+  "suite": "critical-e2e",
+  "status": "passed",
+  "browser_version": "156.0.8078.4",
+  "playwright_version": "1.64.1",
+  "groups": [
+    {
+      "id": "E01",
+      "status": "passed",
+      "checks": [
+        {
+          "id": "E01.invalid_credentials",
+          "status": "passed"
+        },
+        {
+          "id": "E01.coordination_failure_clears_password",
+          "status": "passed"
+        },
+        {
+          "id": "E01.login_restore_logout",
+          "status": "passed"
+        }
+      ],
+      "duration_ms": 3570
+    },
+    {
+      "id": "E02",
+      "status": "passed",
+      "checks": [
+        {
+          "id": "E02.modes_and_scope",
+          "status": "passed"
+        },
+        {
+          "id": "E02.choose_cancel_complete",
+          "status": "passed"
+        },
+        {
+          "id": "E02.old_target_response",
+          "status": "passed"
+        },
+        {
+          "id": "E02.draft_and_pending_navigation_guard",
+          "status": "passed"
+        }
+      ],
+      "duration_ms": 10472
+    },
+    {
+      "id": "E03",
+      "status": "passed",
+      "checks": [
+        {
+          "id": "E03.create_and_readback",
+          "status": "passed"
+        },
+        {
+          "id": "E03.cursor_reset",
+          "status": "passed"
+        },
+        {
+          "id": "E03.authorization_write_readback",
+          "status": "passed"
+        }
+      ],
+      "duration_ms": 4028
+    },
+    {
+      "id": "E04",
+      "status": "passed",
+      "checks": [
+        {
+          "id": "E04.revoke_cancel_confirm",
+          "status": "passed"
+        }
+      ],
+      "duration_ms": 3371
+    },
+    {
+      "id": "E05",
+      "status": "passed",
+      "checks": [
+        {
+          "id": "E05.injected_read_errors",
+          "status": "passed"
+        },
+        {
+          "id": "E05.saved_read_failure",
+          "status": "passed"
+        },
+        {
+          "id": "E05.real_write_lost_response",
+          "status": "passed"
+        },
+        {
+          "id": "E05.authorization_original_scope_recovery",
+          "status": "passed"
+        },
+        {
+          "id": "E05.tenant_creation_partial_success",
+          "status": "passed"
+        },
+        {
+          "id": "E05.injected_401_exits_session",
+          "status": "passed"
+        }
+      ],
+      "duration_ms": 6980
+    },
+    {
+      "id": "E06",
+      "status": "passed",
+      "checks": [
+        {
+          "id": "E06.real_two_tab_refresh",
+          "status": "passed"
+        },
+        {
+          "id": "E06.late_response_after_logout",
+          "status": "passed"
+        }
+      ],
+      "duration_ms": 8801
+    }
+  ],
+  "complete": true,
+  "failure_stage": null,
+  "failure_diagnostic": null,
+  "page_error_count": 0,
+  "browser_closed": true,
+  "cleanup_errors": [],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "injections": [
+    "E01: coordination storage denial",
+    "E02/E06: held real responses across target/logout",
+    "E03: injected cursor pages from real client projections",
+    "E05: HTTP errors and lost response after real write/readback",
+    "E06: client expiry/clock and refresh response delay; real server rotations"
+  ]
+}

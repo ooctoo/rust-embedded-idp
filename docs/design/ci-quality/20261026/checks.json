@@ -1,0 +1,48 @@
+{
+  "workspaceTests": {
+    "exitCode": 0,
+    "passed": 478,
+    "failed": 0,
+    "ignored": 169
+  },
+  "webTests": {
+    "passed": 122,
+    "failed": 0
+  },
+  "offline": {
+    "integrationRunner": 8,
+    "e2eRunner": 7,
+    "e2eChecker": 2,
+    "sharedFixture": 6,
+    "processes": 21,
+    "n2Linux": 28,
+    "n2CI": 39,
+    "functional": 34
+  },
+  "checksPassed": [
+    "migration wrapper",
+    "cargo fmt --all -- --check",
+    "git diff --check",
+    "workflow YAML parse",
+    "relative document links"
+  ],
+  "logsSha256": {
+    "process-offline.log": "596176ed66970d05afcc7b2477ee59aea5cc4add3be4533f8356d5257f421f8a",
+    "workspace-test.log": "e372b9fb5ca2c9fcce14ff3848c39af3dbd4345579ad99c183fcb15444bf162a",
+    "n2-linux.log": "48ed2bacba83af9f23ae14fcbd24c7eee9e62e1fc4aa409d16dd618f8549b36b",
+    "fmt.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "e2e-checker-offline.log": "727cbffd3e380ebcaccaf5b1595ddb3c2a1c5627f45c56ecaf8c126bf1c421b7",
+    "workspace-test-final.log": "da7f19846521e6e664f58d40189af5df30b90106990820d1726a775a0a1c3d4d",
+    "fixture-offline.log": "c5ff9d9b2858a604c46414f05e2c9edd9b80bfac6426e1c922e16d5de32dfd47",
+    "e2e-runner-offline.log": "9d306c2a87c327d48e7ab6c98d62a3a5f8c2f4061cb6f3a4dd6c0a6a83cedfc4",
+    "integration-offline.log": "b19144e19091b8e1636bfde2cc972b420ea88b2b2bbdeae698d3f06535102e2a",
+    "n2-ci.log": "24f59e030742ae399880bf49e03a6d7fab551ac4f104a24b8be3c47fa88a7180",
+    "fmt-final.log": "f6900e06ca5d406c3c540572b9a3c10817ff978b7ca5456844845536851a3b1b",
+    "web-test.log": "e835a85e9ad6213248aed9496bca6a88f9ec8295cc8ab58ddde3c195c448df8b",
+    "migration-wrapper.log": "277c1744e972932d269b98606099efd47379005cb772a246854f8dfe24986a05",
+    "workspace-test-fixed.log": "6569d61354413de5b72c7e5394fd5bfb6f138ca30d9a221f5a2a985d11738449",
+    "n2-functional.log": "eb27debc300ec7512a5521fe951d55ca863904b13beacf03362bfcf19efa7fd2",
+    "build.log": "d314e2b8d23d87becd1f1fc5f1b087bd1e6af6a796811b2dab00052b26ee1914"
+  },
+  "remoteActionsExecuted": false
+}

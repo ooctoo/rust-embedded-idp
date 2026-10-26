@@ -1,0 +1,48 @@
+{
+  "date": "2026-10-23",
+  "baseline": "6853be0b0ab0baa46d45f478531080e78497365c",
+  "environment": {
+    "system": "Darwin",
+    "release": "25.6.0",
+    "machine": "arm64",
+    "node": "v24.19.0",
+    "pnpm": "10.28.2",
+    "cargo": "cargo 1.93.0 (083ac5135 2025-12-15)",
+    "postgres": "18.6 (Debian 18.6-1.pgdg13+2)",
+    "browser": "Google Chrome for Testing 153.0.8010.12; Chromium headless shell 1243"
+  },
+  "web": {
+    "command": "pnpm --dir web test",
+    "exitCode": 0,
+    "passed": 111,
+    "failed": 0,
+    "managementSubset": 86
+  },
+  "embeddedBundle": {
+    "command": "pnpm --dir web test:embedded-bundle",
+    "exitCode": 0,
+    "passed": 3,
+    "failed": 0
+  },
+  "nodeSyntax": {
+    "files": [
+      "scripts/check_management_n1.mjs",
+      "scripts/check_management_navigation.mjs"
+    ],
+    "exitCode": 0
+  },
+  "notRerun": [
+    "Axum98",
+    "workspace448/152ignored",
+    "host52",
+    "UI-F96",
+    "UI-E47",
+    "Web/Rust build; identical existing artifacts reused"
+  ],
+  "notes": [
+    "N1/C/D use one new owned fixture. Final B uses another fresh fixture because its dot-tenant name assertions require initial seed values.",
+    "No product/Core/storage/auth/schema/config/assembly changes in this followup.",
+    "Headless local A1 evidence only; D02-D07 remain pending; no N2-N5/M1-03-06 or pilot/deployment."
+  ],
+  "diffCheck": true
+}

@@ -1,0 +1,47 @@
+{
+  "baseline": "cbd7aaed8b22c8ca2bb04f8be2fd7c0d1db01fe8",
+  "reviewedSources": {
+    "web/management/app.tsx": "d22f4c5a22a092b63fd58e74275af9505eb90b9072a8409b2991a81b7bad4d5c",
+    "web/management/shell.tsx": "357dbe205a48d87887dfd3396ff457cee48fde091986a551bf4115ce988a5336",
+    "web/management/styles.css": "a1c501e15e7961bf5e07714f720fae947d793d3c1cbd3ae7ab212bbea096e9dd",
+    "web/management/workflow.tsx": "8426438d309960aa325f8710b5e8cb4be832b6431a58767ec20370fe933d2abc",
+    "web/management/clients.tsx": "3790338d5496d156d6d36189085a5906864d73cc8d8736b484f1a52577919156",
+    "web/management/administrators.tsx": "6f0cadda43a6775a3889f2f7ce3dc3568e2282e4c780277b3e158cc2370e854e",
+    "web/management/diagnostic.tsx": "800465ccafa2f078abff50af04e12a580c8ff23a054f753811f493c4928a64e2",
+    "web/management/roles.tsx": "017d776b9e537d7755a745f76cbe01120f8229c3ae0935a1672bade52ed37d70",
+    "scripts/check_management_console.mjs": "baaf7a7e30ca43b66420a39c58d6848ac44581a5e6cbc68c341ede42e60af581",
+    "scripts/management_console_states.mjs": "6ad11fa88d6a1f221692668b27d87eb18b8fab944d99de504dd4378cd84bfd47",
+    "scripts/management_console_pagination.mjs": "e774b3378e27dcc29dc90399625904de1b628a3dca2625e688b23e11659b9021",
+    "scripts/management_console_tenant.mjs": "9b9abb00f959af95e6731ab5bcd624f3c5a10723ca255c8c5b064be1351a0464",
+    "web/management/permission-directory.tsx": "c16045268d261bc0a8e7db44addc6965df6ee6d0f37294ce9045ea867acee483",
+    "scripts/management_console_focus.mjs": "3712cddb985cc39c0295b9449efe2a3c3fc7676b69375a7440031c918a684b12",
+    "scripts/management_console_labels.mjs": "911b5b2c4993f068fd0fe6c2d2b5ab55da2559df96046425b3438b05c56914b3"
+  },
+  "unchangedBoundarySources": {
+    "web/management/client.ts": "62117c1b9b134a30d56808bc6fb8c2362971d4709ef6c23a437719650b23e2aa",
+    "web/management/navigation.ts": "52a750e666fe68d5870c2dd4d485ca9c7ce5b3cca6ef4059f4573a4f513252a1",
+    "web/management/hash-navigation.ts": "0b8631dd72924de920de057e1f0742a0c9b96e49d4cfeb5466029c2dda9d973b",
+    "web/embedded/index.ts": "3075033ca3a30df1bf84e73fcc6711df4f56875935404a927c6e72e31efde4b9",
+    "web/embedded/browser-session.ts": "6c9dacff1b1cb33f6319e3ce0ca8385caf566857a76189c70a065f7e916a6bbd",
+    "web/embedded/admin.ts": "4959235536d1bb259e75f2444fc621ff43e4b079a64c265c008d312214d459ed",
+    "web/package.json": "bc73d597f38fdd1d54729005c7a0ee448b02b3d3bc1c78e12e33a7f80e760062",
+    "web/pnpm-lock.yaml": "df608badc42f26adec1df31006618a6e2a175b515bd7a09db6f2a2d180829f7a"
+  },
+  "unchangedRustAndEmbeddingExamples": true,
+  "note": "Revision2 reviewed sources; full UI-F96/UI-D42/host50 use the recorded compiled assets. After full96, precommit removed only one extra EOF blank line each in labels/tenant scripts; tested and final hashes are retained above, with syntax rechecked. Initial manifest remains at ../source-manifest.json.",
+  "precommitWhitespaceOnly": {
+    "files": {
+      "scripts/management_console_labels.mjs": {
+        "testedSha256": "ebfa465a90602c2bdb4403563bca49261a885666172920b86c6b4ad5d53f810e",
+        "committedSha256": "911b5b2c4993f068fd0fe6c2d2b5ab55da2559df96046425b3438b05c56914b3",
+        "change": "remove one extra blank line at EOF; executable statements unchanged"
+      },
+      "scripts/management_console_tenant.mjs": {
+        "testedSha256": "635a5e5b1cea0af959ea6cbfe68edf72fc6c425d1280401747b74191802019b9",
+        "committedSha256": "9b9abb00f959af95e6731ab5bcd624f3c5a10723ca255c8c5b064be1351a0464",
+        "change": "remove one extra blank line at EOF; executable statements unchanged"
+      }
+    },
+    "nodeSyntaxRerun": true
+  }
+}

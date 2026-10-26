@@ -1,0 +1,5941 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Device scan login HTTP contract",
+    "description": "Independent 18-operation scan contract. Browser (8) and device (10) routers are mounted separately with host-selected prefixes. Scan modes are configured per entry; UI assets are not part of this JSON API contract.",
+    "version": "3.0.0"
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ],
+  "paths": {
+    "/auth/browser/device-scan/approve": {
+      "post": {
+        "description": "Records approval; this does not activate the target session. POST JSON; body limit 16384 bytes; strict DTO rejects unknown members and duplicate JSON keys. All responses use Cache-Control: no-store. Browser guard requires configured exact Origin and x-embedded-idp-browser: 1, rejects tenant header, and accepts Sec-Fetch-Site only when absent or exactly same-origin. Cookie name/origin are host-profile values; expected_session is checked against the authenticated browser identity.",
+        "operationId": "scanBrowserApprove",
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "description": "Must exactly match configured browser origin; duplicate values rejected.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-embedded-idp-browser",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ]
+            }
+          },
+          {
+            "name": "Sec-Fetch-Site",
+            "in": "header",
+            "description": "If supplied, exactly same-origin; duplicate values rejected.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "same-origin"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApprovalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Records approval; this does not activate the target session.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanProgress"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or proof mismatch",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or expired browser session",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Boundary, admission, host-context or proof rejected",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Scan not found",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict; exchange may return exchange_already_started",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Expired or closed scan/delivery",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Scan rate limit exceeded",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Storage or host configuration unavailable",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BrowserCookie": [],
+            "BrowserHeader": [],
+            "BrowserOrigin": []
+          }
+        ],
+        "x-scan-side": "browser"
+      }
+    },
+    "/auth/browser/device-scan/attach": {
+      "post": {
+        "description": "Attaches the source session to a device display code. POST JSON; body limit 16384 bytes; strict DTO rejects unknown members and duplicate JSON keys. All responses use Cache-Control: no-store. Browser guard requires configured exact Origin and x-embedded-idp-browser: 1, rejects tenant header, and accepts Sec-Fetch-Site only when absent or exactly same-origin. Cookie name/origin are host-profile values; expected_session is checked against the authenticated browser identity.",
+        "operationId": "scanBrowserAttach",
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "description": "Must exactly match configured browser origin; duplicate values rejected.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-embedded-idp-browser",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ]
+            }
+          },
+          {
+            "name": "Sec-Fetch-Site",
+            "in": "header",
+            "description": "If supplied, exactly same-origin; duplicate values rejected.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "same-origin"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttachRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Attaches the source session to a device display code.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanConfirmation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or proof mismatch",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or expired browser session",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Boundary, admission, host-context or proof rejected",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Scan not found",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict; exchange may return exchange_already_started",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Expired or closed scan/delivery",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Scan rate limit exceeded",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Storage or host configuration unavailable",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BrowserCookie": [],
+            "BrowserHeader": [],
+            "BrowserOrigin": []
+          }
+        ],
+        "x-scan-side": "browser"
+      }
+    },
+    "/auth/browser/device-scan/cancel": {
+      "post": {
+        "description": "Cancels the pending source grant. POST JSON; body limit 16384 bytes; strict DTO rejects unknown members and duplicate JSON keys. All responses use Cache-Control: no-store. Browser guard requires configured exact Origin and x-embedded-idp-browser: 1, rejects tenant header, and accepts Sec-Fetch-Site only when absent or exactly same-origin. Cookie name/origin are host-profile values; expected_session is checked against the authenticated browser identity.",
+        "operationId": "scanBrowserCancel",
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "description": "Must exactly match configured browser origin; duplicate values rejected.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-embedded-idp-browser",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ]
+            }
+          },
+          {
+            "name": "Sec-Fetch-Site",
+            "in": "header",
+            "description": "If supplied, exactly same-origin; duplicate values rejected.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "same-origin"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GrantRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Cancels the pending source grant.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanProgress"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or proof mismatch",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or expired browser session",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Boundary, admission, host-context or proof rejected",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Scan not found",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict; exchange may return exchange_already_started",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Expired or closed scan/delivery",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Scan rate limit exceeded",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Storage or host configuration unavailable",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BrowserCookie": [],
+            "BrowserHeader": [],
+            "BrowserOrigin": []
+          }
+        ],
+        "x-scan-side": "browser"
+      }
+    },
+    "/auth/browser/device-scan/context": {
+      "post": {
+        "description": "Returns the authenticated source identity and configured scan entry. POST JSON; body limit 16384 bytes; strict DTO rejects unknown members and duplicate JSON keys. All responses use Cache-Control: no-store. Browser guard requires configured exact Origin and x-embedded-idp-browser: 1, rejects tenant header, and accepts Sec-Fetch-Site only when absent or exactly same-origin. Cookie name/origin are host-profile values; expected_session is checked against the authenticated browser identity.",
+        "operationId": "scanBrowserContext",
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "description": "Must exactly match configured browser origin; duplicate values rejected.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-embedded-idp-browser",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ]
+            }
+          },
+          {
+            "name": "Sec-Fetch-Site",
+            "in": "header",
+            "description": "If supplied, exactly same-origin; duplicate values rejected.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "same-origin"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrowserOnly"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Returns the authenticated source identity and configured scan entry.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserContext"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or proof mismatch",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or expired browser session",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Boundary, admission, host-context or proof rejected",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Scan not found",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict; exchange may return exchange_already_started",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Expired or closed scan/delivery",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Scan rate limit exceeded",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Storage or host configuration unavailable",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BrowserCookie": [],
+            "BrowserHeader": [],
+            "BrowserOrigin": []
+          }
+        ],
+        "x-scan-side": "browser"
+      }
+    },
+    "/auth/browser/device-scan/deny": {
+      "post": {
+        "description": "Denies the pending source grant. POST JSON; body limit 16384 bytes; strict DTO rejects unknown members and duplicate JSON keys. All responses use Cache-Control: no-store. Browser guard requires configured exact Origin and x-embedded-idp-browser: 1, rejects tenant header, and accepts Sec-Fetch-Site only when absent or exactly same-origin. Cookie name/origin are host-profile values; expected_session is checked against the authenticated browser identity.",
+        "operationId": "scanBrowserDeny",
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "description": "Must exactly match configured browser origin; duplicate values rejected.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-embedded-idp-browser",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ]
+            }
+          },
+          {
+            "name": "Sec-Fetch-Site",
+            "in": "header",
+            "description": "If supplied, exactly same-origin; duplicate values rejected.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "same-origin"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GrantRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Denies the pending source grant.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanProgress"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or proof mismatch",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or expired browser session",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Boundary, admission, host-context or proof rejected",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Scan not found",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict; exchange may return exchange_already_started",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Expired or closed scan/delivery",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Scan rate limit exceeded",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Storage or host configuration unavailable",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BrowserCookie": [],
+            "BrowserHeader": [],
+            "BrowserOrigin": []
+          }
+        ],
+        "x-scan-side": "browser"
+      }
+    },
+    "/auth/browser/device-scan/inspect": {
+      "post": {
+        "description": "Returns confirmation details for the source session. POST JSON; body limit 16384 bytes; strict DTO rejects unknown members and duplicate JSON keys. All responses use Cache-Control: no-store. Browser guard requires configured exact Origin and x-embedded-idp-browser: 1, rejects tenant header, and accepts Sec-Fetch-Site only when absent or exactly same-origin. Cookie name/origin are host-profile values; expected_session is checked against the authenticated browser identity.",
+        "operationId": "scanBrowserInspect",
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "description": "Must exactly match configured browser origin; duplicate values rejected.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-embedded-idp-browser",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ]
+            }
+          },
+          {
+            "name": "Sec-Fetch-Site",
+            "in": "header",
+            "description": "If supplied, exactly same-origin; duplicate values rejected.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "same-origin"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReadGrantRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Returns confirmation details for the source session.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanConfirmation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or proof mismatch",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or expired browser session",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Boundary, admission, host-context or proof rejected",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Scan not found",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict; exchange may return exchange_already_started",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Expired or closed scan/delivery",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Scan rate limit exceeded",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Storage or host configuration unavailable",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BrowserCookie": [],
+            "BrowserHeader": [],
+            "BrowserOrigin": []
+          }
+        ],
+        "x-scan-side": "browser"
+      }
+    },
+    "/auth/browser/device-scan/phone-codes": {
+      "post": {
+        "description": "Issues a phone-display scan code. POST JSON; body limit 16384 bytes; strict DTO rejects unknown members and duplicate JSON keys. All responses use Cache-Control: no-store. Browser guard requires configured exact Origin and x-embedded-idp-browser: 1, rejects tenant header, and accepts Sec-Fetch-Site only when absent or exactly same-origin. Cookie name/origin are host-profile values; expected_session is checked against the authenticated browser identity.",
+        "operationId": "scanBrowserPhoneCodes",
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "description": "Must exactly match configured browser origin; duplicate values rejected.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-embedded-idp-browser",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ]
+            }
+          },
+          {
+            "name": "Sec-Fetch-Site",
+            "in": "header",
+            "description": "If supplied, exactly same-origin; duplicate values rejected.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "same-origin"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhoneCodesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Issues a phone-display scan code.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneCodesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or proof mismatch",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or expired browser session",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Boundary, admission, host-context or proof rejected",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Scan not found",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict; exchange may return exchange_already_started",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Expired or closed scan/delivery",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Scan rate limit exceeded",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Storage or host configuration unavailable",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BrowserCookie": [],
+            "BrowserHeader": [],
+            "BrowserOrigin": []
+          }
+        ],
+        "x-scan-side": "browser"
+      }
+    },
+    "/auth/browser/device-scan/status": {
+      "post": {
+        "description": "Returns source-scoped progress. POST JSON; body limit 16384 bytes; strict DTO rejects unknown members and duplicate JSON keys. All responses use Cache-Control: no-store. Browser guard requires configured exact Origin and x-embedded-idp-browser: 1, rejects tenant header, and accepts Sec-Fetch-Site only when absent or exactly same-origin. Cookie name/origin are host-profile values; expected_session is checked against the authenticated browser identity.",
+        "operationId": "scanBrowserStatus",
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "description": "Must exactly match configured browser origin; duplicate values rejected.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-embedded-idp-browser",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ]
+            }
+          },
+          {
+            "name": "Sec-Fetch-Site",
+            "in": "header",
+            "description": "If supplied, exactly same-origin; duplicate values rejected.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "same-origin"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReadGrantRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Returns source-scoped progress.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanProgress"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or proof mismatch",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or expired browser session",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Boundary, admission, host-context or proof rejected",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Scan not found",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict; exchange may return exchange_already_started",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Expired or closed scan/delivery",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Scan rate limit exceeded",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Storage or host configuration unavailable",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BrowserCookie": [],
+            "BrowserHeader": [],
+            "BrowserOrigin": []
+          }
+        ],
+        "x-scan-side": "browser"
+      }
+    },
+    "/auth/device-scan/abort": {
+      "post": {
+        "description": "Aborts a pending delivery. HTTP 409 already_acknowledged means acknowledgement won the race and the target session is already active; preserve the bundle/session and recover or query status. Abort is not logout. POST JSON; body limit 16384 bytes; strict DTO rejects unknown members and duplicate JSON keys. All responses use Cache-Control: no-store. Proof profile is EMBEDDED-IDP-DEVICE-SCAN-V2. The signed bytes bind the proof fields (challenge, device id, key id, signed-at) to exact raw body bytes, POST method, externally prefixed path, tenant and configured audience, then append scan-context-sha256 as unpadded base64url. This is SHA-256 of the domain separator EMBEDDED-IDP-SCAN-CONTEXT-V1 plus length-prefixed canonical purpose_str, trusted target_client_id and entry_id. These trusted route-context values are not taken from request headers or body. Duplicate proof headers, query parameters and changed body are rejected. TrustedScanHostContext must also be injected by the host.",
+        "operationId": "scanDeviceAbort",
+        "parameters": [
+          {
+            "name": "x-device-id",
+            "in": "header",
+            "description": "Device identifier; non-empty visible ASCII, at most 128 bytes.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[!-~]+$"
+            }
+          },
+          {
+            "name": "x-device-key-id",
+            "in": "header",
+            "description": "Registered 32-byte Ed25519 key thumbprint, unpadded base64url.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            }
+          },
+          {
+            "name": "x-device-challenge",
+            "in": "header",
+            "description": "32-byte proof challenge, unpadded base64url.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            }
+          },
+          {
+            "name": "x-device-signature",
+            "in": "header",
+            "description": "64-byte Ed25519 signature, unpadded base64url.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{86}$"
+            }
+          },
+          {
+            "name": "x-device-signed-at",
+            "in": "header",
+            "description": "Canonical unsigned Unix seconds; no sign or leading zero except 0.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 20,
+              "minLength": 1,
+              "pattern": "^(0|[1-9][0-9]*)$"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AbortRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Aborts a pending delivery. HTTP 409 already_acknowledged means acknowledgement won the race and the target session is already active; preserve the bundle/session and recover or query status. Abort is not logout.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanProgress"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or proof mismatch",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or expired browser session",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Boundary, admission, host-context or proof rejected",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Scan not found",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict; exchange may return exchange_already_started",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Expired or closed scan/delivery",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 16384 bytes",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported JSON media type",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Scan rate limit exceeded",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Storage or host configuration unavailable",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "DeviceChallenge": [],
+            "DeviceId": [],
+            "DeviceKeyId": [],
+            "DeviceSignature": [],
+            "DeviceSignedAt": []
+          }
+        ],
+        "x-scan-side": "device"
+      }
+    },
+    "/auth/device-scan/acknowledge": {
+      "post": {
+        "description": "Acknowledges receipt and activates the pending target session. The response contains progress only, never the bundle; delivery_state=acknowledged confirms activation. After an unknown response, recover/query status before deciding whether to retry, and expose the locally persisted session only after confirmation. POST JSON; body limit 16384 bytes; strict DTO rejects unknown members and duplicate JSON keys. All responses use Cache-Control: no-store. Proof profile is EMBEDDED-IDP-DEVICE-SCAN-V2. The signed bytes bind the proof fields (challenge, device id, key id, signed-at) to exact raw body bytes, POST method, externally prefixed path, tenant and configured audience, then append scan-context-sha256 as unpadded base64url. This is SHA-256 of the domain separator EMBEDDED-IDP-SCAN-CONTEXT-V1 plus length-prefixed canonical purpose_str, trusted target_client_id and entry_id. These trusted route-context values are not taken from request headers or body. Duplicate proof headers, query parameters and changed body are rejected. TrustedScanHostContext must also be injected by the host.",
+        "operationId": "scanDeviceAcknowledge",
+        "parameters": [
+          {
+            "name": "x-device-id",
+            "in": "header",
+            "description": "Device identifier; non-empty visible ASCII, at most 128 bytes.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[!-~]+$"
+            }
+          },
+          {
+            "name": "x-device-key-id",
+            "in": "header",
+            "description": "Registered 32-byte Ed25519 key thumbprint, unpadded base64url.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            }
+          },
+          {
+            "name": "x-device-challenge",
+            "in": "header",
+            "description": "32-byte proof challenge, unpadded base64url.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            }
+          },
+          {
+            "name": "x-device-signature",
+            "in": "header",
+            "description": "64-byte Ed25519 signature, unpadded base64url.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{86}$"
+            }
+          },
+          {
+            "name": "x-device-signed-at",
+            "in": "header",
+            "description": "Canonical unsigned Unix seconds; no sign or leading zero except 0.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 20,
+              "minLength": 1,
+              "pattern": "^(0|[1-9][0-9]*)$"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcknowledgeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Acknowledges receipt and activates the pending target session. The response contains progress only, never the bundle; delivery_state=acknowledged confirms activation. After an unknown response, recover/query status before deciding whether to retry, and expose the locally persisted session only after confirmation.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanProgress"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or proof mismatch",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or expired browser session",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Boundary, admission, host-context or proof rejected",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Scan not found",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict; exchange may return exchange_already_started",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Expired or closed scan/delivery",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 16384 bytes",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported JSON media type",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Scan rate limit exceeded",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Storage or host configuration unavailable",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "DeviceChallenge": [],
+            "DeviceId": [],
+            "DeviceKeyId": [],
+            "DeviceSignature": [],
+            "DeviceSignedAt": []
+          }
+        ],
+        "x-scan-side": "device"
+      }
+    },
+    "/auth/device-scan/cancel": {
+      "post": {
+        "description": "Cancels a device-side grant. POST JSON; body limit 16384 bytes; strict DTO rejects unknown members and duplicate JSON keys. All responses use Cache-Control: no-store. Proof profile is EMBEDDED-IDP-DEVICE-SCAN-V2. The signed bytes bind the proof fields (challenge, device id, key id, signed-at) to exact raw body bytes, POST method, externally prefixed path, tenant and configured audience, then append scan-context-sha256 as unpadded base64url. This is SHA-256 of the domain separator EMBEDDED-IDP-SCAN-CONTEXT-V1 plus length-prefixed canonical purpose_str, trusted target_client_id and entry_id. These trusted route-context values are not taken from request headers or body. Duplicate proof headers, query parameters and changed body are rejected. TrustedScanHostContext must also be injected by the host.",
+        "operationId": "scanDeviceCancel",
+        "parameters": [
+          {
+            "name": "x-device-id",
+            "in": "header",
+            "description": "Device identifier; non-empty visible ASCII, at most 128 bytes.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[!-~]+$"
+            }
+          },
+          {
+            "name": "x-device-key-id",
+            "in": "header",
+            "description": "Registered 32-byte Ed25519 key thumbprint, unpadded base64url.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            }
+          },
+          {
+            "name": "x-device-challenge",
+            "in": "header",
+            "description": "32-byte proof challenge, unpadded base64url.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            }
+          },
+          {
+            "name": "x-device-signature",
+            "in": "header",
+            "description": "64-byte Ed25519 signature, unpadded base64url.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{86}$"
+            }
+          },
+          {
+            "name": "x-device-signed-at",
+            "in": "header",
+            "description": "Canonical unsigned Unix seconds; no sign or leading zero except 0.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 20,
+              "minLength": 1,
+              "pattern": "^(0|[1-9][0-9]*)$"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationAccessRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Cancels a device-side grant.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanProgress"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or proof mismatch",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or expired browser session",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Boundary, admission, host-context or proof rejected",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Scan not found",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict; exchange may return exchange_already_started",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Expired or closed scan/delivery",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 16384 bytes",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported JSON media type",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Scan rate limit exceeded",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Storage or host configuration unavailable",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "DeviceChallenge": [],
+            "DeviceId": [],
+            "DeviceKeyId": [],
+            "DeviceSignature": [],
+            "DeviceSignedAt": []
+          }
+        ],
+        "x-scan-side": "device"
+      }
+    },
+    "/auth/device-scan/claim": {
+      "post": {
+        "description": "Claims a phone-display code. For an unknown response, retry with the exact same operation_id and request values, then retain the original operation_id and delivery secret for lookup/recovery. POST JSON; body limit 16384 bytes; strict DTO rejects unknown members and duplicate JSON keys. All responses use Cache-Control: no-store. Proof profile is EMBEDDED-IDP-DEVICE-SCAN-V2. The signed bytes bind the proof fields (challenge, device id, key id, signed-at) to exact raw body bytes, POST method, externally prefixed path, tenant and configured audience, then append scan-context-sha256 as unpadded base64url. This is SHA-256 of the domain separator EMBEDDED-IDP-SCAN-CONTEXT-V1 plus length-prefixed canonical purpose_str, trusted target_client_id and entry_id. These trusted route-context values are not taken from request headers or body. Duplicate proof headers, query parameters and changed body are rejected. TrustedScanHostContext must also be injected by the host.",
+        "operationId": "scanDeviceClaim",
+        "parameters": [
+          {
+            "name": "x-device-id",
+            "in": "header",
+            "description": "Device identifier; non-empty visible ASCII, at most 128 bytes.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[!-~]+$"
+            }
+          },
+          {
+            "name": "x-device-key-id",
+            "in": "header",
+            "description": "Registered 32-byte Ed25519 key thumbprint, unpadded base64url.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            }
+          },
+          {
+            "name": "x-device-challenge",
+            "in": "header",
+            "description": "32-byte proof challenge, unpadded base64url.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            }
+          },
+          {
+            "name": "x-device-signature",
+            "in": "header",
+            "description": "64-byte Ed25519 signature, unpadded base64url.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{86}$"
+            }
+          },
+          {
+            "name": "x-device-signed-at",
+            "in": "header",
+            "description": "Canonical unsigned Unix seconds; no sign or leading zero except 0.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 20,
+              "minLength": 1,
+              "pattern": "^(0|[1-9][0-9]*)$"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClaimRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Claims a phone-display code. For an unknown response, retry with the exact same operation_id and request values, then retain the original operation_id and delivery secret for lookup/recovery.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanProgress"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or proof mismatch",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or expired browser session",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Boundary, admission, host-context or proof rejected",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Scan not found",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict; exchange may return exchange_already_started",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Expired or closed scan/delivery",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 16384 bytes",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported JSON media type",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Scan rate limit exceeded",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Storage or host configuration unavailable",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "DeviceChallenge": [],
+            "DeviceId": [],
+            "DeviceKeyId": [],
+            "DeviceSignature": [],
+            "DeviceSignedAt": []
+          }
+        ],
+        "x-scan-side": "device"
+      }
+    },
+    "/auth/device-scan/close-origin": {
+      "post": {
+        "description": "Closes an origin or reports that it was already activated. already_activated means delivery was acknowledged and the target session is active; close-origin does not revoke or log out that session. POST JSON; body limit 16384 bytes; strict DTO rejects unknown members and duplicate JSON keys. All responses use Cache-Control: no-store. Proof profile is EMBEDDED-IDP-DEVICE-SCAN-V2. The signed bytes bind the proof fields (challenge, device id, key id, signed-at) to exact raw body bytes, POST method, externally prefixed path, tenant and configured audience, then append scan-context-sha256 as unpadded base64url. This is SHA-256 of the domain separator EMBEDDED-IDP-SCAN-CONTEXT-V1 plus length-prefixed canonical purpose_str, trusted target_client_id and entry_id. These trusted route-context values are not taken from request headers or body. Duplicate proof headers, query parameters and changed body are rejected. TrustedScanHostContext must also be injected by the host.",
+        "operationId": "scanDeviceCloseOrigin",
+        "parameters": [
+          {
+            "name": "x-device-id",
+            "in": "header",
+            "description": "Device identifier; non-empty visible ASCII, at most 128 bytes.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[!-~]+$"
+            }
+          },
+          {
+            "name": "x-device-key-id",
+            "in": "header",
+            "description": "Registered 32-byte Ed25519 key thumbprint, unpadded base64url.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            }
+          },
+          {
+            "name": "x-device-challenge",
+            "in": "header",
+            "description": "32-byte proof challenge, unpadded base64url.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            }
+          },
+          {
+            "name": "x-device-signature",
+            "in": "header",
+            "description": "64-byte Ed25519 signature, unpadded base64url.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{86}$"
+            }
+          },
+          {
+            "name": "x-device-signed-at",
+            "in": "header",
+            "description": "Canonical unsigned Unix seconds; no sign or leading zero except 0.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 20,
+              "minLength": 1,
+              "pattern": "^(0|[1-9][0-9]*)$"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloseOriginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Closes an origin or reports that it was already activated. already_activated means delivery was acknowledged and the target session is active; close-origin does not revoke or log out that session.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloseOriginResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or proof mismatch",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or expired browser session",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Boundary, admission, host-context or proof rejected",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Scan not found",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict; exchange may return exchange_already_started",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Expired or closed scan/delivery",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 16384 bytes",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported JSON media type",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Scan rate limit exceeded",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Storage or host configuration unavailable",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "DeviceChallenge": [],
+            "DeviceId": [],
+            "DeviceKeyId": [],
+            "DeviceSignature": [],
+            "DeviceSignedAt": []
+          }
+        ],
+        "x-scan-side": "device"
+      }
+    },
+    "/auth/device-scan/create": {
+      "post": {
+        "description": "Creates a device-display origin. For an unknown response, retry with the exact same operation_id, entry_id, tenant_id and delivery_secret_hash; persist the original operation_id and delivery secret so lookup can recover the result. POST JSON; body limit 16384 bytes; strict DTO rejects unknown members and duplicate JSON keys. All responses use Cache-Control: no-store. Proof profile is EMBEDDED-IDP-DEVICE-SCAN-V2. The signed bytes bind the proof fields (challenge, device id, key id, signed-at) to exact raw body bytes, POST method, externally prefixed path, tenant and configured audience, then append scan-context-sha256 as unpadded base64url. This is SHA-256 of the domain separator EMBEDDED-IDP-SCAN-CONTEXT-V1 plus length-prefixed canonical purpose_str, trusted target_client_id and entry_id. These trusted route-context values are not taken from request headers or body. Duplicate proof headers, query parameters and changed body are rejected. TrustedScanHostContext must also be injected by the host.",
+        "operationId": "scanDeviceCreate",
+        "parameters": [
+          {
+            "name": "x-device-id",
+            "in": "header",
+            "description": "Device identifier; non-empty visible ASCII, at most 128 bytes.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[!-~]+$"
+            }
+          },
+          {
+            "name": "x-device-key-id",
+            "in": "header",
+            "description": "Registered 32-byte Ed25519 key thumbprint, unpadded base64url.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            }
+          },
+          {
+            "name": "x-device-challenge",
+            "in": "header",
+            "description": "32-byte proof challenge, unpadded base64url.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            }
+          },
+          {
+            "name": "x-device-signature",
+            "in": "header",
+            "description": "64-byte Ed25519 signature, unpadded base64url.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{86}$"
+            }
+          },
+          {
+            "name": "x-device-signed-at",
+            "in": "header",
+            "description": "Canonical unsigned Unix seconds; no sign or leading zero except 0.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 20,
+              "minLength": 1,
+              "pattern": "^(0|[1-9][0-9]*)$"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Creates a device-display origin. For an unknown response, retry with the exact same operation_id, entry_id, tenant_id and delivery_secret_hash; persist the original operation_id and delivery secret so lookup can recover the result.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or proof mismatch",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or expired browser session",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Boundary, admission, host-context or proof rejected",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Scan not found",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict; exchange may return exchange_already_started",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Expired or closed scan/delivery",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 16384 bytes",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported JSON media type",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Scan rate limit exceeded",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Storage or host configuration unavailable",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "DeviceChallenge": [],
+            "DeviceId": [],
+            "DeviceKeyId": [],
+            "DeviceSignature": [],
+            "DeviceSignedAt": []
+          }
+        ],
+        "x-scan-side": "device"
+      }
+    },
+    "/auth/device-scan/exchange": {
+      "post": {
+        "description": "Starts delivery using the operation_id as the fixed issuance_operation_id. On exchange_already_started, use the returned existing issuance_operation_id. Delivery may be progress-only or a token bundle; the bundle remains Pending until acknowledge succeeds. POST JSON; body limit 16384 bytes; strict DTO rejects unknown members and duplicate JSON keys. All responses use Cache-Control: no-store. Proof profile is EMBEDDED-IDP-DEVICE-SCAN-V2. The signed bytes bind the proof fields (challenge, device id, key id, signed-at) to exact raw body bytes, POST method, externally prefixed path, tenant and configured audience, then append scan-context-sha256 as unpadded base64url. This is SHA-256 of the domain separator EMBEDDED-IDP-SCAN-CONTEXT-V1 plus length-prefixed canonical purpose_str, trusted target_client_id and entry_id. These trusted route-context values are not taken from request headers or body. Duplicate proof headers, query parameters and changed body are rejected. TrustedScanHostContext must also be injected by the host.",
+        "operationId": "scanDeviceExchange",
+        "parameters": [
+          {
+            "name": "x-device-id",
+            "in": "header",
+            "description": "Device identifier; non-empty visible ASCII, at most 128 bytes.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[!-~]+$"
+            }
+          },
+          {
+            "name": "x-device-key-id",
+            "in": "header",
+            "description": "Registered 32-byte Ed25519 key thumbprint, unpadded base64url.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            }
+          },
+          {
+            "name": "x-device-challenge",
+            "in": "header",
+            "description": "32-byte proof challenge, unpadded base64url.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            }
+          },
+          {
+            "name": "x-device-signature",
+            "in": "header",
+            "description": "64-byte Ed25519 signature, unpadded base64url.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{86}$"
+            }
+          },
+          {
+            "name": "x-device-signed-at",
+            "in": "header",
+            "description": "Canonical unsigned Unix seconds; no sign or leading zero except 0.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 20,
+              "minLength": 1,
+              "pattern": "^(0|[1-9][0-9]*)$"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationAccessRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Starts delivery using the operation_id as the fixed issuance_operation_id. On exchange_already_started, use the returned existing issuance_operation_id. Delivery may be progress-only or a token bundle; the bundle remains Pending until acknowledge succeeds.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or proof mismatch",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or expired browser session",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Boundary, admission, host-context or proof rejected",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Scan not found",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict; exchange may return exchange_already_started",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ScanError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ExchangeAlreadyStarted"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Expired or closed scan/delivery",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 16384 bytes",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported JSON media type",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Scan rate limit exceeded",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Storage or host configuration unavailable",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "DeviceChallenge": [],
+            "DeviceId": [],
+            "DeviceKeyId": [],
+            "DeviceSignature": [],
+            "DeviceSignedAt": []
+          }
+        ],
+        "x-scan-side": "device"
+      }
+    },
+    "/auth/device-scan/lookup": {
+      "post": {
+        "description": "Looks up an origin; origin_action is optional for compatibility. A scan_not_found 404 is nonterminal: retain the original create/claim action, operation_id and delivery secret, and retry lookup; do not create a replacement origin solely because of this response. POST JSON; body limit 16384 bytes; strict DTO rejects unknown members and duplicate JSON keys. All responses use Cache-Control: no-store. Proof profile is EMBEDDED-IDP-DEVICE-SCAN-V2. The signed bytes bind the proof fields (challenge, device id, key id, signed-at) to exact raw body bytes, POST method, externally prefixed path, tenant and configured audience, then append scan-context-sha256 as unpadded base64url. This is SHA-256 of the domain separator EMBEDDED-IDP-SCAN-CONTEXT-V1 plus length-prefixed canonical purpose_str, trusted target_client_id and entry_id. These trusted route-context values are not taken from request headers or body. Duplicate proof headers, query parameters and changed body are rejected. TrustedScanHostContext must also be injected by the host.",
+        "operationId": "scanDeviceLookup",
+        "parameters": [
+          {
+            "name": "x-device-id",
+            "in": "header",
+            "description": "Device identifier; non-empty visible ASCII, at most 128 bytes.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[!-~]+$"
+            }
+          },
+          {
+            "name": "x-device-key-id",
+            "in": "header",
+            "description": "Registered 32-byte Ed25519 key thumbprint, unpadded base64url.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            }
+          },
+          {
+            "name": "x-device-challenge",
+            "in": "header",
+            "description": "32-byte proof challenge, unpadded base64url.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            }
+          },
+          {
+            "name": "x-device-signature",
+            "in": "header",
+            "description": "64-byte Ed25519 signature, unpadded base64url.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{86}$"
+            }
+          },
+          {
+            "name": "x-device-signed-at",
+            "in": "header",
+            "description": "Canonical unsigned Unix seconds; no sign or leading zero except 0.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 20,
+              "minLength": 1,
+              "pattern": "^(0|[1-9][0-9]*)$"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LookupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Looks up an origin; origin_action is optional for compatibility. A scan_not_found 404 is nonterminal: retain the original create/claim action, operation_id and delivery secret, and retry lookup; do not create a replacement origin solely because of this response.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LookupResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or proof mismatch",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or expired browser session",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Boundary, admission, host-context or proof rejected",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Scan not found",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict; exchange may return exchange_already_started",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Expired or closed scan/delivery",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 16384 bytes",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported JSON media type",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Scan rate limit exceeded",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Storage or host configuration unavailable",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "DeviceChallenge": [],
+            "DeviceId": [],
+            "DeviceKeyId": [],
+            "DeviceSignature": [],
+            "DeviceSignedAt": []
+          }
+        ],
+        "x-scan-side": "device"
+      }
+    },
+    "/auth/device-scan/recover": {
+      "post": {
+        "description": "Recovers delivery using the original issuance_operation_id; it does not issue a second session. The response may be progress-only (including after acknowledgement) or the same pending bundle. POST JSON; body limit 16384 bytes; strict DTO rejects unknown members and duplicate JSON keys. All responses use Cache-Control: no-store. Proof profile is EMBEDDED-IDP-DEVICE-SCAN-V2. The signed bytes bind the proof fields (challenge, device id, key id, signed-at) to exact raw body bytes, POST method, externally prefixed path, tenant and configured audience, then append scan-context-sha256 as unpadded base64url. This is SHA-256 of the domain separator EMBEDDED-IDP-SCAN-CONTEXT-V1 plus length-prefixed canonical purpose_str, trusted target_client_id and entry_id. These trusted route-context values are not taken from request headers or body. Duplicate proof headers, query parameters and changed body are rejected. TrustedScanHostContext must also be injected by the host.",
+        "operationId": "scanDeviceRecover",
+        "parameters": [
+          {
+            "name": "x-device-id",
+            "in": "header",
+            "description": "Device identifier; non-empty visible ASCII, at most 128 bytes.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[!-~]+$"
+            }
+          },
+          {
+            "name": "x-device-key-id",
+            "in": "header",
+            "description": "Registered 32-byte Ed25519 key thumbprint, unpadded base64url.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            }
+          },
+          {
+            "name": "x-device-challenge",
+            "in": "header",
+            "description": "32-byte proof challenge, unpadded base64url.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            }
+          },
+          {
+            "name": "x-device-signature",
+            "in": "header",
+            "description": "64-byte Ed25519 signature, unpadded base64url.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{86}$"
+            }
+          },
+          {
+            "name": "x-device-signed-at",
+            "in": "header",
+            "description": "Canonical unsigned Unix seconds; no sign or leading zero except 0.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 20,
+              "minLength": 1,
+              "pattern": "^(0|[1-9][0-9]*)$"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecoverRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Recovers delivery using the original issuance_operation_id; it does not issue a second session. The response may be progress-only (including after acknowledgement) or the same pending bundle.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or proof mismatch",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or expired browser session",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Boundary, admission, host-context or proof rejected",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Scan not found",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict; exchange may return exchange_already_started",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Expired or closed scan/delivery",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 16384 bytes",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported JSON media type",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Scan rate limit exceeded",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Storage or host configuration unavailable",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "DeviceChallenge": [],
+            "DeviceId": [],
+            "DeviceKeyId": [],
+            "DeviceSignature": [],
+            "DeviceSignedAt": []
+          }
+        ],
+        "x-scan-side": "device"
+      }
+    },
+    "/auth/device-scan/status": {
+      "post": {
+        "description": "Returns delivery progress. POST JSON; body limit 16384 bytes; strict DTO rejects unknown members and duplicate JSON keys. All responses use Cache-Control: no-store. Proof profile is EMBEDDED-IDP-DEVICE-SCAN-V2. The signed bytes bind the proof fields (challenge, device id, key id, signed-at) to exact raw body bytes, POST method, externally prefixed path, tenant and configured audience, then append scan-context-sha256 as unpadded base64url. This is SHA-256 of the domain separator EMBEDDED-IDP-SCAN-CONTEXT-V1 plus length-prefixed canonical purpose_str, trusted target_client_id and entry_id. These trusted route-context values are not taken from request headers or body. Duplicate proof headers, query parameters and changed body are rejected. TrustedScanHostContext must also be injected by the host.",
+        "operationId": "scanDeviceStatus",
+        "parameters": [
+          {
+            "name": "x-device-id",
+            "in": "header",
+            "description": "Device identifier; non-empty visible ASCII, at most 128 bytes.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[!-~]+$"
+            }
+          },
+          {
+            "name": "x-device-key-id",
+            "in": "header",
+            "description": "Registered 32-byte Ed25519 key thumbprint, unpadded base64url.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            }
+          },
+          {
+            "name": "x-device-challenge",
+            "in": "header",
+            "description": "32-byte proof challenge, unpadded base64url.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$"
+            }
+          },
+          {
+            "name": "x-device-signature",
+            "in": "header",
+            "description": "64-byte Ed25519 signature, unpadded base64url.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{86}$"
+            }
+          },
+          {
+            "name": "x-device-signed-at",
+            "in": "header",
+            "description": "Canonical unsigned Unix seconds; no sign or leading zero except 0.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 20,
+              "minLength": 1,
+              "pattern": "^(0|[1-9][0-9]*)$"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReadAccessRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Returns delivery progress.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanProgress"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or proof mismatch",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or expired browser session",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Boundary, admission, host-context or proof rejected",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Scan not found",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict; exchange may return exchange_already_started",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Expired or closed scan/delivery",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 16384 bytes",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported JSON media type",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Scan rate limit exceeded",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Storage or host configuration unavailable",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "DeviceChallenge": [],
+            "DeviceId": [],
+            "DeviceKeyId": [],
+            "DeviceSignature": [],
+            "DeviceSignedAt": []
+          }
+        ],
+        "x-scan-side": "device"
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AbortRequest": {
+        "type": "object",
+        "required": [
+          "delivery_secret",
+          "grant_id",
+          "issuance_operation_id",
+          "operation_id",
+          "tenant_id"
+        ],
+        "properties": {
+          "delivery_secret": {
+            "type": "string"
+          },
+          "grant_id": {
+            "type": "string"
+          },
+          "issuance_operation_id": {
+            "type": "string"
+          },
+          "operation_id": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AcknowledgeRequest": {
+        "type": "object",
+        "required": [
+          "delivery_secret",
+          "grant_id",
+          "issuance_operation_id",
+          "operation_id",
+          "receipt_nonce",
+          "tenant_id"
+        ],
+        "properties": {
+          "delivery_secret": {
+            "type": "string"
+          },
+          "grant_id": {
+            "type": "string"
+          },
+          "issuance_operation_id": {
+            "type": "string"
+          },
+          "operation_id": {
+            "type": "string"
+          },
+          "receipt_nonce": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ApprovalRequest": {
+        "type": "object",
+        "required": [
+          "confirmation_revision",
+          "expected_session",
+          "grant_id",
+          "operation_id"
+        ],
+        "properties": {
+          "confirmation_revision": {
+            "type": "string"
+          },
+          "expected_session": {
+            "$ref": "#/components/schemas/ExpectedSession"
+          },
+          "grant_id": {
+            "type": "string"
+          },
+          "operation_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AttachRequest": {
+        "type": "object",
+        "required": [
+          "display_code",
+          "expected_session",
+          "operation_id"
+        ],
+        "properties": {
+          "display_code": {
+            "type": "string"
+          },
+          "expected_session": {
+            "$ref": "#/components/schemas/ExpectedSession"
+          },
+          "operation_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "BrowserContext": {
+        "type": "object",
+        "required": [
+          "account_id",
+          "client_id",
+          "entry",
+          "session_id",
+          "tenant_id"
+        ],
+        "properties": {
+          "account_id": {
+            "type": "string"
+          },
+          "client_id": {
+            "type": "string"
+          },
+          "entry": {
+            "$ref": "#/components/schemas/ScanEntry"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "BrowserOnly": {
+        "type": "object",
+        "properties": {
+          "expected_session": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ExpectedSession"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "ClaimRequest": {
+        "type": "object",
+        "required": [
+          "delivery_secret_hash",
+          "entry_id",
+          "operation_id",
+          "scan_code",
+          "tenant_id"
+        ],
+        "properties": {
+          "delivery_secret_hash": {
+            "type": "string",
+            "description": "Unpadded base64url encoding of exactly 32 bytes.",
+            "pattern": "^[A-Za-z0-9_-]{43}$"
+          },
+          "entry_id": {
+            "type": "string"
+          },
+          "operation_id": {
+            "type": "string"
+          },
+          "scan_code": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CloseOriginRequest": {
+        "type": "object",
+        "required": [
+          "delivery_secret",
+          "entry_id",
+          "origin_action",
+          "origin_operation_id",
+          "tenant_id"
+        ],
+        "properties": {
+          "delivery_secret": {
+            "type": "string"
+          },
+          "entry_id": {
+            "type": "string"
+          },
+          "origin_action": {
+            "type": "string",
+            "enum": [
+              "create",
+              "claim"
+            ]
+          },
+          "origin_operation_id": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CloseOriginResponse": {
+        "type": "object",
+        "required": [
+          "closed_at_unix_secs",
+          "origin_action",
+          "origin_operation_id",
+          "outcome",
+          "progress"
+        ],
+        "properties": {
+          "closed_at_unix_secs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "origin_action": {
+            "type": "string",
+            "enum": [
+              "create",
+              "claim"
+            ]
+          },
+          "origin_operation_id": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "closed",
+              "already_activated"
+            ]
+          },
+          "progress": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ScanProgress"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreateRequest": {
+        "type": "object",
+        "required": [
+          "delivery_secret_hash",
+          "entry_id",
+          "operation_id",
+          "tenant_id"
+        ],
+        "properties": {
+          "delivery_secret_hash": {
+            "type": "string",
+            "description": "Unpadded base64url encoding of exactly 32 bytes.",
+            "pattern": "^[A-Za-z0-9_-]{43}$"
+          },
+          "entry_id": {
+            "type": "string"
+          },
+          "operation_id": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreateResponse": {
+        "type": "object",
+        "required": [
+          "display_code",
+          "progress",
+          "verification_uri"
+        ],
+        "properties": {
+          "display_code": {
+            "type": "string"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/ScanProgress"
+          },
+          "verification_uri": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "DeliveryBundle": {
+        "type": "object",
+        "required": [
+          "progress",
+          "receipt_nonce",
+          "session",
+          "tokens"
+        ],
+        "properties": {
+          "progress": {
+            "$ref": "#/components/schemas/ScanProgress"
+          },
+          "receipt_nonce": {
+            "type": "string"
+          },
+          "session": {
+            "type": "object",
+            "required": [
+              "account_id",
+              "client_id",
+              "expires_at_unix_secs",
+              "session_id",
+              "tenant_id"
+            ],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "client_id": {
+                "type": "string"
+              },
+              "expires_at_unix_secs": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "session_id": {
+                "type": "string"
+              },
+              "tenant_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          "tokens": {
+            "type": "object",
+            "required": [
+              "access_expires_at_unix_secs",
+              "access_token",
+              "refresh_expires_at_unix_secs",
+              "refresh_token"
+            ],
+            "properties": {
+              "access_expires_at_unix_secs": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "access_token": {
+                "type": "string"
+              },
+              "refresh_expires_at_unix_secs": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "refresh_token": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      "DeliveryProgress": {
+        "type": "object",
+        "required": [
+          "progress"
+        ],
+        "properties": {
+          "progress": {
+            "$ref": "#/components/schemas/ScanProgress"
+          }
+        },
+        "additionalProperties": false
+      },
+      "DeliveryResponse": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/DeliveryProgress"
+          },
+          {
+            "$ref": "#/components/schemas/DeliveryBundle"
+          }
+        ],
+        "description": "Exchange/recover may return progress while delivery is pending, or a token bundle that remains Pending until acknowledge succeeds."
+      },
+      "ExchangeAlreadyStarted": {
+        "type": "object",
+        "required": [
+          "error",
+          "issuance_operation_id",
+          "message",
+          "request_id",
+          "retryable"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "enum": [
+              "exchange_already_started"
+            ]
+          },
+          "issuance_operation_id": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "retryable": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ExpectedSession": {
+        "type": "object",
+        "required": [
+          "account_id",
+          "client_id",
+          "session_id",
+          "tenant_id"
+        ],
+        "properties": {
+          "account_id": {
+            "type": "string"
+          },
+          "client_id": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "GrantRequest": {
+        "type": "object",
+        "required": [
+          "expected_session",
+          "grant_id",
+          "operation_id"
+        ],
+        "properties": {
+          "expected_session": {
+            "$ref": "#/components/schemas/ExpectedSession"
+          },
+          "grant_id": {
+            "type": "string"
+          },
+          "operation_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "LookupRequest": {
+        "type": "object",
+        "required": [
+          "delivery_secret",
+          "entry_id",
+          "origin_operation_id",
+          "tenant_id"
+        ],
+        "properties": {
+          "delivery_secret": {
+            "type": "string"
+          },
+          "entry_id": {
+            "type": "string"
+          },
+          "origin_action": {
+            "oneOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "create",
+                  "claim"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "origin_operation_id": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "LookupResponse": {
+        "type": "object",
+        "required": [
+          "display_code",
+          "origin_operation_id",
+          "progress"
+        ],
+        "properties": {
+          "display_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "origin_operation_id": {
+            "type": "string"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/ScanProgress"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OperationAccessRequest": {
+        "type": "object",
+        "required": [
+          "delivery_secret",
+          "grant_id",
+          "operation_id",
+          "tenant_id"
+        ],
+        "properties": {
+          "delivery_secret": {
+            "type": "string"
+          },
+          "grant_id": {
+            "type": "string"
+          },
+          "operation_id": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PhoneCodesRequest": {
+        "type": "object",
+        "required": [
+          "entry_id",
+          "expected_session",
+          "operation_id"
+        ],
+        "properties": {
+          "entry_id": {
+            "type": "string"
+          },
+          "expected_session": {
+            "$ref": "#/components/schemas/ExpectedSession"
+          },
+          "operation_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PhoneCodesResponse": {
+        "type": "object",
+        "required": [
+          "code_expires_at_unix_secs",
+          "progress",
+          "scan_code"
+        ],
+        "properties": {
+          "code_expires_at_unix_secs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "progress": {
+            "$ref": "#/components/schemas/ScanProgress"
+          },
+          "scan_code": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ReadAccessRequest": {
+        "type": "object",
+        "required": [
+          "delivery_secret",
+          "grant_id",
+          "tenant_id"
+        ],
+        "properties": {
+          "delivery_secret": {
+            "type": "string"
+          },
+          "grant_id": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ReadGrantRequest": {
+        "type": "object",
+        "required": [
+          "expected_session",
+          "grant_id"
+        ],
+        "properties": {
+          "expected_session": {
+            "$ref": "#/components/schemas/ExpectedSession"
+          },
+          "grant_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RecoverRequest": {
+        "type": "object",
+        "required": [
+          "delivery_secret",
+          "grant_id",
+          "issuance_operation_id",
+          "tenant_id"
+        ],
+        "properties": {
+          "delivery_secret": {
+            "type": "string"
+          },
+          "grant_id": {
+            "type": "string"
+          },
+          "issuance_operation_id": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ScanConfirmation": {
+        "type": "object",
+        "required": [
+          "confirmation_revision",
+          "progress",
+          "source",
+          "target"
+        ],
+        "properties": {
+          "confirmation_revision": {
+            "type": "string"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/ScanProgress"
+          },
+          "source": {
+            "type": "object",
+            "required": [
+              "account_id",
+              "client_id",
+              "display_name",
+              "session_id"
+            ],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "client_id": {
+                "type": "string"
+              },
+              "display_name": {
+                "type": "string"
+              },
+              "session_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          "target": {
+            "type": "object",
+            "required": [
+              "context_label",
+              "device_id",
+              "display_name",
+              "identification",
+              "revision"
+            ],
+            "properties": {
+              "context_label": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "device_id": {
+                "type": "string"
+              },
+              "display_name": {
+                "type": "string"
+              },
+              "identification": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      "ScanEntry": {
+        "type": "object",
+        "required": [
+          "entry_id",
+          "modes",
+          "target_client_id"
+        ],
+        "properties": {
+          "entry_id": {
+            "type": "string"
+          },
+          "modes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "device_display",
+                "phone_display"
+              ]
+            },
+            "minItems": 1,
+            "uniqueItems": true
+          },
+          "target_client_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ScanError": {
+        "type": "object",
+        "required": [
+          "error",
+          "message",
+          "request_id",
+          "retryable",
+          "terminal"
+        ],
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "retryable": {
+            "type": "boolean"
+          },
+          "terminal": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ScanProgress": {
+        "type": "object",
+        "required": [
+          "approved_until_unix_secs",
+          "code_expires_at_unix_secs",
+          "delivery_state",
+          "expires_at_unix_secs",
+          "expires_in",
+          "grant_id",
+          "issuance_operation_id",
+          "mode",
+          "next_action",
+          "poll_after_ms",
+          "recover_until_unix_secs",
+          "server_time_unix_secs",
+          "state",
+          "version"
+        ],
+        "properties": {
+          "approved_until_unix_secs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "code_expires_at_unix_secs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "delivery_state": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "recoverable",
+              "acknowledged",
+              "revoked",
+              null
+            ]
+          },
+          "expires_at_unix_secs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "expires_in": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "grant_id": {
+            "type": "string"
+          },
+          "issuance_operation_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "device_display",
+              "phone_display"
+            ]
+          },
+          "next_action": {
+            "type": "string",
+            "enum": [
+              "use_local_session",
+              "persist_then_acknowledge",
+              "restart",
+              "exchange",
+              "wait_for_phone_scan",
+              "wait_for_device_scan",
+              "confirm_on_phone"
+            ]
+          },
+          "poll_after_ms": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "recover_until_unix_secs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "server_time_unix_secs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "waiting_user",
+              "waiting_device",
+              "awaiting_approval",
+              "approved",
+              "issued",
+              "denied",
+              "cancelled",
+              "expired",
+              "invalidated"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "securitySchemes": {
+      "BrowserCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "HOST_CONFIGURED_COOKIE",
+        "description": "Placeholder only: substitute the entry-specific BrowserSessionHttpConfig cookie_name; no global cookie name."
+      },
+      "BrowserHeader": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-embedded-idp-browser",
+        "description": "Exactly 1."
+      },
+      "BrowserOrigin": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "Origin",
+        "description": "Exact configured origin; host-specific."
+      },
+      "DeviceChallenge": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-device-challenge"
+      },
+      "DeviceId": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-device-id"
+      },
+      "DeviceKeyId": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-device-key-id"
+      },
+      "DeviceSignature": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-device-signature"
+      },
+      "DeviceSignedAt": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-device-signed-at"
+      }
+    }
+  }
+}

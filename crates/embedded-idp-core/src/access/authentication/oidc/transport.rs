@@ -66,3 +66,39 @@ where
         }
     }
 }
+
+/// Ordinary OIDC transport without device-proof dependencies. Supplying proof
+/// never downgrades to the ordinary exchange path.
+impl<S, T, G, D, C, I, V> TenantOidcAuthorizationService
+    for CoreTenantOidcService<S, T, G, D, C, I, V>
+where
+    S: TenantAuthStore,
+    for<'a> S::Transaction<'a>: TenantOidcTransaction,
+    T: TokenIssuer + AccessTokenValidator + ScopedAccessTokenIssuer + IdTokenIssuer + Send + Sync,
+    G: RefreshTokenGenerator + Send + Sync,
+    D: RefreshTokenDigester + Send + Sync,
+    C: Clock + Send + Sync,
+    I: IdGenerator + Send + Sync,
+    V: ClientSecretVerifier + Send + Sync,
+{
+    fn authenticate(&self, access: SecretString) -> Result<AccessActor, TenantAuthError> {
+        self.auth.authenticate(access)
+    }
+    fn authorize(
+        &self,
+        actor: AccessActor,
+        request: TenantAuthorizationRequest,
+    ) -> Result<TenantAuthorizationResult, TenantAuthError> {
+        self.authorize(actor, request)
+    }
+    fn exchange(
+        &self,
+        command: TenantCodeExchange,
+        proof: Option<TenantAuthenticationProof>,
+    ) -> Result<TenantCodeExchangeResult, TenantAuthError> {
+        if proof.is_some() {
+            return Err(TenantAuthError::DeviceProofRequired);
+        }
+        self.exchange(command)
+    }
+}

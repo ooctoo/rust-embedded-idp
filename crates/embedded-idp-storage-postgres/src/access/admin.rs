@@ -5,10 +5,10 @@ use serde_json::{json, Value};
 
 /// Created only by the store runner; every operation stays on one pooled connection.
 pub struct PostgresAccessAdminTransaction<'a> {
-    tx: Transaction<'a>,
-    schema: &'a str,
-    mode: TenancyMode,
-    actor: Option<Uuid>,
+    pub(super) tx: Transaction<'a>,
+    pub(super) schema: &'a str,
+    pub(super) mode: TenancyMode,
+    pub(super) actor: Option<Uuid>,
 }
 
 pub(crate) fn check_readiness(

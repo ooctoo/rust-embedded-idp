@@ -1,0 +1,681 @@
+{
+  "logSha256": "35aeebd121c5c916c77370241ace6af13b9b215cca8a8bbb1d827517c17d857e",
+  "cases": [
+    {
+      "name": "access_lists_page_without_cross_tenant_or_subject_data",
+      "status": "ok"
+    },
+    {
+      "name": "device_credentials_stay_in_their_tenant_and_layout_damage_is_rejected",
+      "status": "ok"
+    },
+    {
+      "name": "access_registration_and_database_constraints_keep_membership_atomic",
+      "status": "ok"
+    },
+    {
+      "name": "scan_login_migration::scan_login_do_migrates_v4_idempotently_and_rolls_back_on_version_write_failure",
+      "status": "ok"
+    },
+    {
+      "name": "list_time_upgrade_preserves_unknown_history_and_is_repeatable",
+      "status": "ok"
+    },
+    {
+      "name": "database_serializes_concurrent_last_membership_removals",
+      "status": "ok"
+    },
+    {
+      "name": "scan_origin_closure_primary_key_damage_rejects_v6_readiness",
+      "status": "ok"
+    },
+    {
+      "name": "scan_login_origin_closure_migration::scan_origin_closure_do_migrates_v5_idempotently_and_rolls_back_on_version_write_failure",
+      "status": "ok"
+    },
+    {
+      "name": "access_sql_checks_exact_scopes_status_revocation_and_batch_order_in_both_modes",
+      "status": "ok"
+    },
+    {
+      "name": "access_initialization_is_atomic_idempotent_and_allows_host_tables",
+      "status": "ok"
+    },
+    {
+      "name": "schema_inspection_ignores_unrelated_concurrent_ddl",
+      "status": "ok"
+    },
+    {
+      "name": "admin_transaction_panic_rolls_back_and_returns_a_usable_connection",
+      "status": "ok"
+    },
+    {
+      "name": "account_security::concurrent_platform_account_disables_cannot_remove_the_last_effective_admin",
+      "status": "ok"
+    },
+    {
+      "name": "accounts::concurrent_http_member_removal_preserves_one_membership_and_duplicate_binding_is_idempotent",
+      "status": "ok"
+    },
+    {
+      "name": "accounts::account_admin_queries_in_both_modes_hide_secrets_and_bind_filters_and_scope",
+      "status": "ok"
+    },
+    {
+      "name": "accounts::member_http_changes_are_tenant_scoped_atomic_and_rebinding_does_not_restore_credentials",
+      "status": "ok"
+    },
+    {
+      "name": "clients::client_admin_rejects_tenant_actors_and_observes_platform_permission_and_session_revocation",
+      "status": "ok"
+    },
+    {
+      "name": "admin_role_lifecycle_versions_and_domain_isolation_work_in_both_modes",
+      "status": "ok"
+    },
+    {
+      "name": "clients::management_preparation_racing_online_upsert_never_reverts_online_definition",
+      "status": "ok"
+    },
+    {
+      "name": "concurrent_last_tenant_security_admin_revocation_keeps_one_effective_admin",
+      "status": "ok"
+    },
+    {
+      "name": "audit::audit_http_pages_metadata_with_bound_filters_and_reads_immutable_scoped_details",
+      "status": "ok"
+    },
+    {
+      "name": "audit::audit_http_requires_separate_live_audit_authority_and_rejects_invalid_queries",
+      "status": "ok"
+    },
+    {
+      "name": "account_security::account_security_reset_retires_every_tenant_credential_and_rolls_back_on_failure",
+      "status": "ok"
+    },
+    {
+      "name": "clients::concurrent_client_updates_preserve_the_current_secret_and_audit_each_commit",
+      "status": "ok"
+    },
+    {
+      "name": "devices::device_admin_rechecks_tenant_grants_and_actor_device_authority",
+      "status": "ok"
+    },
+    {
+      "name": "devices::device_revocation_serializes_with_waiting_authentication",
+      "status": "ok"
+    },
+    {
+      "name": "account_security::account_security_create_is_atomic_requires_a_tenant_and_never_returns_passwords",
+      "status": "ok"
+    },
+    {
+      "name": "devices::admin_unbind_cleans_only_the_exact_binding_and_rolls_back_with_audit",
+      "status": "ok"
+    },
+    {
+      "name": "devices::device_admin_http_is_scoped_and_disable_revoke_cleanup_is_atomic_in_both_modes",
+      "status": "ok"
+    },
+    {
+      "name": "devices::device_operation_receipt_replays_once_and_is_scoped_to_target",
+      "status": "ok"
+    },
+    {
+      "name": "devices::device_filters_preserve_active_bindings_tenant_scope_and_pagination_in_both_modes",
+      "status": "ok"
+    },
+    {
+      "name": "devices::disabled_device_can_be_enabled_without_restoring_old_credentials",
+      "status": "ok"
+    },
+    {
+      "name": "permissions::directory_write_rolls_back_if_audit_fails",
+      "status": "ok"
+    },
+    {
+      "name": "diagnostic::diagnostic_http_enforces_management_scope_and_live_authority",
+      "status": "ok"
+    },
+    {
+      "name": "list_order::admin_access_lists_optionally_filter_business_and_page_tied_permissions",
+      "status": "ok"
+    },
+    {
+      "name": "removal_cleans_tenant_credentials_and_audit_or_actor_failure_rolls_back",
+      "status": "ok"
+    },
+    {
+      "name": "permissions::directory_http_crud_is_scoped_versioned_and_audited",
+      "status": "ok"
+    },
+    {
+      "name": "diagnostic::diagnostic_http_matches_host_decisions_and_audits_caller_target_and_result",
+      "status": "ok"
+    },
+    {
+      "name": "roles::role_admin_queries_scope_cursor_and_read_write_authority_in_both_modes",
+      "status": "ok"
+    },
+    {
+      "name": "list_order::admin_lists_are_newest_first_and_cursor_pages_keep_tied_timestamps",
+      "status": "ok"
+    },
+    {
+      "name": "role_bindings::binding_http_queries_and_mutations_enforce_identity_scope_and_protected_roles",
+      "status": "ok"
+    },
+    {
+      "name": "clients::client_admin_http_in_both_modes_filters_and_commits_only_secret_free_audits",
+      "status": "ok"
+    },
+    {
+      "name": "roles::role_admin_http_lifecycle_permissions_versions_and_audit_are_atomic_in_both_modes",
+      "status": "ok"
+    },
+    {
+      "name": "security_admin::platform_appointments_require_existing_domain_membership_and_current_platform_grants",
+      "status": "ok"
+    },
+    {
+      "name": "role_bindings::binding_http_grants_and_revokes_exact_resources_with_atomic_audit_in_both_modes",
+      "status": "ok"
+    },
+    {
+      "name": "sessions::concurrent_bulk_session_revocations_count_once_and_revoke_all_families",
+      "status": "ok"
+    },
+    {
+      "name": "tenants::disabled_mode_has_no_tenant_management_routes_and_core_rejects_queries",
+      "status": "ok"
+    },
+    {
+      "name": "security_admin::security_admin_snapshot_reads_exact_domain_and_requires_live_platform_authority",
+      "status": "ok"
+    },
+    {
+      "name": "sessions::session_admin_requires_current_same_tenant_authority_and_rolls_back_bulk_cleanup",
+      "status": "ok"
+    },
+    {
+      "name": "security_admin::security_admin_http_lifecycle_is_fixed_role_audited_and_preserves_last_admin",
+      "status": "ok"
+    },
+    {
+      "name": "tenants::tenant_http_creation_and_updates_keep_atomic_admin_cleanup_and_version_guards",
+      "status": "ok"
+    },
+    {
+      "name": "tenants::tenant_http_search_is_platform_only_scoped_and_rechecks_authority",
+      "status": "ok"
+    },
+    {
+      "name": "sessions::session_admin_http_filters_paginates_and_revokes_atomically_in_both_modes",
+      "status": "ok"
+    },
+    {
+      "name": "tenants::tenant_http_new_administrator_second_audit_failure_rolls_back_all_rows",
+      "status": "ok"
+    },
+    {
+      "name": "tenants::tenant_http_new_administrator_commits_identity_membership_grant_and_secret_free_audits",
+      "status": "ok"
+    },
+    {
+      "name": "management_preparation_rejects_conflicting_audit_layout_and_retired_admin",
+      "status": "ok"
+    },
+    {
+      "name": "bootstrap_concurrent_first_call_initializes_once",
+      "status": "ok"
+    },
+    {
+      "name": "management_preparation_rejects_audit_swallowing_trigger_and_rule",
+      "status": "ok"
+    },
+    {
+      "name": "bootstrap_refuses_to_repair_last_security_admin",
+      "status": "ok"
+    },
+    {
+      "name": "bootstrap_initializes_both_modes_and_is_idempotent",
+      "status": "ok"
+    },
+    {
+      "name": "management_preparation_concurrent_same_and_different_definition",
+      "status": "ok"
+    },
+    {
+      "name": "bootstrap_rolls_back_directory_and_audit_failures",
+      "status": "ok"
+    },
+    {
+      "name": "management_preparation_prerequisites_matching_conflicts_and_atomic_audit",
+      "status": "ok"
+    },
+    {
+      "name": "readiness_requires_prepared_catalog_and_effective_admin_without_mutating_state",
+      "status": "ok"
+    },
+    {
+      "name": "disabled_mode_keeps_directory_administration_in_system_domain",
+      "status": "ok"
+    },
+    {
+      "name": "tenant_state_version_cleanup_restore_and_audit_rollback",
+      "status": "ok"
+    },
+    {
+      "name": "business_permissions_are_independent_per_tenant_and_archive_denies",
+      "status": "ok"
+    },
+    {
+      "name": "tenant_create_is_atomic_gated_and_unique",
+      "status": "ok"
+    },
+    {
+      "name": "business_admin_is_exact_state_bound_and_database_guarded",
+      "status": "ok"
+    },
+    {
+      "name": "failed_legacy_cutover_releases_transaction_and_advisory_locks",
+      "status": "ok"
+    },
+    {
+      "name": "cloned_adapters_share_a_bounded_pool_and_reuse_released_connections",
+      "status": "ok"
+    },
+    {
+      "name": "secure_provision_creates_pending_device_without_nonce_against_live_postgres",
+      "status": "ok"
+    },
+    {
+      "name": "security_cutover_enforces_schema_and_is_idempotent_against_live_postgres",
+      "status": "ok"
+    },
+    {
+      "name": "confidential_client_flow_requires_secret_against_live_postgres",
+      "status": "ok"
+    },
+    {
+      "name": "duplicate_email_hits_real_storage_constraint_path",
+      "status": "ok"
+    },
+    {
+      "name": "admin_list_queries_support_filters_and_paging_against_live_postgres",
+      "status": "ok"
+    },
+    {
+      "name": "runs_auth_and_device_flow_against_live_postgres",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::device_transport_verifies_without_person_and_binds_request_bytes",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::concurrent_completion_has_one_winner_and_global_key_reuse_is_rejected_at_provision",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::choose_lists_only_joined_tenants_and_switch_requires_live_source",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::concurrent_proven_login_consumes_one_nonce_and_creates_one_binding_session_and_refresh",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::http::http_device_selection_binds_ticket_and_signed_target_tenant",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::http::http_device_login_and_refresh_failures_roll_back_and_bearer_refresh_still_works",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::concurrent_rotations_install_only_one_key_and_audit_once_in_both_modes",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::management_http::http_device_queries_enforce_actor_client_tenant_cursor_and_admission",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::http::http_device_login_and_refresh_preserve_raw_bytes_tenant_and_committed_reuse",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::oidc::resource::resource_device_sessions_require_live_device_authority_and_current_token_for_logout",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::oidc::http::http_oidc_authorize_and_exchange_validate_identity_client_pkce_and_single_use",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::management_http::http_device_lifecycle_and_heartbeat_use_real_proofs_in_both_modes",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::oidc::device_revocation_committed_while_oidc_exchange_waits_prevents_issuance",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::oidc::resource::resource_http_uses_real_tokens_checks_clients_and_hides_inactive_identity",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::oidc::tenant_oidc_confidential_client_secret_is_required",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::oidc::http::http_oidc_device_exchange_binds_raw_form_tenant_and_rolls_back_failures",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::oidc::tenant_oidc_rechecks_pkce_client_source_and_tenant_before_consuming_code",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::oidc::resource::resource_queries_recheck_tenant_membership_session_and_current_refresh_version",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::oidc::tenant_oidc_exchange_is_single_use_and_keeps_scope_on_refresh_and_switch",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::oidc::resource::resource_logout_is_atomic_idempotent_and_invalidates_source_grants_only",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::proof_selection_signs_exact_ticket_and_switch_requires_live_source_and_target_device",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::provision_and_registration_enforce_admission_and_activate_atomically_in_both_modes",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::oidc::tenant_oidc_proof_and_code_roll_back_on_signing_and_database_failures",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::refresh::concurrent_refresh_distinguishes_nonce_replay_from_fresh_proven_reuse",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::refresh::member_revocation_committed_while_refresh_waits_prevents_issuance",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::management_http::http_device_unbind_rolls_back_and_revokes_only_own_device_sessions_in_both_modes",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::refresh::tenant_bearer_refresh_rotates_and_commits_scoped_reuse_in_both_modes",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::refresh::revoked_device_cannot_refresh_a_proof_bound_session_in_both_modes",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::rotation_verifies_both_keys_preserves_old_authority_on_failure_and_retires_on_success",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::revoked_device_cannot_complete_proof_login_in_both_modes",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::refresh::tenant_refresh_cannot_transplant_credentials_devices_or_revoke_another_tenant",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::scan_login::abort_revokes_pending_scan_session_with_client_reason_and_erases_delivery_ciphertext",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::scan_login::close_before_create_persists_a_tombstone_and_rejects_late_create",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::refresh::tenant_proof_refresh_rotation_and_reuse_write_failures_roll_back_all_state_in_both_modes",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::scan_login::origin_recovery::close_commits_before_a_blocked_create_finalization_and_the_late_create_is_rejected",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::scan_login::audit_write_failure_rolls_back_exchange_and_same_operation_can_retry",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::scan_login::concurrent_different_exchange_operations_create_one_delivery_and_original_recovers",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::scan_login::origin_recovery::close_commits_before_a_blocked_claim_finalization",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::scan_login::origin_recovery::acknowledge_and_close_race_leaves_one_terminal_delivery",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::proof_login_binds_and_issues_atomically_in_both_modes_and_rechecks_device_authority",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::tenant_proof_consume_failure_rolls_back_and_concurrent_replay_has_one_winner",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::source_unbind_committed_while_tenant_switch_waits_prevents_issuance",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::scan_login::origin_recovery::close_pending_rolls_back_tombstone_when_audit_insert_fails_and_unknown_closure_is_terminal",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::scan_login::scan_login_phone_display_claims_the_proven_target_before_confirmation",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::scan_login::scan_login_device_display_round_trip_persists_one_delivery_and_activates_on_ack",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::scan_login::origin_recovery::cleanup_and_host_compensation_revoke_recoverable_delivery",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::tenant_proofs_reject_cross_tenant_and_revoked_members_without_nonce_consumption",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::scan_login::origin_recovery::denied_release_and_activation_revoke_only_the_pending_delivery_in_sql",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::management::http::management_http_selection_paginates_separately_and_tenant_identity_cannot_cross_domains",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::http_login_selection_authentication_and_switch_use_real_postgres_and_rs256",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::device_proofs::tenant_proofs_verify_real_ed25519_once_in_both_modes",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::registration_http::http_registration_and_resend_failures_rollback_and_concurrent_resends_leave_one_code",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::registration_http::http_resend_hides_ineligible_accounts_and_preserves_registration_tenant",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::management::management_selection_is_separate_and_session_creation_is_atomic",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::selection_rollback_and_concurrent_different_tenants_allow_one_session",
+      "status": "ok"
+    },
+    {
+      "name": "concurrent_verification_consumes_code_once_and_transaction_errors_rollback",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::fixed_login_creates_bound_session_and_rechecks_current_state_in_both_modes",
+      "status": "ok"
+    },
+    {
+      "name": "verification_state_expiry_and_write_failure_cannot_activate_identity",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::registration_http::http_registration_resend_verify_and_login_complete_in_both_modes",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::management::http::management_http_login_authorizes_admin_actions_and_refresh_logout_revoke_live_access_in_both_modes",
+      "status": "ok"
+    },
+    {
+      "name": "registration_verification_round_trip_both_modes_without_sessions",
+      "status": "ok"
+    },
+    {
+      "name": "authentication::management::management_login_enforces_persisted_purpose_live_authority_refresh_and_logout_in_both_modes",
+      "status": "ok"
+    },
+    {
+      "name": "cli_bootstrap_rolls_back_failure_requires_explicit_target_and_online_signing_key",
+      "status": "ok"
+    },
+    {
+      "name": "cli_bootstrap_initializes_both_modes_and_never_resets_existing_credentials",
+      "status": "ok"
+    },
+    {
+      "name": "a02_refresh_concurrency_logout_and_failure_are_atomic_and_entry_isolated",
+      "status": "ok"
+    },
+    {
+      "name": "a02b_confidential_oidc_clients_authenticate_and_isolate_resource_operations",
+      "status": "ok"
+    },
+    {
+      "name": "a02b_b2_device_admission_is_bound_to_entry_and_registration_identity",
+      "status": "ok"
+    },
+    {
+      "name": "a01_preparation_cli_then_read_only_p4_login_and_restricted_p5",
+      "status": "ok"
+    },
+    {
+      "name": "a02b_b2_device_proofs_bind_registration_auth_refresh_and_shared_oidc_exchange",
+      "status": "ok"
+    },
+    {
+      "name": "a02_choose_confidential_and_opt_in_registration",
+      "status": "ok"
+    },
+    {
+      "name": "a02b_b3_scan_entries_isolate_proofs_sources_and_recover_pending_delivery",
+      "status": "ok"
+    },
+    {
+      "name": "a02b_shared_oidc_dispatch_is_client_and_session_bound",
+      "status": "ok"
+    },
+    {
+      "name": "a02_ordinary_entries_are_isolated_read_only_and_preserve_sessions_on_reorder",
+      "status": "ok"
+    },
+    {
+      "name": "explicit_management_only_rejects_missing_dependencies_without_writes",
+      "status": "ok"
+    },
+    {
+      "name": "explicit_management_and_legacy_business_credentials_are_isolated_with_same_issuer_and_key",
+      "status": "ok"
+    },
+    {
+      "name": "a04b_registration_client_recovers_provision_and_complete_against_reference_host",
+      "status": "ok"
+    },
+    {
+      "name": "browser_cookie_restore_logout_and_purpose_isolation_in_both_modes",
+      "status": "ok"
+    },
+    {
+      "name": "explicit_management_rejects_invalid_key_and_client_without_writes",
+      "status": "ok"
+    },
+    {
+      "name": "explicit_management_probe_missing_client_and_no_ui",
+      "status": "ok"
+    },
+    {
+      "name": "explicit_ui_without_browser_fails_without_writes",
+      "status": "ok"
+    },
+    {
+      "name": "explicit_management_restart_preserves_credentials_and_existing_client",
+      "status": "ok"
+    },
+    {
+      "name": "a04a_device_self_client_reads_and_recovers_unbind_against_reference_host",
+      "status": "ok"
+    },
+    {
+      "name": "legacy_restart_does_not_overwrite_existing_client",
+      "status": "ok"
+    },
+    {
+      "name": "reference_host_refuses_uninitialized_or_wrong_mode_without_mutating_schema",
+      "status": "ok"
+    },
+    {
+      "name": "reference_scan_login_enables_all_device_proof_challenge_purposes",
+      "status": "ok"
+    },
+    {
+      "name": "a04d_scan_client_both_modes_recover_delivery_and_close_origin",
+      "status": "ok"
+    },
+    {
+      "name": "a04c_rotation_client_dual_signs_and_recovers_against_reference_host",
+      "status": "ok"
+    },
+    {
+      "name": "n1_reference_tenant_body_path_and_concurrent_version_share_transaction",
+      "status": "ok"
+    },
+    {
+      "name": "n1_reference_lookup_and_authentication_boundaries_in_both_modes",
+      "status": "ok"
+    },
+    {
+      "name": "explicit_optional_management_surfaces_respect_mount_and_authorization",
+      "status": "ok"
+    },
+    {
+      "name": "reference_host_runs_management_and_business_flows_in_both_modes",
+      "status": "ok"
+    },
+    {
+      "name": "explicit_management_only_is_read_only_at_startup_in_both_modes_and_mounts",
+      "status": "ok"
+    }
+  ]
+}
