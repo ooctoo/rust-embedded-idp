@@ -440,6 +440,12 @@ impl<S, T, G, D, C, I> CoreTenantAuthenticationService<S, T, G, D, C, I> {
         if self.entry.require_device_proof {
             return Err(TenantAuthError::DeviceProofRequired);
         }
+        if let Some(bound) = self.restricted_browser_isolation_secs {
+            if bound != lifetime_secs {
+                return Err(AccessError::InvalidInput("browser_session_lifetime").into());
+            }
+            self.restricted_browser_selection = true;
+        }
         self.config.session_ttl_secs = self.config.session_ttl_secs.min(lifetime_secs);
         self.config.refresh_token_ttl_secs = self.config.refresh_token_ttl_secs.min(lifetime_secs);
         self.config.access_token_ttl_secs = self

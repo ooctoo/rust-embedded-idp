@@ -92,6 +92,61 @@ pub(super) fn management(
 }
 
 #[test]
+fn isolated_management_browser_selection_keeps_channel_and_purpose_boundaries() {
+    let store = seed();
+    let normal = management(
+        TenancyMode::Enabled,
+        LoginTenantPolicy::ChooseAfterAuthentication,
+        store.clone(),
+    )
+    .with_restricted_browser_isolation(120)
+    .unwrap();
+    let browser = management(
+        TenancyMode::Enabled,
+        LoginTenantPolicy::ChooseAfterAuthentication,
+        store.clone(),
+    )
+    .with_restricted_browser_isolation(120)
+    .unwrap()
+    .into_restricted_browser(120)
+    .unwrap();
+    // Use the same client and entry deliberately: only purpose distinguishes it.
+    let business = svc(LoginTenantPolicy::ChooseAfterAuthentication, store.clone())
+        .with_restricted_browser_isolation(120)
+        .unwrap();
+    let TenantLoginOutcome::SelectionRequired(ticket) = browser.browser_login(login()).unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(
+        normal.select_tenant(ticket.ticket.clone(), "t1".into()),
+        Err(TenantAuthError::InvalidSelection)
+    );
+    assert_eq!(
+        business.list_tenants(ticket.ticket.clone(), AccessPageRequest::default()),
+        Err(TenantAuthError::InvalidSelection)
+    );
+    assert_eq!(
+        business.select_tenant(ticket.ticket.clone(), "t1".into()),
+        Err(TenantAuthError::InvalidSelection)
+    );
+    let page = normal
+        .list_tenants(ticket.ticket.clone(), AccessPageRequest::default())
+        .unwrap();
+    assert!(!page.items.is_empty());
+    assert!(page.items.iter().all(|item| item.tenant.id != "0"));
+    assert!(store.0.lock().unwrap().selections[0].consumed_at.is_none());
+    assert!(store.0.lock().unwrap().sessions.is_empty());
+    let session = browser.browser_select(ticket.ticket, "t1".into()).unwrap();
+    assert_eq!(session.session.purpose, AccessTokenPurpose::Management);
+    assert_eq!(
+        session.session.expires_at,
+        C.now() + Duration::from_secs(120)
+    );
+    assert!(store.0.lock().unwrap().selections[0].consumed_at.is_some());
+}
+
+#[test]
 fn management_sessions_refresh_and_logout_are_separate_from_business_in_both_modes() {
     for mode in [TenancyMode::Disabled, TenancyMode::Enabled] {
         let s = seed();

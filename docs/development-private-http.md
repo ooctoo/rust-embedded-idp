@@ -96,3 +96,8 @@ EMBEDDED_IDP_APP_SCAN_LOGIN_VERIFICATION_URI=http://192.168.31.159:9100/auth/bro
 交付应固定 Git 提交，构建 embedded/management/scan-code Web 归档并附 SHA-256 和文件清单。生成的 dist 不提交 Git；宿主固定源码依赖与对应 Web 制品，更新自身 H5、桌面 Debug URL 放行后再做目标平台验收。
 
 实际验证结果见[验收记录](development-private-http-validation.md)。
+
+
+## 新JSON多入口的受限选择隔离
+
+A02A新JSON装配额外在token/browser两侧配置 `with_restricted_browser_isolation(ttl)`。受限browser票据只能由匹配的browser选择接口消费；普通租户列表仍可读取，普通token完成接口拒绝。受限短会话的切换须重新登录并选择租户，不能借普通切换创建更长期限；普通完整token/HTTPS会话不受此限制。嵌入宿主如混用两类服务，应在转换restricted wrapper之前为两侧设置同一上限。原无参数LegacyReference未自动启用该可选策略，兼容边界见[第二批复审记录](a02a-implementation-result.md)。

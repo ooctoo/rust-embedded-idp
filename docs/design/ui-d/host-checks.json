@@ -1,0 +1,31 @@
+{
+  "command": "cargo test -p embedded-idp-app --locked --offline -- --include-ignored --test-threads=1",
+  "stage": "UI-D supplemental acceptance",
+  "date": "2026-10-23",
+  "passed": 50,
+  "failed": 0,
+  "ignored": 0,
+  "groups": [
+    {
+      "passed": 33,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "passed": 2,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "passed": 2,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "passed": 13,
+      "failed": 0,
+      "ignored": 0
+    }
+  ],
+  "evidence": "fresh isolated PostgreSQL 18.3; rebuilt compiled Web assets; local reference host only; no existing database or deployment"
+}

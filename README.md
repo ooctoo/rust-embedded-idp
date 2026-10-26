@@ -31,7 +31,7 @@
 
 3.0.0 两种模式均使用 `tenant_v6`；2.0.0 的历史基线为 `tenant_v3`。已接通注册与邮箱验证、登录与选租户、会话/refresh、OIDC、租户设备、角色与资源授权，以及租户/成员/角色/权限目录/设备/会话/客户端/审计管理。业务权限定义可按租户和业务标识创建、读取、修改、启停和归档，并与同租户同业务角色关联。React 管理后台接入真实 API；本地 `@embedded-idp/react` 主入口提供登录、租户选择和本人角色列表，`/admin` 子入口提供权限目录组件，React 19 由宿主提供。
 
-仓库提供[无租户嵌入宿主示例](examples/no-tenant-host/README.md)：另起 Axum 业务进程，复用 IdP 业务路由和 React 登录组件，并在宿主报告接口中检查 `report::read::<id>`。该示例的配置模板和启动命令均在 `examples/no-tenant-host` 内，不依赖根目录的开发环境脚本；带租户的嵌入体验留待后续。`web/embedded/demo.html` 仍只使用模拟响应。设备自助界面、部分管理页面浏览器补验和性能验收仍未完成。
+仓库提供[无租户嵌入宿主示例](examples/no-tenant-host/README.md)：另起 Axum 业务进程，复用 IdP 业务路由和 React 登录组件，并在宿主报告接口中检查 `report::read::<id>`。该示例的配置模板和启动命令均在 `examples/no-tenant-host` 内，不依赖根目录的开发环境脚本；[Enabled嵌入宿主示例](examples/tenant-host/README.md)现已提供Fixed/Choose、租户报告隔离、授权过滤列表和独立管理组件，并完成局部验证。`web/embedded/demo.html` 仍只使用模拟响应。设备自助已提供[A04-A本人列表、详情、解绑和回执恢复组件](docs/a04-a-integration.md)；[A04-B登记、宿主signer/admission接入与恢复组件](docs/a04-b-integration.md)也已完成局部实施。[A04-C双签轮换与结果核对组件](docs/a04-c-integration.md)已完成局部实施。[A04-D双向扫码、交付确认及恢复组件](docs/a04-d-integration.md)已完成局部实施。原生持钥接入及性能验收仍未完成；管理后台本地整体验收及未覆盖环境见[UI-F报告](docs/ui-f-implementation-result.md)。
 
 业务权限目录已按租户隔离；内置管理权限受保护。宿主可调用 Core 服务或选装 Axum 管理路由。独立管理应用提供完整页面；本地 `@embedded-idp/react/admin` 入口提供可嵌入的权限目录组件，尚未发布到 npm。组件使用独立的管理会话与管理 API，不使用业务登录令牌；接入方式见 [React 集成说明](docs/react-ui-integration-design.md)。
 
@@ -91,6 +91,8 @@ unset ADMIN_PASSWORD
 
 ## 验证与文档
 
+- [剩余产品能力技术设计](docs/product-capability-completion-design.md) / [分阶段实施方案](docs/product-capability-completion-plan.md)（2026-10-25：覆盖既定接入缺口、设备自助与租户嵌入，以及安全/身份/运行软件的候选增强；A01、A02A、A02B-B1及配套A03已实施并完成局部验证，见各批实施记录；未做完整验收或部署；候选增强不自动纳入首版）
+
 ```sh
 node scripts/test_dev_env.mjs
 node scripts/test_device_proof_vectors.mjs
@@ -115,10 +117,30 @@ cargo test --workspace --locked
 - [参考服务配置与启动](docs/standalone-app-v1.md)
 - [M1-02 显式配置与仅管理启动实施结果](docs/m1-02-implementation-result.md)（旧参考行为保留；含示例、验收范围与后续边界）
 - [M1-02 修订 3 收尾与验收回传](docs/m1-02-closure-result.md)（可选 browser/UI、完整管理生命周期及归一偏差修复；保留旧参考行为；M1-03–06、试点与部署待定）
+- [开发、自动化与生产运行拓扑](docs/validation-runtime-topology.md)（Mac开发及既有Mac/Linux专项记录；当前CI按质量设计收敛，生产配置、架构和部署由下游仓库决定）
+- [N2 GitHub Actions实际功能补验](docs/n2-github-actions-functional-execution-result.md) / [完整证据（历史附件）](docs/n2-evidence-archive.md)（2026-10-25：最终`14dd919`限定H01/arm64 CI组合八套264组通过，清理与artifact核对完成；失败历史保留，收尾材料随本轮本地归档、未新增推送，未部署，未扩大为整体N2/生产验收）
+- [开源仓库CI质量设计](docs/ci-quality-design.md)、[分阶段实施计划](docs/ci-quality-implementation-plan.md)与[N2退役映射](docs/n2-retirement-plan-and-mapping.md)（当前设计：构建/UT、真实集成、关键E2E；旧N2编排已删除，选定断言迁入、全量逐页UI保证退出；生产配置与CD归下游；实现及验证见[实施记录](docs/ci-quality-implementation-result.md)）
+- [历史CI边界复审与提速方案](docs/ci-speed-minimal-implementation-plan.md)（已由上述设计替代，不作为当前待办）
+- [N2 workflow同步与执行版本冻结](docs/n2-ci-workflow-sync-result.md) / [本轮离线证据（历史附件）](docs/n2-evidence-archive.md)（2026-10-25：main修正精确同步，124项离线工具检查通过；仅相关改动提交并推送验收分支并冻结新执行SHA，未触发实际N2补验、未部署，缩放/旁白不测，M1-03–06未启动）
+- [N2功能选集、CI驱动与workflow适配回传](docs/n2-functional-ci-tooling-result.md) / [离线证据（历史附件）](docs/n2-evidence-archive.md)（工具实施阶段历史记录，2026-10-25：工具实现和122项离线检查通过，264项功能断言仅登记未实跑；缩放/旁白不测，未改产品、未执行实际补验、仅本地提交归档、未推送/部署，M1-03–06未启动）
+- [历史N2功能补验方案](docs/management-console-n2-github-actions-functional-plan.md)（已完成限定组合补验，结果见执行报告；保留手动专项，不作为普通CI或发布的必跑集合）
+- [N2 Linux Docker 补验最小执行方案](docs/management-console-n2-linux-docker-execution-plan.md)（2026-10-25：推荐先做Linux arm64、Debian/glibc、release默认features及Mac Chrome的H01隔离补验；完整复审后补齐准备依赖顺序、布局开关、容器重建及清理边界，仅四份相关文档本地归档、未推送；方案归档时未准备环境或执行，后续实际结果见下一条，M1-03–06未启动）
+- [N2 Linux Docker 实际补验](docs/n2-linux-docker-execution-result.md) / [独立证据（历史附件）](docs/n2-evidence-archive.md)（2026-10-25：按后续授权准备隔离环境并实跑，单架构H01适用补验及清理完成；提交前完整复审修复短屏焦点裁切并补齐工具错误路径、16项离线回归及实际复验，相关改动本地归档；历史失败保留，不扩大为整体N2或生产验收；不推送、不部署，M1-03–06未启动）
+- [N2 Mac 子批执行与补验](docs/n2-mac-execution-result.md) / [独立证据（历史附件）](docs/n2-evidence-archive.md)（2026-10-24：桌面Chrome实际补验，含提交前复审的三项产品修复及复验；真实中文IME与执行者视觉复核完成；旁白按用户决定移出，需求方视觉签认单列，不扩大为完整N2或生产验收；本地归档，不推送、不部署，M1-03–06未启动）
 - [M1-02 实现审查调整交接说明](docs/m1-02-implementation-adjustments-handoff.md) / [A01–A05 静态核对与调整计划回传](docs/m1-02-implementation-adjustments-result.md)（实施前计划；后续处置与运行证据见收尾回传）
 - [M1-02 实际代码完整审查](docs/m1-02-code-review.md) / [原设计修订 2 固定快照](docs/m1-02-configuration-composition-design-r2.md)（修复前审查与固定基线；问题处置与运行证据见收尾回传）
-- [管理后台与社区能力补齐详细设计](docs/management-console-capability-design.md)（修订2设计基线；UI-A/UI-B进展另见交付记录，新增社区能力未实施）
-- [UI-B 后台壳层与导航实施验收](docs/ui-b-implementation-result.md) / [运行截图](docs/design/ui-b/README.md)（本地实现、审查收尾与提交前核对完成，未推送；UI-C–F、M1-03–06未启动，试点与部署待定）
+- [N2 推荐选项与首批补验执行计划](docs/management-console-n2-options-and-first-batch-plan.md)（修订2完整复审及提交前核对完成，随本批文档本地归档、未推送：六项待确认推荐、只读环境盘点与分批前提，补齐缩放高度、Windows执行/宿主依赖及证据与签认边界；D02–D07未冻结，未准备环境或运行验收）
+- [N2 目标环境、无障碍与宿主嵌入补验设计](docs/management-console-n2-target-validation-design.md)（修订2复审及提交前核对完成，随本批文档本地归档、未推送：token刷新、宿主协调/构建前提、分类恢复及夹具/证据边界；D02–D07待决，28项断言待执行；未准备环境、未运行验收；N3–N5与M1-03–06未启动，试点和部署待定）
+- [N1 最小实现与验收回传](docs/n1-implementation-result.md) / [本地证据](docs/design/n1/README.md)（报告修订2及提交前核对完成，随本批本地提交归档、未推送：dot-only寻址、误登记防护、分阶段回读及专项补验；D02–D07待决；归档时N2–N5与M1-03–06未启动，当前N2文档进展见上）
+- [N1 既有 ID 兼容专项设计](docs/management-console-n1-id-compatibility-design.md)（修订2复审及提交前核对完成，本地归档、未推送：dot-only寻址、响应/错误语义、分阶段回读与29项待执行断言；作为设计归档基线保留，当前实现与边界见N1回传；D02–D07待决；归档时N2–N5与M1-03–06未启动，当前N2文档见上）
+- [N0 支持范围与交付基线设计](docs/management-console-n0-support-baseline-design.md)（修订2复审及提交前核对完成，本地归档、未推送：支持矩阵与验收分级，补齐客户端/服务端环境和Cookie入口隔离；首批桌面家族已确认，其余范围待决；归档时N1–N5与M1-03–06未启动，当前N1设计见上）
+- [管理后台交付总结与后续实施计划](docs/management-console-delivery-summary-and-plan.md)（修订2，UI-A–F交付、兼容限制、未覆盖项及后续门槛；复审与提交前核对完成，随本批文档本地归档、未推送；原归档时候选任务未启动，后续文档进展见汇总，试点与部署待定）
+- [管理后台与社区能力补齐详细设计](docs/management-console-capability-design.md)（修订2设计基线；UI-A至UI-F进展另见交付记录，新增社区能力未实施）
+- [UI-B 后台壳层与导航实施验收](docs/ui-b-implementation-result.md) / [运行截图](docs/design/ui-b/README.md)（已完成本地实现、审查收尾与提交前核对，未推送；后续进展见UI-C报告）
+- [UI-C 列表与详情样板实施验收](docs/ui-c-implementation-result.md) / [运行截图](docs/design/ui-c/README.md)（客户端列表、ID定位、配置确认与异常恢复；本地实现、专项补验及提交前核对完成，本批随UI-C提交归档，未推送；后续进展见UI-D报告）
+- [UI-D 租户准备与授权实施验收](docs/ui-d-implementation-result.md) / [运行证据](docs/design/ui-d/README.md)（复用既有租户、成员、权限及授权能力；审查收尾、专项补验及提交前核对完成，随UI-D提交归档、未推送；后续进展见UI-E报告）
+- [UI-E 账号与安全处置实施验收](docs/ui-e-implementation-result.md) / [运行证据](docs/design/ui-e/README.md)（全局账号、设备与绑定、目标域会话、诊断及审计；实现、审查补验与提交前核对完成，随UI-E提交归档、未推送；后续进展见UI-F报告）
+- [UI-F 整体核对与实施验收](docs/ui-f-implementation-result.md) / [运行证据](docs/design/ui-f/README.md)（既有任务整体验收与键盘、异常呈现收尾；修订2审查及提交前核对完成，随本批UI-F提交归档、未推送；M1-03–06未启动，试点与部署待定）
 - [开发与嵌入指南](docs/developer-and-integration-guide.md)
 - [宿主集成边界](docs/host-integration-v1.md)
 - [租户/角色/权限设计](docs/tenant-role-permission-design-v1.md)
@@ -134,6 +156,7 @@ cargo test --workspace --locked
 - [通用扫码授权设备登录设计](docs/device-scan-login-design-v1.md)（双向扫码、宿主准入、Pending 交付恢复、ACK 与原操作终止）
 - [扫码授权设备登录升级手册](docs/device-scan-login-upgrade.md)
 - [扫码授权设备登录验证记录](docs/device-scan-login-validation.md)
+- [JSON v2 多入口扫码组合设计与配置](docs/a02b-b3-technical-design.md) · [局部实施记录](docs/a02b-b3-implementation-result.md)
 - [私网 HTTP 开发接入](docs/development-private-http.md)及[验收记录](docs/development-private-http-validation.md)
 
 `docs/*-v1.md` 中的早期模型和切片文档保留作历史背景；以当前设计、执行计划、代码和测试为准，不把旧开发适配器示例用于生产接入。

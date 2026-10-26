@@ -23,6 +23,7 @@ use std::{
 #[derive(Clone)]
 pub(crate) struct BrowserConfig {
     pub cookie_name: String,
+    pub development_session_ttl_secs: Option<u64>,
 }
 #[derive(Clone)]
 pub(crate) struct EntryConfig {
@@ -34,6 +35,32 @@ pub(crate) struct EntryConfig {
     pub browser: Option<BrowserConfig>,
     pub ui_base_path: Option<String>,
     pub registration_enabled: bool,
+    pub oidc_enabled: bool,
+    pub device: Option<DeviceEntryConfig>,
+    pub scan: Option<crate::scan_composition::ScanConfig>,
+}
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DeviceEntryConfig {
+    pub admission_provider: String,
+    pub profile_provider: String,
+    pub audience: String,
+    pub paths: DevicePaths,
+}
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DevicePaths {
+    pub login: String,
+    pub selection: String,
+    pub refresh: String,
+    pub heartbeat: String,
+    pub oidc_token: String,
+}
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct AdmissionProviderReference {
+    pub id: String,
+    pub grants_file: String,
 }
 #[derive(Clone)]
 pub(crate) struct ReferenceBusinessConfig {
@@ -56,6 +83,7 @@ pub(crate) struct AppConfig {
     pub management: EntryConfig,
     pub business_entries: Vec<EntryConfig>,
     pub reference_business: Option<ReferenceBusinessConfig>,
+    pub device_admission_providers: Vec<AdmissionProviderReference>,
 }
 
 #[derive(Deserialize)]
@@ -69,6 +97,8 @@ struct Document {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Runtime {
+    #[serde(default)]
+    device_admission_providers: Vec<AdmissionProviderReference>,
     tenancy_mode: String,
     bind_addr: String,
     issuer: String,
@@ -225,6 +255,17 @@ struct Business {
     require_device_proof: bool,
     #[serde(default)]
     registration_enabled: bool,
+    #[serde(default)]
+    oidc: Option<OidcProtocol>,
+    #[serde(default)]
+    device: Option<DeviceEntryConfig>,
+    #[serde(default)]
+    scan: Option<crate::scan_composition::ScanConfig>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OidcProtocol {
+    enabled: bool,
 }
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -236,6 +277,8 @@ enum Policy {
 #[serde(deny_unknown_fields)]
 struct Browser {
     cookie_name: String,
+    #[serde(default)]
+    development_session_ttl_secs: Option<u64>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -273,7 +316,7 @@ struct Smtp {
 }
 
 // A recursive visitor catches duplicate keys even where serde Option normally accepts repeated null.
-struct Unique(serde_json::Value);
+pub(crate) struct Unique(pub(crate) serde_json::Value);
 impl<'de> Deserialize<'de> for Unique {
     fn deserialize<D: de::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         d.deserialize_any(UniqueVisitor)
@@ -352,9 +395,13 @@ impl AppConfig {
                 mount_prefix: "/api".into(),
                 browser: Some(BrowserConfig {
                     cookie_name: format!("idp_{port}_management"),
+                    development_session_ttl_secs: None,
                 }),
                 ui_base_path: Some(c.admin_ui_base_path.clone()),
                 registration_enabled: false,
+                oidc_enabled: false,
+                device: None,
+                scan: None,
             },
             business_entries: vec![EntryConfig {
                 login_entry: "business".into(),
@@ -364,10 +411,15 @@ impl AppConfig {
                 mount_prefix: String::new(),
                 browser: Some(BrowserConfig {
                     cookie_name: format!("idp_{port}_business"),
+                    development_session_ttl_secs: None,
                 }),
                 ui_base_path: None,
                 registration_enabled: c.embedded_idp.auth.allow_local_registration,
+                oidc_enabled: false,
+                device: None,
+                scan: None,
             }],
+            device_admission_providers: vec![],
             reference_business: Some(ReferenceBusinessConfig {
                 public_client: c.public_client.clone(),
                 confidential_client: c.confidential_client.clone(),
@@ -377,14 +429,26 @@ impl AppConfig {
         }
     }
     pub(crate) fn from_file(path: &Path) -> Result<Self, String> {
+        Self::load_file(path, true)
+    }
+    pub(crate) fn for_preparation(path: &Path) -> Result<Self, String> {
+        Self::load_file(path, false)
+    }
+    fn load_file(path: &Path, for_startup: bool) -> Result<Self, String> {
         let names: BTreeSet<String> = env::vars_os()
             .filter_map(|(key, _)| key.into_string().ok())
             .collect();
-        Self::from_file_with_lookup(path, &names, true, &|name| match env::var(name) {
-            Ok(value) => Ok(Some(value)),
-            Err(env::VarError::NotPresent) => Ok(None),
-            Err(env::VarError::NotUnicode(_)) => Err("invalid secret encoding".into()),
-        })
+        Self::from_file_with_lookup(
+            path,
+            &names,
+            for_startup,
+            for_startup,
+            &|name| match env::var(name) {
+                Ok(value) => Ok(Some(value)),
+                Err(env::VarError::NotPresent) => Ok(None),
+                Err(env::VarError::NotUnicode(_)) => Err("invalid secret encoding".into()),
+            },
+        )
     }
     #[cfg(test)]
     fn from_file_with_env(
@@ -392,21 +456,31 @@ impl AppConfig {
         envs: &std::collections::HashMap<String, String>,
     ) -> Result<Self, String> {
         let names = envs.keys().cloned().collect();
-        Self::from_file_with_lookup(path, &names, false, &|name| Ok(envs.get(name).cloned()))
+        Self::from_file_with_lookup(path, &names, false, true, &|name| {
+            Ok(envs.get(name).cloned())
+        })
     }
     fn from_file_with_lookup(
         path: &Path,
         names: &BTreeSet<String>,
         for_startup: bool,
+        resolve_email: bool,
         lookup: &impl Fn(&str) -> Result<Option<String>, String>,
     ) -> Result<Self, String> {
         let bytes = read_limited(path, 1024 * 1024, "configuration")?;
         let unique: Unique = serde_json::from_slice(&bytes)
             .map_err(|_| "invalid JSON configuration structure".to_string())?;
         reject_nulls(&unique.0, None)?;
+        if unique.0["version"] == 1
+            && unique.0["runtime"]
+                .get("device_admission_providers")
+                .is_some()
+        {
+            return Err("device providers require version 2".into());
+        }
         let d: Document = serde_path_to_error::deserialize(unique.0.into_deserializer())
             .map_err(|e| format!("invalid JSON configuration field: {}", e.path()))?;
-        if d.version != 1 {
+        if !matches!(d.version, 1 | 2) {
             return Err("unsupported configuration version".into());
         }
         let mut refs = vec![(
@@ -498,10 +572,23 @@ impl AppConfig {
             mount_prefix: d.management.mount_prefix,
             browser: d.management.browser.map(|b| BrowserConfig {
                 cookie_name: b.cookie_name,
+                development_session_ttl_secs: b.development_session_ttl_secs,
             }),
             ui_base_path: d.management.ui.map(|x| x.base_path),
             registration_enabled: false,
+            oidc_enabled: false,
+            device: None,
+            scan: None,
         };
+        if d.version == 1
+            && (d
+                .business_entries
+                .iter()
+                .any(|b| b.oidc.is_some() || b.device.is_some() || b.scan.is_some())
+                || !d.runtime.device_admission_providers.is_empty())
+        {
+            return Err("protocol configuration requires version 2".into());
+        }
         let mut business_entries = Vec::new();
         for b in d.business_entries {
             business_entries.push(EntryConfig {
@@ -512,9 +599,13 @@ impl AppConfig {
                 mount_prefix: b.mount_prefix,
                 browser: b.browser.map(|x| BrowserConfig {
                     cookie_name: x.cookie_name,
+                    development_session_ttl_secs: x.development_session_ttl_secs,
                 }),
                 ui_base_path: None,
                 registration_enabled: b.registration_enabled,
+                oidc_enabled: b.oidc.is_some_and(|o| o.enabled),
+                device: b.device,
+                scan: b.scan,
             })
         }
         let absolute = if path.is_absolute() {
@@ -564,7 +655,23 @@ impl AppConfig {
             management,
             business_entries,
             reference_business: None,
+            device_admission_providers: d
+                .runtime
+                .device_admission_providers
+                .into_iter()
+                .map(|mut p| {
+                    p.grants_file = resolve_path(base, &p.grants_file)?;
+                    Ok(p)
+                })
+                .collect::<Result<Vec<_>, String>>()?,
         };
+        for entry in &mut c.business_entries {
+            if let Some(scan) = &mut entry.scan {
+                for key in &mut scan.result_keyring.keys {
+                    key.key_file = resolve_path(base, &key.key_file)?;
+                }
+            }
+        }
         c.validate_static(d.runtime.email.as_ref())?;
         c.postgres.connection.connection_uri = "postgres://placeholder".into();
         c.postgres
@@ -579,11 +686,13 @@ impl AppConfig {
             .connection
             .uri_ref
             .resolve(base, lookup)?;
-        c.email_delivery = d
-            .runtime
-            .email
-            .map(|email| email.normalize(base, lookup))
-            .transpose()?;
+        if resolve_email {
+            c.email_delivery = d
+                .runtime
+                .email
+                .map(|email| email.normalize(base, lookup))
+                .transpose()?;
+        }
         c.postgres
             .validate()
             .map_err(|_| "invalid runtime.postgres".to_string())?;
@@ -611,26 +720,53 @@ impl AppConfig {
         .map_err(str::to_owned)?;
         if config.client_config().session_ttl_secs.is_some() {
             config
-                .with_development_session_ttl_secs(self.development_session_ttl_secs)
+                .with_development_session_ttl_secs(
+                    b.development_session_ttl_secs
+                        .unwrap_or(self.development_session_ttl_secs),
+                )
                 .map_err(str::to_owned)
+        } else if b.development_session_ttl_secs.is_some() {
+            Err("browser.development_session_ttl_secs requires development-login transport".into())
         } else {
             Ok(config)
         }
     }
     pub(crate) fn validate_for_startup(&self) -> Result<(), String> {
-        if self.reference_business.is_none() && !self.business_entries.is_empty() {
-            return Err("business entries are not supported by this build".into());
-        }
-        Ok(())
+        Ok(()) // All supported protocol combinations are checked before secret resolution.
     }
     fn validate_static(&mut self, email: Option<&Email>) -> Result<(), String> {
         if let Some(e) = email {
             e.validate()?;
         }
+        if self
+            .business_entries
+            .iter()
+            .filter(|e| e.scan.is_some())
+            .count()
+            > 16
+        {
+            return Err("at most 16 scan entries are supported".into());
+        }
+        for entry in &self.business_entries {
+            if let Some(scan) = &entry.scan {
+                scan.validate(entry, self)?;
+            }
+        }
+        let mut providers = BTreeSet::new();
+        for provider in &self.device_admission_providers {
+            if !valid_id(&provider.id) || provider.id.len() > 48 || !providers.insert(&provider.id)
+            {
+                return Err("invalid or duplicate device admission provider".into());
+            }
+        }
         let mut ids = BTreeSet::new();
         let mut clients = BTreeSet::new();
         let mut cookies = BTreeSet::new();
         let mut paths: Vec<(String, String)> = Vec::new();
+        if self.business_entries.iter().any(|e| e.oidc_enabled) {
+            paths.push(("shared OIDC".into(), "/oidc".into()));
+            paths.push(("discovery".into(), "/.well-known".into()));
+        }
         let mut cookie_paths: Vec<String> = Vec::new();
         for (management, e) in std::iter::once((true, &self.management))
             .chain(self.business_entries.iter().map(|e| (false, e)))
@@ -649,13 +785,54 @@ impl AppConfig {
             if !clients.insert(&e.client_id) {
                 return Err("duplicate client_id".into());
             }
-            if e.require_device_proof {
-                return Err(if management {
-                    "management_device_proof_unsupported"
-                } else {
-                    "business device proof is not supported by this build"
+            if management && e.require_device_proof {
+                return Err("management_device_proof_unsupported".into());
+            }
+            if e.require_device_proof && e.device.is_none() {
+                return Err("business device proof requires device configuration".into());
+            }
+            if e.require_device_proof && e.browser.is_some() {
+                return Err("required device proof cannot use browser sessions".into());
+            }
+            if let Some(device) = &e.device {
+                if !providers.contains(&device.admission_provider)
+                    || device.profile_provider != "ed25519-v2"
+                {
+                    return Err("missing or unsupported device admission/profile provider".into());
                 }
-                .into());
+                for (actual, suffix) in [
+                    (&device.paths.login, "/auth/login"),
+                    (&device.paths.selection, "/auth/tenant-selection/complete"),
+                    (&device.paths.refresh, "/auth/refresh"),
+                    (&device.paths.heartbeat, "/devices/heartbeat"),
+                ] {
+                    if actual != &format!("{}{suffix}", e.mount_prefix) {
+                        return Err("device external path must match mounted route".into());
+                    }
+                }
+                if device.paths.oidc_token != "/oidc/token" {
+                    return Err("device OIDC path must be /oidc/token".into());
+                }
+                embedded_idp_axum::TenantDeviceAuthHttpConfig::new(
+                    &device.audience,
+                    &device.paths.login,
+                    &device.paths.selection,
+                    &device.paths.refresh,
+                )
+                .map_err(|_| "invalid device proof profile")?;
+                let family = format!("{}/devices", e.mount_prefix);
+                for (owner, path) in &paths {
+                    if overlaps(&family, path) {
+                        return Err(format!(
+                            "route conflict between {owner} and {}",
+                            e.login_entry
+                        ));
+                    }
+                }
+                paths.push((e.login_entry.clone(), family));
+            }
+            if e.registration_enabled && !matches!(e.policy, LoginTenantPolicy::Fixed { .. }) {
+                return Err("registration requires a fixed tenant policy".into());
             }
             if e.registration_enabled && email.is_none() {
                 return Err("registration requires runtime.email".into());
@@ -761,7 +938,7 @@ impl SecretRef {
         Ok(v)
     }
 }
-fn read_limited(path: &Path, limit: u64, label: &str) -> Result<Vec<u8>, String> {
+pub(crate) fn read_limited(path: &Path, limit: u64, label: &str) -> Result<Vec<u8>, String> {
     if !fs::metadata(path)
         .map_err(|_| format!("cannot read {label}"))?
         .is_file()
@@ -790,7 +967,7 @@ fn valid_env_name(n: &str) -> bool {
     matches!(b.next(),Some(x) if x.is_ascii_alphabetic()||x==b'_')
         && b.all(|x| x.is_ascii_alphanumeric() || x == b'_')
 }
-fn valid_id(s: &str) -> bool {
+pub(crate) fn valid_id(s: &str) -> bool {
     !s.is_empty()
         && s.len() <= 128
         && s.bytes()
@@ -1025,6 +1202,33 @@ mod tests {
         HashMap::from([("DB_URI".into(), "postgres://localhost/db".into())])
     }
     #[test]
+    fn preparation_skips_unrelated_secrets_and_startup_capability_gate() {
+        let mut value = doc();
+        value["runtime"]["email"] = serde_json::json!({"mode":"smtp","smtp":{"username":"user","password_ref":{"env":"UNAVAILABLE_SMTP"}}});
+        value["business_entries"] = serde_json::json!([{"login_entry":"product","client_id":"product-client","tenant_policy":{"kind":"choose"},"mount_prefix":"/product"}]);
+        let path = std::env::temp_dir().join(format!("a01-prep-{}.json", std::process::id()));
+        std::fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
+        let lookup = |key: &str| {
+            assert_eq!(
+                key, "DB_URI",
+                "preparation must not resolve unrelated secrets"
+            );
+            Ok(Some("postgres://localhost/db".into()))
+        };
+        let config =
+            AppConfig::from_file_with_lookup(&path, &BTreeSet::new(), false, false, &lookup)
+                .unwrap();
+        assert!(config.email_delivery.is_none());
+        assert!(config.validate_for_startup().is_ok());
+        value["runtime"]["email"]["smtp"]["port"] = serde_json::json!(0);
+        std::fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
+        assert!(
+            AppConfig::from_file_with_lookup(&path, &BTreeSet::new(), false, false, &lookup)
+                .is_err()
+        );
+        std::fs::remove_file(path).unwrap();
+    }
+    #[test]
     fn management_and_legacy_conflicts() {
         let c = parse(&doc(), &envs()).ok().unwrap();
         assert!(c.business_entries.is_empty());
@@ -1094,22 +1298,23 @@ mod tests {
             std::thread::current().id()
         ));
         let mut d = doc();
-        d["business_entries"] = serde_json::json!([{"login_entry":"product","client_id":"product","tenant_policy":{"kind":"choose"},"mount_prefix":"/product"}]);
+        d["business_entries"] = serde_json::json!([{"login_entry":"product","client_id":"product","tenant_policy":{"kind":"choose"},"mount_prefix":"/product","require_device_proof":true}]);
         fs::write(&path, serde_json::to_vec(&d).unwrap()).unwrap();
         let calls = Cell::new(0);
         let lookup = |_: &str| {
             calls.set(calls.get() + 1);
             Ok(None)
         };
-        let err = AppConfig::from_file_with_lookup(&path, &BTreeSet::new(), true, &lookup)
+        let err = AppConfig::from_file_with_lookup(&path, &BTreeSet::new(), true, true, &lookup)
             .err()
             .unwrap();
-        assert!(err.contains("not supported"));
+        assert!(err.contains("requires device configuration"));
         assert_eq!(calls.get(), 0);
+        d["business_entries"][0]["require_device_proof"] = false.into();
         d["management"]["mount_prefix"] = "/invalid+".into();
         fs::write(&path, serde_json::to_vec(&d).unwrap()).unwrap();
         assert!(
-            AppConfig::from_file_with_lookup(&path, &BTreeSet::new(), true, &lookup)
+            AppConfig::from_file_with_lookup(&path, &BTreeSet::new(), true, true, &lookup)
                 .err()
                 .unwrap()
                 .contains("mount")
@@ -1185,11 +1390,203 @@ mod tests {
             .is_none());
     }
     #[test]
-    fn nonempty_business_is_valid_but_build_rejects_startup() {
+    fn device_v2_requires_providers_exact_paths_and_safe_combinations() {
+        let mut v = doc();
+        v["version"] = 2.into();
+        v["runtime"]["device_admission_providers"] =
+            serde_json::json!([{"id":"grants","grants_file":"grants.json"}]);
+        v["business_entries"] = serde_json::json!([{"login_entry":"one","client_id":"one","tenant_policy":{"kind":"choose"},"mount_prefix":"/one","require_device_proof":true,"device":{"admission_provider":"grants","profile_provider":"ed25519-v2","audience":"one-api","paths":{"login":"/one/auth/login","selection":"/one/auth/tenant-selection/complete","refresh":"/one/auth/refresh","heartbeat":"/one/devices/heartbeat","oidc_token":"/oidc/token"}}}]);
+        assert!(parse(&v, &envs()).is_ok());
+        for (key, value) in [
+            ("admission_provider", "missing"),
+            ("profile_provider", "untrusted"),
+        ] {
+            let mut bad = v.clone();
+            bad["business_entries"][0]["device"][key] = value.into();
+            assert!(parse(&bad, &envs()).err().unwrap().contains("provider"));
+        }
+        for path in ["login", "selection", "refresh", "heartbeat", "oidc_token"] {
+            let mut bad = v.clone();
+            bad["business_entries"][0]["device"]["paths"][path] = "/unbound".into();
+            assert!(parse(&bad, &envs()).is_err());
+        }
+        let mut bad = v.clone();
+        bad["business_entries"][0]["browser"] = serde_json::json!({"cookie_name":"device"});
+        assert!(parse(&bad, &envs()).err().unwrap().contains("browser"));
+        bad["business_entries"][0]["require_device_proof"] = false.into();
+        assert!(parse(&bad, &envs()).is_ok());
+        bad = v.clone();
+        bad["version"] = 1.into();
+        assert!(parse(&bad, &envs()).err().unwrap().contains("version 2"));
+        bad = v.clone();
+        bad["business_entries"].as_array_mut().unwrap().push(serde_json::json!({"login_entry":"two","client_id":"two","tenant_policy":{"kind":"choose"},"mount_prefix":"/one/devices"}));
+        assert!(parse(&bad, &envs()).err().unwrap().contains("conflict"));
+        bad = v;
+        bad["business_entries"][0]["scan"] = serde_json::json!({});
+        assert!(parse(&bad, &envs()).is_err());
+    }
+    #[test]
+    fn scan_v2_requires_explicit_dependencies_paths_keys_and_bounded_cleanup() {
+        let mut v = doc();
+        v["version"] = 2.into();
+        v["runtime"]["device_admission_providers"] =
+            serde_json::json!([{"id":"grants","grants_file":"grants.json"}]);
+        v["business_entries"] = serde_json::json!([{"login_entry":"one","client_id":"one","tenant_policy":{"kind":"choose"},"mount_prefix":"/one","browser":{"cookie_name":"one"},"device":{"admission_provider":"grants","profile_provider":"ed25519-v2","audience":"one-api","paths":{"login":"/one/auth/login","selection":"/one/auth/tenant-selection/complete","refresh":"/one/auth/refresh","heartbeat":"/one/devices/heartbeat","oidc_token":"/oidc/token"}},"scan":{"admission_provider":"reference-identity-only","presentation_provider":"registered-device","host_scope":"one-host","modes":["device_display","phone_display"],"audience":"one-scan","device_prefix":"/one/auth/device-scan","verification_uri":"https://idp.example.test/one/auth/browser/device-scan/ui","result_keyring":{"active_key_id":"new","keys":[{"key_id":"new","key_file":"new.key"},{"key_id":"old","key_file":"old.key"}]},"cleanup":{"interval_secs":30,"batch_size":100}}}]);
+        let parsed = parse(&v, &envs()).unwrap();
+        let entry = &parsed.business_entries[0];
+        let scan = entry.scan.as_ref().unwrap();
+        let core = scan.entry(entry).unwrap();
+        assert_eq!(core.entry_id, entry.login_entry);
+        assert_eq!(
+            core.allowed_source_client_ids,
+            vec![entry.client_id.clone()]
+        );
+        assert!(std::path::Path::new(&scan.result_keyring.keys[0].key_file).is_absolute());
+        for path in [
+            "admission_provider",
+            "presentation_provider",
+            "device_prefix",
+            "verification_uri",
+        ] {
+            let mut bad = v.clone();
+            bad["business_entries"][0]["scan"][path] = "unsupported".into();
+            assert!(parse(&bad, &envs()).is_err(), "{path}");
+        }
+        for (path, value) in [
+            ("/version", serde_json::json!(1)),
+            (
+                "/business_entries/0/require_device_proof",
+                serde_json::json!(true),
+            ),
+            ("/business_entries/0/scan/modes", serde_json::json!([])),
+            (
+                "/business_entries/0/scan/modes",
+                serde_json::json!(["device_display", "device_display"]),
+            ),
+            (
+                "/business_entries/0/scan/cleanup/interval_secs",
+                serde_json::json!(0),
+            ),
+            (
+                "/business_entries/0/scan/cleanup/batch_size",
+                serde_json::json!(101),
+            ),
+            (
+                "/business_entries/0/scan/result_keyring/active_key_id",
+                serde_json::json!("missing"),
+            ),
+            (
+                "/business_entries/0/scan/result_keyring/keys/1/key_id",
+                serde_json::json!("new"),
+            ),
+        ] {
+            let mut bad = v.clone();
+            if path.ends_with("require_device_proof") {
+                bad["business_entries"][0]["require_device_proof"] = value;
+            } else {
+                *bad.pointer_mut(path).unwrap() = value;
+            }
+            assert!(parse(&bad, &envs()).is_err(), "{path}");
+        }
+        for dependency in ["browser", "device"] {
+            let mut bad = v.clone();
+            bad["business_entries"][0]
+                .as_object_mut()
+                .unwrap()
+                .remove(dependency);
+            assert!(parse(&bad, &envs()).is_err());
+        }
+    }
+    #[test]
+    fn oidc_v2_is_explicit_and_reserves_shared_routes() {
+        let mut v = doc();
+        v["business_entries"] = serde_json::json!([{"login_entry":"one","client_id":"one","tenant_policy":{"kind":"choose"},"mount_prefix":"/one","oidc":{"enabled":true}}]);
+        assert!(parse(&v, &envs()).err().unwrap().contains("version 2"));
+        v["version"] = 2.into();
+        assert!(parse(&v, &envs()).unwrap().business_entries[0].oidc_enabled);
+        for field in ["device", "scan"] {
+            v["business_entries"][0][field] = serde_json::json!({"enabled":true});
+            assert!(parse(&v, &envs()).is_err());
+            v["business_entries"][0]
+                .as_object_mut()
+                .unwrap()
+                .remove(field);
+        }
+        for path in ["/oidc", "/.well-known", "/oidc/token"] {
+            v["business_entries"][0]["mount_prefix"] = path.into();
+            assert!(parse(&v, &envs()).err().unwrap().contains("conflict"));
+        }
+        v["business_entries"][0]["mount_prefix"] = "/one".into();
+        v["business_entries"][0]["oidc"] = serde_json::json!({"enabled":false});
+        assert!(!parse(&v, &envs()).unwrap().business_entries[0].oidc_enabled);
+        v["business_entries"][0]["oidc"] = serde_json::json!({"enabled":true,"device":true});
+        assert!(parse(&v, &envs()).is_err());
+    }
+    #[test]
+    fn ordinary_business_is_supported_at_startup() {
         let mut v = doc();
         v["business_entries"] = serde_json::json!([{"login_entry":"product","client_id":"product-client","tenant_policy":{"kind":"fixed","tenant_id":"a"},"mount_prefix":"/product"}]);
         let c = parse(&v, &envs()).ok().unwrap();
-        assert!(c.validate_for_startup().is_err());
+        assert!(c.validate_for_startup().is_ok());
+    }
+    #[test]
+    fn registration_requires_fixed_policy_and_email_and_full_browser_rejects_dev_ttl() {
+        let mut v = doc();
+        v["business_entries"] = serde_json::json!([{"login_entry":"registration","client_id":"registration","tenant_policy":{"kind":"fixed","tenant_id":"a"},"mount_prefix":"/registration","registration_enabled":true}]);
+        assert!(parse(&v, &envs()).err().unwrap().contains("email"));
+        v["runtime"]["email"] = serde_json::json!({"mode":"log"});
+        assert!(parse(&v, &envs()).is_ok());
+        v["business_entries"][0]["tenant_policy"] = serde_json::json!({"kind":"choose"});
+        assert!(parse(&v, &envs()).err().unwrap().contains("fixed"));
+        v["business_entries"][0]["registration_enabled"] = false.into();
+        v["business_entries"][0]["browser"] =
+            serde_json::json!({"cookie_name":"business","development_session_ttl_secs":120});
+        assert!(parse(&v, &envs()).err().unwrap().contains("development"));
+    }
+    #[cfg(all(feature = "development-private-network-http", debug_assertions))]
+    #[test]
+    fn ordinary_registration_and_independent_browser_lifetimes() {
+        let mut v = doc();
+        v["business_entries"] = serde_json::json!([
+            {"login_entry":"one","client_id":"one","tenant_policy":{"kind":"fixed","tenant_id":"a"},"mount_prefix":"/one","browser":{"cookie_name":"one","development_session_ttl_secs":120}},
+            {"login_entry":"two","client_id":"two","tenant_policy":{"kind":"choose"},"mount_prefix":"/two","browser":{"cookie_name":"two","development_session_ttl_secs":240}}
+        ]);
+        // Full browser sessions must not silently ignore a development TTL.
+        assert!(parse(&v, &envs()).err().unwrap().contains("development"));
+        v["runtime"]["http"]["transport_policy"] = "development-private-network-http".into();
+        v["runtime"]["http"]["browser_origin"] = "http://192.168.1.10:9100".into();
+        let c = parse(&v, &envs()).ok().unwrap();
+        let configs = c
+            .business_entries
+            .iter()
+            .map(|entry| {
+                c.browser_http_config(entry, AccessTokenPurpose::Business)
+                    .unwrap()
+                    .client_config()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(configs[0].session_ttl_secs, Some(120));
+        assert_eq!(configs[1].session_ttl_secs, Some(240));
+        assert_eq!(
+            c.browser_http_config(&c.management, AccessTokenPurpose::Management)
+                .unwrap()
+                .client_config()
+                .session_ttl_secs,
+            Some(900)
+        );
+        v["business_entries"].as_array_mut().unwrap().reverse();
+        let reordered = parse(&v, &envs()).ok().unwrap();
+        assert_eq!(reordered.business_entries[1].login_entry, "one");
+        assert_eq!(reordered.business_entries[1].mount_prefix, "/one");
+        v["business_entries"][1]["registration_enabled"] = true.into();
+        assert!(parse(&v, &envs()).err().unwrap().contains("email"));
+        v["runtime"]["email"] = serde_json::json!({"mode":"log"});
+        assert!(parse(&v, &envs()).is_ok());
+        v["business_entries"][0]["registration_enabled"] = true.into();
+        assert!(parse(&v, &envs()).err().unwrap().contains("fixed"));
+        v["business_entries"][0]["registration_enabled"] = false.into();
+        v["business_entries"][0]["browser"]["development_session_ttl_secs"] = 59.into();
+        assert!(parse(&v, &envs()).is_err());
     }
     #[test]
     fn rejects_policy_paths_cookie_and_secrets() {
@@ -1279,16 +1676,16 @@ mod tests {
         let mut names =
             BTreeSet::from(["DB_URI".to_string(), "EMBEDDED_IDP_APP_UNKNOWN".to_string()]);
         fs::write(&path, serde_json::to_vec(&doc()).unwrap()).unwrap();
-        assert!(AppConfig::from_file_with_lookup(&path, &names, false, &lookup).is_err());
+        assert!(AppConfig::from_file_with_lookup(&path, &names, false, true, &lookup).is_err());
         assert!(calls.borrow().is_empty());
         names.remove("EMBEDDED_IDP_APP_UNKNOWN");
         let mut bad = doc();
         bad["management"]["mount_prefix"] = "/bad+path".into();
         fs::write(&path, serde_json::to_vec(&bad).unwrap()).unwrap();
-        assert!(AppConfig::from_file_with_lookup(&path, &names, false, &lookup).is_err());
+        assert!(AppConfig::from_file_with_lookup(&path, &names, false, true, &lookup).is_err());
         assert!(calls.borrow().is_empty());
         fs::write(&path, serde_json::to_vec(&doc()).unwrap()).unwrap();
-        assert!(AppConfig::from_file_with_lookup(&path, &names, false, &lookup).is_ok());
+        assert!(AppConfig::from_file_with_lookup(&path, &names, false, true, &lookup).is_ok());
         assert_eq!(&*calls.borrow(), &["DB_URI".to_string()]);
         fs::remove_file(path).unwrap();
     }
@@ -1302,7 +1699,7 @@ mod tests {
         for v in [
             serde_json::json!(null),
             serde_json::json!("1"),
-            serde_json::json!(2),
+            serde_json::json!(3),
         ] {
             let mut d = doc();
             d["version"] = v;

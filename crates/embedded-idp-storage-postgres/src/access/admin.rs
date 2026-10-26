@@ -7,10 +7,10 @@ use crate::PgTransaction;
 
 /// Created only by the store runner; every operation stays on one pooled connection.
 pub struct PostgresAccessAdminTransaction<'a> {
-    tx: PgTransaction<'a>,
-    schema: &'a str,
-    mode: TenancyMode,
-    actor: Option<Uuid>,
+    pub(super) tx: PgTransaction<'a>,
+    pub(super) schema: &'a str,
+    pub(super) mode: TenancyMode,
+    pub(super) actor: Option<Uuid>,
 }
 
 pub(crate) fn check_readiness(

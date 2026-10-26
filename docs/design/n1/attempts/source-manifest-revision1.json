@@ -1,0 +1,80 @@
+{
+  "baseline": "6853be0b0ab0baa46d45f478531080e78497365c",
+  "productSources": {
+    "crates/embedded-idp-axum/src/client_admin.rs": "0a02698ec660e80104e8ef2f1ffca98c0dea60edcab95f0c39a3f8193dfb7370",
+    "crates/embedded-idp-axum/src/tenant_management_admin.rs": "59cb9c63956433d912b468dcf96950c2f60b809a50e9160b2845c4d793e7f93d",
+    "web/management/client.ts": "4695cc9e9fddb73221da5ffea2c508e91b893df479d7738a41fffbe63bb69f5a",
+    "web/management/clients.tsx": "cfde161a4f7f9f3fc3bf4b38196c40a910937b2862fdb5e0d3ef9516c5bd2473",
+    "web/management/tenants.tsx": "26fff2dc0a6721051ac9b77bf97fbc73f6fbb586f525e4cde7eabe26233e1d8f"
+  },
+  "acceptanceSources": {
+    "crates/embedded-idp-app/tests/live_reference_host.rs": "c519e219b6effc0c871d5f3e2dc4398ad191cc7a6da55806f547a7d1eb351189",
+    "web/management/client.test.mjs": "a4ba07c24638ab35c2b0711c9ef14471378aa3371ac5b0a24c049e3bff583edb",
+    "scripts/check_management_n1.mjs": "0f3352cf274cb45c595def1278e353d16bdfa1a5aa8cef4c7f83f2e2add9cf10",
+    "scripts/check_management_navigation.mjs": "c2702e73355cf7fb1d0f63ce2661ce86342d7ea92e4932266a6c4e9ba1938144",
+    "scripts/check_management_clients.mjs": "eef3de2d64561c4ead9590642d795a7e96d287bd88a40ee070335cb5b835b54a",
+    "scripts/check_management_authorization.mjs": "b9161c9428b2f23fdcb28fb40e3bd923987fb4b67f643555197e0f733bd72e00",
+    "scripts/management_console_tenant.mjs": "13df4093594351f9fe7d11473021e5084a95db28cba84e227d901a088d00bf64"
+  },
+  "unchangedBoundaries": {
+    "crates/embedded-idp-core/src/access/query.rs": "c43ed5060ac77a230103269edf7bcb0659b344fa6b6ca643fff93775bfba5f08",
+    "crates/embedded-idp-core/src/access/model.rs": "8b5c3167d191b16299b167eeca4a41f92990ecb3f960b695e8ef129591a01fbb",
+    "crates/embedded-idp-core/src/access/admin.rs": "f026a545cb5c8895027dae2faa6ec6aaf7c9540f02eda73c19a8df764d0e18e8",
+    "crates/embedded-idp-core/src/access/admin/clients.rs": "d3eadcb1647199fb75a7e998fb24901fb1e2d1781f62455e511e0e81192b2bbc",
+    "crates/embedded-idp-core/src/access/admin/tenants.rs": "fdcdd3602d5cf52235fbba5f4f7a1c904de21c81a94019ab97d8ba395555f7cb",
+    "crates/embedded-idp-core/src/access/service.rs": "f1a2b86184352e955cdc8e185b25e530ce69ffb9b45f1612323cc507e44b0656",
+    "crates/embedded-idp-axum/src/management_auth.rs": "5b1af7dc9a9bfb068e4891daaf8c5a5938a4b591a9ca3d18cebf79c2e89fb05f",
+    "crates/embedded-idp-axum/src/admin_api.rs": "b5ecc4a3be4c1a0882ee5ef426e79f45a5f6c933bd57fc61f1c31730b9eb01ea",
+    "crates/embedded-idp-storage-postgres/src/sql/tenant_v6.sql": "022d436c61689b701caef0997a2b26b32dbca3beb3958f801f1c2a835c0c24c5",
+    "crates/embedded-idp-app/src/bootstrap.rs": "be12acecd2e4dc75685355bcc70218450c6474b439bb4f8fca2a25cbcc15b404",
+    "web/embedded/browser-session.ts": "6c9dacff1b1cb33f6319e3ce0ca8385caf566857a76189c70a065f7e916a6bbd",
+    "web/embedded/index.ts": "3075033ca3a30df1bf84e73fcc6711df4f56875935404a927c6e72e31efde4b9",
+    "web/embedded/admin.ts": "4959235536d1bb259e75f2444fc621ff43e4b079a64c265c008d312214d459ed",
+    "web/management/navigation.ts": "52a750e666fe68d5870c2dd4d485ca9c7ce5b3cca6ef4059f4573a4f513252a1",
+    "web/management/hash-navigation.ts": "0b8631dd72924de920de057e1f0742a0c9b96e49d4cfeb5466029c2dda9d973b",
+    "web/package.json": "bc73d597f38fdd1d54729005c7a0ee448b02b3d3bc1c78e12e33a7f80e760062",
+    "web/pnpm-lock.yaml": "df608badc42f26adec1df31006618a6e2a175b515bd7a09db6f2a2d180829f7a"
+  },
+  "artifacts": {
+    "web/dist/management/index.html": "22e4b52d1c36c240c03c505844d208269e88b7c18d42cb70c7ec5429a5e6455e",
+    "web/dist/management/assets/shell-C7hxidkY.js": "fb5a772e302b3923ae523917d9c9a45aa13a8130f6332b7de9d3480bf3e65878",
+    "web/dist/management/assets/index-BX7Hoh6V.js": "060765a5601204e6c76866aa975c93262a7a63560acb4fd4ae695aa294bedd5a",
+    "web/dist/management/assets/index-DWB8AfL5.css": "22b6b856c4331e81442efa409a5283b16e1c64d288b4f12eead361347c79a9d2",
+    "target/debug/embedded-idp-app": "553d6a0124ad199cc0a3451f26ab36b788da5f233814d9bbc479856384ec6c88"
+  },
+  "servedAssets": {
+    "enabled": {
+      "uiBasePath": "/console",
+      "apiPrefix": "/identity",
+      "assetSha256": {
+        "index-BX7Hoh6V.js": "060765a5601204e6c76866aa975c93262a7a63560acb4fd4ae695aa294bedd5a",
+        "index-DWB8AfL5.css": "22b6b856c4331e81442efa409a5283b16e1c64d288b4f12eead361347c79a9d2"
+      }
+    },
+    "disabled": {
+      "uiBasePath": "/manage",
+      "apiPrefix": "/gateway",
+      "assetSha256": {
+        "index-BX7Hoh6V.js": "060765a5601204e6c76866aa975c93262a7a63560acb4fd4ae695aa294bedd5a",
+        "index-DWB8AfL5.css": "22b6b856c4331e81442efa409a5283b16e1c64d288b4f12eead361347c79a9d2"
+      }
+    },
+    "fixed": {
+      "uiBasePath": "/console",
+      "apiPrefix": "/identity",
+      "assetSha256": {
+        "index-BX7Hoh6V.js": "060765a5601204e6c76866aa975c93262a7a63560acb4fd4ae695aa294bedd5a",
+        "index-DWB8AfL5.css": "22b6b856c4331e81442efa409a5283b16e1c64d288b4f12eead361347c79a9d2"
+      }
+    },
+    "choose": {
+      "uiBasePath": "/console",
+      "apiPrefix": "/identity",
+      "assetSha256": {
+        "index-BX7Hoh6V.js": "060765a5601204e6c76866aa975c93262a7a63560acb4fd4ae695aa294bedd5a",
+        "index-DWB8AfL5.css": "22b6b856c4331e81442efa409a5283b16e1c64d288b4f12eead361347c79a9d2"
+      }
+    }
+  },
+  "artifactNote": "Final on-disk build hashes; four fixture hosts served assets matching the Web build. Sources were unchanged during browser acceptance; app52 final rerun also includes finalized live tests. No generated bundle or executable is archived."
+}

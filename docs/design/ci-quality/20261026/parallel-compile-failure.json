@@ -1,0 +1,170 @@
+{
+  "schemaVersion": 1,
+  "status": "failed",
+  "phase": "live_postgres_checks",
+  "startedAt": "2026-10-26T02:01:42.130877+00:00",
+  "finishedAt": "2026-10-26T02:05:30.532902+00:00",
+  "durationSeconds": 228.405,
+  "postgresImage": "postgres:18.6-bookworm",
+  "postgresImageId": "sha256:1518a079f5f4987988538d2dcde58230afeaa22a1822fe3f09767bfb5d7fb932",
+  "sourceSha": "ad37ccef3f55d0813cdeeefa5bcf9fc596e2591d",
+  "runtime": {
+    "workingTreeDirty": true,
+    "rust": "rustc 1.93.0 (254b59607 2026-01-19)",
+    "node": "v24.19.0",
+    "pnpm": "10.28.2",
+    "system": "Darwin 25.6.0",
+    "architecture": "arm64",
+    "postgres": "postgres (PostgreSQL) 18.6 (Debian 18.6-1.pgdg12+2)"
+  },
+  "testTargets": [
+    {
+      "target": "tests/live_access.rs",
+      "status": "ok",
+      "passed": 11,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "target": "tests/live_access_admin.rs",
+      "status": "ok",
+      "passed": 44,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "target": "tests/live_access_bootstrap.rs",
+      "status": "ok",
+      "passed": 9,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "target": "tests/live_access_tenants.rs",
+      "status": "ok",
+      "passed": 4,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "target": "tests/live_business_admin.rs",
+      "status": "ok",
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "target": "tests/live_pool.rs",
+      "status": "ok",
+      "passed": 2,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "target": "tests/live_postgres.rs",
+      "status": "ok",
+      "passed": 6,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "target": "tests/live_tenant_registration.rs",
+      "status": "ok",
+      "passed": 62,
+      "failed": 0,
+      "ignored": 0
+    }
+  ],
+  "checks": [
+    {
+      "name": "record-sourceSha",
+      "exitCode": 0,
+      "durationSeconds": 0.007
+    },
+    {
+      "name": "record-workingTree",
+      "exitCode": 0,
+      "durationSeconds": 0.016
+    },
+    {
+      "name": "record-rust",
+      "exitCode": 0,
+      "durationSeconds": 0.038
+    },
+    {
+      "name": "record-node",
+      "exitCode": 0,
+      "durationSeconds": 0.02
+    },
+    {
+      "name": "record-pnpm",
+      "exitCode": 0,
+      "durationSeconds": 0.161
+    },
+    {
+      "name": "verify-postgres-image",
+      "exitCode": 0,
+      "durationSeconds": 0.097
+    },
+    {
+      "name": "start-owned-postgres",
+      "exitCode": 0,
+      "durationSeconds": 0.161
+    },
+    {
+      "name": "read-postgres-port",
+      "exitCode": 0,
+      "durationSeconds": 0.023
+    },
+    {
+      "name": "postgres-readiness-probe",
+      "exitCode": 2,
+      "durationSeconds": 0.086
+    },
+    {
+      "name": "postgres-readiness-probe",
+      "exitCode": 0,
+      "durationSeconds": 0.122
+    },
+    {
+      "name": "read-postgres-version",
+      "exitCode": 0,
+      "durationSeconds": 0.051
+    },
+    {
+      "name": "existing-live-postgres-checks",
+      "exitCode": 101,
+      "durationSeconds": 225.897
+    },
+    {
+      "name": "private-postgres-failure-diagnostic",
+      "exitCode": 0,
+      "durationSeconds": 0.105
+    },
+    {
+      "name": "check-owned-container",
+      "exitCode": 0,
+      "durationSeconds": 0.023
+    },
+    {
+      "name": "inspect-container-owner",
+      "exitCode": 0,
+      "durationSeconds": 0.021
+    },
+    {
+      "name": "remove-owned-container",
+      "exitCode": 0,
+      "durationSeconds": 0.545
+    },
+    {
+      "name": "verify-container-removed",
+      "exitCode": 0,
+      "durationSeconds": 0.019
+    }
+  ],
+  "cleanup": "confirmed",
+  "ownedCommandGroups": "confirmed",
+  "failure": "existing live Postgres checks failed (exit 101)",
+  "log": "integration.log",
+  "privateRecoveryDirectory": null
+}

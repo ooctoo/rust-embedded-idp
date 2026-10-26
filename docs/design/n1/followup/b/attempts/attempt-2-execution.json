@@ -1,0 +1,6 @@
+{
+  "command": "node scripts/check_management_navigation.mjs",
+  "exitCode": 1,
+  "durationSeconds": 21.12,
+  "passLines": []
+}

@@ -1,0 +1,17 @@
+{
+  "command": "node scripts/check_management_n1.mjs",
+  "exitCode": 1,
+  "durationSeconds": 33.48,
+  "passLines": [
+    "PASS real dot-only client seed, lookup, edit and readback use query and do not carry target headers",
+    "PASS dot-only client opens from the real list",
+    "PASS real authorized lookup 200/null permits initial registration",
+    "PASS injected 404/405/204/201/202/206/HTML/invalid JSON/missing fields/wrong ID never opens registration or POST",
+    "PASS saved: injected 200/null and 404 keep write lock; real nonnull read recovers without replay",
+    "PASS unknown: injected 200/null and 404 keep write lock; real nonnull read recovers without replay",
+    "PASS rejected: injected 200/null and 404 keep write lock; real nonnull read recovers without replay",
+    "PASS dot-only draft survives cancelled cross-page navigation without replay",
+    "PASS dot-only confirmation survives cancelled cross-page navigation without replay",
+    "PASS dot-only unknown survives cancelled cross-page navigation without replay"
+  ]
+}

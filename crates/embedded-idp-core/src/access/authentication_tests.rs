@@ -570,7 +570,7 @@ fn bearer_refresh_rotates_in_both_modes_and_reuse_revokes_only_its_family() {
             panic!()
         };
         let TenantRefreshOutcome::Rotated { session, tokens } = auth
-            .rotate_refresh(first.tokens.refresh_token.clone())
+            .refresh_ordinary(first.tokens.refresh_token.clone())
             .unwrap()
         else {
             panic!()
@@ -579,7 +579,7 @@ fn bearer_refresh_rotates_in_both_modes_and_reuse_revokes_only_its_family() {
         assert_eq!(tokens.refresh_expires_at, first.session.expires_at);
         assert!(auth.authenticate(tokens.access_token.token).is_ok());
         assert_eq!(
-            auth.rotate_refresh(first.tokens.refresh_token),
+            auth.refresh_ordinary(first.tokens.refresh_token),
             Ok(TenantRefreshOutcome::ReuseDetected {
                 tenant_id: tenant.into(),
                 session_id: session.id
@@ -587,7 +587,7 @@ fn bearer_refresh_rotates_in_both_modes_and_reuse_revokes_only_its_family() {
         );
         assert!(auth.authenticate(first.tokens.access_token).is_err());
         assert!(auth.authenticate(other.tokens.access_token).is_ok());
-        assert!(auth.rotate_refresh(tokens.refresh_token).is_err());
+        assert!(auth.refresh_ordinary(tokens.refresh_token).is_err());
     }
 }
 
@@ -2120,3 +2120,107 @@ pub(super) mod device_proofs {
 }
 
 mod oidc;
+
+#[test]
+fn ordinary_refresh_rolls_back_failed_rotation_and_failed_reuse_revocation() {
+    let store = seed();
+    let auth = svc(
+        LoginTenantPolicy::Fixed {
+            tenant_id: "t1".into(),
+        },
+        store.clone(),
+    );
+    let TenantLoginOutcome::Authenticated(initial) = auth.login(login()).unwrap() else {
+        panic!()
+    };
+    let service: &dyn TenantRefreshService = &auth;
+    let before = store.0.lock().unwrap().clone();
+    store.0.lock().unwrap().fail_insert = true;
+    assert!(matches!(
+        service.refresh_ordinary(initial.tokens.refresh_token.clone()),
+        Err(TenantAuthError::Store(_))
+    ));
+    {
+        let mut state = store.0.lock().unwrap();
+        assert_eq!(state.sessions, before.sessions);
+        assert!(state.refreshes == before.refreshes);
+        state.fail_insert = false;
+    }
+    let TenantRefreshOutcome::Rotated { tokens, .. } = service
+        .refresh_ordinary(initial.tokens.refresh_token.clone())
+        .unwrap()
+    else {
+        panic!()
+    };
+    let rotated = store.0.lock().unwrap().clone();
+    store.0.lock().unwrap().fail_insert = true;
+    assert!(matches!(
+        service.refresh_ordinary(initial.tokens.refresh_token.clone()),
+        Err(TenantAuthError::Store(_))
+    ));
+    {
+        let mut state = store.0.lock().unwrap();
+        assert_eq!(state.sessions, rotated.sessions);
+        assert!(state.refreshes == rotated.refreshes);
+        state.fail_insert = false;
+    }
+    assert!(auth.authenticate(tokens.access_token.token.clone()).is_ok());
+    assert!(matches!(
+        service.refresh_ordinary(initial.tokens.refresh_token),
+        Ok(TenantRefreshOutcome::ReuseDetected { .. })
+    ));
+    assert!(auth.authenticate(tokens.access_token.token).is_err());
+    assert!(store.0.lock().unwrap().refreshes.iter().all(|record| {
+        record.revocation_reason == Some(RefreshTokenRevocationReason::ReuseDetected)
+    }));
+}
+
+#[test]
+fn ordinary_refresh_contract_rejects_wrong_boundary_without_consuming_token() {
+    for change in ["client", "purpose", "tenant", "device", "proof_required"] {
+        let s = seed();
+        let mut auth = svc(
+            LoginTenantPolicy::Fixed {
+                tenant_id: "t1".into(),
+            },
+            s.clone(),
+        );
+        let TenantLoginOutcome::Authenticated(initial) = auth.login(login()).unwrap() else {
+            panic!()
+        };
+        let original = s.0.lock().unwrap().sessions[0].clone();
+        match change {
+            "client" => s.0.lock().unwrap().sessions[0].client_id = "other".into(),
+            "purpose" => s.0.lock().unwrap().sessions[0].purpose = AccessTokenPurpose::Management,
+            "tenant" => {
+                auth.entry.policy = LoginTenantPolicy::Fixed {
+                    tenant_id: "t2".into(),
+                }
+            }
+            "device" => s.0.lock().unwrap().sessions[0].device_id = Some("d1".into()),
+            "proof_required" => auth.entry.require_device_proof = true,
+            _ => unreachable!(),
+        }
+        assert!(
+            auth.refresh_ordinary(initial.tokens.refresh_token.clone())
+                .is_err(),
+            "{change}"
+        );
+        assert!(s
+            .0
+            .lock()
+            .unwrap()
+            .refreshes
+            .iter()
+            .all(|r| r.revoked_at.is_none()));
+        s.0.lock().unwrap().sessions[0] = original;
+        auth.entry.policy = LoginTenantPolicy::Fixed {
+            tenant_id: "t1".into(),
+        };
+        auth.entry.require_device_proof = false;
+        assert!(matches!(
+            auth.refresh_ordinary(initial.tokens.refresh_token),
+            Ok(TenantRefreshOutcome::Rotated { .. })
+        ));
+    }
+}

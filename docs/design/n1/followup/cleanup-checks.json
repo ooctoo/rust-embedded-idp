@@ -1,0 +1,19 @@
+{
+  "fixtures": {
+    "n1-c-d": {
+      "ownershipLabelVerified": true,
+      "fixtureDirectoryRemoved": true,
+      "containerRemoved": true,
+      "allFourHostPidsExited": true,
+      "privateConfigAndStateRemoved": true
+    },
+    "b": {
+      "ownershipLabelVerified": true,
+      "fixtureDirectoryRemoved": true,
+      "containerRemoved": true,
+      "allFourHostPidsExited": true,
+      "privateConfigAndStateRemoved": true
+    }
+  },
+  "note": "Two new owned disposable fixtures only; project .env and existing databases were not used. Initial cleanup evidence remains separate."
+}

@@ -20,7 +20,7 @@ use embedded_idp_core::{
 use serde::Deserialize;
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 #[derive(Clone)]
 pub struct TenantOidcHttpConfig {
@@ -43,7 +43,8 @@ impl TenantOidcHttpConfig {
 #[derive(Clone)]
 struct OidcState {
     service: Arc<dyn TenantOidcAuthorizationService>,
-    config: TenantOidcHttpConfig,
+    config: Option<TenantOidcHttpConfig>,
+    profiles: BTreeMap<String, TenantOidcHttpConfig>,
 }
 /// Merge with tenant authentication/resource routers; replaces the old OIDC
 /// authorize/token routes. No caller-supplied subject or tenant selects identity.
@@ -51,10 +52,29 @@ pub fn tenant_oidc_authorization_router(
     service: Arc<dyn TenantOidcAuthorizationService>,
     config: TenantOidcHttpConfig,
 ) -> Router {
+    oidc_router(OidcState {
+        service,
+        config: Some(config),
+        profiles: BTreeMap::new(),
+    })
+}
+/// A frozen host-supplied client registry; request fields only choose a profile.
+/// The selected Core service must still authenticate the client and credential.
+pub fn tenant_oidc_authorization_router_with_profiles(
+    service: Arc<dyn TenantOidcAuthorizationService>,
+    profiles: BTreeMap<String, TenantOidcHttpConfig>,
+) -> Router {
+    oidc_router(OidcState {
+        service,
+        config: None,
+        profiles,
+    })
+}
+fn oidc_router(state: OidcState) -> Router {
     Router::new()
         .route("/oidc/authorize", get(authorize))
         .route("/oidc/token", post(token))
-        .with_state(OidcState { service, config })
+        .with_state(state)
         .layer(axum::extract::DefaultBodyLimit::max(
             AUTH_DEVICE_BODY_LIMIT_BYTES,
         ))
@@ -156,17 +176,8 @@ async fn token(
         Err(_) => return oauth_error(StatusCode::PAYLOAD_TOO_LARGE, "invalid_request"),
     };
     let digest = Sha256::digest(&bytes).into();
-    let proof = match credential_proof(
-        &state.config.token,
-        &parts.headers,
-        &parts.method,
-        &uri,
-        digest,
-    ) {
-        Ok(proof) => proof,
-        Err(_) => return oauth_error(StatusCode::BAD_REQUEST, "invalid_request"),
-    };
     let headers = parts.headers.clone();
+    let actual_method = parts.method.clone();
     let form =
         match Form::<CodeForm>::from_request(Request::from_parts(parts, Body::from(bytes)), &())
             .await
@@ -189,6 +200,14 @@ async fn token(
             Ok(credentials) => credentials,
             Err(error) => return exchange_error(error),
         };
+    let config = match state.profiles.get(&client_id).or(state.config.as_ref()) {
+        Some(config) => config,
+        None => return exchange_error(TenantAuthError::InvalidClient),
+    };
+    let proof = match credential_proof(&config.token, &headers, &actual_method, &uri, digest) {
+        Ok(proof) => proof,
+        Err(_) => return oauth_error(StatusCode::BAD_REQUEST, "invalid_request"),
+    };
     let command = TenantCodeExchange {
         grant_type: form.grant_type,
         client_id,
@@ -324,6 +343,113 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    }
+    #[tokio::test]
+    async fn client_registry_preserves_raw_form_and_trusted_profile() {
+        use base64ct::{Base64UrlUnpadded, Encoding};
+        use std::sync::Mutex;
+        #[derive(Default)]
+        struct Capture(Mutex<Vec<(String, TenantAuthenticationProof)>>);
+        impl TenantOidcAuthorizationService for Capture {
+            fn authenticate(&self, _: SecretString) -> Result<AccessActor, TenantAuthError> {
+                unreachable!()
+            }
+            fn authorize(
+                &self,
+                _: AccessActor,
+                _: TenantAuthorizationRequest,
+            ) -> Result<TenantAuthorizationResult, TenantAuthError> {
+                unreachable!()
+            }
+            fn exchange(
+                &self,
+                command: TenantCodeExchange,
+                proof: Option<TenantAuthenticationProof>,
+            ) -> Result<TenantCodeExchangeResult, TenantAuthError> {
+                assert_eq!(command.code.expose_secret(), "a+b");
+                self.0
+                    .lock()
+                    .unwrap()
+                    .push((command.client_id, proof.unwrap()));
+                Err(TenantAuthError::InvalidGrant)
+            }
+        }
+        let captured = Arc::new(Capture::default());
+        let app = Router::new().nest(
+            "/api",
+            tenant_oidc_authorization_router_with_profiles(
+                captured.clone(),
+                BTreeMap::from([
+                    (
+                        "one".into(),
+                        TenantOidcHttpConfig::new("audience-one", "/api/oidc/token").unwrap(),
+                    ),
+                    (
+                        "two".into(),
+                        TenantOidcHttpConfig::new("audience-two", "/api/oidc/token").unwrap(),
+                    ),
+                ]),
+            ),
+        );
+        for client in ["one", "two", "unknown"] {
+            let body = format!("grant_type=authorization_code&code=a%2Bb&redirect_uri=test%3A%2F%2Fcallback&client_id={client}");
+            let request = |path: &str, duplicate: bool| {
+                let mut request = Request::builder()
+                    .method("POST")
+                    .uri(path)
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .header("x-embedded-idp-tenant-id", "t1")
+                    .header("x-device-id", "device-1")
+                    .header(
+                        "x-device-key-id",
+                        Base64UrlUnpadded::encode_string(&[1; 32]),
+                    )
+                    .header(
+                        "x-device-challenge",
+                        Base64UrlUnpadded::encode_string(&[2; 32]),
+                    )
+                    .header(
+                        "x-device-signature",
+                        Base64UrlUnpadded::encode_string(&[3; 64]),
+                    )
+                    .header("x-device-signed-at", "1700000000");
+                if duplicate {
+                    request = request.header("x-embedded-idp-tenant-id", "t2");
+                }
+                request.body(Body::from(body.clone())).unwrap()
+            };
+            let before = captured.0.lock().unwrap().len();
+            for (path, duplicate) in [
+                ("/api/oidc/token?extra=1", false),
+                ("/api/oidc/token", true),
+            ] {
+                let response = app.clone().oneshot(request(path, duplicate)).await.unwrap();
+                assert!(response.status().is_client_error());
+                assert_eq!(captured.0.lock().unwrap().len(), before);
+            }
+            let response = app
+                .clone()
+                .oneshot(request("/api/oidc/token", false))
+                .await
+                .unwrap();
+            if client == "unknown" {
+                assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+                assert_eq!(captured.0.lock().unwrap().len(), before);
+            } else {
+                assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+                let calls = captured.0.lock().unwrap();
+                let (actual_client, proof) = calls.last().unwrap();
+                assert_eq!(actual_client, client);
+                assert_eq!(proof.binding.audience, format!("audience-{client}"));
+                assert_eq!(proof.binding.external_path, "/api/oidc/token");
+                assert_eq!(proof.binding.tenant_id, "t1");
+                assert_eq!(proof.binding.method, CanonicalHttpMethod::Post);
+                assert_eq!(
+                    proof.binding.body_sha256,
+                    <[u8; 32]>::from(Sha256::digest(body.as_bytes()))
+                );
+            }
+        }
     }
     #[test]
     fn oidc_errors_preserve_infrastructure_failure_and_authentication_challenges() {

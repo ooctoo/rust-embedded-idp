@@ -1,0 +1,89 @@
+[
+  {
+    "attempt": "e2e-attempt1",
+    "status": "failed",
+    "stage": "E02.draft_and_pending_navigation_guard",
+    "diagnostic": {
+      "type": "AssertionError",
+      "checker_line": 34
+    },
+    "cleanup": "passed",
+    "resultSha256": "2593b440f28254cd675013ca48747f311fc9ed457d18a2262c2a80636fc8effa"
+  },
+  {
+    "attempt": "e2e-attempt2",
+    "status": "failed",
+    "stage": "E02.draft_and_pending_navigation_guard",
+    "diagnostic": {
+      "type": "AssertionError",
+      "checker_file": "ci_e2e_navigation.mjs",
+      "checker_line": 128
+    },
+    "cleanup": "passed",
+    "resultSha256": "51d7d35334692106ee5f79635a2ad67a91cee2163fdfc12b30d2428148ad1d3c"
+  },
+  {
+    "attempt": "e2e-attempt3",
+    "status": "failed",
+    "stage": "E02.draft_and_pending_navigation_guard",
+    "diagnostic": {
+      "type": "AssertionError",
+      "checker_file": "ci_e2e_navigation.mjs",
+      "checker_line": 128,
+      "actual_number": 201,
+      "expected_number": 200
+    },
+    "cleanup": "passed",
+    "resultSha256": "6ed773fc98624a9a1120723c6445bcf5ac4582773ba9eae202a03fcc70014433"
+  },
+  {
+    "attempt": "e2e-attempt4",
+    "status": "failed",
+    "stage": "E03.create_and_readback",
+    "diagnostic": {
+      "type": "TimeoutError",
+      "checker_file": "check_ci_e2e.mjs",
+      "checker_line": 168,
+      "actual_number": null,
+      "expected_number": null
+    },
+    "cleanup": "passed",
+    "resultSha256": "72f9ec2f99dcba1d1f6a73bff9d22ac4ad156b520100682c6686c6a2df507bb1"
+  },
+  {
+    "attempt": "e2e-attempt5",
+    "status": "failed",
+    "stage": "E05.real_write_lost_response",
+    "diagnostic": {
+      "type": "TimeoutError",
+      "checker_file": "check_ci_e2e.mjs",
+      "checker_line": 286,
+      "actual_number": null,
+      "expected_number": null
+    },
+    "cleanup": "passed",
+    "resultSha256": "270ee8304cb3216377966695e58fac86f1ce7a1816d8d6c5b39451f24e6da7bf"
+  },
+  {
+    "attempt": "e2e-attempt6",
+    "status": "failed",
+    "stage": "E05.real_write_lost_response",
+    "diagnostic": {
+      "type": "TimeoutError",
+      "checker_file": "check_ci_e2e.mjs",
+      "checker_line": 286,
+      "actual_number": null,
+      "expected_number": null
+    },
+    "cleanup": "passed",
+    "resultSha256": "98aa27280b6a1c65beedefb8247a938ed29f6af9a920b9d672a56b4e5a6f0534"
+  },
+  {
+    "attempt": "e2e-attempt7",
+    "status": "passed",
+    "stage": null,
+    "diagnostic": null,
+    "cleanup": "passed",
+    "resultSha256": "3348dbaddb4678651913564c988544d2c37f52ffd3328f807ab066e4ab84b1f1"
+  }
+]

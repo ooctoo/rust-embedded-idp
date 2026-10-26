@@ -84,8 +84,8 @@ pub fn tenant_device_auth_router(
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct RefreshRequest {
-    refresh_token: String,
+pub(super) struct RefreshRequest {
+    pub(super) refresh_token: String,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -153,7 +153,7 @@ pub(super) async fn raw_json<T: serde::de::DeserializeOwned>(
         Sha256::digest(&bytes).into(),
     ))
 }
-fn has_proof(headers: &HeaderMap) -> bool {
+pub(super) fn has_proof(headers: &HeaderMap) -> bool {
     [
         DEVICE_ID_HEADER,
         DEVICE_KEY_ID_HEADER,
@@ -343,13 +343,17 @@ async fn refresh(
         Ok(p) => p,
         Err(r) => return r,
     };
-    match call(move || {
+    let result = call(move || {
         state
             .service
             .refresh(SecretString::new(body.refresh_token), proof)
     })
-    .await
-    {
+    .await;
+    refresh_response(result)
+}
+
+pub(super) fn refresh_response(result: Result<TenantRefreshOutcome, TenantAuthError>) -> Response {
+    match result {
         Ok(TenantRefreshOutcome::Rotated { session, tokens }) => {
             authenticated(TenantLoginSession {
                 session,

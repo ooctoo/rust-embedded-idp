@@ -1,0 +1,32 @@
+{
+  "date": "2026-10-23",
+  "stage": "UI-E supplemental acceptance",
+  "command": "cargo test -p embedded-idp-app --locked --offline -- --include-ignored --test-threads=1",
+  "exitCode": 0,
+  "groups": [
+    {
+      "passed": 33,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "passed": 2,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "passed": 2,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "passed": 13,
+      "failed": 0,
+      "ignored": 0
+    }
+  ],
+  "passed": 50,
+  "failed": 0,
+  "ignored": 0,
+  "evidence": "fresh disposable PostgreSQL 18.3; compiled reference hosts; no production acceptance"
+}

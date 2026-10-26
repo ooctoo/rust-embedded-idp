@@ -1,0 +1,28 @@
+.th-main, .th-main * { box-sizing: border-box; }
+.th-main { max-width: 1160px; margin: 0 auto; padding: 28px 20px 56px; color: #172033; font: 400 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+.th-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; margin-bottom: 20px; }
+.th-header p { margin: 0; color: #385e9f; font-weight: 700; }
+.th-header h1 { margin: 4px 0; font-size: clamp(25px, 5vw, 34px); }
+.th-header span,.th-note { color: #58677c; }
+.th-main a { color: #245cca; }
+.th-entry,.th-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+.th-main button { min-height: 40px; max-width: 100%; border: 1px solid #245cca; border-radius: 7px; padding: 8px 13px; color: white; background: #245cca; font: inherit; cursor: pointer; }
+.th-main button:disabled { opacity: .55; cursor: not-allowed; }
+.th-main button:focus-visible,.th-main input:focus-visible,.th-main textarea:focus-visible,.th-main select:focus-visible { outline: 3px solid #94b8ff; outline-offset: 2px; }
+.th-main button.th-secondary { color: #245cca; background: transparent; }
+.th-main [aria-pressed="true"] { outline: 2px solid #193b78; outline-offset: 2px; }
+.th-grid { display: grid; grid-template-columns: minmax(300px, 0.9fr) minmax(320px, 1.1fr); gap: 20px; align-items: start; }
+.th-card { min-width: 0; margin: 16px 0; padding: 22px; border: 1px solid #dce3ef; border-radius: 12px; background: white; overflow-wrap: anywhere; }
+.th-card h2 { margin-top: 0; }
+.th-form { display: grid; justify-items: start; gap: 8px; margin: 18px 0; }
+.th-form label,.th-card > label { font-weight: 650; }
+.th-form input,.th-form select,.th-card select,.th-card textarea { width: 100%; min-width: 0; min-height: 42px; padding: 9px 10px; border: 1px solid #8290a3; border-radius: 7px; font: inherit; }
+.th-card textarea { resize: vertical; }
+.th-report-list { list-style: none; padding: 0; }
+.th-report-list li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 12px 0; border-bottom: 1px solid #dce3ef; }
+.th-report-list span,.th-report-list small { color: #58677c; overflow-wrap: anywhere; }
+.th-alert { padding: 10px 12px; border-inline-start: 3px solid #b42318; background: #fef3f2; color: #7a271a; overflow-wrap: anywhere; }
+.th-main footer { margin-top: 22px; font-size: 13px; }
+@media (max-width: 720px) { .th-main { padding: 18px 12px 40px; } .th-grid { grid-template-columns: minmax(0,1fr); } .th-header { align-items: flex-start; } }
+
+@media (max-width: 420px) { .th-header { flex-direction: column; gap: 10px; } }

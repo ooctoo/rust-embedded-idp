@@ -1,0 +1,204 @@
+{
+  "date": "2026-10-23",
+  "baseline": "cbd7aaed8b22c8ca2bb04f8be2fd7c0d1db01fe8",
+  "webTests": {
+    "command": "pnpm --dir web test",
+    "passed": 106,
+    "exitCode": 0
+  },
+  "embeddedBundle": {
+    "command": "pnpm --dir web test:embedded-bundle",
+    "passed": 3,
+    "exitCode": 0
+  },
+  "builds": [
+    {
+      "command": "pnpm --dir web build",
+      "exitCode": 0
+    },
+    {
+      "command": "cargo build -p embedded-idp-app --locked --offline",
+      "exitCode": 0
+    },
+    {
+      "command": "cargo build -p embedded-idp-storage-postgres --example bootstrap_local_postgres --locked --offline",
+      "exitCode": 0
+    },
+    {
+      "command": "cargo fmt --all -- --check",
+      "exitCode": 0
+    },
+    {
+      "command": "cargo check --workspace --all-targets --locked --offline",
+      "exitCode": 0
+    }
+  ],
+  "workspace": {
+    "command": "cargo test --workspace --locked --offline",
+    "exitCode": 0,
+    "passed": 444,
+    "failed": 0,
+    "ignored": 150,
+    "groups": [
+      {
+        "passed": 33,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 2
+      },
+      {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 13
+      },
+      {
+        "passed": 94,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 260,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 9,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 12,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 22,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 10
+      },
+      {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 43
+      },
+      {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 5
+      },
+      {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 4
+      },
+      {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 1
+      },
+      {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 2
+      },
+      {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 6
+      },
+      {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 62
+      },
+      {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 1
+      },
+      {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 1
+      },
+      {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0
+      }
+    ],
+    "note": "Ignored live tests are not passed; host50 and targeted Postgres12 are separately executed in disposable DB."
+  },
+  "nodeSyntax": {
+    "files": [
+      "scripts/check_management_console.mjs",
+      "scripts/management_console_states.mjs",
+      "scripts/management_console_pagination.mjs",
+      "scripts/management_console_tenant.mjs"
+    ],
+    "exitCode": 0
+  },
+  "buildWarnings": [
+    "existing Vite chunk size warning above 500kB"
+  ],
+  "tools": {
+    "node": "24.19.0",
+    "pnpm": "10.28.2",
+    "cargo": "1.93.0",
+    "browser": "installed Chromium headless shell1243"
+  }
+}

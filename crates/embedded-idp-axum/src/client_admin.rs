@@ -21,6 +21,7 @@ pub fn client_admin_router(service: Arc<dyn ClientAdminService>) -> Router {
     Router::new()
         .route("/admin/clients", get(list))
         .route(crate::http_paths::ADMIN_CLIENT_UPSERT_PATH, post(upsert))
+        .route("/admin/clients/-/lookup", get(lookup))
         .route("/admin/clients/:client_id", get(detail))
         .with_state(service)
         .layer(DefaultBodyLimit::max(16384))
@@ -63,6 +64,11 @@ struct PageQuery {
     sort_order: ManagementSortOrder,
     client_type: Option<Kind>,
     pkce_required: Option<bool>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LookupQuery {
+    client_id: String,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -178,6 +184,29 @@ async fn detail(
         Err(e) => error(e),
     }
 }
+async fn lookup(
+    State(service): State<Arc<dyn ClientAdminService>>,
+    context_value: Option<Extension<AccessAdminContext>>,
+    headers: HeaderMap,
+    Query(query): Query<LookupQuery>,
+) -> Response {
+    let context = match context(context_value, &headers) {
+        Ok(c) => c,
+        Err(e) => return e,
+    };
+    let id = query.client_id;
+    let requested = id.clone();
+    match call(move || service.get_client(context, id)).await {
+        Ok(c) if c.client_id == requested => {
+            Json(json!({"client_id":requested,"client":metadata(c)})).into_response()
+        }
+        Ok(_) => error(AccessError::InvalidStoreResponse),
+        Err(AccessError::NotFound("client")) => {
+            Json(json!({"client_id":requested,"client":null})).into_response()
+        }
+        Err(e) => error(e),
+    }
+}
 async fn upsert(
     State(service): State<Arc<dyn ClientAdminService>>,
     context_value: Option<Extension<AccessAdminContext>>,
@@ -209,6 +238,143 @@ async fn upsert(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::{
+        body::{to_bytes, Body},
+        http::{Request, StatusCode},
+    };
+    use tower::ServiceExt;
+
+    struct LookupService;
+    impl ClientAdminService for LookupService {
+        fn list_clients(
+            &self,
+            _: AccessAdminContext,
+            _: AdminClientFilter,
+            _: AccessPageRequest,
+        ) -> Result<AccessPage<AdminClientRecord>, AccessError> {
+            unreachable!()
+        }
+        fn get_client(
+            &self,
+            _: AccessAdminContext,
+            id: String,
+        ) -> Result<AdminClientRecord, AccessError> {
+            if id.is_empty()
+                || id.len() > 128
+                || !id
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"_.-".contains(&b))
+            {
+                return Err(AccessError::InvalidInput("client_id"));
+            }
+            match id.as_str() {
+                "missing" => return Err(AccessError::NotFound("client")),
+                "other" => return Err(AccessError::NotFound("other")),
+                "forbidden" => return Err(AccessError::Forbidden),
+                _ => {}
+            }
+            Ok(AdminClientRecord {
+                client_id: if id == "mismatch" { "wrong".into() } else { id },
+                client_name: "Example".into(),
+                redirect_uris: vec![],
+                client_type: OidcClientType::PublicDesktop,
+                pkce_required: true,
+                client_secret_configured: false,
+                created_at: None,
+            })
+        }
+        fn upsert_client(
+            &self,
+            _: AccessAdminContext,
+            _: AdminUpsertClient,
+        ) -> Result<AccessAuditEvent, AccessError> {
+            unreachable!()
+        }
+    }
+    fn app() -> Router {
+        client_admin_router(Arc::new(LookupService)).layer(Extension(AccessAdminContext {
+            actor: AccessActor {
+                tenant_id: "0".into(),
+                subject_id: "admin".into(),
+                session_id: "session".into(),
+            },
+            authentication_source: "test".into(),
+            request_id: "request".into(),
+        }))
+    }
+    async fn request(uri: &str) -> (StatusCode, Value) {
+        let response = app()
+            .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        let status = response.status();
+        let body = to_bytes(response.into_body(), 16384).await.unwrap();
+        (status, serde_json::from_slice(&body).unwrap_or(Value::Null))
+    }
+    #[tokio::test]
+    async fn exact_lookup_preserves_ids_and_classifies_service_results() {
+        for (encoded, expected) in [
+            ("%2E", "."),
+            ("..", ".."),
+            ("...", "..."),
+            (".a", ".a"),
+            ("a..", "a.."),
+            ("-", "-"),
+            ("lookup", "lookup"),
+            ("upsert", "upsert"),
+        ] {
+            let (status, body) =
+                request(&format!("/admin/clients/-/lookup?client_id={encoded}")).await;
+            assert_eq!(status, StatusCode::OK);
+            assert_eq!(body["client_id"], expected);
+            assert_eq!(body["client"]["client_id"], expected);
+        }
+        let (status, body) = request("/admin/clients/-/lookup?client_id=missing").await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(body["client"].is_null());
+        for (id, expected) in [
+            ("other", StatusCode::NOT_FOUND),
+            ("forbidden", StatusCode::FORBIDDEN),
+            ("mismatch", StatusCode::INTERNAL_SERVER_ERROR),
+        ] {
+            assert_eq!(
+                request(&format!("/admin/clients/-/lookup?client_id={id}"))
+                    .await
+                    .0,
+                expected
+            );
+        }
+        for id in ["-", "lookup"] {
+            assert_eq!(
+                request(&format!("/admin/clients/{id}")).await.0,
+                StatusCode::OK
+            );
+        }
+        assert_eq!(
+            request("/admin/clients/upsert").await.0,
+            StatusCode::METHOD_NOT_ALLOWED
+        );
+    }
+    #[tokio::test]
+    async fn lookup_rejects_ambiguous_or_invalid_query() {
+        for query in [
+            "",
+            "client_id=",
+            "client_id=.&client_id=.",
+            "client_id=.&client_id=..",
+            "client_id=.&other=x",
+            "client_id=%252e",
+            "client_id=%",
+            "client_id=%FF",
+            "client_id=a%2Fb",
+        ] {
+            assert_eq!(
+                request(&format!("/admin/clients/-/lookup?{query}")).await.0,
+                StatusCode::BAD_REQUEST,
+                "{query}"
+            );
+        }
+    }
     #[test]
     fn client_payload_cannot_supply_hash_policy_or_actor() {
         let valid = json!({"client_id":"web","client_name":"Web","redirect_uris":["https://example.test/callback"],"client_type":"confidential_web","pkce_required":true,"client_secret":"fixture-only"});

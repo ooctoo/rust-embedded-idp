@@ -31,6 +31,15 @@ pub struct CoreManagementAuthenticationService<S, T, G, D, C, I> {
 }
 
 impl<S, T, G, D, C, I> CoreManagementAuthenticationService<S, T, G, D, C, I> {
+    /// Apply the same opt-in ticket isolation as ordinary business authentication.
+    pub fn with_restricted_browser_isolation(
+        mut self,
+        lifetime_secs: u64,
+    ) -> Result<Self, TenantAuthError> {
+        self.auth = self.auth.with_restricted_browser_isolation(lifetime_secs)?;
+        Ok(self)
+    }
+
     /// Fixed `0` explicitly selects platform management in either mode. Other
     /// policies follow ordinary tenant rules; selection never includes `0`.
     /// The initial management entry supports bearer sessions only. Reject a

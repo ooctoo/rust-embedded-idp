@@ -146,13 +146,13 @@ function Console({ client }: { client: ManagementClient }) {
       <main className="management-main"><section className="management-panel" aria-label="管理认证" aria-busy={busy}>
         {notices}
         {!capabilities ? <Card className="management-card">
-          <Title level={2}>连接管理服务</Title>
+          <Title level={1}>连接管理服务</Title>
           {busy ? <div role="status"><Spin /> 正在读取登录方式…</div> : <Button onClick={() => void run(() => client.loadCapabilities())}>重新连接</Button>}
         </Card> : state.selecting ? <TenantPicker client={client} busy={busy} run={run} reportError={setError} /> : state.session ?
           <Card className="management-card"><div role="status"><Spin /> 正在验证当前管理会话…</div>
             {!busy && <Button onClick={() => void run(async () => { await client.verifySession(); setVerifiedKey(sessionKey); })}>重新验证会话</Button>}
           </Card> : <Card className="management-card">
-          <Title level={2}>登录管理控制台</Title>
+          <Title level={1}>登录管理控制台</Title>
           <Paragraph type="secondary">{!capabilities.tenancy_enabled ? "使用管理员邮箱和密码登录。" : capabilities.login_tenant_policy === "fixed" ?
             capabilities.fixed_tenant_id === "0" ? "此入口用于平台管理员登录。" : `此入口仅登录租户 ${capabilities.fixed_tenant_id}。` : "验证账号后，选择已加入的租户。"}</Paragraph>
           <Form<{ email: string; password: string }> form={form} layout="vertical" disabled={busy} requiredMark={false}
@@ -174,7 +174,13 @@ function Console({ client }: { client: ManagementClient }) {
 }
 
 export function ManagementApp({ client }: { client: ManagementClient }) {
-  return <ConfigProvider locale={zhCN} theme={{ token: { colorPrimary: "#245cca", colorTextSecondary: "#58677c", borderRadius: 8, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif' } }}>
+  return <ConfigProvider locale={zhCN} theme={{ token: {
+    colorPrimary: "#245cca", colorPrimaryHover: "#1e4da8", colorPrimaryActive: "#163b85",
+    colorTextSecondary: "#58677c", colorTextDescription: "#58677c", colorTextPlaceholder: "#58677c",
+    colorBorder: "#8290a3", colorError: "#b42318", colorErrorHover: "#941c14", colorErrorActive: "#7a1710",
+    colorSuccess: "#17663c", colorWarning: "#8a4b00",
+    borderRadius: 8, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif',
+  } }}>
     <App><Console client={client} /></App>
   </ConfigProvider>;
 }

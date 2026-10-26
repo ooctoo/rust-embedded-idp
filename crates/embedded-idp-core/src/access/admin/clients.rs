@@ -28,7 +28,7 @@ pub struct AdminUpsertClient {
     pub client_secret: Option<SecretString>,
 }
 impl AdminUpsertClient {
-    fn validate(&self) -> Result<(), AccessError> {
+    pub(crate) fn validate(&self) -> Result<(), AccessError> {
         validate_id(&self.client_id, 128, "client_id")?;
         if self.client_name.trim().is_empty()
             || self.client_name.len() > 256

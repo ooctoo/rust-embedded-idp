@@ -1,0 +1,11 @@
+{
+  "command": "node /private/tmp/idp-n1-b-diagnostic.mjs",
+  "exitCode": 1,
+  "durationSeconds": 8.89,
+  "passLines": [
+    "PASS platform and target retain every existing task without changing login session",
+    "PASS hash Back Forward and Cookie reload restore the selected page",
+    "PASS a delayed old-tenant response cannot populate the new target",
+    "PASS unknown and traversal hashes fail locally; missing targets never mount a data page"
+  ]
+}

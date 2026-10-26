@@ -10,18 +10,20 @@ export function useCursorPage<T>(load: (cursor?: string) => Promise<AdminPage<T>
   const [reloadRevision, setReloadRevision] = useState(0);
   const [page, setPage] = useState<AdminPage<T>>();
   const [error, setError] = useState("");
+  const [errorStatus, setErrorStatus] = useState<number>();
   const [loading, setLoading] = useState(true);
   useEffect(() => {
     let active = true;
     setPage(undefined);
     setError("");
+    setErrorStatus(undefined);
     setLoading(true);
     load(cursors.at(-1)).then(value => { if (active) setPage(value); })
-      .catch(reason => { if (active) setError(failure(reason)); })
+      .catch(reason => { if (active) { setError(failure(reason)); setErrorStatus(reason instanceof ManagementError ? reason.status : undefined); } })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [load, cursors, reloadRevision]);
-  return { page, error, loading,
+  return { page, error, errorStatus, loading,
     reload: () => { setCursors([undefined]); setReloadRevision(v => v + 1); },
     controls: <div className="management-pagination">
       <Button disabled={loading || cursors.length === 1} onClick={() => setCursors(v => v.slice(0, -1))}>上一页</Button>

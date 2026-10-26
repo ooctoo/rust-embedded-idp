@@ -1,0 +1,51 @@
+{
+  "date": "2026-10-23",
+  "revision": 2,
+  "webTests": {
+    "command": "pnpm --dir web test",
+    "passed": 106,
+    "failed": 0,
+    "exitCode": 0
+  },
+  "embeddedBundle": {
+    "command": "pnpm --dir web test:embedded-bundle",
+    "passed": 3,
+    "failed": 0,
+    "exitCode": 0
+  },
+  "builds": [
+    {
+      "command": "pnpm --dir web build",
+      "exitCode": 0
+    },
+    {
+      "command": "cargo build -p embedded-idp-app --locked --offline",
+      "exitCode": 0
+    },
+    {
+      "command": "cargo fmt --all -- --check",
+      "exitCode": 0
+    }
+  ],
+  "nodeSyntax": {
+    "files": [
+      "scripts/management_console_focus.mjs",
+      "scripts/management_console_labels.mjs",
+      "scripts/management_console_pagination.mjs",
+      "scripts/management_console_states.mjs",
+      "scripts/management_console_tenant.mjs",
+      "scripts/check_management_console.mjs"
+    ],
+    "exitCode": 0
+  },
+  "diffCheck": {
+    "command": "git diff --check",
+    "exitCode": 0
+  },
+  "reusedInitialEvidence": [
+    "../checks.json: bootstrap build, workspace all-targets check and workspace444 passed /150 ignored",
+    "../rust-checks.json: targeted Postgres device6/account3/session3",
+    "../browser-runs.json: UI-B19/UI-C27/UI-E47"
+  ],
+  "note": "Only UI-F96, UI-D42, host50, Web106, embedded3, Web/host builds, fmt, Node syntax and diff checks were rerun for revision2; no fresh claim for initial-only checks."
+}

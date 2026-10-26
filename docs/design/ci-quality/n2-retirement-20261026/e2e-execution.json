@@ -1,0 +1,19 @@
+{
+  "suite": "critical-e2e",
+  "status": "passed",
+  "cleanup": "passed",
+  "architecture": "arm64",
+  "system": "Darwin",
+  "sha": "a3fcd729a10d65da8d7e988b71e4d80fd436c418",
+  "workingTreeDirty": true,
+  "cases": "completed",
+  "toolVersions": {
+    "node": "v24.19.0",
+    "pnpm": "10.28.2",
+    "rust": "rustc 1.93.0 (254b59607 2026-01-19)"
+  },
+  "postgresImageId": "sha256:1518a079f5f4987988538d2dcde58230afeaa22a1822fe3f09767bfb5d7fb932",
+  "postgresVersion": "18.6 (Debian 18.6-1.pgdg12+2)",
+  "checkerExitCode": 0,
+  "durationSeconds": 46.26
+}

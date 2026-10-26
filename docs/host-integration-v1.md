@@ -1272,7 +1272,27 @@ host must still authenticate management purpose/audience before injecting the co
 | --- | --- |
 | GET `/admin/clients` | Optional client_type, pkce_required, limit and cursor; returns items/has_more/next_cursor |
 | GET `/admin/clients/:client_id` | Client metadata and client_secret_configured; no secret or hash |
+| GET `/admin/clients/-/lookup?client_id=<id>` | Exact query lookup for every bounded ID, including `.`/`..`; 200 with `{client_id, client}`; authorized absence is `client: null` |
 | POST `/admin/clients/upsert` | client_id, client_name, redirect_uris, client_type, pkce_required, optional client_secret; returns client metadata and audit_id |
+
+The N1 exact lookup accepts one required `client_id` query parameter, rejects
+unknown/duplicate parameters, and uses the original `ClientAdminService::get_client`.
+Only `NotFound("client")` becomes 200/null; authorization, storage and other errors
+remain failures. It does not change list filters/cursors or the legacy dynamic
+route. Static single-segment actions such as `upsert` and dot-only IDs retain
+legacy-path limitations; use the fixed two-segment lookup without inventing ID
+aliases or reserved words. The host owns any outer prefix and must mount this
+router behind management authentication; do not merge it with the separate
+legacy `admin_router` at the same prefix.
+
+The updated ManagementClient and management UI require the N1 server protocol.
+Lookup accepts only 200 JSON with exact echoed/metadata IDs. Raw lookup 404/405
+means an unconfirmed query (`status=0`, `client_lookup_unconfirmed`), never null;
+`getClient` produces 404/`client_not_found` only after valid 200/null. Initial null
+may open registration, but null after a dispatched saved/unknown/rejected write
+must retain the recovery state and cannot automatically reopen registration.
+Existing clients and routes stay available; old clients do not automatically gain
+this new safety or dot-only UI support. See [N1 implementation report](n1-implementation-result.md).
 
 `client_type` is public_desktop or confidential_web. The existing PKCE and redirect
 rules apply. Client IDs follow the bounded Access identifier contract; names allow
@@ -1442,6 +1462,17 @@ header is rejected. The body/path names the tenant being managed, never the acto
 | GET `/admin/tenants/:tenant_id` | tenant_id, name, status, allow_registration, version; 404 if absent |
 | POST `/admin/tenants` | Required tenant_id, name, allow_registration, administrator (existing/new); 201 with tenant metadata and audit_id |
 | PATCH `/admin/tenants/:tenant_id` | Required name, status, allow_registration, expected_version; 200 with tenant metadata and audit_id |
+| PATCH `/admin/tenants` | N1: required tenant_id plus the same update fields in JSON, no nonempty query; same versioned service/transaction and response |
+
+For dot-only tenant details, reuse the existing exact list filter and accept
+one exact matching row with no next page; an empty or ambiguous result cannot
+start a create/update replay. The new collection PATCH locates the resource only
+by JSON `tenant_id`, never by an actor/target header. Its DTO rejects missing,
+unknown and duplicate fields. The legacy path PATCH still rejects body tenant_id.
+Both variants use the same platform authority, expected_version and atomic audit.
+The updated ManagementClient uses collection PATCH for all IDs and confirms 200
+JSON, exact ID/fields, next version and audit_id; an unconfirmed write response
+blocks automatic replay. Disabled mode exposes neither tenant route variant.
 
 Only real tenants are returned, including suspended and archived records. Domain 0
 is excluded and cannot be supplied as a filter, detail target or mutation target.

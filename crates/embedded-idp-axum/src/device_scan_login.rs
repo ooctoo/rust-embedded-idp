@@ -1609,6 +1609,54 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+        #[cfg(feature = "openapi")]
+        {
+            use std::collections::BTreeSet;
+            let bytes = to_bytes(response.into_body(), 4096).await.unwrap();
+            let response_body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            let contract = serde_json::to_value(crate::openapi::scan_document()).unwrap();
+            let schema_ref = contract["paths"]["/auth/device-scan/status"]["post"]["responses"]
+                ["200"]["content"]["application/json"]["schema"]["$ref"]
+                .as_str()
+                .unwrap();
+            let schema = contract
+                .pointer(schema_ref.strip_prefix('#').unwrap())
+                .unwrap();
+            let required = schema["required"].as_array().unwrap();
+            let actual = response_body.as_object().unwrap();
+            assert_eq!(
+                required
+                    .iter()
+                    .filter_map(serde_json::Value::as_str)
+                    .collect::<BTreeSet<_>>(),
+                actual.keys().map(String::as_str).collect::<BTreeSet<_>>()
+            );
+            for (name, value) in actual {
+                let field = &schema["properties"][name];
+                let valid = match field["type"].as_str() {
+                    Some("string") => value.is_string(),
+                    Some("integer") => value.as_u64().is_some(),
+                    Some("boolean") => value.is_boolean(),
+                    _ => field["type"].as_array().is_some_and(|types| {
+                        types.iter().any(|ty| {
+                            ty == "null" && value.is_null()
+                                || ty == "string" && value.is_string()
+                                || ty == "integer" && value.as_u64().is_some()
+                        })
+                    }),
+                };
+                assert!(
+                    valid,
+                    "HTTP progress field {name} does not match OpenAPI schema"
+                );
+                if let Some(values) = field["enum"].as_array() {
+                    assert!(
+                        values.contains(value),
+                        "HTTP progress field {name} violates enum"
+                    );
+                }
+            }
+        }
         let (binding, proof) = stub.device.lock().unwrap().take().unwrap();
         assert_eq!(binding.external_path, "/outer/auth/device-scan/status");
         let expected_digest: [u8; 32] = Sha256::digest(body.as_bytes()).into();

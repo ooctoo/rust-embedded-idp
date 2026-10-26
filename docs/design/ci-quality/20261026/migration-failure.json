@@ -1,0 +1,121 @@
+{
+  "schemaVersion": 1,
+  "status": "failed",
+  "phase": "live_postgres_checks",
+  "startedAt": "2026-10-26T01:59:02.940977+00:00",
+  "finishedAt": "2026-10-26T01:59:47.802382+00:00",
+  "durationSeconds": 44.862,
+  "postgresImage": "postgres:18.6-bookworm",
+  "postgresImageId": "sha256:1518a079f5f4987988538d2dcde58230afeaa22a1822fe3f09767bfb5d7fb932",
+  "sourceSha": "ad37ccef3f55d0813cdeeefa5bcf9fc596e2591d",
+  "runtime": {
+    "workingTreeDirty": true,
+    "rust": "rustc 1.93.0 (254b59607 2026-01-19)",
+    "node": "v24.19.0",
+    "pnpm": "10.28.2",
+    "system": "Darwin 25.6.0",
+    "architecture": "arm64",
+    "postgres": "postgres (PostgreSQL) 18.6 (Debian 18.6-1.pgdg12+2)"
+  },
+  "testTargets": [
+    {
+      "target": "tests/live_access.rs",
+      "status": "FAILED",
+      "passed": 10,
+      "failed": 1,
+      "ignored": 0
+    }
+  ],
+  "checks": [
+    {
+      "name": "record-sourceSha",
+      "exitCode": 0,
+      "durationSeconds": 0.016
+    },
+    {
+      "name": "record-workingTree",
+      "exitCode": 0,
+      "durationSeconds": 0.025
+    },
+    {
+      "name": "record-rust",
+      "exitCode": 0,
+      "durationSeconds": 0.06
+    },
+    {
+      "name": "record-node",
+      "exitCode": 0,
+      "durationSeconds": 0.02
+    },
+    {
+      "name": "record-pnpm",
+      "exitCode": 0,
+      "durationSeconds": 0.17
+    },
+    {
+      "name": "verify-postgres-image",
+      "exitCode": 0,
+      "durationSeconds": 0.103
+    },
+    {
+      "name": "start-owned-postgres",
+      "exitCode": 0,
+      "durationSeconds": 0.19
+    },
+    {
+      "name": "read-postgres-port",
+      "exitCode": 0,
+      "durationSeconds": 0.024
+    },
+    {
+      "name": "postgres-readiness-probe",
+      "exitCode": 2,
+      "durationSeconds": 0.117
+    },
+    {
+      "name": "postgres-readiness-probe",
+      "exitCode": 0,
+      "durationSeconds": 0.109
+    },
+    {
+      "name": "read-postgres-version",
+      "exitCode": 0,
+      "durationSeconds": 0.048
+    },
+    {
+      "name": "existing-live-postgres-checks",
+      "exitCode": 101,
+      "durationSeconds": 42.556
+    },
+    {
+      "name": "private-postgres-failure-diagnostic",
+      "exitCode": 0,
+      "durationSeconds": 0.1
+    },
+    {
+      "name": "check-owned-container",
+      "exitCode": 0,
+      "durationSeconds": 0.023
+    },
+    {
+      "name": "inspect-container-owner",
+      "exitCode": 0,
+      "durationSeconds": 0.021
+    },
+    {
+      "name": "remove-owned-container",
+      "exitCode": 0,
+      "durationSeconds": 0.248
+    },
+    {
+      "name": "verify-container-removed",
+      "exitCode": 0,
+      "durationSeconds": 0.019
+    }
+  ],
+  "cleanup": "confirmed",
+  "ownedCommandGroups": "confirmed",
+  "failure": "existing live Postgres checks failed (exit 101)",
+  "log": "integration.log",
+  "privateRecoveryDirectory": null
+}
