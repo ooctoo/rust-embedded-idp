@@ -660,3 +660,52 @@ fn resend_reads_time_after_lock_and_rolls_back_retirement_when_insertion_fails()
     assert_ne!(result.verification_code, registered.verification_code);
     assert!(svc.resend_verification(resend_command("t1")).is_err());
 }
+
+#[test]
+fn registration_shares_password_capacity_without_writes_on_rejection() {
+    let db = memory(TenancyMode::Enabled);
+    let budget = crate::PasswordWorkBudget::default();
+    let first = service(db.clone(), TenancyMode::Enabled).with_password_work_budget(budget.clone());
+    let second =
+        service(db.clone(), TenancyMode::Enabled).with_password_work_budget(budget.clone());
+    let holds: Vec<_> = (0..4).map(|_| budget.try_login().unwrap()).collect();
+    for (svc, email) in [(&first, "one@example.com"), (&second, "two@example.com")] {
+        assert!(matches!(
+            svc.register_account(register_command("t1", email, "goodpass1")),
+            Err(TenantRegistrationError::Store(StoreError::Backend(message)))
+                if message == "password.work_unavailable"
+        ));
+    }
+    {
+        let data = db.inner.lock().unwrap();
+        assert!(data.accounts.is_empty());
+        assert!(data.memberships.is_empty());
+        assert!(data.verifications.is_empty());
+    }
+    assert!(matches!(
+        first.register_account(register_command("t1", "invalid", "short")),
+        Err(TenantRegistrationError::InvalidContract(_))
+    ));
+    drop(holds);
+    let registration_a = budget.try_registration().unwrap();
+    let registration_b = budget.try_registration().unwrap();
+    assert!(first
+        .register_account(register_command("t1", "one@example.com", "goodpass1"))
+        .is_err());
+    // Saturating registration cannot consume the two reserved login slots.
+    let login_a = budget.try_login().unwrap();
+    let login_b = budget.try_login().unwrap();
+    drop((registration_a, login_a, login_b));
+    first
+        .register_account(register_command("t1", "one@example.com", "goodpass1"))
+        .unwrap();
+    second
+        .register_account(register_command("t2", "two@example.com", "goodpass1"))
+        .unwrap();
+    assert!(
+        budget.try_registration().is_ok(),
+        "completed hashes release their slot"
+    );
+    drop(registration_b);
+    assert_eq!(db.inner.lock().unwrap().accounts.len(), 2);
+}

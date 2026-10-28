@@ -9,6 +9,10 @@ mod registration_email;
 mod registration_email_migration;
 pub use registration_email::*;
 pub use registration_email_migration::*;
+mod security_foundation;
+pub use security_foundation::*;
+mod security_runtime;
+pub use security_runtime::*;
 mod access;
 mod adapter;
 mod config;
@@ -18,8 +22,11 @@ mod transaction;
 
 pub use access::{
     AccessSchemaFacts, PostgresAccessAdminTransaction, PostgresAccessStore,
-    PostgresTenantAuthTransaction, PostgresTenantEmailVerificationTransaction,
-    ACCESS_SCHEMA_VERSION,
+    PostgresRecoveryCompletionTransaction, PostgresRecoveryStartTransaction,
+    PostgresSecurityOutboxTransaction, PostgresSelfPasswordChangeReadTransaction,
+    PostgresSelfPasswordChangeWriteTransaction, PostgresSelfSessionMutationTransaction,
+    PostgresSelfSessionReadTransaction, PostgresTenantAuthTransaction,
+    PostgresTenantEmailVerificationTransaction, ACCESS_SCHEMA_VERSION,
 };
 pub use adapter::{PgPooledConnection, PostgresStorageAdapter};
 pub use config::{

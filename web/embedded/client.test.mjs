@@ -527,3 +527,76 @@ test("development tenant selection completes through Cookie endpoint without Web
   assert.equal(calls.at(-1).init.headers.Authorization, "TenantSelection synthetic-ticket");
   assert.equal(calls.at(-1).init.credentials, "same-origin");
 });
+
+test("account security token bridge uses fixed routes and preserves anonymous requests", async t => {
+  const calls = [];
+  const client = new EmbeddedIdentityClient("/idp", async (url, init) => {
+    const path = new URL(url, "https://host.test").pathname.replace("/idp", "");
+    calls.push({ path, init });
+    if (path === "/auth/access/capabilities") return json(fixed);
+    if (path === "/auth/login") return json(authenticated());
+    if (path === "/auth/security/sessions/revoke") return json({ completed: true });
+    if (path === "/auth/password-recovery/result") return json({ completed: false });
+    throw new Error(path);
+  });
+  await client.loadCapabilities(); await client.login("user@example.test", "password");
+  const owner = client.getSnapshot().session;
+  assert.equal(client.accountSecurityScope, JSON.stringify({ purpose: "business", mode: "token", base: "/idp" }));
+  await client.requestAccountSecurity("recovery-result", { operation_id: "op" });
+  assert.equal(calls.at(-1).init.headers.Authorization, undefined);
+  assert.equal(client.getSnapshot().session, owner);
+  await client.requestAccountSecurity("revoke", { target_tenant_id: owner.tenant_id, target_session_id: owner.session_id }, owner);
+  assert.equal(calls.at(-1).path, "/auth/security/sessions/revoke");
+  assert.equal(calls.at(-1).init.headers.Authorization, "Bearer synthetic-access");
+  assert.deepEqual(client.getSnapshot().session, owner);
+  client.forgetAccountSecuritySession({ ...owner, session_id: "new-session" });
+  assert.deepEqual(client.getSnapshot().session, owner);
+  client.forgetAccountSecuritySession(owner);
+  assert.equal(client.getSnapshot().session, undefined);
+});
+
+test("account security development Cookie bridge does not refresh and binds trusted expected identity", async t => {
+  insecureEnvironment(t);
+  const calls = [];
+  const client = developmentClient(async (url, init) => {
+    const path = new URL(url, "http://192.168.31.159:8080").pathname.replace("/idp", "");
+    calls.push({ path, init });
+    if (path.endsWith("/capabilities")) return json(fixed);
+    if (path.endsWith("/login")) { const value = authenticated(); delete value.tokens.refresh_token; return json(value); }
+    if (path.endsWith("/auth/browser/security/sessions")) return json({ items: [], next_cursor: null });
+    throw new Error(path);
+  });
+  await client.loadCapabilities(); await client.login("user@example.test", "password");
+  const owner = client.getSnapshot().session;
+  await client.requestAccountSecurity("sessions", { expected: { session_id: "attacker" }, limit: 50 }, owner);
+  assert.equal(calls.at(-1).path, "/auth/browser/security/sessions");
+  assert.equal(calls.at(-1).init.credentials, "same-origin");
+  assert.deepEqual(JSON.parse(calls.at(-1).init.body), { expected: owner, limit: 50 });
+  assert.equal(calls.some(call => call.path.endsWith("/refresh")), false);
+});
+
+test("ordinary account errors retain fixed text while exposing nested stable codes", async () => {
+  const client = new EmbeddedIdentityClient("/idp", async url => {
+    if (url.endsWith("/capabilities")) return json(fixed);
+    if (url.endsWith("/login")) return json(authenticated());
+    return json({ error: { code: "invalid_credentials", message: "secret backend detail" } }, 401);
+  });
+  await client.loadCapabilities(); await client.login("user@example.test", "password");
+  const owner = client.getSnapshot().session;
+  await assert.rejects(client.requestAccountSecurity("password", { current_password: "wrong", new_password: "next" }, owner), error => {
+    assert.equal(error.code, "invalid_credentials");
+    assert.equal(error.message, "凭证无效或已过期，请重新登录。");
+    assert.equal(error.message.includes("secret backend detail"), false);
+    return true;
+  });
+  assert.equal(client.getSnapshot().session, owner);
+});
+
+test("account security bridge rejects inherited operation names before transport", async () => {
+  let calls = 0;
+  const client = new EmbeddedIdentityClient("/idp", async () => { calls++; return json({}); });
+  for (const operation of ["constructor", "toString"]) {
+    await assert.rejects(client.requestAccountSecurity(operation, {}), error => error.status === 400);
+  }
+  assert.equal(calls, 0);
+});

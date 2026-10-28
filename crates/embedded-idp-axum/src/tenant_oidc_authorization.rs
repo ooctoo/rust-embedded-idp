@@ -256,6 +256,9 @@ fn authorization_error(error: TenantAuthError) -> Response {
 fn exchange_error(error: TenantAuthError) -> Response {
     match error {
         TenantAuthError::InvalidClient => oauth_error(StatusCode::UNAUTHORIZED, "invalid_client"),
+        error if password_work_unavailable(&error) => {
+            oauth_error(StatusCode::SERVICE_UNAVAILABLE, "server_error")
+        }
         TenantAuthError::Configuration(_)
         | TenantAuthError::Store(_)
         | TenantAuthError::Token(_)
@@ -264,6 +267,14 @@ fn exchange_error(error: TenantAuthError) -> Response {
             oauth_error(StatusCode::INTERNAL_SERVER_ERROR, "server_error")
         }
         _ => oauth_error(StatusCode::BAD_REQUEST, "invalid_grant"),
+    }
+}
+fn password_work_unavailable(error: &TenantAuthError) -> bool {
+    let is_marker = |error: &embedded_idp_core::StoreError| matches!(error, embedded_idp_core::StoreError::Backend(code) if code == "password.work_unavailable");
+    match error {
+        TenantAuthError::Store(error) => is_marker(error),
+        TenantAuthError::Access(AccessError::Store(error)) => is_marker(error),
+        _ => false,
     }
 }
 fn oauth_error(status: StatusCode, error: &'static str) -> Response {
@@ -469,6 +480,21 @@ mod tests {
         assert_eq!(
             exchange_error(TenantAuthError::InvalidGrant).status(),
             StatusCode::BAD_REQUEST
+        );
+
+        let unavailable = exchange_error(TenantAuthError::Store(
+            embedded_idp_core::StoreError::Backend("password.work_unavailable".into()),
+        ));
+        assert_eq!(unavailable.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(unavailable.headers().get(header::WWW_AUTHENTICATE), None);
+
+        let unavailable_access = exchange_error(TenantAuthError::Access(AccessError::Store(
+            embedded_idp_core::StoreError::Backend("password.work_unavailable".into()),
+        )));
+        assert_eq!(unavailable_access.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            unavailable_access.headers().get(header::WWW_AUTHENTICATE),
+            None
         );
     }
     #[test]

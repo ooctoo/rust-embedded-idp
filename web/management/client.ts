@@ -5,12 +5,25 @@ export interface Capabilities {
 }
 
 import { BrowserSessionCoordinator, assertBrowserOrigin, developmentBrowserMode, secureRandomUuid, type BrowserClientConfig } from "../embedded/browser-session";
+import type { AccountSecurityOperation, SecurityIdentity } from "../embedded/account-security-client";
 
 export interface Session {
   tenant_id: string;
   account_id: string;
   session_id: string;
   client_id?: string;
+}
+
+function responseCode(value: unknown): string | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const item = value as Record<string, unknown>;
+  const code = item.code ?? (typeof item.error === "string" ? item.error :
+    item.error && typeof item.error === "object" && !Array.isArray(item.error) ? (item.error as Record<string, unknown>).code : undefined);
+  return typeof code === "string" ? code : undefined;
+}
+function sameSecurityIdentity(session: Session, expected: SecurityIdentity) {
+  return session.tenant_id === expected.tenant_id && session.account_id === expected.account_id &&
+    session.session_id === expected.session_id && session.client_id === expected.client_id;
 }
 
 interface Credentials {
@@ -386,6 +399,66 @@ export class ManagementClient {
   }
 
   getSnapshot = () => this.state;
+  get accountSecurityScope() {
+    return JSON.stringify({ purpose: "management", mode: this.development ? "development_login" : this.isCookieMode() ? "cookie" : "token", base: this.basePath || "/" });
+  }
+  forgetAccountSecuritySession(expected: SecurityIdentity) {
+    if (this.credentials && sameSecurityIdentity(this.credentials.session, expected)) this.clear();
+  }
+  async requestAccountSecurity(operation: AccountSecurityOperation, body: Record<string, unknown>, expected?: SecurityIdentity): Promise<unknown> {
+    const identityBound = operation === "sessions" || operation === "revoke" || operation === "password";
+    const method = operation === "sessions" ? "GET" : "POST";
+    const paths: Record<AccountSecurityOperation, string> = {
+      sessions: "/auth/security/sessions", revoke: "/auth/security/sessions/revoke", password: "/auth/security/password",
+      "revoke-result": "/auth/security/sessions/revoke/result", "password-result": "/auth/security/password/result",
+      "recovery-start": "/auth/password-recovery/start", "recovery-complete": "/auth/password-recovery/complete",
+      "recovery-result": "/auth/password-recovery/result",
+    };
+    const browserPaths: Record<AccountSecurityOperation, string> = {
+      sessions: "/security/sessions", revoke: "/security/sessions/revoke", password: "/security/password",
+      "revoke-result": "/security/sessions/revoke/result", "password-result": "/security/password/result",
+      "recovery-start": "/password-recovery/start", "recovery-complete": "/password-recovery/complete",
+      "recovery-result": "/password-recovery/result",
+    };
+    if (!Object.hasOwn(paths, operation)) throw new ManagementError("请求无效，请重新操作。", 400);
+    const path = paths[operation];
+    if (!identityBound) {
+      return this.isCookieMode() ? this.browserRequest(browserPaths[operation], body) : this.request(path, "POST", body);
+    }
+    if (!expected || !this.credentials || !sameSecurityIdentity(this.credentials.session, expected)) {
+      throw new ManagementError("操作已取消。", 0, "security_session_changed");
+    }
+    const revision = this.revision;
+    const mutation = operation === "revoke" || operation === "password";
+    if (mutation) this.mutationActivity(1);
+    try {
+      if (this.isCookieMode()) {
+        return await this.browserOperation(async () => {
+          this.browser?.check(); this.current(revision); this.assertSecurityIdentity(expected);
+          try {
+            const payload = { ...body, expected };
+            const value = await this.browserRequest(browserPaths[operation], payload);
+            this.current(revision); this.assertSecurityIdentity(expected);
+            return value;
+          } catch (error) { this.securityFailure(error, revision, expected); throw error; }
+        });
+      }
+      const credentials = await this.access();
+      this.current(revision); this.assertSecurityIdentity(expected);
+      const url = operation === "sessions" ? `${path}?limit=50${typeof body.cursor === "string" ? `&cursor=${encodeURIComponent(body.cursor)}` : ""}` : path;
+      try {
+        const value = await this.request(url, method, method === "GET" ? undefined : body, `Bearer ${credentials.tokens.access_token}`);
+        this.current(revision); this.assertSecurityIdentity(expected);
+        return value;
+      } catch (error) { this.securityFailure(error, revision, expected); throw error; }
+    } finally { if (mutation) this.mutationActivity(-1); }
+  }
+  private assertSecurityIdentity(expected: SecurityIdentity) {
+    if (!this.credentials || !sameSecurityIdentity(this.credentials.session, expected)) throw new ManagementError("操作已取消。", 0, "security_session_changed");
+  }
+  private securityFailure(error: unknown, revision: number, expected: SecurityIdentity) {
+    if (revision === this.revision && error instanceof ManagementError && error.status === 401 && error.code === "invalid_session") this.forgetAccountSecuritySession(expected);
+  }
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
     return () => { this.listeners.delete(listener); };
@@ -442,7 +515,8 @@ export class ManagementClient {
         409: "数据已变化或操作与当前状态冲突，请重新加载后核对。",
         429: "操作过于频繁，请稍后重试。",
       };
-      throw new ManagementError(messages[response.status] ?? "管理服务暂时不可用，请稍后重试。", response.status);
+      const failure = await response.json().catch(() => undefined);
+      throw new ManagementError(messages[response.status] ?? "管理服务暂时不可用，请稍后重试。", response.status, responseCode(failure));
     }
     if (success && response.status !== success.status) throw invalidResponse();
     if (response.status === 204) return undefined;
@@ -473,8 +547,7 @@ export class ManagementClient {
     if (!response.ok) {
       const messages: Record<number, string> = { 400: "请求无效，请重新操作。", 401: "凭证无效或已过期，请重新登录。", 403: "当前账号无权执行此操作。", 409: "浏览器会话已被其他页面替换，请重新加载。", 429: "操作过于频繁，请稍后重试。" };
       const failure = await response.json().catch(() => ({}));
-      const code = typeof failure?.code === "string" ? failure.code : typeof failure?.error === "string" ? failure.error : undefined;
-      throw new ManagementError(messages[response.status] ?? "管理服务暂时不可用，请稍后重试。", response.status, code);
+      throw new ManagementError(messages[response.status] ?? "管理服务暂时不可用，请稍后重试。", response.status, responseCode(failure));
     }
     if (response.status === 204) return undefined;
     try { return await response.json(); } catch { throw invalidResponse(); }

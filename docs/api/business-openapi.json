@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Ordinary business entry HTTP contract",
-    "description": "A02A module-root conditional catalog. Each entry binds client_id, login_entry_id, tenant policy and Business purpose. No device, scan or OIDC routes. Cookie name/path, origin, token lifetime and mount prefix belong to the host profile. JSON/form bodies are limited to 16384 bytes; all responses use Cache-Control: no-store. Secrets never belong in query parameters. Fixed and Choose are mutually exclusive; registration requires Fixed plus explicit enablement and email service.",
+    "description": "A02A module-root conditional catalog. Each entry binds client_id, login_entry_id, tenant policy and Business purpose. No device, scan or OIDC routes. Cookie name/path, origin, token lifetime and mount prefix belong to the host profile. JSON/form bodies are limited to 16384 bytes; all responses use Cache-Control: no-store. Secrets never belong in query parameters. Fixed and Choose are mutually exclusive; registration requires Fixed plus explicit enablement and email service. Password recovery is account-wide and appears only when account security and recovery email are both enabled.",
     "license": {
       "name": "MIT",
       "identifier": "MIT"
@@ -405,6 +405,32 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "Password work budget is at capacity",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              },
+              "Set-Cookie": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "When rotating/clearing refresh credential; host profile defines exact cookie name/path."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -671,6 +697,562 @@
           }
         ],
         "x-mount-condition": "browser"
+      }
+    },
+    "/auth/browser/password-recovery/complete": {
+      "post": {
+        "description": "Anonymous account-wide recovery; it is not tenant- or entry-scoped. Strict JSON rejects unknown fields and query parameters; tenant and business selector headers are rejected. Bearer tokens and refresh cookies do not authenticate this operation, and no response sets or clears cookies. Bodies are limited to 16384 bytes and read within 5 seconds. Start has one deliberately uniform result for known, unknown, and ineligible email addresses: success means the request was recorded, not that email was sent or an account exists. Start uses the shared account budget as an abuse limit, not as authenticated identity. Outer host admission may read the start body and consume this budget before the browser Origin guard runs. A result with completed=false is not proof that a command did not commit.",
+        "operationId": "browserPasswordRecoveryComplete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordRecoveryComplete"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordRecoveryCompleted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request for malformed JSON/command; invalid_recovery for invalid or unavailable recovery credentials",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Browser Origin/header/tenant guard rejected the request",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "408": {
+            "description": "request_timeout; body read exceeded 5 seconds",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The operation ID is already bound to a different command",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "request_too_large; body exceeded 16384 bytes",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited by source/global admission",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "security_unavailable for recovery capacity, crypto, or storage; temporarily_unavailable for local or outer anonymous-work admission rejection (the local legacy response is nested)",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AnonymousWorkUnavailable"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BrowserHeader": [],
+            "Origin": []
+          }
+        ],
+        "x-mount-condition": "recovery_email_browser"
+      }
+    },
+    "/auth/browser/password-recovery/result": {
+      "post": {
+        "description": "Anonymous account-wide recovery; it is not tenant- or entry-scoped. Strict JSON rejects unknown fields and query parameters; tenant and business selector headers are rejected. Bearer tokens and refresh cookies do not authenticate this operation, and no response sets or clears cookies. Bodies are limited to 16384 bytes and read within 5 seconds. Start has one deliberately uniform result for known, unknown, and ineligible email addresses: success means the request was recorded, not that email was sent or an account exists. Start uses the shared account budget as an abuse limit, not as authenticated identity. Outer host admission may read the start body and consume this budget before the browser Origin guard runs. A result with completed=false is not proof that a command did not commit.",
+        "operationId": "browserPasswordRecoveryResult",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordRecoveryResult"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordRecoveryCompleted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request for malformed JSON or command",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Browser Origin/header/tenant guard rejected the request",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "408": {
+            "description": "request_timeout; body read exceeded 5 seconds",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "request_too_large; body exceeded 16384 bytes",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited by source/global admission",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "security_unavailable for recovery capacity, crypto, or storage; temporarily_unavailable for local or outer anonymous-work admission rejection (the local legacy response is nested)",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AnonymousWorkUnavailable"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BrowserHeader": [],
+            "Origin": []
+          }
+        ],
+        "x-mount-condition": "recovery_email_browser"
+      }
+    },
+    "/auth/browser/password-recovery/start": {
+      "post": {
+        "description": "Anonymous account-wide recovery; it is not tenant- or entry-scoped. Strict JSON rejects unknown fields and query parameters; tenant and business selector headers are rejected. Bearer tokens and refresh cookies do not authenticate this operation, and no response sets or clears cookies. Bodies are limited to 16384 bytes and read within 5 seconds. Start has one deliberately uniform result for known, unknown, and ineligible email addresses: success means the request was recorded, not that email was sent or an account exists. Start uses the shared account budget as an abuse limit, not as authenticated identity. Outer host admission may read the start body and consume this budget before the browser Origin guard runs. A result with completed=false is not proof that a command did not commit.",
+        "operationId": "browserPasswordRecoveryStart",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordRecoveryStart"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordRecoveryStarted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request for malformed JSON or command",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Browser Origin/header/tenant guard rejected the request",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "408": {
+            "description": "request_timeout; body read exceeded 5 seconds",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The operation ID is already bound to a different command",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "request_too_large; body exceeded 16384 bytes",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited by source/global admission or start account budget",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "security_unavailable for recovery capacity, crypto, or storage; temporarily_unavailable for local or outer anonymous-work admission rejection (the local legacy response is nested)",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AnonymousWorkUnavailable"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BrowserHeader": [],
+            "Origin": []
+          }
+        ],
+        "x-mount-condition": "recovery_email_browser"
       }
     },
     "/auth/browser/refresh": {
@@ -1203,6 +1785,1089 @@
         "x-mount-condition": "browser"
       }
     },
+    "/auth/browser/security/password": {
+      "post": {
+        "description": "Requires exact configured Origin and x-embedded-idp-browser: 1; Sec-Fetch-Site, when present, must be same-origin. Requires the configured HttpOnly cookie and strict expected {tenant_id,account_id,session_id,client_id}. Body includes current_password and new_password, neither is trimmed or returned. Request is strict JSON; body is limited to 16384 bytes. All responses are no-store and none sets or clears cookies.",
+        "operationId": "browserSelfPasswordChange",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrowserSelfPasswordChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SelfPasswordChangeCompleted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid JSON, content type, fields or password policy",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid session or current password",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Browser origin or request boundary rejected",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Credential snapshot or operation conflict",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds 16384 bytes",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected service projection failure",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Password work, security storage, crypto or receipt capacity unavailable",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BrowserHeader": [],
+            "Origin": [],
+            "RefreshCookie": []
+          }
+        ],
+        "x-mount-condition": "account_security_browser"
+      }
+    },
+    "/auth/browser/security/password/result": {
+      "post": {
+        "description": "Capability result lookup: no bearer authentication, cookie or expected identity is required; it reports only whether the operation completed. Browser results still require the configured Origin and browser header. Request is strict JSON; body is limited to 16384 bytes. All responses are no-store and none sets or clears cookies.",
+        "operationId": "browserSelfPasswordChangeResult",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SelfPasswordChangeResult"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SelfPasswordChangeCompleted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid JSON, content type, fields or password policy",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid session or current password",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Browser origin or request boundary rejected",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Credential snapshot or operation conflict",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds 16384 bytes",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected service projection failure",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Password work, security storage, crypto or receipt capacity unavailable",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BrowserHeader": [],
+            "Origin": []
+          }
+        ],
+        "x-mount-condition": "account_security_browser"
+      }
+    },
+    "/auth/browser/security/sessions": {
+      "post": {
+        "description": "Requires the exact configured Origin and x-embedded-idp-browser: 1; when present, Sec-Fetch-Site must be same-origin. Tenant and business selection headers are forbidden. The configured HttpOnly refresh cookie is read only; this route does not refresh or expose credentials. Strict JSON requires expected {tenant_id,account_id,session_id,client_id}; optional limit is 1..50 and cursor is at most 1024 encoded bytes. The host must bind identity purpose and restricted-session lifetime exactly to BrowserSessionHttpConfig. The current actor must be a first-party scope=null session; same-account delegated sessions remain listable. Request body limit is 16384 bytes. Response fields match SelfSessionPage and all responses are no-store.",
+        "operationId": "browserSelfSessions",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SelfSessionRead"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SelfSessionPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Extractor rejection; may be text/plain. 400 can also be a JSON domain error.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Service or boundary rejection",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Service or boundary rejection",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Service or boundary rejection",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds 16384 bytes",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported media type",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid JSON/body extraction",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Service or boundary rejection",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BrowserHeader": [],
+            "Origin": [],
+            "RefreshCookie": []
+          }
+        ],
+        "x-mount-condition": "browser"
+      }
+    },
+    "/auth/browser/security/sessions/revoke": {
+      "post": {
+        "description": "Requires exact configured Origin and x-embedded-idp-browser: 1; Sec-Fetch-Site, when present, must be same-origin. Requires the configured HttpOnly cookie and strict expected {tenant_id,account_id,session_id,client_id}. Business selector is rejected. All responses are no-store; none sets or clears a cookie.",
+        "operationId": "browserRevokeSelfSession",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrowserSelfSessionRevoke"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SelfSessionRevokeCompleted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Extractor rejection; may be text/plain. 400 can also be a JSON domain error.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Service or boundary rejection",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or browser boundary rejected",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Target session was not found",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Operation conflicts with an existing request",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Extractor rejection; may be text/plain. 400 can also be a JSON domain error.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Extractor rejection; may be text/plain. 400 can also be a JSON domain error.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Extractor rejection; may be text/plain. 400 can also be a JSON domain error.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Service or boundary rejection",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Security storage, crypto or receipt capacity unavailable",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BrowserHeader": [],
+            "Origin": [],
+            "RefreshCookie": []
+          }
+        ],
+        "x-mount-condition": "account_security_browser"
+      }
+    },
+    "/auth/browser/security/sessions/revoke/result": {
+      "post": {
+        "description": "Capability result lookup: no cookie or expected identity is required and no authentication service is called. Exact configured Origin and x-embedded-idp-browser: 1 are required; Sec-Fetch-Site, when present, must be same-origin. Body contains only canonical non-nil operation UUID and receipt secret. All responses are no-store and none sets or clears a cookie.",
+        "operationId": "browserSelfSessionRevokeResult",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SelfSessionRevokeResult"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SelfSessionRevokeCompleted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Extractor rejection; may be text/plain. 400 can also be a JSON domain error.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Service or boundary rejection",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or browser boundary rejected",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Target session was not found",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Operation conflicts with an existing request",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Extractor rejection; may be text/plain. 400 can also be a JSON domain error.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Extractor rejection; may be text/plain. 400 can also be a JSON domain error.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Extractor rejection; may be text/plain. 400 can also be a JSON domain error.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Service or boundary rejection",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Security storage, crypto or receipt capacity unavailable",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BrowserHeader": [],
+            "Origin": []
+          }
+        ],
+        "x-mount-condition": "account_security_browser"
+      }
+    },
     "/auth/browser/tenant-selection/complete": {
       "post": {
         "description": "Exact configured Origin AND x-embedded-idp-browser: 1 required; Sec-Fetch-Site, when supplied, must be same-origin. Tenant header forbidden. Refresh cookie is HttpOnly, Secure in HTTPS, SameSite=Strict, entry-specific name/path. Only access token appears in JSON. Browser selection route is present even for Fixed but selection is rejected by policy. Restore rotates; refresh requires expected_session. Logout without cookie is idempotent 204 in normal mode. Development restricted browser mode disables restore/refresh and requires expected_session even for cookie-less logout.",
@@ -1657,6 +3322,26 @@
           },
           "500": {
             "description": "Service or boundary rejection",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Password work budget is at capacity",
             "headers": {
               "Cache-Control": {
                 "schema": {
@@ -2226,6 +3911,487 @@
         "x-mount-condition": "enabled_choose"
       }
     },
+    "/auth/password-recovery/complete": {
+      "post": {
+        "description": "Anonymous account-wide recovery; it is not tenant- or entry-scoped. Strict JSON rejects unknown fields and query parameters; tenant and business selector headers are rejected. Bearer tokens and refresh cookies do not authenticate this operation, and no response sets or clears cookies. Bodies are limited to 16384 bytes and read within 5 seconds. Start has one deliberately uniform result for known, unknown, and ineligible email addresses: success means the request was recorded, not that email was sent or an account exists. Start uses the shared account budget as an abuse limit, not as authenticated identity. Outer host admission may read the start body and consume this budget before the browser Origin guard runs. A result with completed=false is not proof that a command did not commit.",
+        "operationId": "businessPasswordRecoveryComplete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordRecoveryComplete"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordRecoveryCompleted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request for malformed JSON/command; invalid_recovery for invalid or unavailable recovery credentials",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "408": {
+            "description": "request_timeout; body read exceeded 5 seconds",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The operation ID is already bound to a different command",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "request_too_large; body exceeded 16384 bytes",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited by source/global admission",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "security_unavailable for recovery capacity, crypto, or storage; temporarily_unavailable for local or outer anonymous-work admission rejection (the local legacy response is nested)",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AnonymousWorkUnavailable"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": [],
+        "x-mount-condition": "recovery_email"
+      }
+    },
+    "/auth/password-recovery/result": {
+      "post": {
+        "description": "Anonymous account-wide recovery; it is not tenant- or entry-scoped. Strict JSON rejects unknown fields and query parameters; tenant and business selector headers are rejected. Bearer tokens and refresh cookies do not authenticate this operation, and no response sets or clears cookies. Bodies are limited to 16384 bytes and read within 5 seconds. Start has one deliberately uniform result for known, unknown, and ineligible email addresses: success means the request was recorded, not that email was sent or an account exists. Start uses the shared account budget as an abuse limit, not as authenticated identity. Outer host admission may read the start body and consume this budget before the browser Origin guard runs. A result with completed=false is not proof that a command did not commit.",
+        "operationId": "businessPasswordRecoveryResult",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordRecoveryResult"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordRecoveryCompleted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request for malformed JSON or command",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "408": {
+            "description": "request_timeout; body read exceeded 5 seconds",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "request_too_large; body exceeded 16384 bytes",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited by source/global admission",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "security_unavailable for recovery capacity, crypto, or storage; temporarily_unavailable for local or outer anonymous-work admission rejection (the local legacy response is nested)",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AnonymousWorkUnavailable"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": [],
+        "x-mount-condition": "recovery_email"
+      }
+    },
+    "/auth/password-recovery/start": {
+      "post": {
+        "description": "Anonymous account-wide recovery; it is not tenant- or entry-scoped. Strict JSON rejects unknown fields and query parameters; tenant and business selector headers are rejected. Bearer tokens and refresh cookies do not authenticate this operation, and no response sets or clears cookies. Bodies are limited to 16384 bytes and read within 5 seconds. Start has one deliberately uniform result for known, unknown, and ineligible email addresses: success means the request was recorded, not that email was sent or an account exists. Start uses the shared account budget as an abuse limit, not as authenticated identity. Outer host admission may read the start body and consume this budget before the browser Origin guard runs. A result with completed=false is not proof that a command did not commit.",
+        "operationId": "businessPasswordRecoveryStart",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordRecoveryStart"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordRecoveryStarted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request for malformed JSON or command",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "408": {
+            "description": "request_timeout; body read exceeded 5 seconds",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The operation ID is already bound to a different command",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "request_too_large; body exceeded 16384 bytes",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate_limited by source/global admission or start account budget",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "security_unavailable for recovery capacity, crypto, or storage; temporarily_unavailable for local or outer anonymous-work admission rejection (the local legacy response is nested)",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AnonymousWorkUnavailable"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": [],
+        "x-mount-condition": "recovery_email"
+      }
+    },
     "/auth/refresh": {
       "post": {
         "description": "Refresh credential selects tenant and is bound to this entry/client/Business purpose. Tenant and device-proof headers forbidden; proof-bound sessions cannot downgrade. Reuse revocation is committed before 401 refresh_token_reuse_detected. Successful rotation returns status, session and tokens.",
@@ -2623,6 +4789,26 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "Password work budget is at capacity",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "security": [],
@@ -2832,6 +5018,1025 @@
         },
         "security": [],
         "x-mount-condition": "registration_fixed"
+      }
+    },
+    "/auth/security/password": {
+      "post": {
+        "description": "Requires exactly one Bearer Authorization header. Optional tenant hint must match the authenticated actor; business selector is rejected. Strict JSON includes current_password and new_password, neither is trimmed or returned. Request body is limited to 16384 bytes. All responses are no-store and none sets or clears cookies.",
+        "operationId": "businessSelfPasswordChange",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SelfPasswordChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SelfPasswordChangeCompleted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid JSON, content type, fields or password policy",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid session or current password",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Browser origin or request boundary rejected",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Credential snapshot or operation conflict",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds 16384 bytes",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected service projection failure",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Password work, security storage, crypto or receipt capacity unavailable",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "x-mount-condition": "account_security"
+      }
+    },
+    "/auth/security/password/result": {
+      "post": {
+        "description": "Capability result lookup: no bearer authentication, cookie or expected identity is required; it reports only whether the operation completed. Browser results still require the configured Origin and browser header. Request is strict JSON; body is limited to 16384 bytes. All responses are no-store and none sets or clears cookies.",
+        "operationId": "businessSelfPasswordChangeResult",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SelfPasswordChangeResult"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SelfPasswordChangeCompleted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid JSON, content type, fields or password policy",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid session or current password",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Browser origin or request boundary rejected",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Credential snapshot or operation conflict",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds 16384 bytes",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected service projection failure",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Password work, security storage, crypto or receipt capacity unavailable",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [],
+        "x-mount-condition": "account_security"
+      }
+    },
+    "/auth/security/sessions": {
+      "get": {
+        "description": "Requires exactly one Bearer Authorization header. An optional x-embedded-idp-tenant-id must match the authenticated tenant; x-embedded-idp-business-id is rejected. The authenticated actor must be a current first-party session with scope=null; OAuth-derived scope-bearing sessions cannot authorize global self-security reads. Lists all of the same account's database-active sessions across tenants, including delegated scope-bearing sessions. Expired-by-time sessions are projected as status=expired; revoked/pending records are omitted. Cursor is base64url JSON version=1 with subject_id, tenant_id and canonical UUID session_id, at most 1024 encoded bytes. Query accepts only limit and cursor. Response contains no scope, refresh-token data or account email.",
+        "operationId": "businessSelfSessions",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Opaque base64url JSON cursor, bound to the authenticated subject.",
+              "maxLength": 1024
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SelfSessionPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid limit/cursor or query extractor rejection",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Service or boundary rejection",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Service or boundary rejection",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Service or boundary rejection",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Service or boundary rejection",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "x-mount-condition": "always"
+      }
+    },
+    "/auth/security/sessions/revoke": {
+      "post": {
+        "description": "Requires exactly one Bearer Authorization header. An optional tenant header must match the authenticated actor; the business selector header is rejected. Request is strict JSON with target tenant/session, canonical non-nil operation UUID and receipt secret. All responses are no-store and none sets or clears a cookie.",
+        "operationId": "businessRevokeSelfSession",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SelfSessionRevoke"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SelfSessionRevokeCompleted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Extractor rejection; may be text/plain. 400 can also be a JSON domain error.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Service or boundary rejection",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Service or boundary rejection",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Target session was not found",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Operation conflicts with an existing request",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Extractor rejection; may be text/plain. 400 can also be a JSON domain error.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Extractor rejection; may be text/plain. 400 can also be a JSON domain error.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Extractor rejection; may be text/plain. 400 can also be a JSON domain error.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Service or boundary rejection",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Security storage, crypto or receipt capacity unavailable",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "x-mount-condition": "account_security"
+      }
+    },
+    "/auth/security/sessions/revoke/result": {
+      "post": {
+        "description": "Capability result lookup: no bearer authentication is performed. Body contains only canonical non-nil operation UUID and receipt secret; tenant and business selector headers are rejected. A matching secret may query the same operation through another entry. All responses are no-store.",
+        "operationId": "businessSelfSessionRevokeResult",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SelfSessionRevokeResult"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SelfSessionRevokeCompleted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Extractor rejection; may be text/plain. 400 can also be a JSON domain error.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Service or boundary rejection",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Service or boundary rejection",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Target session was not found",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Operation conflicts with an existing request",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Extractor rejection; may be text/plain. 400 can also be a JSON domain error.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Extractor rejection; may be text/plain. 400 can also be a JSON domain error.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Extractor rejection; may be text/plain. 400 can also be a JSON domain error.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Service or boundary rejection",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Security storage, crypto or receipt capacity unavailable",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [],
+        "x-mount-condition": "account_security"
       }
     },
     "/auth/session": {
@@ -3565,6 +6770,30 @@
         },
         "additionalProperties": false
       },
+      "AnonymousWorkUnavailable": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": [
+              "code"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "temporarily_unavailable"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
       "Authenticated": {
         "type": "object",
         "required": [
@@ -3619,6 +6848,82 @@
         "properties": {
           "expected_session": {
             "$ref": "#/components/schemas/Identity"
+          }
+        },
+        "additionalProperties": false
+      },
+      "BrowserSelfPasswordChange": {
+        "type": "object",
+        "required": [
+          "current_password",
+          "new_password",
+          "operation_id",
+          "receipt_secret",
+          "expected"
+        ],
+        "properties": {
+          "current_password": {
+            "type": "string",
+            "description": "Password is not trimmed or returned.",
+            "minLength": 1
+          },
+          "expected": {
+            "$ref": "#/components/schemas/SelfSessionIdentity"
+          },
+          "new_password": {
+            "type": "string",
+            "description": "Password is not trimmed or returned.",
+            "minLength": 1
+          },
+          "operation_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Canonical lowercase non-nil UUID.",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "receipt_secret": {
+            "type": "string",
+            "description": "Canonical unpadded base64url encoding of 32 random bytes.",
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "BrowserSelfSessionRevoke": {
+        "type": "object",
+        "required": [
+          "target_tenant_id",
+          "target_session_id",
+          "operation_id",
+          "receipt_secret",
+          "expected"
+        ],
+        "properties": {
+          "expected": {
+            "$ref": "#/components/schemas/SelfSessionIdentity"
+          },
+          "operation_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Canonical lowercase non-nil UUID.",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "receipt_secret": {
+            "type": "string",
+            "description": "Canonical unpadded base64url encoding of 32 random bytes.",
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+          },
+          "target_session_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Canonical non-nil UUID."
+          },
+          "target_tenant_id": {
+            "type": "string"
           }
         },
         "additionalProperties": false
@@ -3781,6 +7086,134 @@
         "properties": {
           "error": {
             "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PasswordRecoveryComplete": {
+        "type": "object",
+        "required": [
+          "handle",
+          "code",
+          "new_password",
+          "operation_id",
+          "receipt_secret"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 6,
+            "minLength": 6,
+            "pattern": "^[0-9]{6}$"
+          },
+          "handle": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 64,
+            "pattern": "^[A-Za-z0-9_-]{64}$"
+          },
+          "new_password": {
+            "type": "string",
+            "description": "Validated by the configured account password policy; never returned.",
+            "minLength": 1
+          },
+          "operation_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Canonical lowercase non-nil UUID; the all-zero UUID is rejected.",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "receipt_secret": {
+            "type": "string",
+            "description": "Canonical unpadded base64url encoding of 32 random bytes.",
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PasswordRecoveryCompleted": {
+        "type": "object",
+        "required": [
+          "completed"
+        ],
+        "properties": {
+          "completed": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PasswordRecoveryResult": {
+        "type": "object",
+        "required": [
+          "operation_id",
+          "receipt_secret"
+        ],
+        "properties": {
+          "operation_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Canonical lowercase non-nil UUID; the all-zero UUID is rejected.",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "receipt_secret": {
+            "type": "string",
+            "description": "Canonical unpadded base64url encoding of 32 random bytes.",
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PasswordRecoveryStart": {
+        "type": "object",
+        "required": [
+          "email",
+          "operation_id",
+          "receipt_secret"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 254
+          },
+          "operation_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Canonical lowercase non-nil UUID; the all-zero UUID is rejected.",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "receipt_secret": {
+            "type": "string",
+            "description": "Canonical unpadded base64url encoding of 32 random bytes.",
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PasswordRecoveryStarted": {
+        "type": "object",
+        "required": [
+          "handle",
+          "expires_at_unix_secs"
+        ],
+        "properties": {
+          "expires_at_unix_secs": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "handle": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 64,
+            "pattern": "^[A-Za-z0-9_-]{64}$"
           }
         },
         "additionalProperties": false
@@ -3990,6 +7423,276 @@
         "type": "string",
         "enum": [
           "tenant_selection_required"
+        ]
+      },
+      "SelfPasswordChange": {
+        "type": "object",
+        "required": [
+          "current_password",
+          "new_password",
+          "operation_id",
+          "receipt_secret"
+        ],
+        "properties": {
+          "current_password": {
+            "type": "string",
+            "description": "Password is not trimmed or returned.",
+            "minLength": 1
+          },
+          "new_password": {
+            "type": "string",
+            "description": "Password is not trimmed or returned.",
+            "minLength": 1
+          },
+          "operation_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Canonical lowercase non-nil UUID.",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "receipt_secret": {
+            "type": "string",
+            "description": "Canonical unpadded base64url encoding of 32 random bytes.",
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SelfPasswordChangeCompleted": {
+        "type": "object",
+        "required": [
+          "completed"
+        ],
+        "properties": {
+          "completed": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SelfPasswordChangeResult": {
+        "type": "object",
+        "required": [
+          "operation_id",
+          "receipt_secret"
+        ],
+        "properties": {
+          "operation_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Canonical lowercase non-nil UUID.",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "receipt_secret": {
+            "type": "string",
+            "description": "Canonical unpadded base64url encoding of 32 random bytes.",
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SelfSession": {
+        "type": "object",
+        "required": [
+          "tenant_id",
+          "session_id",
+          "client_id",
+          "purpose",
+          "device_id",
+          "created_at",
+          "expires_at",
+          "status",
+          "current"
+        ],
+        "properties": {
+          "client_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "current": {
+            "type": "boolean"
+          },
+          "device_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expires_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "purpose": {
+            "$ref": "#/components/schemas/SelfSessionPurpose"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SelfSessionStatus"
+          },
+          "tenant_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SelfSessionIdentity": {
+        "type": "object",
+        "required": [
+          "tenant_id",
+          "account_id",
+          "session_id",
+          "client_id"
+        ],
+        "properties": {
+          "account_id": {
+            "type": "string"
+          },
+          "client_id": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SelfSessionPage": {
+        "type": "object",
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SelfSession"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "SelfSessionPurpose": {
+        "type": "string",
+        "enum": [
+          "business",
+          "management"
+        ]
+      },
+      "SelfSessionRead": {
+        "type": "object",
+        "required": [
+          "expected"
+        ],
+        "properties": {
+          "cursor": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "expected": {
+            "$ref": "#/components/schemas/SelfSessionIdentity"
+          },
+          "limit": {
+            "type": "integer",
+            "maximum": 50,
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "SelfSessionRevoke": {
+        "type": "object",
+        "required": [
+          "target_tenant_id",
+          "target_session_id",
+          "operation_id",
+          "receipt_secret"
+        ],
+        "properties": {
+          "operation_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Canonical lowercase non-nil UUID.",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "receipt_secret": {
+            "type": "string",
+            "description": "Canonical unpadded base64url encoding of 32 random bytes.",
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+          },
+          "target_session_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Canonical non-nil UUID."
+          },
+          "target_tenant_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SelfSessionRevokeCompleted": {
+        "type": "object",
+        "required": [
+          "completed"
+        ],
+        "properties": {
+          "completed": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SelfSessionRevokeResult": {
+        "type": "object",
+        "required": [
+          "operation_id",
+          "receipt_secret"
+        ],
+        "properties": {
+          "operation_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Canonical lowercase non-nil UUID.",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "receipt_secret": {
+            "type": "string",
+            "description": "Canonical unpadded base64url encoding of 32 random bytes.",
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SelfSessionStatus": {
+        "type": "string",
+        "enum": [
+          "active",
+          "expired"
         ]
       },
       "Session": {

@@ -4,12 +4,16 @@ mod device_management;
 mod device_proof;
 mod management_preparation;
 mod oidc;
+mod password_retirement;
+mod recovery_account;
 mod refresh;
 mod registration;
 mod scan_login;
+mod self_sessions;
 pub use admin::PostgresAccessAdminTransaction;
 pub use authentication::PostgresTenantAuthTransaction;
 pub use registration::PostgresTenantEmailVerificationTransaction;
+pub use self_sessions::PostgresSelfSessionReadTransaction;
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -579,3 +583,20 @@ mod scan_login_schema_tests {
         }
     }
 }
+
+mod self_session_revocation;
+pub use self_session_revocation::PostgresSelfSessionMutationTransaction;
+
+mod self_password_change;
+pub use self_password_change::{
+    PostgresSelfPasswordChangeReadTransaction, PostgresSelfPasswordChangeWriteTransaction,
+};
+
+mod recovery_start;
+pub use recovery_start::PostgresRecoveryStartTransaction;
+
+mod recovery_completion;
+pub use recovery_completion::PostgresRecoveryCompletionTransaction;
+
+mod security_outbox;
+pub use security_outbox::PostgresSecurityOutboxTransaction;

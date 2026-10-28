@@ -3222,6 +3222,36 @@ fn client_admin_rejects_invalid_config_and_redacts_hasher_errors() {
 }
 
 #[test]
+fn client_admin_budget_saturation_preserves_marker_without_partial_write() {
+    use crate::{
+        BudgetedClientSecretCodec, OidcClientType, PasswordWorkBudget, PhcClientSecretCodec,
+        SecretString,
+    };
+    let (admin, store) = service(seeded());
+    let budget = PasswordWorkBudget::default();
+    let permits: Vec<_> = (0..4).map(|_| budget.try_login().unwrap()).collect();
+    let hasher = BudgetedClientSecretCodec::new(PhcClientSecretCodec, budget);
+    let clients = CoreClientAdminService::new(admin, hasher);
+    let command = AdminUpsertClient {
+        client_id: "budgeted-web".into(),
+        client_name: "Budgeted Web".into(),
+        redirect_uris: vec!["https://example.test/callback".into()],
+        client_type: OidcClientType::ConfidentialWeb,
+        pkce_required: true,
+        client_secret: Some(SecretString::new("fixture-secret")),
+    };
+    assert_eq!(
+        clients.upsert_client(ctx("0", "u1", "s0"), command),
+        Err(AccessError::Store(StoreError::Backend(
+            "password.work_unavailable".into()
+        )))
+    );
+    assert!(store.0.lock().unwrap().clients.is_empty());
+    assert!(store.0.lock().unwrap().audits.is_empty());
+    drop(permits);
+}
+
+#[test]
 fn client_secret_hashing_cannot_commit_after_management_session_expires() {
     use crate::{ClientSecretError, ClientSecretHasher, OidcClientType, SecretString};
     struct MovingClock(Arc<AtomicU64>);
@@ -3501,6 +3531,12 @@ fn security_config() -> crate::AuthConfig {
     }
 }
 fn security_service() -> (CoreAccountSecurityService<Store, FixedClock, SeqIds>, Store) {
+    security_service_with_budget(crate::PasswordWorkBudget::default())
+}
+
+fn security_service_with_budget(
+    budget: crate::PasswordWorkBudget,
+) -> (CoreAccountSecurityService<Store, FixedClock, SeqIds>, Store) {
     let (admin, store) = service(seeded());
     {
         let mut data = store.0.lock().unwrap();
@@ -3517,9 +3553,123 @@ fn security_service() -> (CoreAccountSecurityService<Store, FixedClock, SeqIds>,
             .collect();
     }
     (
-        CoreAccountSecurityService::new(admin, security_config()).unwrap(),
+        CoreAccountSecurityService::new(admin, security_config())
+            .unwrap()
+            .with_password_work_budget(budget),
         store,
     )
+}
+
+fn saturated_password_budget() -> (crate::PasswordWorkBudget, Vec<crate::PasswordWorkPermit>) {
+    let budget = crate::PasswordWorkBudget::default();
+    let permits = (0..4).map(|_| budget.try_login().unwrap()).collect();
+    (budget, permits)
+}
+
+#[test]
+fn account_creation_budget_saturation_prevents_hashing_and_writes() {
+    use crate::SecretString;
+    let (budget, permits) = saturated_password_budget();
+    let (svc, store) = security_service_with_budget(budget);
+    let before = store.0.lock().unwrap().clone();
+    assert_eq!(
+        svc.create_account(
+            ctx("0", "u1", "s0"),
+            AdminCreateAccount {
+                tenant_id: "t1".into(),
+                email: "budgeted@example.test".into(),
+                password: SecretString::new("Fixture-budget-123"),
+                display_name: None,
+            },
+        ),
+        Err(AccessError::Store(StoreError::Backend(
+            "password.work_unavailable".into()
+        )))
+    );
+    let after = store.0.lock().unwrap();
+    assert_eq!(after.account_records.len(), before.account_records.len());
+    assert_eq!(after.passwords, before.passwords);
+    assert_eq!(after.audits, before.audits);
+    drop(after);
+    drop(permits);
+}
+
+#[test]
+fn account_password_reset_budget_saturation_prevents_hashing_and_writes() {
+    use crate::SecretString;
+    let (budget, permits) = saturated_password_budget();
+    let (svc, store) = security_service_with_budget(budget);
+    let before = store.0.lock().unwrap().clone();
+    assert_eq!(
+        svc.set_account_password(
+            ctx("0", "u1", "s0"),
+            AdminSetAccountPassword {
+                account_id: "u2".into(),
+                new_password: SecretString::new("Fixture-budget-123"),
+            },
+        ),
+        Err(AccessError::Store(StoreError::Backend(
+            "password.work_unavailable".into()
+        )))
+    );
+    let after = store.0.lock().unwrap();
+    assert_eq!(after.passwords, before.passwords);
+    assert_eq!(after.sessions, before.sessions);
+    assert_eq!(after.audits, before.audits);
+    drop(after);
+    drop(permits);
+}
+
+#[test]
+fn new_tenant_administrator_budget_saturation_prevents_hashing_and_writes() {
+    let (budget, permits) = saturated_password_budget();
+    let (svc, store) = security_service_with_budget(budget);
+    let before = store.0.lock().unwrap().clone();
+    assert_eq!(
+        svc.create_tenant(ctx("0", "u1", "s0"), new_tenant_administrator_command()),
+        Err(AccessError::Store(StoreError::Backend(
+            "password.work_unavailable".into()
+        )))
+    );
+    let after = store.0.lock().unwrap();
+    assert_eq!(after.tenants, before.tenants);
+    assert_eq!(after.memberships, before.memberships);
+    assert_eq!(after.account_records, before.account_records);
+    assert_eq!(after.passwords, before.passwords);
+    assert_eq!(after.audits, before.audits);
+    drop(after);
+    drop(permits);
+}
+
+#[test]
+fn no_kdf_admin_operations_remain_available_when_password_budget_is_full() {
+    let (budget, permits) = saturated_password_budget();
+    let (svc, _store) = security_service_with_budget(budget.clone());
+    svc.set_account_status(
+        ctx("0", "u1", "s0"),
+        AdminSetAccountStatus {
+            account_id: "u2".into(),
+            status: AccountIdentityStatus::Disabled,
+            expected_status: AccountIdentityStatus::Active,
+        },
+    )
+    .unwrap();
+
+    let (other, other_store) = security_service_with_budget(budget);
+    let mut existing_admin = new_tenant_administrator_command();
+    existing_admin.administrator = InitialTenantAdministrator::Existing {
+        subject_id: "u2".into(),
+    };
+    other
+        .create_tenant(ctx("0", "u1", "s0"), existing_admin)
+        .unwrap();
+    assert!(other_store
+        .0
+        .lock()
+        .unwrap()
+        .tenants
+        .contains_key("created-tenant"));
+    drop(permits);
 }
 #[test]
 fn account_security_creation_requires_platform_permissions_and_initial_membership() {

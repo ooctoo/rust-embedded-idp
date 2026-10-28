@@ -5,6 +5,18 @@
 //! PostgreSQL adapters live in storage; constructing these services does not
 //! automatically mount HTTP routes or enable tenant-aware device flows.
 
+mod self_sessions;
+pub use self_sessions::*;
+mod self_session_revocation;
+pub use self_session_revocation::*;
+mod self_password_change;
+pub use self_password_change::*;
+mod recovery_start;
+pub use recovery_start::*;
+mod recovery_completion;
+pub use recovery_completion::*;
+mod security_outbox;
+pub use security_outbox::*;
 mod admin;
 mod authentication;
 mod bootstrap;

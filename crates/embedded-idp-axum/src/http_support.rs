@@ -11,6 +11,10 @@ use tokio::task;
 use crate::dto::{ErrorHttpResponse, IntrospectionHttpResponse, JwkHttpResponse, JwksHttpResponse};
 
 pub(crate) fn map_service_error(error: ServiceError) -> Response {
+    let password_work_unavailable = matches!(
+        &error,
+        ServiceError::Store(StoreError::Backend(code)) if code == "password.work_unavailable"
+    );
     let (status, code) = match error {
         ServiceError::InvalidContract(_) => (StatusCode::BAD_REQUEST, "invalid_contract"),
         ServiceError::RegistrationDisabled => (StatusCode::FORBIDDEN, "registration_disabled"),
@@ -71,19 +75,30 @@ pub(crate) fn map_service_error(error: ServiceError) -> Response {
             (StatusCode::CONFLICT, "device_registration_state_invalid")
         }
         ServiceError::DeviceProofRejected(_) => (StatusCode::UNAUTHORIZED, "device_proof_rejected"),
+        ServiceError::Store(StoreError::Backend(ref code))
+            if code == "password.work_unavailable" =>
+        {
+            (StatusCode::SERVICE_UNAVAILABLE, "temporarily_unavailable")
+        }
         ServiceError::Store(_) | ServiceError::Token(_) => {
             (StatusCode::INTERNAL_SERVER_ERROR, "internal_error")
         }
     };
 
-    (
+    let mut response = (
         status,
         Json(ErrorHttpResponse {
             code,
             message: service_error_message(&error),
         }),
     )
-        .into_response()
+        .into_response();
+    if password_work_unavailable {
+        response
+            .headers_mut()
+            .insert(header::CACHE_CONTROL, "no-store".parse().unwrap());
+    }
+    response
 }
 
 fn service_error_message(error: &ServiceError) -> String {
@@ -108,6 +123,11 @@ fn service_error_message(error: &ServiceError) -> String {
         },
         ServiceError::EmailAlreadyExists => "Email is already registered.".to_string(),
         ServiceError::InvalidCredentials => "Email or password is incorrect.".to_string(),
+        ServiceError::Store(StoreError::Backend(ref code))
+            if code == "password.work_unavailable" =>
+        {
+            "the request could not be completed".to_string()
+        }
         _ => format!("{error:?}"),
     }
 }
@@ -171,6 +191,40 @@ pub(crate) fn introspection_response(result: IntrospectTokenResult) -> Introspec
         sid: result.session_id,
         exp: result.expires_at.and_then(unix_timestamp),
         iat: result.issued_at.and_then(unix_timestamp),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::to_bytes;
+    use serde_json::Value;
+
+    #[tokio::test]
+    async fn password_work_unavailable_is_redacted_service_unavailable() {
+        let response = map_service_error(ServiceError::Store(StoreError::Backend(
+            "password.work_unavailable".into(),
+        )));
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+        let body: Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
+        assert_eq!(body["code"], "temporarily_unavailable");
+        assert_eq!(body["message"], "the request could not be completed");
+        assert!(!body.to_string().contains("password.work_unavailable"));
+    }
+
+    #[tokio::test]
+    async fn other_service_failures_keep_internal_error_projection() {
+        let response = map_service_error(ServiceError::Store(StoreError::Backend(
+            "database unavailable".into(),
+        )));
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let body: Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
+        assert_eq!(body["code"], "internal_error");
     }
 }
 

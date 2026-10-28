@@ -3,6 +3,8 @@ use std::{
     future::{Future, IntoFuture},
 };
 
+mod abuse_config;
+mod account_security_config;
 mod admin_ui;
 mod administrator_init;
 mod bootstrap;
@@ -15,6 +17,9 @@ mod oidc_dispatch;
 mod scan_cleanup;
 mod scan_composition;
 mod scan_ui;
+mod security_email;
+mod security_preparation;
+mod security_runtime;
 
 use std::time::Duration;
 use tokio::runtime::Builder;
@@ -32,6 +37,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut args = std::env::args().skip(1);
     let config = if let Some(command) = args.next() {
         match command.as_str() {
+            "__security-email-helper" if args.next().is_none() => {
+                std::process::exit(security_email::helper_main());
+            }
             "prepare-management-client" | "prepare-management-client-audit" => {
                 if let Err((code, message)) =
                     management_client_preparation::run(args.collect(), command.ends_with("-audit"))
@@ -43,6 +51,13 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
             "bootstrap-admin" => {
                 return administrator_init::run(args.collect()).map_err(Into::into)
+            }
+            "security-plan" | "security-apply" | "security-check" => {
+                if let Err((code, message)) = security_preparation::run(&command, args.collect()) {
+                    eprintln!("{message}");
+                    std::process::exit(code);
+                }
+                return Ok(());
             }
             "--config" => {
                 let path = args
@@ -56,8 +71,10 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
             "--help" if args.next().is_none() => {
                 println!(
-                    "Run with no arguments to start the reference host using legacy environment configuration.\nUse --config <path> for explicit JSON v1/v2 host configuration. SIGINT and SIGTERM trigger bounded HTTP and cleanup shutdown.\n{}",
-                    format!("{}\n{}", administrator_init::USAGE, management_client_preparation::USAGE)
+                    "Run with no arguments to start the reference host using legacy environment configuration.\nUse --config <path> for explicit JSON v1/v2 host configuration. SIGINT and SIGTERM trigger bounded HTTP and cleanup shutdown.\n{}\n{}\n{}",
+                    format!("{}\n{}", administrator_init::USAGE, management_client_preparation::USAGE),
+                    security_preparation::USAGE,
+                    "security-plan|security-apply|security-check"
                 );
                 return Ok(());
             }
@@ -72,11 +89,16 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Its last connection drop drives an internal runtime to close the connection.
     let services_until_runtime_stops = app.clone();
     let scan_cleanup = composition.scan_cleanup;
+    let security_job = composition.security_runtime;
+    // Outbox worker clones may finish blocking DB calls during runtime shutdown.
+    let security_until_runtime_stops = security_job.clone();
     let runtime = Builder::new_multi_thread().enable_all().build()?;
 
     let result = runtime.block_on(async move {
         let listener = TcpListener::bind(config.bind_addr).await?;
         let (stop_tx, stop_rx) = watch::channel(false);
+        let security = security_job.map(|job| security_runtime::spawn(job, stop_rx.clone()));
+        let mut security_stop = stop_rx.clone();
         let cleanup = if scan_cleanup.is_empty() {
             None
         } else {
@@ -111,7 +133,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             shutdown_signal().await;
             let _ = signal_stop.send(true);
         };
-        let serving = axum::serve(listener, app)
+        let serving = axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>())
             .with_graceful_shutdown(shutdown)
             .into_future();
         let server_stop = stop_tx.clone();
@@ -136,12 +158,21 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
             }
         };
-        let (server_result, ()) = tokio::join!(server_drain, cleanup_drain);
+        let security_drain = async move {
+            if let Some(handle) = security {
+                if !*security_stop.borrow() {
+                    let _ = security_stop.changed().await;
+                }
+                handle.shutdown().await;
+            }
+        };
+        let (server_result, (), ()) = tokio::join!(server_drain, cleanup_drain, security_drain);
         server_result?;
         Ok::<(), std::io::Error>(())
     });
     runtime.shutdown_timeout(RUNTIME_SHUTDOWN_TIMEOUT);
     drop(services_until_runtime_stops);
+    drop(security_until_runtime_stops);
     result?;
     Ok(())
 }

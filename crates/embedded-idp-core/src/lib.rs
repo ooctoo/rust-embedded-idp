@@ -16,7 +16,8 @@ mod support;
 mod token;
 
 pub use client_secret::{
-    ClientSecretError, ClientSecretHasher, ClientSecretVerifier, PhcClientSecretCodec,
+    BudgetedClientSecretCodec, ClientSecretError, ClientSecretHasher, ClientSecretVerifier,
+    PhcClientSecretCodec,
 };
 pub use config::{AuthConfig, ConfigValidationError, DeviceConfig, EmbeddedIdpConfig, OidcConfig};
 pub use device_proof::{
@@ -98,4 +99,15 @@ pub use token::{
     digest_refresh_token, next_refresh_token_version, normalize_oauth_scope, AccessTokenIssuer,
     AccessTokenPurpose, AccessTokenValidator, IdTokenClaims, IdTokenIssuer, IssuedAccessToken,
     IssuedTokenBundle, ScopedAccessTokenIssuer, TokenError, TokenIssuer, ValidatedAccessToken,
+};
+
+mod admission;
+pub use admission::{
+    AbuseAdmission, AdmissionConfigError, AdmissionPolicy, AdmissionQuota, AdmissionRejection,
+};
+
+mod account_security_crypto;
+pub use account_security_crypto::{
+    AccountSecurityCrypto, SecurityCryptoContext, SecurityCryptoError, SecurityDigest,
+    SecurityDigestPurpose, SecurityEnvelope, SecurityEnvelopePurpose,
 };

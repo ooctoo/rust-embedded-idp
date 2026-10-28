@@ -26,3 +26,13 @@ export { DeviceScanClient, DeviceScanError, type DeviceScanRecord, type DeviceSc
 export { buildDeviceScanProofBytes, type ScanTarget, type ScanProgress, type ScanBundle, type ScanSigner, type ScanSignInput } from "./scan-login-protocol";
 export { DeviceScanLogin, type DeviceScanLoginProps, type ScanCodeRenderer } from "./device-scan-login";
 export { ScanSourceEntry, type ScanSourceEntryProps } from "./scan-source-entry";
+
+export { AccountSecurityClient, AccountSecurityError, parseSecurityIntent,
+  type AccountSecurityPort, type AccountSecurityOperation, type SecurityIdentity,
+  type SecuritySession, type SecuritySessionPage, type SecurityIntent,
+  type RevocationIntent, type PasswordChangeIntent, type RecoveryStartIntent,
+  type RecoveryCompletionIntent } from "./account-security-client";
+
+export { AccountSecurityPanel, PasswordRecovery, type AccountSecurityPanelProps, type PasswordRecoveryProps } from "./account-security";
+export { AccountSecurityWorkflow, createSessionSecurityJournal, validateAccountSecurityFeatures,
+  type SecurityJournalStore, type SecurityJournalRecord, type AccountSecurityFeatures } from "./account-security-workflow";

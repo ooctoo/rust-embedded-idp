@@ -164,6 +164,7 @@ pub struct CoreTenantRegistrationService<S, K, I, V> {
     clock: K,
     ids: I,
     codes: V,
+    password_work: crate::PasswordWorkBudget,
 }
 impl<S, K, I, V> CoreTenantRegistrationService<S, K, I, V> {
     pub fn new(
@@ -182,7 +183,13 @@ impl<S, K, I, V> CoreTenantRegistrationService<S, K, I, V> {
             clock,
             ids,
             codes,
+            password_work: crate::PasswordWorkBudget::default(),
         })
+    }
+    /// Share with every password entry in the embedding host.
+    pub fn with_password_work_budget(mut self, budget: crate::PasswordWorkBudget) -> Self {
+        self.password_work = budget;
+        self
     }
 }
 impl<S, K, I, V> CoreTenantRegistrationService<S, K, I, V>
@@ -203,7 +210,10 @@ where
         }
         validate_registration_password(&self.config, command.password.expose_secret())
             .map_err(TenantRegistrationError::InvalidContract)?;
-        let password_hash = hash_password(command.password.expose_secret())?;
+        let password_hash = {
+            let _permit = self.password_work.try_registration()?;
+            hash_password(command.password.expose_secret())?
+        };
         let now = self.clock.now();
         let expires_at = now
             .checked_add(Duration::from_secs(self.config.verification_code_ttl_secs))

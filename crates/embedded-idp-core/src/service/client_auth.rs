@@ -30,12 +30,16 @@ pub(crate) fn authenticate_client(
 }
 
 fn store_error_from_client_secret(error: ClientSecretError) -> StoreError {
-    StoreError::Backend(format!("client_secret:{error:?}"))
+    if error.is_work_unavailable() {
+        StoreError::Backend("password.work_unavailable".into())
+    } else {
+        StoreError::Backend(format!("client_secret:{error:?}"))
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{ClientSecretError, ClientSecretVerifier, OidcClient, OidcClientType};
+    use crate::{ClientSecretError, ClientSecretVerifier, OidcClient, OidcClientType, StoreError};
 
     use super::authenticate_client;
 
@@ -100,6 +104,24 @@ mod tests {
                 &TestVerifier { result: Ok(true) }
             ),
             Ok(())
+        );
+    }
+
+    #[test]
+    fn budget_marker_is_preserved_but_other_client_errors_remain_scoped() {
+        assert_eq!(
+            super::store_error_from_client_secret(ClientSecretError::VerifierRejected(
+                "password.work_unavailable".into()
+            )),
+            StoreError::Backend("password.work_unavailable".into())
+        );
+        assert_eq!(
+            super::store_error_from_client_secret(ClientSecretError::VerifierRejected(
+                "password.work_unavailable details".into()
+            )),
+            StoreError::Backend(
+                "client_secret:VerifierRejected(\"password.work_unavailable details\")".into()
+            )
         );
     }
 }

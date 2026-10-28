@@ -1,0 +1,63 @@
+# S03-A4 本人改密 Core/PG 技术设计与实施计划
+
+2026-10-26。状态：独立double check完成，主代理按复核修正后冻结，可按本文进入Core/PG实施。承接S03-A3，HTTP/宿主与Web在后续切片接入。
+
+## 目标、依赖与复用
+
+可信AccessActor发起本人改密，当前密码验证成功且凭据快照仍一致时，原子变更密码并退出该账号所有租户/用途的会话；成功收据可在发起会话撤销后独立查询。沿用tenant_v6、security_foundation_v1及security_runtime_v1，不新增表/依赖/迁移。复用service/password.rs的Argon2密码校验、策略和hash函数、PasswordWorkBudget、AccountSecurityCrypto、既有receipt结构、self_actor_is_active和锁定辅助函数。避免调用管理服务伪造权限，也不复用只撤销单一会话的目标集合。
+
+安全边界与现行生产安全合同一致：可信宿主给出Actor，Core重查账号/成员/租户/session/device/key/binding；scope非NULL的委托会话禁止全域安全写。所有数据仍在宿主选择的同一schema及authority内。
+
+## Core公开合同
+
+新增SelfPasswordChangeCommand {current_password: SecretString, new_password: SecretString, operation_id: Uuid, receipt_secret: SecretString}，SelfPasswordChangeService提供change_password(actor, command)及password_change_result(SecurityReceiptQuery)。不返回密码hash、版本、账号信息或新登录凭据。SecretString字段必须脱敏Debug。新增专用SelfPasswordChangeError { InvalidCredentials, Access(AccessError) }，避免为AccessError增加variant而破坏旧调用方穷尽匹配；Store闭包仍使用AccessError，Core向外转换包装，旧密码失败使用独立InvalidCredentials。
+
+CoreSelfPasswordChangeService构造器显式接收mode、store、clock、crypto、ids、AuthConfig及宿主共享PasswordWorkBudget；调用AuthConfig.validate并返回既有ConfigValidationError。不得在服务内部创建独立默认budget。
+
+新增凭据快照 {account_id, password_hash: SecretString, credential_version: u64}；存储快照必须绑定actor.subject_id，版本为正。Core拒绝错误主体或畸形快照，不以存储返回值扩大权限。
+
+新增专用Store/Transaction契约，保持既有SelfSessionMutationStore兼容。Store采用GAT ReadTransaction/WriteTransaction关联类型，两个runner：password_change_read(mode, authority, actor: Option<&AccessActor>, run)和password_change_write(mode, authority, actor: &AccessActor, run)，均返回Result<R, AccessError>。read的None仅供结果查询，Some为准备快照；write始终要求actor，不用可疑布尔参数切换锁级别。两runner均完成布局检查，read持state SHARE，write持state UPDATE。事务提供actor有效性、凭据快照、receipt读取/计数、CAS改密并全域退役、记录password_changed事件与receipt。read关联类型仅实现SelfPasswordChangeReadTransaction（actor_is_active、credential_snapshot、receipt），write关联类型实现其扩展SelfPasswordChangeWriteTransaction（receipt_count、replace_password_and_retire、record_completion）；读事务不暴露写方法。结果查询只读且无Actor；不提供任何写能力。实现可以抽取现有receipt SQL为crate-private共享辅助函数，但不引入通用工作流框架或改变原撤销语义。
+
+## 操作时序与事务
+
+1. 验证mode/actor/非nil canonical UUID、32字节canonical receipt secret；新密码调用现有validate_registration_password，字符计数而非字节，必须满足字母数字要求。旧密码非空且不超过配置max字符，另有HTTP16KiB限制在下一批实现。策略错误不启动KDF。
+2. 短事务：state FOR SHARE→核对base/foundation/runtime→tenant/account/session锁→锁后Clock→actor有效性→读取receipt及凭据快照。若相同操作已完成且认证仍有效，验证secret/命令摘要后返回成功；存在冲突返回409语义。过期receipt不得重用operation。结束事务并释放连接/锁后才进入KDF。
+3. 获取宿主共享PasswordWorkBudget.try_login许可；使用verify_password_or_dummy(Some(snapshot.password_hash), current_password)验证当前密码，错误/畸形PHC按既有helper做dummy验证后统一InvalidCredentials；真正存储或crypto失败仍通过Access包装返回并由HTTP脱敏。验证成功再生成新hash；同一许可覆盖两项工作，物理工作结束才释放，不能因异步调用者取消而提前归还。预算饱和沿用password.work_unavailable。新旧密码相同仍允许正常改密及全域退出，不新增历史密码策略。
+4. 新写事务：state FOR UPDATE→同样验证布局/authority→tenant/account/session锁→锁后Clock→actor重查→receipt重查→快照account/hash/version/status一致性检查→receipt总容量小于100000→CAS更新password_hash。凭据版本由已有trigger推进，不手工加版本。CAS UPDATE谓词同时约束account id、status=active、old password_hash和security_credential_version，要求恰一行。email/status/registration tenant的变化也会经trigger造成版本不符。不能直接调用旧admin update_account_security的弱谓词。条件失败用明确security.credentials_changed冲突；若actor已撤销则按actor失效拒绝，不承诺所有并发失败均409。
+5. 同事务退役下面完整集合，并写password_changed/accepted事件及24小时成功receipt。任何一步失败全部回滚。COMMIT结果未知由独立receipt查询核对，不自动再次改密，不自动登录。
+
+两次事务之间不持连接、不持数据库锁；KDF之后必须重查，不使用第一次认证作为写入授权。ReadCommitted+state排他屏障与既有登录/管理/扫码写路径协同，所有旧登录快照必须在其写事务按既有规则重新验证；测试须证明不能在改密后以旧密码生成可用会话。
+
+## 全域退役SQL集合
+
+按account UUID跨全部tenant/purpose处理：auth_sessions所有未revoked行；对应refresh_tokens未撤销行；authorization_codes按account删除；auth_tenant_selections按account撤销；email_verification_codes按account删除。保留账号、成员、角色、设备绑定和密钥本身。
+
+扫描授权集合为source_account_id=账号的grant，或delivery关联session.account_id=账号的grant。所有相关presentation与delivery_secret_hash清空；可用grant状态invalidated，保留历史终态及记录。所有匹配grant均version+1，版本溢出须事务失败，不允许wrap。保留scan_login_operations、scan_login_origin_closures持久tombstone及audit历史。属于账号的交付session全部已退役，相关delivery的result密文和receipt_nonce_hash清空，recoverable/acknowledged交付标revoked。与该账号无关的grant/delivery/会话不能修改。具体SQL按当前schema check枚举实现，不能把单会话撤销只处理recoverable子会话的规则照搬到全域改密。
+
+password_recovery_flows中account_id匹配且pending的行invalidated；相关security_email_outbox pending/sending均cancelled并清空密文、key、lease；pending取消记录last_outcome=not_started；sending取消记录unknown，不能声称邮件未发出；已终态保留原last_outcome。同账号其他状态也不保留可读密文。删除该账号全部flow关联的password_recovery_start_receipts，防止重放返回已失效handle。不删除累计邮箱budget，不通过改密刷新猜测额度。已启动的外部SMTP无法收回；未来worker必须以lease/state条件完成，且任何迟到邮件code因flow/version失效不能改密。不得假称能阻止已发出的邮件到达。
+
+## receipt绑定和错误
+
+沿用purpose=password_change，secret摘要context为operation，related为空。命令HMAC使用独立Command key，context为operation+subject，以u32长度前缀绑定域embedded-idp/self-password-change/v1、actor tenant/subject/session和new_password，不保存裸SHA或明文。current_password用于重新认证，不进入持久命令摘要。已有stored key ID用于重放验证；当前key用于新写，未知key为基础设施错误。
+
+result校验语法后只查该purpose/operation；不存在、过期、secret不匹配均false；true只表示已提交。false不是未发生证明。查询不认证、不返回account，不检查当前密码，不做KDF。receipt容量包含全部purpose，未清理的过期行也计入容量，满时拒绝写入503语义。
+
+## 实施顺序与局部退出门槛
+
+1. 独立设计复核：确认公共trait兼容、密码策略/锁序/CAS、scan与outbox终态约束、key轮换与结果未知；主代理记录修正并冻结。
+2. 实现Core端口/服务与定向单元测试；覆盖无效actor/UUID/secret、策略/旧密码失败、预算饱和、不持锁KDF、快照不一致、重复/冲突/匿名result/previous-key/unknown-key、失效actor不得靠receipt写入。
+3. 实现PG适配器及必要的内部receipt复用。两mode隔离PG验证跨租户/用途全域退出与其他账号保留、scan全部状态、flow/outbox/startreceipt失效、budget保留、trigger版本推进、并发双改密最多一次、旧登录竞争（用数据库barrier分别安排旧登录先持state SHARE发出会话后改密退役，以及旧hash快照先读而认证事务在改密提交后被拒绝，不依赖概率竞速）、事件写失败回滚，以及提交后匿名结果确认。模拟数据必须符合现有SQL约束。
+4. 更新Core/PG接口合同、实施记录；cargo fmt、相关crate定向测试及workspace all-target编译。现有撤销及列表测试回归，保留8个既有测试SHA。不声称真实COMMIT网络故障已注入。
+5. 下一批再冻结并接入Bearer/browser密码HTTP、显式宿主共享预算和Web；本批不新增未实现路由到合同清单。不做完整验收、部署、提交或推送。
+
+## 主代理源码核对补充
+
+密码策略来自service/password.rs，当前管理端CoreAccountSecurityService的旧hash路径尚未接入共享预算；本批不把该旧路径当作本人服务，后续宿主接线批需一并补齐预算并保留旧合同。scan delivery枚举确认为recoverable/acknowledged/revoked，不存在cancelled；失效清理不得写入不存在的状态。foundation触发器是唯一版本推进者。
+
+## Double check记录与冻结裁定
+
+独立复核要求补齐六项：构造器策略/共享预算注入、密码验证helper、grant版本及历史保留、CAS精确谓词、outbox未知结果与全flow start receipt清理、两种旧登录竞争的确定性测试。以上已逐项写回；主代理还用专用错误包装保持AccessError穷尽匹配兼容，并分离只读/写事务trait避免result暴露写方法。复用范围和依赖不变，无新增开源组件或许可证变化。设计冻结后先实施Core，再PG，完成独立代码复核及局部测试后更新合同；HTTP及UI仍另批先设计复核。
+
+## 实现复核记录
+
+Core与PG实现分别完成只读独立代码审查，未发现阻塞项；主代理核对实际diff。PG只读runner采用普通ReadCommitted事务以允许FOR SHARE行锁，能力由只读trait限制，不使用与锁语句冲突的数据库read-only设置。局部真实PG及Core全量lib结果见后续实施记录，未通过前不标记本批完成。

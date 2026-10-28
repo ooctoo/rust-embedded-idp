@@ -220,6 +220,13 @@ async fn logout_response(
 }
 
 fn resource_error(error: TenantAuthError) -> Response {
+    if password_work_unavailable(&error) {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"error":"server_error"})),
+        )
+            .into_response();
+    }
     let (status, code) = match &error {
         TenantAuthError::InvalidClient => (StatusCode::UNAUTHORIZED, "invalid_client"),
         TenantAuthError::InvalidSession | TenantAuthError::DeviceProofRequired => {
@@ -248,12 +255,50 @@ fn resource_error(error: TenantAuthError) -> Response {
     }
     response
 }
+fn password_work_unavailable(error: &TenantAuthError) -> bool {
+    let is_marker = |error: &embedded_idp_core::StoreError| matches!(error, embedded_idp_core::StoreError::Backend(code) if code == "password.work_unavailable");
+    match error {
+        TenantAuthError::Store(error) => is_marker(error),
+        TenantAuthError::Access(AccessError::Store(error)) => is_marker(error),
+        _ => false,
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
     use axum::body::Body;
     use std::sync::Mutex;
     use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn resource_budget_failure_uses_oauth_server_error_without_challenge() {
+        let response = resource_error(TenantAuthError::Store(
+            embedded_idp_core::StoreError::Backend("password.work_unavailable".into()),
+        ));
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(response.headers().get(header::WWW_AUTHENTICATE), None);
+        let body: serde_json::Value = serde_json::from_slice(
+            &axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(body["error"], "server_error");
+
+        assert_eq!(
+            resource_error(TenantAuthError::Store(
+                embedded_idp_core::StoreError::Backend("ordinary failure".into()),
+            ))
+            .status(),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+        let invalid = resource_error(TenantAuthError::InvalidClient);
+        assert_eq!(invalid.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            invalid.headers()[header::WWW_AUTHENTICATE],
+            "Basic realm=\"idp\""
+        );
+    }
 
     #[derive(Default)]
     struct Logout(Mutex<Vec<TenantTokenRequest>>);

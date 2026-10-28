@@ -1,10 +1,26 @@
+mod self_sessions;
+pub use self_sessions::{management_self_session_router, self_session_router};
+mod self_session_revocation;
+pub use self_session_revocation::{
+    management_self_session_revocation_router, self_session_revocation_router,
+};
+mod self_password_change;
+pub use self_password_change::{
+    management_self_password_change_router, self_password_change_router,
+};
+mod password_recovery;
+pub use password_recovery::{
+    browser_password_recovery_router, management_password_recovery_router, password_recovery_router,
+};
 mod http_transport;
 pub use http_transport::HttpTransportPolicy;
 mod registration_email_http;
 pub use registration_email_http::{registration_email_router, RegistrationEmailHttpConfig};
 mod browser_session;
 pub use browser_session::{
-    browser_session_router, BrowserSessionClientConfig, BrowserSessionHttpConfig,
+    browser_self_password_change_router, browser_self_session_revocation_router,
+    browser_self_session_router, browser_session_router, BrowserSessionClientConfig,
+    BrowserSessionHttpConfig,
 };
 mod device_scan_login;
 pub use device_scan_login::{
@@ -1359,3 +1375,6 @@ mod anonymous_login;
 pub use anonymous_login::{with_anonymous_login_budget, AnonymousLoginBudget};
 #[cfg(feature = "openapi")]
 pub mod openapi;
+
+mod abuse_admission;
+pub use abuse_admission::{with_abuse_admission, TrustedRequestSource};

@@ -44,7 +44,7 @@
 | GET `/auth/access/capabilities`, `/auth/session` | tenant auth router；capabilities公开，session需Bearer access token | JSON；200/401；同上 |
 | GET `/auth/tenant-selection/tenants`, POST `/auth/me/tenant-selection` | 仅Enabled + `ChooseAfterAuthentication`；列表使用selection ticket，切换使用Bearer session | GET无body，切换POST不提取body；200/认证错误；同上 |
 | POST `/auth/tenant-selection/complete` | 普通tenant_auth在Enabled + Choose时注册；tenant_device_auth替代普通router并提供proof-aware完成，配置只绑定外部签名路径，不控制是否挂载 | JSON，设备分支按会话策略要求proof；200/拒绝；[`tenant_device_auth.rs`](../../crates/embedded-idp-axum/src/tenant_device_auth.rs) |
-| POST `/auth/register`, `/auth/verify-email`, `/auth/resend-verification` | `tenant_registration_router`显式装配；公开，受租户注册策略限制 | JSON；注册/重发202，验证200；拒绝按错误映射；[`tenant_registration.rs`](../../crates/embedded-idp-axum/src/tenant_registration.rs) |
+| POST `/auth/register`, `/auth/verify-email`, `/auth/resend-verification` | `tenant_registration_router`显式装配；公开，受租户注册策略限制 | JSON；注册/重发202，验证200；新增密码工作预算耗尽503 `temporarily_unavailable`/no-store，其他拒绝按既有错误映射；[`tenant_registration.rs`](../../crates/embedded-idp-axum/src/tenant_registration.rs) |
 | GET `/auth/me/roles` | `tenant_self_router`；需认证subject和access service | JSON；200/401/拒绝；[`tenant_self.rs`](../../crates/embedded-idp-axum/src/tenant_self.rs) |
 
 ## Tenant devices 与 device-auth
@@ -140,7 +140,7 @@ A01 管理 client 显式准备仅涉及现有管理 client API/CLI 的准备流�
 
 ## A02A 新入口与 A03 合同覆盖
 
-[生成合同](business-openapi.json) 的唯一源码为 `crates/embedded-idp-axum/src/openapi.rs`，通过可选 `openapi` feature 使用 utoipa 生成。该文件覆盖以下 17 项普通业务操作；历史管理、device、OIDC、scan 等仍以以上完整路由清单为准，未声称历史全量 schema 已交付。`business_profile` 过滤 Fixed/Choose、browser、registration 条件，server URL 表示宿主 mount_prefix，模块 path 不硬编码外层前缀。每个入口的 Cookie 名由配置替换合同占位符。
+[生成合同](business-openapi.json) 的唯一源码为 `crates/embedded-idp-axum/src/openapi.rs`，通过可选 `openapi` feature 使用 utoipa 生成。该文件覆盖27项既有普通业务/安全操作，并定义6项双开关启用的密码恢复操作；历史管理、device、OIDC、scan 等仍以以上完整路由清单为准，未声称历史全量 schema 已交付。旧 `business_profile` 与 `business_profile_with_account_security` 均默认排除恢复；`business_profile_with_recovery` 仅在 `account_security && recovery_email` 时加入三个业务路径，browser路径还要求browser启用。server URL表示宿主 mount_prefix，模块path不硬编码外层前缀。
 
 | 方法/路径 | 权威 HTTP 实现 / 条件 |
 | --- | --- |
@@ -149,18 +149,28 @@ A01 管理 client 显式准备仅涉及现有管理 client API/CLI 的准备流�
 | POST `/auth/login`, GET `/auth/access/capabilities`, GET `/auth/session` | `tenant_auth.rs`，所有普通入口 |
 | GET `/auth/tenant-selection/tenants`, POST `/auth/me/tenant-selection`, POST `/auth/tenant-selection/complete` | `tenant_auth.rs`，仅 Enabled+Choose |
 | GET `/auth/me/roles` | `tenant_self.rs`，Bearer，business_id必填，cursor绑定tenant/business/subject；next_cursor始终存在、可null |
+| GET `/auth/security/sessions` | `self_sessions.rs`，Bearer本人查询；全域按subject隔离、cursor绑定subject，actor必须是`scope=null`第一方会话；列表可显示本人委托会话 |
 | POST `/auth/browser/login`, `/auth/browser/tenant-selection/complete`, `/auth/browser/restore`, `/auth/browser/refresh`, `/auth/browser/logout` | `browser_session.rs`，browser启用时全部挂载；Fixed的browser选择路由存在但服务拒绝选择 |
+| POST `/auth/browser/security/sessions` | `browser_session/self_sessions.rs`，配置匹配的业务browser身份只读查询；expected identity必需、16 KiB JSON限制、不轮换cookie |
+| POST `/auth/password-recovery/start`, `/complete`, `/result` | `password_recovery.rs::password_recovery_router`，仅account security与recovery email同时启用；匿名账号全域操作，不接受tenant/business selector、query、Bearer或Cookie |
+| POST `/auth/browser/password-recovery/start`, `/complete`, `/result` | `password_recovery.rs::browser_password_recovery_router`，上述双开关且browser启用；复用Origin/browser header guard，无Cookie身份或Set-Cookie |
 | POST `/auth/register`, `/auth/verify-email`, `/auth/resend-verification` | `tenant_registration.rs`，显式注册开关、Fixed策略及邮件依赖 |
 
 新router不会隐式提供OIDC资源接口、challenge或设备管理接口。普通refresh的reuse结果在Core提交撤销后映射401；logout只撤销凭证对应会话/refresh family。Browser JSON没有refresh_token；Cookie/Origin/固定请求头是联合要求，Sec-Fetch-Site若出现必须same-origin。
 
 检查命令：`./scripts/check_api_contracts.sh`。它比对确定性生成物，并执行唯一operationId、schema引用、清单覆盖、profile条件及真实Axum响应（状态、Content-Type、no-store、DTO与错误）检查；本批真实宿主生命周期/隔离测试另见第二批实施记录。
 
-A03复审补充：roles/tenant列表的Query提取失败是text/plain 400；登录不允许tenant header。正常browser模式无Cookie退出204，受限development_login模式仍先要求expected_session。合同局部测试覆盖17项成功响应的递归schema、全部有效条件组合的实际挂载及代表提取器/安全失败，不把fixture HTTP投影当作Core事务或真实宿主隔离验收。
+本人会话查询的management对称路由为 GET `/admin/auth/security/sessions` 和 POST `/admin/auth/browser/security/sessions`。目前 management 路由没有生成完整OpenAPI schema；这两项由[本人会话查询专用合同](self-session-contract.md)记录，不计入 business-openapi.json。
+
+密码恢复的management对应路由为 POST `/admin/auth/password-recovery/start`, `/complete`, `/result` 与 POST `/admin/auth/browser/password-recovery/start`, `/complete`, `/result`。它们沿用同一账号全域服务；只在account security与recovery email同时启用时挂载，browser三项另要求management browser启用。当前只列入路由清单，由[密码恢复HTTP合同](recovery-http-contract.md)定义wire约束；未生成management OpenAPI schema，也不表示宿主已自动挂载。
+
+业务OpenAPI中的六个完整路径为 POST `/auth/password-recovery/start`, `/auth/password-recovery/complete`, `/auth/password-recovery/result`, `/auth/browser/password-recovery/start`, `/auth/browser/password-recovery/complete`, `/auth/browser/password-recovery/result`。管理对应路径为 POST `/admin/auth/password-recovery/start`, `/admin/auth/password-recovery/complete`, `/admin/auth/password-recovery/result`, `/admin/auth/browser/password-recovery/start`, `/admin/auth/browser/password-recovery/complete`, `/admin/auth/browser/password-recovery/result`。
+
+A03复审补充：roles/tenant列表的Query提取失败是text/plain 400；登录不允许tenant header。正常browser模式无Cookie退出204，受限development_login模式仍先要求expected_session。既有合同局部测试覆盖27项操作成功响应的递归schema及profile路由；恢复profile测试另覆盖双开关和browser条件，不把fixture投影当作Core事务或真实宿主隔离验收。
 
 ## A02B-B1 共享 OIDC 合同
 
-[共享 OIDC 合同](shared-oidc-openapi.json) 与普通入口合同分开：新 v2 `business_entries[].oidc.enabled=true` 至少出现一项时，宿主只装配一次共享 `/oidc/*` 与 `/.well-known/openid-configuration`。authorize/token 复用租户 OIDC 授权处理器，userinfo/introspect/revoke 使用仅三项的 `tenant_oidc_protocol_resource_router`；不合并旧 resource router 所带的 `/auth/logout`。这七项包括 GET authorize（Bearer、S256）、POST token（authorization_code form）、GET userinfo、POST introspect/revoke、GET discovery/JWKS。v1 拒绝 `oidc` 配置字段，普通 `business_document()` 仍仅描述原17项。共享发现元数据不暴露设备端点；legacy/reference OIDC 路由语义仍按前文历史清单保留。
+[共享 OIDC 合同](shared-oidc-openapi.json) 与普通入口合同分开：新 v2 `business_entries[].oidc.enabled=true` 至少出现一项时，宿主只装配一次共享 `/oidc/*` 与 `/.well-known/openid-configuration`。authorize/token 复用租户 OIDC 授权处理器，userinfo/introspect/revoke 使用仅三项的 `tenant_oidc_protocol_resource_router`；不合并旧 resource router 所带的 `/auth/logout`。这七项包括 GET authorize（Bearer、S256）、POST token（authorization_code form）、GET userinfo、POST introspect/revoke、GET discovery/JWKS。v1拒绝`oidc`配置字段；普通业务profile后续加入本人安全与恢复增量，当前覆盖范围见上方A02A章节。共享发现元数据不暴露设备端点；legacy/reference OIDC路由语义仍按前文历史清单保留。
 
 ## A04-A 前端消费（2026-10-26）
 
@@ -171,3 +181,41 @@ A03复审补充：roles/tenant列表的Query提取失败是text/plain 400；登�
 `examples/tenant-host` 在 `/fixed` 和 `/choose` 下分别组合普通 Fixed tenant-a 与 Choose auth/refresh/logout/self/browser，固定入口不暴露选租户路由。模块本地根路径未改。每个入口另挂 `GET /api/reports` 和 `GET /api/reports/:id`，由宿主完成真实身份/精确授权和双列资源查询；列表受40候选预算及绑定scope/filter的签名游标约束。详情未授权403，授权后缺失404。示例有 `/`、`/fixed`、`/choose`、`/assets/:name`、`/example-config`、`/healthz`；可选 `/management` UI与 `/control/admin/auth/*`、`/control/admin/access/permissions*`、`/control/admin/platform/permissions`。管理router只组合权限目录，目录使用独立Management Bearer，Cookie仅用于认证生命周期。
 
 独立[示例合同](../../examples/tenant-host/api-contract.json)与 `scripts/check_tenant_host_contract.mjs`核对路由/query/响应字段和预算；已加入check_api_contracts.sh。它不扩充IdP business-openapi.json；真实响应和安全行为由示例限定live测试覆盖。
+
+### S01-B 宿主准入层
+
+参考app与两个嵌入示例的所有写方法（POST/PUT/PATCH/DELETE）附加来源/global预算；指定匿名账号路径再检查跨入口账号预算。无新增业务路由；附加状态、原始body/可信peer边界见[合同](host-admission-contract.md)。未包装的独立库router不隐式改变行为。后续新增恢复/邀请等入口须同步分类和局部测试。
+
+## S03-A3 可选本人撤销与收据
+
+参考宿主仅在显式配置 `runtime.account_security` 且security foundation/runtime检查通过时挂载；外层management/business entry prefix仍由宿主决定。所有响应no-store，JSON最大16KiB，无Set-Cookie；来源/global预算由宿主共享admission层承担。业务OpenAPI新增4项，管理保持独立清单与[专用合同](self-session-revocation-contract.md)。
+
+| 方法 | 模块路径 | 认证与范围 |
+| --- | --- | --- |
+| POST | `/auth/security/sessions/revoke` | Business Bearer，事务内当前第一方actor，仅本人复合tenant/session目标 |
+| POST | `/auth/security/sessions/revoke/result` | operation+256-bit receipt secret，仅boolean；无Bearer依赖，禁止tenant/business选择头 |
+| POST | `/auth/browser/security/sessions/revoke` | Business Cookie、Origin/browser头与expected identity |
+| POST | `/auth/browser/security/sessions/revoke/result` | Origin/browser头与receipt能力；不要求Cookie/expected |
+| POST | `/admin/auth/security/sessions/revoke` | Management Bearer，事务内本人actor；不要求管理员权限 |
+| POST | `/admin/auth/security/sessions/revoke/result` | receipt能力，无Management token依赖，仅boolean |
+| POST | `/admin/auth/browser/security/sessions/revoke` | Management Cookie、Origin/browser头与expected identity |
+| POST | `/admin/auth/browser/security/sessions/revoke/result` | Origin/browser头与receipt能力，不要求Cookie/expected |
+
+结果能力按同一部署全局验证，持有同operation/secret可从另一入口核对同一boolean；不暴露账号/目标或授权新写。没有配置时这些写/结果路径不挂载，已有本人列表不受影响。无参数legacy环境入口默认不启用，使用显式JSON配置启用。
+
+## S03-A5 本人改密（显式account_security）
+
+以下8个POST仅在runtime.account_security启用时挂载，模块根外prefix由宿主决定。业务schema纳入business-openapi条件profile；管理路由仍以专用合同描述。
+
+| POST路径 | 身份/能力 |
+| --- | --- |
+| /auth/security/password | 本业务入口Bearer第一方actor |
+| /auth/security/password/result | operation+secret收据能力，无需Bearer |
+| /auth/browser/security/password | 本业务Cookie+expected+原browser guard |
+| /auth/browser/security/password/result | 收据能力+原browser guard，无需Cookie |
+| /admin/auth/security/password | 管理Bearer第一方actor |
+| /admin/auth/security/password/result | 收据能力，无需Bearer |
+| /admin/auth/browser/security/password | 管理Cookie+expected+原browser guard |
+| /admin/auth/browser/security/password/result | 收据能力+原browser guard，无需Cookie |
+
+16KiB/no-store/无Set-Cookie，固定JSON拒绝及结果未知语义见[self-password-change-contract.md](self-password-change-contract.md)。此处不增加密码恢复候选路由，Web尚待实施。

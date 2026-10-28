@@ -64,6 +64,19 @@ pub trait BrowserSessionIdentityService: Send + Sync {
     ) -> Result<AuthenticatedBrowserSession, TenantAuthError>;
 }
 
+/// Read-only cookie authentication for self-security actions. Hosts must match
+/// purpose and lifetime to their browser HTTP configuration before mounting.
+/// The expected identity is mandatory to reject actions from stale tabs.
+pub trait SelfSecurityBrowserIdentityService: Send + Sync {
+    fn self_security_browser_purpose(&self) -> AccessTokenPurpose;
+    fn self_security_browser_lifetime_secs(&self) -> Option<u64>;
+    fn authenticate_self_security_browser(
+        &self,
+        cookie: SecretString,
+        expected: BrowserSessionIdentity,
+    ) -> Result<AccessActor, TenantAuthError>;
+}
+
 /// Cookie adapters use this dedicated contract instead of exposing refresh
 /// credentials to browser scripts. Implementations remain purpose-specific.
 pub trait BrowserSessionService: Send + Sync {
@@ -208,7 +221,21 @@ where
         expected: Option<BrowserSessionIdentity>,
         lifetime_secs: Option<u64>,
     ) -> Result<AuthenticatedBrowserSession, TenantAuthError> {
-        if self.purpose != AccessTokenPurpose::Business || self.entry.require_device_proof {
+        if self.purpose != AccessTokenPurpose::Business {
+            return Err(TenantAuthError::InvalidSession);
+        }
+        self.authenticate_cookie_identity(cookie, expected, lifetime_secs)
+    }
+
+    // Shared checks are purpose-bound by this service's trusted construction.
+    // Only the self-security adapter may use this for management cookies.
+    fn authenticate_cookie_identity(
+        &self,
+        cookie: SecretString,
+        expected: Option<BrowserSessionIdentity>,
+        lifetime_secs: Option<u64>,
+    ) -> Result<AuthenticatedBrowserSession, TenantAuthError> {
+        if self.entry.require_device_proof {
             return Err(TenantAuthError::InvalidSession);
         }
         let digest = self
@@ -540,5 +567,104 @@ where
         ))?;
         self.auth
             .authenticate_browser_impl(cookie, Some(expected), Some(self.lifetime_secs))
+    }
+}
+
+impl<S, T, G, D, C, I> SelfSecurityBrowserIdentityService
+    for CoreTenantAuthenticationService<S, T, G, D, C, I>
+where
+    S: TenantAuthStore + Send + Sync,
+    for<'a> S::Transaction<'a>: TenantRefreshTransaction,
+    T: TokenIssuer + AccessTokenValidator + ScopedAccessTokenIssuer + Send + Sync,
+    G: RefreshTokenGenerator + Send + Sync,
+    D: RefreshTokenDigester + Send + Sync,
+    C: Clock + Send + Sync,
+    I: IdGenerator + Send + Sync,
+{
+    fn self_security_browser_purpose(&self) -> AccessTokenPurpose {
+        self.purpose
+    }
+    fn self_security_browser_lifetime_secs(&self) -> Option<u64> {
+        None
+    }
+    fn authenticate_self_security_browser(
+        &self,
+        cookie: SecretString,
+        expected: BrowserSessionIdentity,
+    ) -> Result<AccessActor, TenantAuthError> {
+        let identity = self.authenticate_cookie_identity(cookie, Some(expected), None)?;
+        Ok(AccessActor {
+            tenant_id: identity.tenant_id,
+            subject_id: identity.account_id,
+            session_id: identity.session_id,
+        })
+    }
+}
+
+impl<S, T, G, D, C, I> SelfSecurityBrowserIdentityService
+    for CoreManagementAuthenticationService<S, T, G, D, C, I>
+where
+    S: TenantAuthStore + Send + Sync,
+    for<'a> S::Transaction<'a>: TenantRefreshTransaction,
+    T: TokenIssuer + AccessTokenValidator + ScopedAccessTokenIssuer + Send + Sync,
+    G: RefreshTokenGenerator + Send + Sync,
+    D: RefreshTokenDigester + Send + Sync,
+    C: Clock + Send + Sync,
+    I: IdGenerator + Send + Sync,
+{
+    fn self_security_browser_purpose(&self) -> AccessTokenPurpose {
+        self.auth.purpose
+    }
+    fn self_security_browser_lifetime_secs(&self) -> Option<u64> {
+        None
+    }
+    fn authenticate_self_security_browser(
+        &self,
+        cookie: SecretString,
+        expected: BrowserSessionIdentity,
+    ) -> Result<AccessActor, TenantAuthError> {
+        let identity = self
+            .auth
+            .authenticate_cookie_identity(cookie, Some(expected), None)?;
+        Ok(AccessActor {
+            tenant_id: identity.tenant_id,
+            subject_id: identity.account_id,
+            session_id: identity.session_id,
+        })
+    }
+}
+
+impl<S, T, G, D, C, I> SelfSecurityBrowserIdentityService
+    for RestrictedBrowserSessionService<S, T, G, D, C, I>
+where
+    S: TenantAuthStore + Send + Sync,
+    for<'a> S::Transaction<'a>: TenantRefreshTransaction,
+    T: TokenIssuer + AccessTokenValidator + ScopedAccessTokenIssuer + Send + Sync,
+    G: RefreshTokenGenerator + Send + Sync,
+    D: RefreshTokenDigester + Send + Sync,
+    C: Clock + Send + Sync,
+    I: IdGenerator + Send + Sync,
+{
+    fn self_security_browser_purpose(&self) -> AccessTokenPurpose {
+        self.auth.purpose
+    }
+    fn self_security_browser_lifetime_secs(&self) -> Option<u64> {
+        Some(self.lifetime_secs)
+    }
+    fn authenticate_self_security_browser(
+        &self,
+        cookie: SecretString,
+        expected: BrowserSessionIdentity,
+    ) -> Result<AccessActor, TenantAuthError> {
+        let identity = self.auth.authenticate_cookie_identity(
+            cookie,
+            Some(expected),
+            Some(self.lifetime_secs),
+        )?;
+        Ok(AccessActor {
+            tenant_id: identity.tenant_id,
+            subject_id: identity.account_id,
+            session_id: identity.session_id,
+        })
     }
 }

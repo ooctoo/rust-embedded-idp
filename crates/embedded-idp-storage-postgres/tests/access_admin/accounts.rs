@@ -104,7 +104,13 @@ fn account_admin_queries_in_both_modes_hide_secrets_and_bind_filters_and_scope()
             .0,
             StatusCode::BAD_REQUEST
         );
-        let filter=send(&router,"GET","/admin/accounts?email=FILTER_&status=closed&membership_status=active&created_after_unix_secs=1000&created_before_unix_secs=1000",Some(tenant),"");
+        let filter = send(
+            &router,
+            "GET",
+            "/admin/accounts?email=FILTER_&status=closed&membership_status=active&created_after_unix_secs=1000&created_before_unix_secs=1000",
+            Some(tenant),
+            "",
+        );
         assert_eq!(filter.0, StatusCode::OK);
         assert_eq!(filter.1["items"].as_array().unwrap().len(), 1);
         assert_eq!(filter.1["items"][0]["account_id"], closed.to_string());

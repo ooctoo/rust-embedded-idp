@@ -55,7 +55,10 @@ fn audit_http_pages_metadata_with_bound_filters_and_reads_immutable_scoped_detai
             .unwrap();
         }
         let base = "/admin/access/audit-events";
-        let filter=format!("operation=role.create&actor_id={}&occurred_after_unix_secs=9&occurred_before_unix_secs=10",db.actor);
+        let filter = format!(
+            "operation=role.create&actor_id={}&occurred_after_unix_secs=9&occurred_before_unix_secs=10",
+            db.actor
+        );
         let first = get(&router, &format!("{base}?{filter}&limit=1"), Some(t));
         assert_eq!(first.0, StatusCode::OK);
         assert_eq!(first.1["items"].as_array().unwrap().len(), 1);

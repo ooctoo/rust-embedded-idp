@@ -191,12 +191,253 @@ fn response(name: &str) -> Value {
 
 /// OpenAPI 3.1.0 produced by utoipa. Servers use a host-selected mount prefix.
 pub fn business_document() -> utoipa::openapi::OpenApi {
-    let mut doc = Contract::openapi();
+    let mut doc_value = serde_json::to_value(Contract::openapi()).unwrap();
+    doc_value["components"]["schemas"]["SelfSessionPurpose"] = json!({
+        "type":"string","enum":["business","management"]
+    });
+    doc_value["components"]["schemas"]["SelfSessionStatus"] = json!({
+        "type":"string","enum":["active","expired"]
+    });
+    doc_value["components"]["schemas"]["SelfSessionIdentity"] = json!({
+        "type":"object","additionalProperties":false,
+        "required":["tenant_id","account_id","session_id","client_id"],
+        "properties":{"tenant_id":{"type":"string"},"account_id":{"type":"string"},"session_id":{"type":"string"},"client_id":{"type":"string"}}
+    });
+    doc_value["components"]["schemas"]["SelfSession"] = json!({
+        "type":"object","additionalProperties":false,
+        "required":["tenant_id","session_id","client_id","purpose","device_id","created_at","expires_at","status","current"],
+        "properties":{
+            "tenant_id":{"type":"string"},"session_id":{"type":"string"},"client_id":{"type":"string"},
+            "purpose":{"$ref":"#/components/schemas/SelfSessionPurpose"},"device_id":{"type":["string","null"]},
+            "created_at":{"type":"integer","format":"int64","minimum":0},"expires_at":{"type":"integer","format":"int64","minimum":0},
+            "status":{"$ref":"#/components/schemas/SelfSessionStatus"},"current":{"type":"boolean"}
+        }
+    });
+    doc_value["components"]["schemas"]["SelfSessionPage"] = json!({
+        "type":"object","additionalProperties":false,"required":["items","next_cursor"],
+        "properties":{"items":{"type":"array","items":{"$ref":"#/components/schemas/SelfSession"}},"next_cursor":{"type":["string","null"]}}
+    });
+    doc_value["components"]["schemas"]["SelfSessionRead"] = json!({
+        "type":"object","additionalProperties":false,"required":["expected"],
+        "properties":{
+            "expected":{"$ref":"#/components/schemas/SelfSessionIdentity"},
+            "limit":{"type":"integer","minimum":1,"maximum":50},
+            "cursor":{"type":"string","maxLength":1024}
+        }
+    });
+    doc_value["components"]["schemas"]["SelfSessionRevoke"] = json!({
+        "type":"object","additionalProperties":false,
+        "required":["target_tenant_id","target_session_id","operation_id","receipt_secret"],
+        "properties":{"target_tenant_id":{"type":"string"},"target_session_id":{"type":"string","format":"uuid","description":"Canonical non-nil UUID."},"operation_id":{"type":"string","format":"uuid","pattern":"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$","description":"Canonical lowercase non-nil UUID."},"receipt_secret":{"type":"string","minLength":43,"maxLength":43,"pattern":"^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$","description":"Canonical unpadded base64url encoding of 32 random bytes."}}
+    });
+    doc_value["components"]["schemas"]["BrowserSelfSessionRevoke"] = json!({
+        "type":"object","additionalProperties":false,
+        "required":["target_tenant_id","target_session_id","operation_id","receipt_secret","expected"],
+        "properties":{"target_tenant_id":{"type":"string"},"target_session_id":{"type":"string","format":"uuid","description":"Canonical non-nil UUID."},"operation_id":{"type":"string","format":"uuid","pattern":"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$","description":"Canonical lowercase non-nil UUID."},"receipt_secret":{"type":"string","minLength":43,"maxLength":43,"pattern":"^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$","description":"Canonical unpadded base64url encoding of 32 random bytes."},"expected":{"$ref":"#/components/schemas/SelfSessionIdentity"}}
+    });
+    doc_value["components"]["schemas"]["SelfSessionRevokeResult"] = json!({
+        "type":"object","additionalProperties":false,"required":["operation_id","receipt_secret"],
+        "properties":{"operation_id":{"type":"string","format":"uuid","pattern":"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$","description":"Canonical lowercase non-nil UUID."},"receipt_secret":{"type":"string","minLength":43,"maxLength":43,"pattern":"^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$","description":"Canonical unpadded base64url encoding of 32 random bytes."}}
+    });
+    doc_value["components"]["schemas"]["SelfSessionRevokeCompleted"] = json!({
+        "type":"object","additionalProperties":false,"required":["completed"],"properties":{"completed":{"type":"boolean"}}
+    });
+    let operation_id = json!({"type":"string","format":"uuid","pattern":"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$","description":"Canonical lowercase non-nil UUID."});
+    let receipt_secret = json!({"type":"string","minLength":43,"maxLength":43,"pattern":"^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$","description":"Canonical unpadded base64url encoding of 32 random bytes."});
+    let password =
+        json!({"type":"string","minLength":1,"description":"Password is not trimmed or returned."});
+    doc_value["components"]["schemas"]["SelfPasswordChange"] = json!({
+        "type":"object","additionalProperties":false,
+        "required":["current_password","new_password","operation_id","receipt_secret"],
+        "properties":{"current_password":password.clone(),"new_password":password.clone(),"operation_id":operation_id.clone(),"receipt_secret":receipt_secret.clone()}
+    });
+    doc_value["components"]["schemas"]["BrowserSelfPasswordChange"] = json!({
+        "type":"object","additionalProperties":false,
+        "required":["current_password","new_password","operation_id","receipt_secret","expected"],
+        "properties":{"current_password":password.clone(),"new_password":password,"operation_id":operation_id.clone(),"receipt_secret":receipt_secret.clone(),"expected":{"$ref":"#/components/schemas/SelfSessionIdentity"}}
+    });
+    doc_value["components"]["schemas"]["SelfPasswordChangeResult"] = json!({
+        "type":"object","additionalProperties":false,"required":["operation_id","receipt_secret"],
+        "properties":{"operation_id":operation_id,"receipt_secret":receipt_secret}
+    });
+    doc_value["components"]["schemas"]["SelfPasswordChangeCompleted"] = json!({
+        "type":"object","additionalProperties":false,"required":["completed"],"properties":{"completed":{"type":"boolean"}}
+    });
+    let recovery_operation_id = json!({"type":"string","format":"uuid","pattern":"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$","description":"Canonical lowercase non-nil UUID; the all-zero UUID is rejected."});
+    let recovery_receipt_secret = json!({"type":"string","minLength":43,"maxLength":43,"pattern":"^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$","description":"Canonical unpadded base64url encoding of 32 random bytes."});
+    doc_value["components"]["schemas"]["PasswordRecoveryStart"] = json!({
+        "type":"object","additionalProperties":false,"required":["email","operation_id","receipt_secret"],
+        "properties":{"email":{"type":"string","format":"email","maxLength":254},"operation_id":recovery_operation_id,"receipt_secret":recovery_receipt_secret}
+    });
+    doc_value["components"]["schemas"]["PasswordRecoveryComplete"] = json!({
+        "type":"object","additionalProperties":false,"required":["handle","code","new_password","operation_id","receipt_secret"],
+        "properties":{"handle":{"type":"string","minLength":64,"maxLength":64,"pattern":"^[A-Za-z0-9_-]{64}$"},"code":{"type":"string","minLength":6,"maxLength":6,"pattern":"^[0-9]{6}$"},"new_password":{"type":"string","minLength":1,"description":"Validated by the configured account password policy; never returned."},"operation_id":recovery_operation_id,"receipt_secret":recovery_receipt_secret}
+    });
+    doc_value["components"]["schemas"]["PasswordRecoveryResult"] = json!({
+        "type":"object","additionalProperties":false,"required":["operation_id","receipt_secret"],
+        "properties":{"operation_id":recovery_operation_id,"receipt_secret":recovery_receipt_secret}
+    });
+    doc_value["components"]["schemas"]["PasswordRecoveryStarted"] = json!({
+        "type":"object","additionalProperties":false,"required":["handle","expires_at_unix_secs"],
+        "properties":{"handle":{"type":"string","minLength":64,"maxLength":64,"pattern":"^[A-Za-z0-9_-]{64}$"},"expires_at_unix_secs":{"type":"integer","format":"int64","minimum":0}}
+    });
+    doc_value["components"]["schemas"]["PasswordRecoveryCompleted"] = json!({
+        "type":"object","additionalProperties":false,"required":["completed"],"properties":{"completed":{"type":"boolean"}}
+    });
+    doc_value["components"]["schemas"]["AnonymousWorkUnavailable"] = json!({
+        "type":"object","additionalProperties":false,"required":["error"],
+        "properties":{"error":{"type":"object","additionalProperties":false,"required":["code"],"properties":{"code":{"type":"string","enum":["temporarily_unavailable"]}}}}
+    });
+    let mut doc: utoipa::openapi::OpenApi = serde_json::from_value(doc_value).unwrap();
     doc.info.title = "Ordinary business entry HTTP contract".into();
     doc.info.version = env!("CARGO_PKG_VERSION").into();
-    doc.info.description = Some("A02A module-root conditional catalog. Each entry binds client_id, login_entry_id, tenant policy and Business purpose. No device, scan or OIDC routes. Cookie name/path, origin, token lifetime and mount prefix belong to the host profile. JSON/form bodies are limited to 16384 bytes; all responses use Cache-Control: no-store. Secrets never belong in query parameters. Fixed and Choose are mutually exclusive; registration requires Fixed plus explicit enablement and email service.".into());
+    doc.info.description = Some("A02A module-root conditional catalog. Each entry binds client_id, login_entry_id, tenant policy and Business purpose. No device, scan or OIDC routes. Cookie name/path, origin, token lifetime and mount prefix belong to the host profile. JSON/form bodies are limited to 16384 bytes; all responses use Cache-Control: no-store. Secrets never belong in query parameters. Fixed and Choose are mutually exclusive; registration requires Fixed plus explicit enablement and email service. Password recovery is account-wide and appears only when account security and recovery email are both enabled.".into());
     let mut paths = serde_json::Map::new();
     for (path, method, id, body, success, auth, condition) in [
+        (
+            "/auth/security/sessions",
+            "get",
+            "businessSelfSessions",
+            "",
+            "SelfSessionPage",
+            "Bearer",
+            "always",
+        ),
+        (
+            "/auth/browser/security/sessions",
+            "post",
+            "browserSelfSessions",
+            "SelfSessionRead",
+            "SelfSessionPage",
+            "BrowserCookie",
+            "browser",
+        ),
+        (
+            "/auth/security/sessions/revoke",
+            "post",
+            "businessRevokeSelfSession",
+            "SelfSessionRevoke",
+            "SelfSessionRevokeCompleted",
+            "Bearer",
+            "account_security",
+        ),
+        (
+            "/auth/security/sessions/revoke/result",
+            "post",
+            "businessSelfSessionRevokeResult",
+            "SelfSessionRevokeResult",
+            "SelfSessionRevokeCompleted",
+            "",
+            "account_security",
+        ),
+        (
+            "/auth/browser/security/sessions/revoke",
+            "post",
+            "browserRevokeSelfSession",
+            "BrowserSelfSessionRevoke",
+            "SelfSessionRevokeCompleted",
+            "BrowserRevoke",
+            "account_security_browser",
+        ),
+        (
+            "/auth/browser/security/sessions/revoke/result",
+            "post",
+            "browserSelfSessionRevokeResult",
+            "SelfSessionRevokeResult",
+            "SelfSessionRevokeCompleted",
+            "BrowserOrigin",
+            "account_security_browser",
+        ),
+        (
+            "/auth/security/password",
+            "post",
+            "businessSelfPasswordChange",
+            "SelfPasswordChange",
+            "SelfPasswordChangeCompleted",
+            "Bearer",
+            "account_security",
+        ),
+        (
+            "/auth/security/password/result",
+            "post",
+            "businessSelfPasswordChangeResult",
+            "SelfPasswordChangeResult",
+            "SelfPasswordChangeCompleted",
+            "",
+            "account_security",
+        ),
+        (
+            "/auth/browser/security/password",
+            "post",
+            "browserSelfPasswordChange",
+            "BrowserSelfPasswordChange",
+            "SelfPasswordChangeCompleted",
+            "BrowserRevoke",
+            "account_security_browser",
+        ),
+        (
+            "/auth/browser/security/password/result",
+            "post",
+            "browserSelfPasswordChangeResult",
+            "SelfPasswordChangeResult",
+            "SelfPasswordChangeCompleted",
+            "BrowserOrigin",
+            "account_security_browser",
+        ),
+        (
+            "/auth/password-recovery/start",
+            "post",
+            "businessPasswordRecoveryStart",
+            "PasswordRecoveryStart",
+            "PasswordRecoveryStarted",
+            "",
+            "recovery_email",
+        ),
+        (
+            "/auth/password-recovery/complete",
+            "post",
+            "businessPasswordRecoveryComplete",
+            "PasswordRecoveryComplete",
+            "PasswordRecoveryCompleted",
+            "",
+            "recovery_email",
+        ),
+        (
+            "/auth/password-recovery/result",
+            "post",
+            "businessPasswordRecoveryResult",
+            "PasswordRecoveryResult",
+            "PasswordRecoveryCompleted",
+            "",
+            "recovery_email",
+        ),
+        (
+            "/auth/browser/password-recovery/start",
+            "post",
+            "browserPasswordRecoveryStart",
+            "PasswordRecoveryStart",
+            "PasswordRecoveryStarted",
+            "BrowserOrigin",
+            "recovery_email_browser",
+        ),
+        (
+            "/auth/browser/password-recovery/complete",
+            "post",
+            "browserPasswordRecoveryComplete",
+            "PasswordRecoveryComplete",
+            "PasswordRecoveryCompleted",
+            "BrowserOrigin",
+            "recovery_email_browser",
+        ),
+        (
+            "/auth/browser/password-recovery/result",
+            "post",
+            "browserPasswordRecoveryResult",
+            "PasswordRecoveryResult",
+            "PasswordRecoveryCompleted",
+            "BrowserOrigin",
+            "recovery_email_browser",
+        ),
         (
             "/auth/login",
             "post",
@@ -372,6 +613,9 @@ pub fn business_document() -> utoipa::openapi::OpenApi {
         for code in ["400", "401", "403", "409", "500"] {
             op["responses"][code] = json!({"description":"Service or boundary rejection", "content":{"application/json":{"schema": if id=="businessLogout" {json!({"oneOf":[reference("Error"),reference("OAuthError")]})} else {reference("Error")}}}});
         }
+        if matches!(id, "businessLogin" | "browserLogin" | "businessRegister") {
+            op["responses"]["503"] = json!({"description":"Password work budget is at capacity","content":{"application/json":{"schema":reference("Error")}}});
+        }
         if !body.is_empty() {
             let mime = if id == "businessLogout" {
                 "application/x-www-form-urlencoded"
@@ -387,6 +631,42 @@ pub fn business_document() -> utoipa::openapi::OpenApi {
                 op["responses"][code]["content"]["text/plain"]["schema"] = json!({"type":"string"});
             }
         }
+        if id.contains("PasswordRecovery") {
+            op["responses"] = json!({
+                "200":response(success),
+                "400":{"description":"Invalid strict JSON or recovery command","content":{"application/json":{"schema":reference("Error")}}},
+                "408":{"description":"Request body read timed out","content":{"application/json":{"schema":reference("Error")}}},
+                "413":{"description":"Request body exceeds 16384 bytes","content":{"application/json":{"schema":reference("Error")}}},
+                "429":{"description":"Source, global, or recovery account budget exhausted","content":{"application/json":{"schema":reference("Error")}}},
+                "503":{"description":"Security operation unavailable; the local anonymous-work semaphore retains its legacy nested response","content":{"application/json":{"schema":{"oneOf":[reference("Error"),reference("AnonymousWorkUnavailable")]}}}}
+            });
+            op["responses"]["400"]["description"] = if id.ends_with("Complete") {
+                json!(
+                    "invalid_request for malformed JSON/command; invalid_recovery for invalid or unavailable recovery credentials"
+                )
+            } else {
+                json!("invalid_request for malformed JSON or command")
+            };
+            op["responses"]["408"]["description"] =
+                json!("request_timeout; body read exceeded 5 seconds");
+            op["responses"]["413"]["description"] =
+                json!("request_too_large; body exceeded 16384 bytes");
+            op["responses"]["503"]["description"] = json!(
+                "security_unavailable for recovery capacity, crypto, or storage; temporarily_unavailable for local or outer anonymous-work admission rejection (the local legacy response is nested)"
+            );
+            op["responses"]["429"]["description"] = if id.ends_with("Start") {
+                json!("rate_limited by source/global admission or start account budget")
+            } else {
+                json!("rate_limited by source/global admission")
+            };
+            if id.ends_with("Start") || id.ends_with("Complete") {
+                op["responses"]["409"] = json!({"description":"The operation ID is already bound to a different command","content":{"application/json":{"schema":reference("Error")}}});
+            }
+            if path.contains("/browser/") {
+                op["responses"]["403"] = json!({"description":"Browser Origin/header/tenant guard rejected the request","content":{"application/json":{"schema":reference("Error")}}});
+                op["security"] = json!([{"Origin":[],"BrowserHeader":[]}]);
+            }
+        }
         if id == "businessRefresh" {
             // raw_json has intentionally different boundaries from Axum Json:
             // overflow is our JSON error; unsupported content type has no body.
@@ -398,10 +678,60 @@ pub fn business_document() -> utoipa::openapi::OpenApi {
             op["responses"]["400"]["description"] =
                 json!("Query extractor rejection is text/plain; domain rejection is JSON");
         }
+        if id == "businessSelfSessions" {
+            op["parameters"] = json!([
+                {"name":"limit","in":"query","required":false,"schema":{"type":"integer","minimum":1,"maximum":50}},
+                {"name":"cursor","in":"query","required":false,"schema":{"type":"string","maxLength":1024,"description":"Opaque base64url JSON cursor, bound to the authenticated subject."}}
+            ]);
+            op["responses"]["400"]["description"] =
+                json!("Invalid limit/cursor or query extractor rejection");
+            op["responses"]["400"]["content"]["text/plain"]["schema"] = json!({"type":"string"});
+        }
+        if id == "browserSelfSessions" {
+            op["responses"]["413"] = json!({"description":"Request body exceeds 16384 bytes","content":{"text/plain":{"schema":{"type":"string"}}}});
+            op["responses"]["415"] = json!({"description":"Unsupported media type","content":{"text/plain":{"schema":{"type":"string"}}}});
+            op["responses"]["422"] = json!({"description":"Invalid JSON/body extraction","content":{"text/plain":{"schema":{"type":"string"}}}});
+        }
+        if matches!(
+            id,
+            "businessRevokeSelfSession"
+                | "browserRevokeSelfSession"
+                | "businessSelfSessionRevokeResult"
+                | "browserSelfSessionRevokeResult"
+        ) {
+            op["responses"]["200"] = response("SelfSessionRevokeCompleted");
+            op["responses"]["404"] = json!({"description":"Target session was not found","content":{"application/json":{"schema":reference("Error")}}});
+            op["responses"]["409"] = json!({"description":"Operation conflicts with an existing request","content":{"application/json":{"schema":reference("Error")}}});
+            op["responses"]["503"] = json!({"description":"Security storage, crypto or receipt capacity unavailable","content":{"application/json":{"schema":reference("Error")}}});
+            op["description"] = json!(
+                "Revocation requires an authenticated current actor. Its receipt result is capability-based: lookup needs no bearer token or cookie, and the receipt secret permits querying across entry points. No response sets or clears cookies."
+            );
+            if id.starts_with("browser") {
+                op["responses"]["403"] = json!({"description":"Origin or browser boundary rejected","content":{"application/json":{"schema":reference("Error")}}});
+                op["description"] = json!(
+                    "Requires exact configured Origin and browser header, with same-origin Fetch-Site when present. Revocation also requires the configured HttpOnly cookie and expected identity. Result lookup requires no cookie or expected selector. No response sets or clears cookies."
+                );
+            }
+        }
+        if id.contains("SelfPasswordChange") {
+            op["responses"]["200"] = response("SelfPasswordChangeCompleted");
+            op["responses"]["400"] = json!({"description":"Invalid JSON, content type, fields or password policy","content":{"application/json":{"schema":reference("Error")}}});
+            op["responses"]["401"] = json!({"description":"Invalid session or current password","content":{"application/json":{"schema":reference("Error")}}});
+            op["responses"]["403"] = json!({"description":"Browser origin or request boundary rejected","content":{"application/json":{"schema":reference("Error")}}});
+            op["responses"]["409"] = json!({"description":"Credential snapshot or operation conflict","content":{"application/json":{"schema":reference("Error")}}});
+            op["responses"]["413"] = json!({"description":"Request body exceeds 16384 bytes","content":{"application/json":{"schema":reference("Error")}}});
+            op["responses"]["500"] = json!({"description":"Unexpected service projection failure","content":{"application/json":{"schema":reference("Error")}}});
+            op["responses"]["503"] = json!({"description":"Password work, security storage, crypto or receipt capacity unavailable","content":{"application/json":{"schema":reference("Error")}}});
+            op["responses"].as_object_mut().unwrap().remove("415");
+            op["responses"].as_object_mut().unwrap().remove("422");
+        }
         op["security"] = match auth {
             "" => json!([]),
             "Client" => json!([{"Basic":[]},{}]),
-            "Browser" | "BrowserOptionalCookie" => json!([{"Origin":[],"BrowserHeader":[]}]),
+            "Browser" | "BrowserOptionalCookie" | "BrowserOrigin" => {
+                json!([{"Origin":[],"BrowserHeader":[]}])
+            }
+            "BrowserRevoke" => json!([{"Origin":[],"BrowserHeader":[],"RefreshCookie":[]}]),
             "BrowserSelection" => json!([{"Origin":[],"BrowserHeader":[],"TenantSelection":[]}]),
             "BrowserCookie" => json!([{"Origin":[],"BrowserHeader":[],"RefreshCookie":[]}]),
             name => json!([{name:[]}]),
@@ -409,6 +739,36 @@ pub fn business_document() -> utoipa::openapi::OpenApi {
         let mut notes = "Access/tickets are entry/client/purpose scoped. Optional tenant header must agree with the authenticated context.".to_string();
         if path.contains("/browser/") {
             notes = "Exact configured Origin AND x-embedded-idp-browser: 1 required; Sec-Fetch-Site, when supplied, must be same-origin. Tenant header forbidden. Refresh cookie is HttpOnly, Secure in HTTPS, SameSite=Strict, entry-specific name/path. Only access token appears in JSON. Browser selection route is present even for Fixed but selection is rejected by policy. Restore rotates; refresh requires expected_session. Logout without cookie is idempotent 204 in normal mode. Development restricted browser mode disables restore/refresh and requires expected_session even for cookie-less logout.".into();
+        }
+        if id == "businessSelfSessions" {
+            notes = "Requires exactly one Bearer Authorization header. An optional x-embedded-idp-tenant-id must match the authenticated tenant; x-embedded-idp-business-id is rejected. The authenticated actor must be a current first-party session with scope=null; OAuth-derived scope-bearing sessions cannot authorize global self-security reads. Lists all of the same account's database-active sessions across tenants, including delegated scope-bearing sessions. Expired-by-time sessions are projected as status=expired; revoked/pending records are omitted. Cursor is base64url JSON version=1 with subject_id, tenant_id and canonical UUID session_id, at most 1024 encoded bytes. Query accepts only limit and cursor. Response contains no scope, refresh-token data or account email.".to_string();
+        }
+        if id == "browserSelfSessions" {
+            notes = "Requires the exact configured Origin and x-embedded-idp-browser: 1; when present, Sec-Fetch-Site must be same-origin. Tenant and business selection headers are forbidden. The configured HttpOnly refresh cookie is read only; this route does not refresh or expose credentials. Strict JSON requires expected {tenant_id,account_id,session_id,client_id}; optional limit is 1..50 and cursor is at most 1024 encoded bytes. The host must bind identity purpose and restricted-session lifetime exactly to BrowserSessionHttpConfig. The current actor must be a first-party scope=null session; same-account delegated sessions remain listable. Request body limit is 16384 bytes. Response fields match SelfSessionPage and all responses are no-store.".to_string();
+        }
+        if id == "businessRevokeSelfSession" {
+            notes = "Requires exactly one Bearer Authorization header. An optional tenant header must match the authenticated actor; the business selector header is rejected. Request is strict JSON with target tenant/session, canonical non-nil operation UUID and receipt secret. All responses are no-store and none sets or clears a cookie.".into();
+        }
+        if id == "businessSelfSessionRevokeResult" {
+            notes = "Capability result lookup: no bearer authentication is performed. Body contains only canonical non-nil operation UUID and receipt secret; tenant and business selector headers are rejected. A matching secret may query the same operation through another entry. All responses are no-store.".into();
+        }
+        if id == "browserRevokeSelfSession" {
+            notes = "Requires exact configured Origin and x-embedded-idp-browser: 1; Sec-Fetch-Site, when present, must be same-origin. Requires the configured HttpOnly cookie and strict expected {tenant_id,account_id,session_id,client_id}. Business selector is rejected. All responses are no-store; none sets or clears a cookie.".into();
+        }
+        if id == "browserSelfSessionRevokeResult" {
+            notes = "Capability result lookup: no cookie or expected identity is required and no authentication service is called. Exact configured Origin and x-embedded-idp-browser: 1 are required; Sec-Fetch-Site, when present, must be same-origin. Body contains only canonical non-nil operation UUID and receipt secret. All responses are no-store and none sets or clears a cookie.".into();
+        }
+        if id.contains("SelfPasswordChange") {
+            notes = if id.ends_with("Result") {
+                "Capability result lookup: no bearer authentication, cookie or expected identity is required; it reports only whether the operation completed. Browser results still require the configured Origin and browser header. Request is strict JSON; body is limited to 16384 bytes. All responses are no-store and none sets or clears cookies.".into()
+            } else if id.starts_with("browser") {
+                "Requires exact configured Origin and x-embedded-idp-browser: 1; Sec-Fetch-Site, when present, must be same-origin. Requires the configured HttpOnly cookie and strict expected {tenant_id,account_id,session_id,client_id}. Body includes current_password and new_password, neither is trimmed or returned. Request is strict JSON; body is limited to 16384 bytes. All responses are no-store and none sets or clears cookies.".into()
+            } else {
+                "Requires exactly one Bearer Authorization header. Optional tenant hint must match the authenticated actor; business selector is rejected. Strict JSON includes current_password and new_password, neither is trimmed or returned. Request body is limited to 16384 bytes. All responses are no-store and none sets or clears cookies.".into()
+            };
+        }
+        if id.contains("PasswordRecovery") {
+            notes = "Anonymous account-wide recovery; it is not tenant- or entry-scoped. Strict JSON rejects unknown fields and query parameters; tenant and business selector headers are rejected. Bearer tokens and refresh cookies do not authenticate this operation, and no response sets or clears cookies. Bodies are limited to 16384 bytes and read within 5 seconds. Start has one deliberately uniform result for known, unknown, and ineligible email addresses: success means the request was recorded, not that email was sent or an account exists. Start uses the shared account budget as an abuse limit, not as authenticated identity. Outer host admission may read the start body and consume this budget before the browser Origin guard runs. A result with completed=false is not proof that a command did not commit.".into();
         }
         if id == "businessLogout" {
             notes = "Public client: form client_id. Confidential backend: Basic OR form client_id/client_secret; never both, never query credentials. Empty 200 on success. Credential determines tenant; tenant header forbidden. Invalid client emits WWW-Authenticate: Basic; invalid token emits Bearer.".into();
@@ -432,12 +792,24 @@ pub fn business_document() -> utoipa::openapi::OpenApi {
                 op["parameters"].as_array_mut().unwrap().push(json!({"name":"business_id","in":"query","required":true,"schema":{"type":"string"}}));
             }
         }
+        if id == "businessSelfSessions" {
+            op["parameters"] = json!([
+                {"name":"limit","in":"query","required":false,"schema":{"type":"integer","minimum":1,"maximum":50}},
+                {"name":"cursor","in":"query","required":false,"schema":{"type":"string","maxLength":1024,"description":"Opaque base64url JSON cursor, bound to the authenticated subject."}}
+            ]);
+        }
         for (status, r) in op["responses"].as_object_mut().unwrap() {
             if id == "businessLogout" && status == "401" {
                 r["headers"]["WWW-Authenticate"] = json!({"description":"On OAuth 401 invalid_client: Basic realm=\"idp\"; invalid_token: Bearer error=\"invalid_token\".","schema":{"type":"string"}});
             }
             r["headers"]["Cache-Control"] = json!({"schema":{"type":"string","enum":["no-store"]}});
-            if path.contains("/browser/") {
+            if path.contains("/browser/")
+                && id != "browserSelfSessions"
+                && !id.contains("RevokeSelfSession")
+                && !id.contains("RevokeResult")
+                && !id.contains("SelfPasswordChange")
+                && !id.contains("PasswordRecovery")
+            {
                 r["headers"]["Set-Cookie"] = json!({"description":"When rotating/clearing refresh credential; host profile defines exact cookie name/path.","schema":{"type":"string"}});
             }
         }
@@ -467,6 +839,47 @@ pub fn business_profile(
     registration: bool,
     cookie_name: &str,
 ) -> utoipa::openapi::OpenApi {
+    business_profile_with_account_security(
+        mount_prefix,
+        choose,
+        browser,
+        registration,
+        false,
+        cookie_name,
+    )
+}
+
+/// Profile variant for hosts that explicitly enable account-security routes.
+pub fn business_profile_with_account_security(
+    mount_prefix: &str,
+    choose: bool,
+    browser: bool,
+    registration: bool,
+    account_security: bool,
+    cookie_name: &str,
+) -> utoipa::openapi::OpenApi {
+    business_profile_with_recovery(
+        mount_prefix,
+        choose,
+        browser,
+        registration,
+        account_security,
+        false,
+        cookie_name,
+    )
+}
+
+/// Profile variant for hosts that explicitly enable account security and
+/// recovery email. Recovery routes require both switches.
+pub fn business_profile_with_recovery(
+    mount_prefix: &str,
+    choose: bool,
+    browser: bool,
+    registration: bool,
+    account_security: bool,
+    recovery_email: bool,
+    cookie_name: &str,
+) -> utoipa::openapi::OpenApi {
     let mut value = serde_json::to_value(business_document()).unwrap();
     let paths = value["paths"].as_object_mut().unwrap();
     paths.retain(|_, item| {
@@ -475,6 +888,10 @@ pub fn business_profile(
                 "enabled_choose" => choose,
                 "browser" => browser,
                 "registration_fixed" => registration && !choose,
+                "account_security" => account_security,
+                "account_security_browser" => account_security && browser,
+                "recovery_email" => account_security && recovery_email,
+                "recovery_email_browser" => account_security && recovery_email && browser,
                 _ => true,
             }
         })
@@ -572,8 +989,8 @@ pub fn device_document() -> utoipa::openapi::OpenApi {
             paths.insert(path.into(), Value::Object(item));
         }
     };
-    let heartbeat_proof_note="Bearer subject authentication and all five device proof headers are required: x-device-id, x-device-key-id, x-device-challenge, x-device-signature, and x-device-signed-at. The host-bound EMBEDDED-IDP-DEVICE-REQUEST-V2 profile verifies signature over original raw JSON bytes, HTTP method, externally visible path (including host prefix), audience and tenant; query strings are rejected and JSON reserialization is not used. An optional x-embedded-idp-tenant-id must match the authenticated tenant.";
-    let device_auth_note="Device-enabled v2 entry: this route replaces ordinary login/refresh for that entry. Device proof is optional or required by the configured entry policy; when present it binds the original raw JSON bytes, method, external path and audience using EMBEDDED-IDP-DEVICE-AUTH-V2. Include x-embedded-idp-tenant-id with all five proof headers: x-device-id, x-device-key-id, x-device-challenge, x-device-signature, and x-device-signed-at. Without proof, do not send the tenant assertion header.";
+    let heartbeat_proof_note = "Bearer subject authentication and all five device proof headers are required: x-device-id, x-device-key-id, x-device-challenge, x-device-signature, and x-device-signed-at. The host-bound EMBEDDED-IDP-DEVICE-REQUEST-V2 profile verifies signature over original raw JSON bytes, HTTP method, externally visible path (including host prefix), audience and tenant; query strings are rejected and JSON reserialization is not used. An optional x-embedded-idp-tenant-id must match the authenticated tenant.";
+    let device_auth_note = "Device-enabled v2 entry: this route replaces ordinary login/refresh for that entry. Device proof is optional or required by the configured entry policy; when present it binds the original raw JSON bytes, method, external path and audience using EMBEDDED-IDP-DEVICE-AUTH-V2. Include x-embedded-idp-tenant-id with all five proof headers: x-device-id, x-device-key-id, x-device-challenge, x-device-signature, and x-device-signed-at. Without proof, do not send the tenant assertion header.";
     let post = "post";
     add(
         "/auth/login",
@@ -619,8 +1036,28 @@ pub fn device_document() -> utoipa::openapi::OpenApi {
         "enabled_choose",
         device_auth_note,
     );
-    add("/devices/provision",post,"deviceProvision",Some("Provision"),"Registration","201",json!([{"DeviceAdmission":[]}]),"always","Requires a host-validated short-lived admission grant bound by the host to tenant, client and device; each call is reauthorized. Provision is idempotent only when retried with the original registration_request_id and identical tenant/device/name/public JWK under the same registration scope. Reusing the id with changed fields conflicts. No query credential; the grant is carried in x-embedded-idp-device-admission.");
-    add("/devices/registration-result",post,"deviceRegistrationResult",Some("RegistrationResultRequest"),"Registration","200",json!([{"DeviceAdmission":[]}]),"always","Requires a fresh host-validated short-lived admission grant on every call, bound to the same tenant, client and device. The grant's stable registration scope and registration_request_id select the record; a changed scope cannot read it. No query credential; the grant is carried in x-embedded-idp-device-admission. Entry identity is not part of this server-side grant scope.");
+    add(
+        "/devices/provision",
+        post,
+        "deviceProvision",
+        Some("Provision"),
+        "Registration",
+        "201",
+        json!([{"DeviceAdmission":[]}]),
+        "always",
+        "Requires a host-validated short-lived admission grant bound by the host to tenant, client and device; each call is reauthorized. Provision is idempotent only when retried with the original registration_request_id and identical tenant/device/name/public JWK under the same registration scope. Reusing the id with changed fields conflicts. No query credential; the grant is carried in x-embedded-idp-device-admission.",
+    );
+    add(
+        "/devices/registration-result",
+        post,
+        "deviceRegistrationResult",
+        Some("RegistrationResultRequest"),
+        "Registration",
+        "200",
+        json!([{"DeviceAdmission":[]}]),
+        "always",
+        "Requires a fresh host-validated short-lived admission grant on every call, bound to the same tenant, client and device. The grant's stable registration scope and registration_request_id select the record; a changed scope cannot read it. No query credential; the grant is carried in x-embedded-idp-device-admission. Entry identity is not part of this server-side grant scope.",
+    );
     add(
         "/devices/complete",
         post,
@@ -632,8 +1069,28 @@ pub fn device_document() -> utoipa::openapi::OpenApi {
         "always",
         "Completes device registration using the public JWK and challenge/signature fields in this JSON body. The registration signature is verified by the device service; HTTP device-proof headers and admission grant are not used by this route. Completion is not idempotent: the one-time challenge and registration are consumed atomically. After an unknown response, query registration-result; do not replay the old signature. A challenge response alone does not prove that its challenge was stored or that completion is possible.",
     );
-    add("/devices/rotate-key",post,"deviceRotateKey",Some("Rotate"),"DeviceKey","200",json!([{"Bearer":[]}]),"always","Requires the current authenticated subject and an active device binding, plus Ed25519 signatures from both the current and proposed keys over the same DEVICE-KEY-ROTATION-V2 bytes. expected_key_id and expected_key_version are compare-and-swap preconditions; the service verifies the one-time device_key_rotation challenge, retires the old key, activates the new key, and appends audit atomically. This operation has no idempotency key or receipt; retrying the old challenge/signatures fails. After an unknown response, read the current device pointer and both relevant key metadata under the same active binding. A challenge response does not prove its nonce was persisted.");
-    add("/devices", "get","deviceList",None,"DevicePage","200",json!([{"Bearer":[]}]),"always","Lists only devices bound to the authenticated subject, tenant and client. limit/cursor are query parameters; cursor is scoped.");
+    add(
+        "/devices/rotate-key",
+        post,
+        "deviceRotateKey",
+        Some("Rotate"),
+        "DeviceKey",
+        "200",
+        json!([{"Bearer":[]}]),
+        "always",
+        "Requires the current authenticated subject and an active device binding, plus Ed25519 signatures from both the current and proposed keys over the same DEVICE-KEY-ROTATION-V2 bytes. expected_key_id and expected_key_version are compare-and-swap preconditions; the service verifies the one-time device_key_rotation challenge, retires the old key, activates the new key, and appends audit atomically. This operation has no idempotency key or receipt; retrying the old challenge/signatures fails. After an unknown response, read the current device pointer and both relevant key metadata under the same active binding. A challenge response does not prove its nonce was persisted.",
+    );
+    add(
+        "/devices",
+        "get",
+        "deviceList",
+        None,
+        "DevicePage",
+        "200",
+        json!([{"Bearer":[]}]),
+        "always",
+        "Lists only devices bound to the authenticated subject, tenant and client. limit/cursor are query parameters; cursor is scoped.",
+    );
     add(
         "/devices/{device_id}",
         "get",
@@ -656,7 +1113,17 @@ pub fn device_document() -> utoipa::openapi::OpenApi {
         "always",
         "Authenticated subject, tenant and client scope.",
     );
-    add("/devices/unbind",post,"deviceUnbind",Some("Unbind"),"OperationReceipt","200",json!([{"Bearer":[]}]),"always","Authenticated subject; expected binding version and operation id provide concurrency/idempotency controls.");
+    add(
+        "/devices/unbind",
+        post,
+        "deviceUnbind",
+        Some("Unbind"),
+        "OperationReceipt",
+        "200",
+        json!([{"Bearer":[]}]),
+        "always",
+        "Authenticated subject; expected binding version and operation id provide concurrency/idempotency controls.",
+    );
     add(
         "/devices/operations/{operation_id}",
         "get",
@@ -758,7 +1225,7 @@ pub fn shared_oidc_document() -> utoipa::openapi::OpenApi {
         "operationId":"sharedOidcToken","description":"Authorization-code exchange only. Supports Basic or form client authentication. The five x-device-* proof headers are optional for clients without a device profile and are accepted only for a host-configured device-enabled client. All five must be present together. Device-bound authorization codes require matching proof; ordinary authorization codes reject supplied proof. Proof binds the original encoded form bytes, POST method, externally visible /oidc/token path, configured audience and tenant.",
         "parameters":[{"name":"x-device-id","in":"header","required":false,"schema":{"type":"string"}},{"name":"x-device-key-id","in":"header","required":false,"schema":{"type":"string"}},{"name":"x-device-challenge","in":"header","required":false,"schema":{"type":"string"}},{"name":"x-device-signature","in":"header","required":false,"schema":{"type":"string"}},{"name":"x-device-signed-at","in":"header","required":false,"schema":{"type":"string","pattern":"^(0|[1-9][0-9]*)$"}}],
         "requestBody":{"required":true,"content":{"application/x-www-form-urlencoded":{"schema":{"type":"object","required":["grant_type","code","redirect_uri","code_verifier"],"properties":{"grant_type":{"type":"string","enum":["authorization_code"]},"code":{"type":"string"},"redirect_uri":{"type":"string"},"client_id":{"type":"string"},"client_secret":{"type":"string"},"code_verifier":{"type":"string","minLength":1}},"additionalProperties":false,"description":"Every authorization code is created with S256 PKCE; code_verifier is required. Proof uses optional HTTP headers, not form fields."}}}},
-        "responses":{"200":json_response("Issued token response",schema("TokenResponse")),"400":json_response("OAuth grant or form error",schema("OAuthError")),"401":json_response("Client authentication error",schema("OAuthError")),"413":json_response("Request body exceeds 16384 bytes",schema("OAuthError")),"415":json_response("Unsupported form media type",schema("OAuthError")),"500":json_response("Server error",schema("OAuthError"))},"security":[{"Basic":[]},{}]
+        "responses":{"200":json_response("Issued token response",schema("TokenResponse")),"400":json_response("OAuth grant or form error",schema("OAuthError")),"401":json_response("Client authentication error",schema("OAuthError")),"413":json_response("Request body exceeds 16384 bytes",schema("OAuthError")),"415":json_response("Unsupported form media type",schema("OAuthError")),"500":json_response("Server error",schema("OAuthError")),"503":{"description":"Password work budget is at capacity","headers":{"Cache-Control":{"schema":{"type":"string","enum":["no-store"]}}},"content":{"application/json":{"schema":schema("OAuthError")}}}},"security":[{"Basic":[]},{}]
     }}));
     paths.insert("/oidc/userinfo".into(), json!({"get":{
         "operationId":"sharedOidcUserinfo","responses":{"200":json_response("Authenticated user claims",schema("UserInfo")),"401":json_response("Bearer authentication failed",schema("OAuthError")),"403":json_response("Insufficient authorization",schema("OAuthError")),"500":json_response("Server error",schema("Error"))},"security":[{"Bearer":[]}]
@@ -783,7 +1250,7 @@ pub fn shared_oidc_document() -> utoipa::openapi::OpenApi {
         paths.insert(path.into(), json!({"post":{
             "operationId":id,"description":desc,
             "requestBody":{"required":true,"content":{"application/x-www-form-urlencoded":{"schema":{"type":"object","required":["token"],"properties":{"token":{"type":"string"},"token_type_hint":{"type":"string","description":"Unknown values are ignored."},"client_id":{"type":"string"},"client_secret":{"type":"string"}},"additionalProperties":false}}}},
-            "responses":{"200":success,"400":{"description":"OAuth error or form extraction failure","content":{"application/json":{"schema":schema("OAuthError")},"text/plain":{"schema":{"type":"string"}}}},"401":json_response("Client authentication error",schema("OAuthError")),"413":{"description":"Form body exceeds 16384 bytes","content":{"text/plain":{"schema":{"type":"string"}}}},"415":{"description":"Unsupported form media type","content":{"text/plain":{"schema":{"type":"string"}}}},"422":{"description":"Form field extraction failed","content":{"text/plain":{"schema":{"type":"string"}}}},"500":json_response("Server error",schema("Error"))},"security":[{"Basic":[]},{}]
+            "responses":{"200":success,"400":{"description":"OAuth error or form extraction failure","content":{"application/json":{"schema":schema("OAuthError")},"text/plain":{"schema":{"type":"string"}}}},"401":json_response("Client authentication error",schema("OAuthError")),"413":{"description":"Form body exceeds 16384 bytes","content":{"text/plain":{"schema":{"type":"string"}}}},"415":{"description":"Unsupported form media type","content":{"text/plain":{"schema":{"type":"string"}}}},"422":{"description":"Form field extraction failed","content":{"text/plain":{"schema":{"type":"string"}}}},"500":json_response("Server error",schema("Error")),"503":{"description":"Password work budget is at capacity","headers":{"Cache-Control":{"schema":{"type":"string","enum":["no-store"]}}},"content":{"application/json":{"schema":schema("OAuthError")}}}},"security":[{"Basic":[]},{}]
         }}));
     }
     let value = json!({

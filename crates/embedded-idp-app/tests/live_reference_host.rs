@@ -2918,6 +2918,15 @@ fn a02_ordinary_entries_are_isolated_read_only_and_preserve_sessions_on_reorder(
             before,
             "ordinary startup never seeds or repairs"
         );
+        // The setup host used a different issuer port; authenticate to this host.
+        let admin = host.json(
+            "POST",
+            "/identity/admin/auth/login",
+            None,
+            None,
+            Some(json!({"email":"admin@example.test","password":"Runtime-Admin123"})),
+            200,
+        );
         let credentials = json!({"email":email,"password":password});
         let one = host.json(
             "POST",
@@ -2934,6 +2943,46 @@ fn a02_ordinary_entries_are_isolated_read_only_and_preserve_sessions_on_reorder(
             None,
             Some(credentials.clone()),
             200,
+        );
+        let sessions = host.json(
+            "GET",
+            "/one/auth/security/sessions?limit=50",
+            Some(token(&one)),
+            None,
+            None,
+            200,
+        );
+        let listed = sessions["items"].as_array().unwrap();
+        assert!(listed
+            .iter()
+            .any(|r| r["session_id"] == one["session"]["session_id"] && r["current"] == true));
+        assert!(listed
+            .iter()
+            .any(|r| r["session_id"] == two["session"]["session_id"] && r["current"] == false));
+        if mode == TenancyMode::Enabled {
+            assert!(!listed
+                .iter()
+                .any(|r| r["session_id"] == admin["session"]["session_id"]));
+        }
+        assert!(!sessions.to_string().contains("refresh_token"));
+        host.json(
+            "GET",
+            "/identity/admin/auth/security/sessions",
+            Some(token(&admin)),
+            None,
+            None,
+            200,
+        );
+        assert_eq!(
+            host.raw(
+                "GET",
+                "/identity/admin/auth/security/sessions",
+                Some(token(&one)),
+                None,
+                None
+            )
+            .0,
+            401
         );
         for (path, access) in [
             ("/two/auth/session", token(&one)),
@@ -2982,6 +3031,42 @@ fn a02_ordinary_entries_are_isolated_read_only_and_preserve_sessions_on_reorder(
         assert!(cookie.contains("Path=/one/auth/browser"));
         assert!(cookie.contains("HttpOnly"));
         assert!(browser["tokens"].get("refresh_token").is_none());
+        let (status, changed_cookie, own_browser_sessions) = host.browser(
+            "/one/auth/browser/security/sessions",
+            Some(cookie_pair(&cookie)),
+            None,
+            json!({"expected":browser_identity(&browser["session"]),"limit":50}),
+        );
+        assert_eq!(status, 200);
+        assert!(changed_cookie.is_none());
+        assert!(own_browser_sessions["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["session_id"] == browser["session"]["session_id"] && r["current"] == true));
+        let (status, management_cookie, management_browser) = host.browser(
+            "/identity/admin/auth/browser/login",
+            None,
+            None,
+            json!({"email":"admin@example.test","password":"Runtime-Admin123"}),
+        );
+        assert_eq!(status, 200);
+        let (status, changed_cookie, management_sessions) = host.browser(
+            "/identity/admin/auth/browser/security/sessions",
+            Some(cookie_pair(management_cookie.as_ref().unwrap())),
+            None,
+            json!({"expected":browser_identity(&management_browser["session"])}),
+        );
+        assert_eq!(status, 200);
+        assert!(changed_cookie.is_none());
+        assert!(management_sessions["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(
+                |r| r["session_id"] == management_browser["session"]["session_id"]
+                    && r["purpose"] == "management"
+            ));
         let expected = json!({"expected_session":browser_identity(&browser["session"])});
         assert_eq!(
             host.browser(
@@ -5807,3 +5892,79 @@ fn a02b_private_browser_cannot_upgrade_through_oidc() {
         400
     );
 }
+
+#[test]
+#[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
+fn s01_host_shares_account_budget_and_bounds_slow_login_body() {
+    let db = Db::new(TenancyMode::Disabled);
+    db.bootstrap();
+    db.seed_management_client();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+    let _ = db.explicit_command(port, TenancyMode::Disabled, "/identity", "");
+    let mut config: Value =
+        serde_json::from_slice(&fs::read(db.dir.join("explicit.json")).unwrap()).unwrap();
+    config["runtime"]["abuse"] = json!({"account":{"period_ms":1000,"burst":1}});
+    let mut command = db.explicit_command_from_config(config);
+    let host = db.start_command(port, &mut command);
+    let input = json!({"email":"unknown@example.test","password":"wrong-password"});
+    assert_eq!(
+        host.raw(
+            "POST",
+            "/identity/admin/auth/login",
+            None,
+            None,
+            Some(input)
+        )
+        .0,
+        401
+    );
+    let (status, body) = host.raw(
+        "POST",
+        "/identity/admin/auth/browser/login",
+        None,
+        None,
+        Some(json!({"email":" UNKNOWN@EXAMPLE.TEST ","password":"wrong-password"})),
+    );
+    assert_eq!(status, 429);
+    assert_eq!(
+        serde_json::from_str::<Value>(&body).unwrap()["code"],
+        "rate_limited"
+    );
+    assert_eq!(host.raw("GET", "/healthz", None, None, None).0, 200);
+
+    let mut socket = TcpStream::connect(("127.0.0.1", port)).unwrap();
+    socket
+        .set_read_timeout(Some(Duration::from_secs(9)))
+        .unwrap();
+    socket.write_all(b"POST /identity/admin/auth/login HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: 200\r\n\r\n{\"email\":").unwrap();
+    let start = Instant::now();
+    let mut response = String::new();
+    socket.read_to_string(&mut response).unwrap();
+    assert!(response.starts_with("HTTP/1.1 408"), "{response}");
+    assert!(start.elapsed() >= Duration::from_secs(4));
+    assert!(response
+        .to_ascii_lowercase()
+        .contains("cache-control: no-store"));
+    assert_eq!(
+        host.raw(
+            "POST",
+            "/identity/admin/auth/login",
+            None,
+            None,
+            Some(json!({"email":"unknown@example.test","password":"wrong-password"}))
+        )
+        .0,
+        401
+    );
+}
+
+#[path = "reference_host/security_http.rs"]
+mod security_http;
+
+#[path = "reference_host/password_http.rs"]
+mod password_http;
+
+#[path = "reference_host/security_runtime.rs"]
+mod security_runtime;

@@ -1,3 +1,4 @@
+use crate::account_security_config::AccountSecurityConfig;
 use crate::config::{
     EmailDeliveryConfig, EmailDeliveryMode, EmbeddedIdpAppConfig, ReferenceScanLoginConfig,
     SeedClientConfig, SeedConfidentialClientConfig, SmtpEmailDeliveryConfig, SmtpTlsMode,
@@ -71,6 +72,7 @@ pub(crate) struct ReferenceBusinessConfig {
 }
 #[derive(Clone)]
 pub(crate) struct AppConfig {
+    pub abuse: embedded_idp_core::AdmissionPolicy,
     pub bind_addr: SocketAddr,
     pub browser_origin: Option<String>,
     pub transport_policy: HttpTransportPolicy,
@@ -78,6 +80,7 @@ pub(crate) struct AppConfig {
     pub embedded_idp: EmbeddedIdpConfig,
     pub postgres: PgStorageConfig,
     pub email_delivery: Option<EmailDeliveryConfig>,
+    pub account_security: Option<AccountSecurityConfig>,
     pub tenancy_mode: TenancyMode,
     pub signing_key_file: String,
     pub management: EntryConfig,
@@ -98,6 +101,8 @@ struct Document {
 #[serde(deny_unknown_fields)]
 struct Runtime {
     #[serde(default)]
+    abuse: crate::abuse_config::AbuseConfig,
+    #[serde(default)]
     device_admission_providers: Vec<AdmissionProviderReference>,
     tenancy_mode: String,
     bind_addr: String,
@@ -110,6 +115,8 @@ struct Runtime {
     auth: Auth,
     #[serde(default)]
     email: Option<Email>,
+    #[serde(default)]
+    account_security: Option<AccountSecurityConfig>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -378,6 +385,7 @@ impl AppConfig {
     pub(crate) fn from_legacy(c: &EmbeddedIdpAppConfig) -> Self {
         let port = c.bind_addr.port();
         Self {
+            abuse: embedded_idp_core::AdmissionPolicy::default(),
             bind_addr: c.bind_addr,
             browser_origin: Some(c.browser_origin.clone()),
             transport_policy: c.transport_policy.clone(),
@@ -385,6 +393,7 @@ impl AppConfig {
             embedded_idp: c.embedded_idp.clone(),
             postgres: c.postgres.clone(),
             email_delivery: Some(c.email_delivery.clone()),
+            account_security: None,
             tenancy_mode: c.tenancy_mode,
             signing_key_file: c.signing_key_file.clone(),
             management: EntryConfig {
@@ -625,6 +634,7 @@ impl AppConfig {
             _ => return Err("invalid runtime.postgres.connection.tls_mode".into()),
         };
         let mut c = Self {
+            abuse: d.runtime.abuse.policy()?,
             bind_addr,
             browser_origin: d.runtime.http.browser_origin,
             transport_policy,
@@ -650,6 +660,19 @@ impl AppConfig {
                 },
             },
             email_delivery: None,
+            account_security: d
+                .runtime
+                .account_security
+                .map(|mut security| {
+                    security.subject_key_file = resolve_path(base, &security.subject_key_file)?;
+                    security.current.key_file = resolve_path(base, &security.current.key_file)?;
+                    if let Some(previous) = &mut security.previous {
+                        previous.key_file = resolve_path(base, &previous.key_file)?;
+                    }
+                    security.validate()?;
+                    Ok::<_, String>(security)
+                })
+                .transpose()?,
             tenancy_mode: mode,
             signing_key_file: resolve_path(base, &d.runtime.signing_key_file)?,
             management,
@@ -732,11 +755,25 @@ impl AppConfig {
         }
     }
     pub(crate) fn validate_for_startup(&self) -> Result<(), String> {
+        self.abuse.validate().map_err(|e| e.to_string())?;
+        if let Some(security) = &self.account_security {
+            security.validate()?;
+        }
         Ok(()) // All supported protocol combinations are checked before secret resolution.
     }
     fn validate_static(&mut self, email: Option<&Email>) -> Result<(), String> {
         if let Some(e) = email {
             e.validate()?;
+        }
+        if self
+            .account_security
+            .as_ref()
+            .is_some_and(|s| s.recovery_email)
+            && !email.is_some_and(|email| email.mode == "smtp")
+        {
+            return Err(
+                "runtime.account_security.recovery_email requires runtime.email.mode=smtp".into(),
+            );
         }
         if self
             .business_entries
@@ -1204,6 +1241,7 @@ mod tests {
     #[test]
     fn preparation_skips_unrelated_secrets_and_startup_capability_gate() {
         let mut value = doc();
+        value["runtime"]["account_security"] = serde_json::json!({"authority":"idp.example.test","subject_key_file":"absent-subject.key","current":{"key_id":"current","key_file":"absent-current.key"},"recovery_email":true});
         value["runtime"]["email"] = serde_json::json!({"mode":"smtp","smtp":{"username":"user","password_ref":{"env":"UNAVAILABLE_SMTP"}}});
         value["business_entries"] = serde_json::json!([{"login_entry":"product","client_id":"product-client","tenant_policy":{"kind":"choose"},"mount_prefix":"/product"}]);
         let path = std::env::temp_dir().join(format!("a01-prep-{}.json", std::process::id()));
@@ -1730,6 +1768,66 @@ mod tests {
         d["management"]["mount_prefix"] = "".into();
         let c = parse(&d, &envs()).ok().unwrap();
         assert!(Path::new(&c.signing_key_file).is_absolute());
+    }
+    #[test]
+    fn recovery_email_is_opt_in_and_requires_smtp_before_secret_resolution() {
+        let mut value = doc();
+        value["runtime"]["account_security"] = serde_json::json!({
+            "authority":"idp.example.test", "subject_key_file":"absent-subject.key",
+            "current":{"key_id":"current","key_file":"absent-current.key"}
+        });
+        assert!(
+            !parse(&value, &envs())
+                .unwrap()
+                .account_security
+                .unwrap()
+                .recovery_email
+        );
+        value["runtime"]["account_security"]["recovery_email"] = serde_json::json!(true);
+        assert!(parse(&value, &envs())
+            .err()
+            .unwrap()
+            .contains("requires runtime.email.mode=smtp"));
+        for mode in ["log", "sendmail"] {
+            value["runtime"]["email"] = serde_json::json!({"mode":mode});
+            assert!(parse(&value, &envs())
+                .err()
+                .unwrap()
+                .contains("requires runtime.email.mode=smtp"));
+        }
+        value["runtime"]["email"] = serde_json::json!({"mode":"smtp"});
+        assert!(
+            parse(&value, &envs())
+                .unwrap()
+                .account_security
+                .unwrap()
+                .recovery_email
+        );
+        value["runtime"]["account_security"]["recovery_email"] = serde_json::json!("true");
+        assert!(parse(&value, &envs()).is_err());
+    }
+    #[test]
+    fn account_security_paths_are_resolved_without_reading_key_files() {
+        let mut value = doc();
+        value["runtime"]["account_security"] = serde_json::json!({
+            "authority": "idp.example.test",
+            "subject_key_file": "security/subject.key",
+            "current": {"key_id": "current", "key_file": "security/current.key"},
+            "previous": {"key_id": "previous", "key_file": "security/previous.key"}
+        });
+        let config = parse(&value, &envs()).unwrap();
+        let security = config.account_security.unwrap();
+        assert!(Path::new(&security.subject_key_file).is_absolute());
+        assert!(security.subject_key_file.ends_with("security/subject.key"));
+        assert!(Path::new(&security.current.key_file).is_absolute());
+        assert!(security.current.key_file.ends_with("security/current.key"));
+        let previous = security.previous.unwrap();
+        assert!(Path::new(&previous.key_file).is_absolute());
+        assert!(previous.key_file.ends_with("security/previous.key"));
+
+        let mut unknown = value;
+        unknown["runtime"]["account_security"]["raw_subject_key"] = "not-accepted".into();
+        assert!(parse(&unknown, &envs()).is_err());
     }
     #[test]
     fn file_secret_and_legacy_source_rules() {

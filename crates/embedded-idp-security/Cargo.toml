@@ -8,6 +8,7 @@ repository.workspace = true
 description = "Production cryptography adapters for rust-embedded-idp"
 
 [dependencies]
+governor = { version = "=0.10.4", default-features = false, features = ["std"] }
 base64ct = { version = "1", features = ["alloc"] }
 embedded-idp-core = { version = "3.0.0", path = "../embedded-idp-core" }
 rand_core = { version = "0.6", features = ["getrandom"] }

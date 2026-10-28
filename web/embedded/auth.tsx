@@ -1,5 +1,7 @@
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type CSSProperties, type FormEvent } from "react";
 import { EmbeddedIdentityClient, IdentityError, type JoinedTenantPage, type MyRolePage } from "./client";
+import { AccountSecurityPanel, PasswordRecovery } from "./account-security";
+import { validateAccountSecurityFeatures, type AccountSecurityFeatures } from "./account-security-workflow";
 import styles from "./auth.module.css";
 
 type Language = "zh-CN" | "en-US";
@@ -13,6 +15,7 @@ const copy = {
     fixed: "此入口只登录指定租户。", selectable: "验证账号后，选择已加入的租户。", disabled: "使用账号邮箱和密码登录。",
     verify: "校验会话", verified: "会话有效", error: "操作失败，请重试。", busy: "正在处理…",
     roles: "我的角色", loadingRoles: "正在读取角色…", noRoles: "当前租户暂无角色。", disabledRole: "已停用",
+    accountSecurity: "我的安全", checkSecurity: "核对安全操作结果", recoverPassword: "找回密码",
   },
   "en-US": {
     connect: "Connect to identity service", retry: "Retry", loading: "Loading sign-in options…", login: "Sign in", email: "Email", password: "Password",
@@ -23,6 +26,7 @@ const copy = {
     fixed: "This sign-in is limited to one tenant.", selectable: "Verify your account, then choose a tenant you have joined.", disabled: "Sign in with your account email and password.",
     verify: "Check session", verified: "Session active", error: "The operation failed. Please try again.", busy: "Working…",
     roles: "My roles", loadingRoles: "Loading roles…", noRoles: "No roles in this tenant.", disabledRole: "Disabled",
+    accountSecurity: "My security", checkSecurity: "Check a security operation", recoverPassword: "Recover password",
   },
 } as const;
 
@@ -35,11 +39,14 @@ export interface EmbeddedAuthProps {
   style?: CSSProperties;
   /** Confirm or preserve host state before a tenant switch or logout. Defaults to allowing the change. */
   beforeSessionChange?: () => boolean | Promise<boolean>;
+  /** Explicitly enables the optional account security and recovery views. */
+  accountSecurity?: AccountSecurityFeatures;
 }
 
 /** Public, host-embeddable sign-in UI. It never imports management routes or styles. */
-export function EmbeddedAuth({ client, businessId, language = "zh-CN", className, style, beforeSessionChange }: EmbeddedAuthProps) {
+export function EmbeddedAuth({ client, businessId, language = "zh-CN", className, style, beforeSessionChange, accountSecurity }: EmbeddedAuthProps) {
   const t = copy[language];
+  const securityFeatures = validateAccountSecurityFeatures(accountSecurity);
   const activeClient = useRef(client);
   activeClient.current = client;
   const state = useSyncExternalStore(client.subscribe, client.getSnapshot, client.getSnapshot);
@@ -54,6 +61,7 @@ export function EmbeddedAuth({ client, businessId, language = "zh-CN", className
   const [rolePage, setRolePage] = useState<{ key: string; page: MyRolePage }>();
   const [roleCursors, setRoleCursors] = useState<(string | undefined)[]>([undefined]);
   const [roleLoading, setRoleLoading] = useState(false);
+  const [securityView, setSecurityView] = useState<"panel" | "recovery">();
   const restoreAttempted = useRef<EmbeddedIdentityClient | undefined>(undefined);
   const roleKey = state.session && businessId ? `${state.session.tenant_id}/${state.session.account_id}/${state.session.session_id}/${businessId}` : "";
   const emailId = useId(), passwordId = useId();
@@ -121,6 +129,21 @@ export function EmbeddedAuth({ client, businessId, language = "zh-CN", className
     finally { setPassword(""); }
   }
 
+  async function changeSecurityView(view?: "panel" | "recovery") {
+    if (beforeSessionChange && !await beforeSessionChange()) return;
+    if (activeClient.current !== client) return;
+    setSecurityView(view);
+  }
+
+  if (securityView === "panel") return <div className={className} style={style} lang={language}>
+    <AccountSecurityPanel identity={client} features={securityFeatures} language={language}
+      onClose={() => void run(() => changeSecurityView(undefined))} />
+  </div>;
+  if (securityView === "recovery") return <div className={className} style={style} lang={language}>
+    <PasswordRecovery identity={client} features={securityFeatures} language={language}
+      onClose={() => void run(() => changeSecurityView(undefined))} />
+  </div>;
+
   return <section className={`${styles.root}${className ? ` ${className}` : ""}`} style={style} lang={language} aria-busy={busy || tenantLoading}>
     {client.isDevelopmentMode() && <p role="status">{language === "zh-CN" ? "开发登录模式：页面重载或会话到期后需重新登录。" : "Development login: sign in again after reload or session expiry."}</p>}
     {state.sessionChanged && <p role="status">{language === "zh-CN" ? "其他页面已更改此会话，请重新加载后继续。" : "Another page changed this session. Reload to continue."} <button type="button" onClick={() => window.location.reload()}>{language === "zh-CN" ? "重新加载" : "Reload"}</button></p>}
@@ -172,6 +195,7 @@ export function EmbeddedAuth({ client, businessId, language = "zh-CN", className
         </nav>}
       </>}</>}
       {verified && <p className={styles.success} role="status">{t.verified}</p>}
+      {accountSecurity !== undefined && <button type="button" disabled={busy} onClick={() => void run(() => changeSecurityView("panel"))}>{t.accountSecurity}</button>}
       <div className={styles.actions}>
         <button type="button" disabled={busy} onClick={() => void run(async () => { await client.verifySession(); setVerified(true); })}>{t.verify}</button>
         {client.canChoose() && <button type="button" disabled={busy} onClick={() => void run(async () => {
@@ -195,6 +219,10 @@ export function EmbeddedAuth({ client, businessId, language = "zh-CN", className
         <input id={passwordId} type="password" autoComplete="current-password" required maxLength={4096} disabled={busy} value={password} onChange={event => setPassword(event.target.value)} />
         <button type="submit" disabled={busy}>{busy ? t.signingIn : t.login}</button>
       </form>
+      {securityFeatures.enabled && <div className={styles.actions}>
+        <button type="button" className={styles.secondary} disabled={busy} onClick={() => void run(() => changeSecurityView("panel"))}>{t.checkSecurity}</button>
+        {securityFeatures.recovery && <button type="button" className={styles.secondary} disabled={busy} onClick={() => void run(() => changeSecurityView("recovery"))}>{t.recoverPassword}</button>}
+      </div>}
       <p className={styles.helper}>{client.supportsRestore() ? t.note : language === "zh-CN" ? "凭证仅保存在本页内存中，刷新后需重新登录。" : "Credentials stay in memory. Sign in again after a reload."}</p>
     </div>}
   </section>;

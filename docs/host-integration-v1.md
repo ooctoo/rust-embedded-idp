@@ -1895,3 +1895,90 @@ The reference host now uses it in both modes, behind startup/readiness validatio
 `BrowserSessionService` is implemented by the business Core authentication service and the independent management Core service. `browser_session_router(service, BrowserSessionHttpConfig::new(origin, cookie_name, external_cookie_path, purpose)?)` merges additional routes without replacing explicit-token or proof routes. Compose it beside `management_router`, not inside its protected admin routes. The configuration validates the origin, external path and service purpose. The adapter owns Cookie and CSRF handling; Core remains independent of HTTP and storage schema changes are not required. For local RFC1918 HTTP testing, hosts may use `new_with_transport_policy(..., &HttpTransportPolicy::DevelopmentPrivateNetworkHttp)` only with the feature-gated debug configuration and must also use the restricted browser service described in the [private-network HTTP development contract](development-private-http.md). The default constructor and behavior remain unchanged.
 
 Full requests, expiry/rotation/logout semantics, multi-tenant rules and React coordination are specified in [browser session design](browser-session-design.md). Development-mode restore/refresh rejection, the 900-second default browser lifetime, stable errors and server-to-Web mode delivery are specified in [private-network HTTP development](development-private-http.md). Statements above that the original adapters do not create cookies still apply to those adapters. Only the new opt-in browser routes read/write refresh cookies.
+
+## 第一期宿主准入接线
+
+`PasswordWorkBudget`必须由宿主创建后clone给所有密码登录/注册service，不能每个入口各建一份。路由合并后，用`with_anonymous_login_budget`共享登录在途容量，再在外层用`with_abuse_admission`注入`Arc<dyn AbuseAdmission>`。参考单进程adapter为Security的`InMemoryAbuseAdmission::new_random(AdmissionPolicy)`；类型化阈值默认只作为开发起点。重启会重置预算，多副本须注入共享原子实现或明确配置每副本限制。
+
+TCP监听采用`app.into_make_service_with_connect_info::<SocketAddr>()`，不能只传Router导致缺失peer。反向代理宿主须自己验证代理身份/链并在准入层外注入`TrustedRequestSource`；库不会信任Forwarded/X-Forwarded-For。默认参考host用直接peer，代理场景下所有代理流量可能共用一桶，不能冒称已按真实客户端分流。
+
+参考JSON的`runtime.abuse`可选，字段为`global`/`source`/`account`（每项`period_ms`和`burst`）及`max_keys`。缺省为开发默认100次/秒、来源5次/秒、账号每2秒1次，对应burst 200/60/10和16384键。配置可收紧或在验证后调整；不提供关闭安全准入的开关。单字段burst非零且不超过1000，period_ms为1–3600000，补满期不超过24h，键容量1–65536。具体错误合同见[宿主准入合同](api/host-admission-contract.md)。
+
+### 本人会话查询（S03-A1）
+
+参考宿主已在每个普通业务入口、legacy reference业务入口和管理入口挂载本人会话查询。Bearer使用各自原认证服务；Cookie使用专用只读身份接口，并复用原Origin/CSRF/Cookie路径规则。库嵌入方通过 `self_session_router`、`management_self_session_router`、`browser_self_session_router` 显式组合；后者必须让purpose与restricted lifetime和HTTP配置相等。
+
+查询仅限第一方 `scope=None` actor，可列出本人其他租户和委托会话，但不会改变或旋转凭据。该只读能力直接使用tenant_v6，无需安装security foundation；撤销/改密依赖显式security扩展及可选配置；恢复仍需后续服务。详见 `docs/api/self-session-contract.md`，不能把本接口存在视为完整安全页或恢复功能完成。
+
+## S03 显式账号安全配置与迁移
+
+JSON v1/v2 可选 `runtime.account_security` 启用本人撤销、改密与收据接口；省略时旧配置继续运行且不挂载这些写/结果路径。无参数legacy环境模式默认不启用，改用 `--config`。配置示例仅含路径与标识：
+
+```json
+{
+  "authority": "my-idp",
+  "recovery_email": false,
+  "subject_key_file": "private/security-subject.key",
+  "current": {"key_id": "security-2026-01", "key_file": "private/security-current.keys"}
+}
+```
+
+将此对象放入 `runtime.account_security`；路径相对配置文件。subject文件必须恰32个原始随机bytes，keyset文件恰128bytes，顺序为secret、command、code、envelope各32bytes。全部密钥非零且互异；可选previous使用同一key_id/key_file结构，ID不得与current相同。Unix文件必须owner-only（如0600）。宿主加载一次共享给所有入口，不生成临时持久密钥；错误不输出内容。密钥生成、保管由宿主操作员承担，不把测试中的固定材料用于真实环境。
+
+首次准备需已完成tenant_v6与管理员bootstrap，再显式依次执行：
+
+```sh
+embedded-idp-app security-plan --config host.json --extension foundation
+embedded-idp-app security-apply --config host.json --extension foundation --fingerprint <上一步输出的64位指纹>
+embedded-idp-app security-check --config host.json --extension foundation
+embedded-idp-app security-plan --config host.json --extension runtime
+embedded-idp-app security-apply --config host.json --extension runtime --fingerprint <上一步输出的64位指纹>
+embedded-idp-app security-check --config host.json --extension runtime
+```
+
+plan输出目标schema、mode、authority及DDL指纹；apply要求操作员明确传回该指纹并在锁内重查。退出2为配置/用法错误，3为重新计算后的指纹不匹配，4为数据库/绑定/布局失败或提交结果未知；未知结果先check，不盲目重复迁移。已经安装时apply拒绝，check才是读取现状。迁移命令不读取原始加密key，也不要求在线签名key；它们只使用可信配置/数据库连接。在线启动和/readyz只检查扩展，缺失或漂移失败，不自动创建/修补。
+
+subject key是稳定累计预算身份，不参与日常轮换；keyset新写用current、旧记录按key ID从current/previous精确读取。更换时previous至少保留旧记录最长24小时TTL；本期无自动重加密或删除旧key的安全检查，不能把重启成功当作旧记录均已排空。未知key将明确失败，不能计为用户错误验证码。
+
+新增HTTP路径、认证及结果能力见[本人撤销合同](api/self-session-revocation-contract.md)及[本人改密合同](api/self-password-change-contract.md)。仍需配合宿主共享准入层。收据secret仅用于有限结果确认，跨入口同secret可读取同一boolean；不授予新修改权限。响应不设置Cookie，以免旧标签页迟到响应覆盖新登录；Web后续仅在expected identity仍匹配时清理本地认证。O01a-B3接入后台安全清理及显式可选的恢复邮件worker，配置边界见下节。
+
+S03-A5的改密service与管理账号hash均使用宿主同一PasswordWorkBudget，不得为每个入口另建预算。本人改密验证旧密码，成功后退出所有租户/用途会话；必须保留提交前生成的operation/receipt secret以核对结果，不能自动再次改密或自动登录。当前HTTP接线不表示Web安全页或恢复流程完成，具体局部证据以S03-A5实施记录为准。
+
+
+### O01a-B3 恢复邮件发送与关闭
+
+配置account_security后，参考宿主在监听地址绑定成功时启动单个安全清理循环：每轮最多100个根记录、完成后间隔1秒，错过周期不补跑。仅配置本人安全能力也会清理到期收据；不会自动修改schema。
+
+`runtime.account_security.recovery_email`默认false。启用为true必须同时配置`runtime.email.mode="smtp"`，复用原SMTP地址、端口、TLS、from及secret_ref；Log/sendmail不能用于密码恢复发送。静态准备CLI检查组合但不读取SMTP密钥或account-security密钥；在线bootstrap解析后再检查。S03-B3起，此开关同时启用后台投递和匿名密码恢复HTTP接口；设为false或省略时保持恢复接口404，仍运行既有安全清理任务。
+
+邮件开启时最多4个循环，每个只在claim提交后调用同一4槽物理sender。每轮完成后等待1秒，无内存待发队列；发送绝对截止时间不超过15秒、剩余30秒lease及flow有效期。发送结果写回失败不再次发邮件，过期sending由清理转Unknown。Accepted只表示SMTP供应商接收；Unknown不自动重发。
+
+SIGINT/SIGTERM或HTTP服务结束会同时停止领取和关闭sender。HTTP/scan清理/安全worker分别并行收尾；安全loop最多等待35秒，覆盖物理发送15秒+kill/reap2秒及结果写回PG10秒绝对deadline，并留调度余量。超时会取消异步循环并记录固定database outcome unknown，但不声称同步DB调用被物理取消；残余工作仍受既有PG deadline约束。sender登记的物理supervisor独立等待结束或隔离，不能被HTTP的10秒drain替代。服务与PG runtime引用保留到宿主Tokio runtime停止后。
+
+若旧配置不包含account_security，则既不启动这些worker也不改变原邮件行为。真实供应商TLS/凭据/容量与部署验收仍由宿主另行完成；局部测试仅使用合成本地SMTP与隔离数据库。
+
+
+### S03-B3 匿名密码恢复接线
+
+详见[恢复HTTP合同](api/recovery-http-contract.md)与[设计](s03-b3-recovery-http-design.md)。启用上述安全配置和SMTP后，参考宿主将同一恢复开始/完成service挂载至管理与所有业务入口；browser变体仅随入口browser配置启用。恢复不依赖Cookie、Bearer或设备proof，账号资格和全域凭据退役由Core决定，安全管理员不支持此恢复路径。路径前缀不是恢复的租户隔离边界。
+
+模块宿主可组合 `password_recovery_router`、`management_password_recovery_router`、`browser_password_recovery_router`。模块自带16KiB/5秒body边界和匿名物理工作许可；宿主仍需在完整路由外接入共享 `AnonymousLoginBudget` 与可信source/global/email准入，共享同一 `PasswordWorkBudget`。来源必须由连接peer或可信扩展提供，不读取客户端转发header。公开匿名start额度可在browser Origin检查之前消耗；该行为不代表账号验证成功。
+
+旧OpenAPI profile默认不包含恢复；显式使用 `business_profile_with_recovery`，同时启用account_security及recovery_email，browser路径再受browser条件控制。完成结果不确定时保留原operation/receipt_secret核对 `/result`；false仅表示未确认，不得自动改用新operation重做。成功后要求重新登录，响应不会操作Cookie。局部验证状态见S03-B3实施记录，Web交互已由[S03-C2](s03-c2-implementation-result.md)实现并完成局部验证。
+
+### 第一期自助安全 Web 配置（S03-C2）
+
+参考宿主的管理HTML由配置生成 `idp-account-security` meta，严格形状为
+`{"enabled":true,"recovery":true}`。enabled来自可选account_security是否配置，
+recovery来自account_security.recovery_email；未配置时两个false。HTML插值转义，
+模板中重复meta或recovery=true/ enabled=false启动失败；页面不从404推断功能开启。
+只读本人会话接口在参考宿主始终装配，写和邮件恢复仍受上述服务端配置控制。
+
+管理壳“我的安全”与管理员管理其他账号的“账号安全”分开；改密/当前撤销成功后
+仍留在结果页，登录页可核对本标签页已保存操作。业务宿主在EmbeddedAuth传入
+accountSecurity配置，或直接挂载AccountSecurityPanel/PasswordRecovery；省略配置
+保留原EmbeddedAuth界面。参见[Web安全合同与示例](api/account-security-web-contract.md)。
+
+默认sessionStorage持有收据查询凭据，只保证同标签页刷新恢复；请勿将这些记录、
+密码、验证码或邮件payload写入遥测。第三方持久适配器须满足同步CAS/readback合同。
+参考页面没有自动重发安全写或自动发送验证码。

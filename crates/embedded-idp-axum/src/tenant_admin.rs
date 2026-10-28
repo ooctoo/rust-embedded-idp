@@ -133,6 +133,15 @@ fn target_inner(
 }
 pub(super) fn error(error: AccessError) -> Response {
     let (status, code, message) = match error {
+        AccessError::Store(embedded_idp_core::StoreError::Backend(ref marker))
+            if marker == "password.work_unavailable" =>
+        {
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "temporarily_unavailable",
+                "the request could not be completed",
+            )
+        }
         AccessError::Forbidden => (
             StatusCode::FORBIDDEN,
             "management_forbidden",
@@ -189,7 +198,9 @@ pub(super) fn platform_context(
 
 #[cfg(test)]
 mod tests {
-    use super::ManagementSortOrder;
+    use super::{error, ManagementSortOrder};
+    use axum::{body::to_bytes, http::StatusCode};
+    use embedded_idp_core::access::AccessError;
 
     #[test]
     fn business_selection_is_explicit_and_management_namespace_is_protected() {
@@ -249,5 +260,24 @@ mod tests {
             ManagementSortOrder::Desc
         );
         assert!(serde_json::from_str::<Query>(r#"{"sort_order":"sideways"}"#).is_err());
+    }
+
+    #[tokio::test]
+    async fn password_work_unavailable_is_redacted_admin_503() {
+        let response = error(AccessError::Store(embedded_idp_core::StoreError::Backend(
+            "password.work_unavailable".into(),
+        )));
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        let body: serde_json::Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
+        assert_eq!(body["code"], "temporarily_unavailable");
+        assert_eq!(body["message"], "the request could not be completed");
+        assert!(!body.to_string().contains("password.work_unavailable"));
+
+        let ordinary = error(AccessError::Store(embedded_idp_core::StoreError::Backend(
+            "ordinary failure".into(),
+        )));
+        assert_eq!(ordinary.status(), StatusCode::INTERNAL_SERVER_ERROR);
     }
 }

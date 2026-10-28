@@ -79,7 +79,10 @@ fn session_admin_http_filters_paginates_and_revokes_atomically_in_both_modes() {
                 StatusCode::BAD_REQUEST
             );
         }
-        let filter=format!("/admin/sessions?account_id={}&device_id={device_id}&client_id=live-admin-client&status=active&created_after_unix_secs=999&created_before_unix_secs=1000",db.member);
+        let filter = format!(
+            "/admin/sessions?account_id={}&device_id={device_id}&client_id=live-admin-client&status=active&created_after_unix_secs=999&created_before_unix_secs=1000",
+            db.member
+        );
         let filtered = send(&router, "GET", &filter, Some(tenant), "");
         assert_eq!(filtered.0, StatusCode::OK);
         assert_eq!(filtered.1["items"].as_array().unwrap().len(), 1);

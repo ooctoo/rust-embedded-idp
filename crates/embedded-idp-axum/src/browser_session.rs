@@ -1,4 +1,10 @@
 //! Optional same-origin browser transport. Ordinary APIs still require Bearer tokens.
+mod self_sessions;
+pub use self_sessions::browser_self_session_router;
+mod self_session_revocation;
+pub use self_session_revocation::browser_self_session_revocation_router;
+mod self_password_change;
+pub use self_password_change::browser_self_password_change_router;
 use std::{sync::Arc, time::SystemTime};
 
 use axum::{
@@ -202,12 +208,7 @@ async fn browser_guard(
     next: Next,
 ) -> Response {
     let headers = request.headers();
-    if !exactly(headers, "origin", &state.config.origin)
-        || !exactly(headers, "x-embedded-idp-browser", "1")
-        || headers.contains_key("sec-fetch-site")
-            && !exactly(headers, "sec-fetch-site", "same-origin")
-        || headers.contains_key("x-embedded-idp-tenant-id")
-    {
+    if !browser_headers_valid(headers, &state.config) {
         return tenant_error(
             StatusCode::FORBIDDEN,
             "browser_origin_rejected",
@@ -215,6 +216,16 @@ async fn browser_guard(
         );
     }
     next.run(request).await
+}
+pub(crate) fn browser_headers_valid(
+    headers: &HeaderMap,
+    config: &BrowserSessionHttpConfig,
+) -> bool {
+    exactly(headers, "origin", &config.origin)
+        && exactly(headers, "x-embedded-idp-browser", "1")
+        && (!headers.contains_key("sec-fetch-site")
+            || exactly(headers, "sec-fetch-site", "same-origin"))
+        && !headers.contains_key("x-embedded-idp-tenant-id")
 }
 fn valid_token(raw: &str) -> bool {
     !raw.is_empty()

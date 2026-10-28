@@ -7,7 +7,8 @@ use axum::{routing::get, Json, Router};
 use config::Config;
 use embedded_idp_axum::{
     browser_session_router, tenant_device_auth_router, tenant_oidc_resource_router,
-    tenant_self_router, BrowserSessionHttpConfig, TenantDeviceAuthHttpConfig,
+    tenant_self_router, with_abuse_admission, with_anonymous_login_budget, AnonymousLoginBudget,
+    BrowserSessionHttpConfig, TenantDeviceAuthHttpConfig,
 };
 use embedded_idp_core::{access::*, *};
 use embedded_idp_security::*;
@@ -61,6 +62,7 @@ fn build_app(config: &Config, business: ReportStore) -> Result<Router, String> {
         )
         .map_err(|_| "invalid business token configuration".to_string())
     };
+    let password_work = embedded_idp_core::PasswordWorkBudget::default();
     let auth = || {
         CoreTenantAuthenticationService::new(
             config.mode,
@@ -78,6 +80,7 @@ fn build_app(config: &Config, business: ReportStore) -> Result<Router, String> {
             SystemClock,
             UuidV7IdGenerator,
         )
+        .map(|auth| auth.with_password_work_budget(password_work.clone()))
         .map_err(|_| "invalid business login configuration".to_string())
     };
     let proofs = CoreTenantDeviceProofService::new(
@@ -110,7 +113,7 @@ fn build_app(config: &Config, business: ReportStore) -> Result<Router, String> {
         config.issuer.clone(),
         config.oidc.clone(),
         "openid profile email".into(),
-        PhcClientSecretCodec,
+        BudgetedClientSecretCodec::new(PhcClientSecretCodec, password_work.clone()),
     )
     .map_err(|_| "invalid OIDC resource configuration")?;
     let auth_http = TenantDeviceAuthHttpConfig::new(
@@ -121,7 +124,7 @@ fn build_app(config: &Config, business: ReportStore) -> Result<Router, String> {
     )
     .map_err(|_| "invalid auth route configuration")?;
 
-    Ok(Router::new()
+    let router = Router::new()
         .route("/", get(reports::index))
         .route("/assets/:name", get(reports::asset))
         .route("/healthz", get(|| async { Json(json!({"status":"ok"})) }))
@@ -142,7 +145,15 @@ fn build_app(config: &Config, business: ReportStore) -> Result<Router, String> {
             authentication,
             authorization: access,
             store: business,
-        })))
+        }));
+    let abuse = Arc::new(
+        InMemoryAbuseAdmission::new_random(embedded_idp_core::AdmissionPolicy::default())
+            .map_err(|e| e.to_string())?,
+    );
+    Ok(with_abuse_admission(
+        with_anonymous_login_budget(router, AnonymousLoginBudget::default()),
+        abuse,
+    ))
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -192,7 +203,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                     "tenancy mode: {:?}; IdP schema: {}; business schema: {}",
                     config.mode, config.idp.connection.schema_name, config.business_schema
                 );
-                axum::serve(listener, app).await?;
+                axum::serve(
+                    listener,
+                    app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+                )
+                .await?;
                 Ok::<_, Box<dyn Error>>(())
             })?;
         }

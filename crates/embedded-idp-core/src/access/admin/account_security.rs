@@ -3,7 +3,7 @@ use crate::service::{
     contracts::is_valid_email,
     password::{hash_password, validate_registration_password},
 };
-use crate::{AuthConfig, ConfigValidationError, SecretString};
+use crate::{AuthConfig, ConfigValidationError, PasswordWorkBudget, SecretString};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AdminCreateAccount {
     pub tenant_id: String,
@@ -69,6 +69,7 @@ pub trait AccountSecurityService: Send + Sync {
 pub struct CoreAccountSecurityService<S, C, I> {
     admin: CoreAccessAdminService<S, C, I>,
     config: AuthConfig,
+    password_work: PasswordWorkBudget,
 }
 impl<S, C, I> CoreAccountSecurityService<S, C, I> {
     pub fn new(
@@ -76,7 +77,16 @@ impl<S, C, I> CoreAccountSecurityService<S, C, I> {
         config: AuthConfig,
     ) -> Result<Self, ConfigValidationError> {
         config.validate()?;
-        Ok(Self { admin, config })
+        Ok(Self {
+            admin,
+            config,
+            password_work: PasswordWorkBudget::default(),
+        })
+    }
+
+    pub fn with_password_work_budget(mut self, password_work: PasswordWorkBudget) -> Self {
+        self.password_work = password_work;
+        self
     }
 }
 impl<S: AccessAdminStore, C: Clock + Send + Sync, I: IdGenerator + Send + Sync>
@@ -115,7 +125,9 @@ impl<S: AccessAdminStore, C: Clock + Send + Sync, I: IdGenerator + Send + Sync>
             if tenant.status != TenantStatus::Active {
                 return Err(AccessError::Forbidden);
             }
+            let permit = self.password_work.try_login()?;
             let hash = SecretString::new(hash_password(command.password.expose_secret())?);
+            drop(permit);
             let now = self.admin.clock.now();
             if !tx.actor_is_active(&context.actor, now)? {
                 return Err(AccessError::Forbidden);
@@ -201,7 +213,9 @@ impl<S: AccessAdminStore, C: Clock + Send + Sync, I: IdGenerator + Send + Sync>
             }
             // ponytail: rare security writes hold the deployment lock while hashing;
             // split preparation only after measuring contention and preserving rechecks.
+            let permit = self.password_work.try_login()?;
             let hash = SecretString::new(hash_password(command.new_password.expose_secret())?);
+            drop(permit);
             let now = self.admin.clock.now();
             if !tx.actor_is_active(&context.actor, now)? {
                 return Err(AccessError::Forbidden);
@@ -381,7 +395,9 @@ impl<S: AccessAdminStore, C: Clock + Send + Sync, I: IdGenerator + Send + Sync>
             }
             // ponytail: infrequent administrator creation hashes under the existing
             // exclusive security-write lock; move preparation only if contention is measured.
+            let permit = self.password_work.try_login()?;
             let hash = SecretString::new(hash_password(password.expose_secret())?);
+            drop(permit);
             let now = self.admin.clock.now();
             if !tx.actor_is_active(&context.actor, now)? {
                 return Err(AccessError::Forbidden);

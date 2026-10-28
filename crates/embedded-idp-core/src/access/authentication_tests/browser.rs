@@ -995,3 +995,161 @@ fn restricted_browser_rejects_overlong_signed_claim_even_with_short_bundle_metad
     assert!(state.sessions.is_empty());
     assert!(state.refreshes.is_empty());
 }
+
+#[test]
+fn self_security_cookie_identity_is_purpose_bound_and_read_only() {
+    let store = seed();
+    store.0.lock().unwrap().members.push(m("0", "a"));
+    let policy = LoginTenantPolicy::Fixed {
+        tenant_id: "0".into(),
+    };
+    let business = svc_mode(TenancyMode::Disabled, policy.clone(), store.clone());
+    let management = management::management(TenancyMode::Disabled, policy, store.clone());
+    let TenantLoginOutcome::Authenticated(b) = business.browser_login(login()).unwrap() else {
+        panic!()
+    };
+    let TenantLoginOutcome::Authenticated(a) = management.browser_login(login()).unwrap() else {
+        panic!()
+    };
+    let before = store.0.lock().unwrap().clone();
+    assert_eq!(
+        business.self_security_browser_purpose(),
+        AccessTokenPurpose::Business
+    );
+    assert_eq!(
+        management.self_security_browser_purpose(),
+        AccessTokenPurpose::Management
+    );
+    assert_eq!(management.self_security_browser_lifetime_secs(), None);
+    for (service, session) in [
+        (&business as &dyn SelfSecurityBrowserIdentityService, &b),
+        (&management as &dyn SelfSecurityBrowserIdentityService, &a),
+    ] {
+        let actor = service
+            .authenticate_self_security_browser(
+                session.tokens.refresh_token.clone(),
+                identity(&session.session),
+            )
+            .unwrap();
+        assert_eq!(actor.subject_id, session.session.account_id);
+        assert_eq!(actor.tenant_id, session.session.tenant_id);
+        assert_eq!(actor.session_id, session.session.id);
+        for field in ["tenant", "account", "session", "client"] {
+            let mut wrong = identity(&session.session);
+            match field {
+                "tenant" => wrong.tenant_id = "different".into(),
+                "account" => wrong.account_id = "different".into(),
+                "session" => wrong.session_id = "different".into(),
+                _ => wrong.client_id = "different".into(),
+            }
+            assert!(service
+                .authenticate_self_security_browser(session.tokens.refresh_token.clone(), wrong)
+                .is_err());
+        }
+    }
+    assert!(business
+        .authenticate_self_security_browser(a.tokens.refresh_token.clone(), identity(&a.session))
+        .is_err());
+    assert!(management
+        .authenticate_self_security_browser(b.tokens.refresh_token.clone(), identity(&b.session))
+        .is_err());
+    // A differently configured entry must reject even an internally matching assertion.
+    let mut other_client = svc_mode(
+        TenancyMode::Disabled,
+        LoginTenantPolicy::Fixed {
+            tenant_id: "0".into(),
+        },
+        store.clone(),
+    );
+    other_client.entry.client_id = "other-client".into();
+    assert!(other_client
+        .authenticate_self_security_browser(b.tokens.refresh_token.clone(), identity(&b.session))
+        .is_err());
+    let after = store.0.lock().unwrap();
+    assert_eq!(after.sessions, before.sessions);
+    assert_eq!(after.refreshes.len(), before.refreshes.len());
+    for (actual, original) in after.refreshes.iter().zip(&before.refreshes) {
+        assert_eq!(actual.token_digest, original.token_digest);
+        assert_eq!(actual.token_version, original.token_version);
+        assert_eq!(actual.revoked_at, original.revoked_at);
+    }
+}
+
+#[test]
+fn restricted_management_self_security_does_not_expand_scan_identity() {
+    let store = seed();
+    store.0.lock().unwrap().members.push(m("0", "a"));
+    let auth = management::management(
+        TenancyMode::Enabled,
+        LoginTenantPolicy::Fixed {
+            tenant_id: "0".into(),
+        },
+        store.clone(),
+    )
+    .into_restricted_browser(120)
+    .unwrap();
+    let TenantLoginOutcome::Authenticated(session) = auth.browser_login(login()).unwrap() else {
+        panic!()
+    };
+    assert_eq!(
+        auth.self_security_browser_purpose(),
+        AccessTokenPurpose::Management
+    );
+    assert_eq!(auth.self_security_browser_lifetime_secs(), Some(120));
+    assert!(auth
+        .authenticate_self_security_browser(
+            session.tokens.refresh_token.clone(),
+            identity(&session.session)
+        )
+        .is_ok());
+    assert_eq!(
+        auth.authenticate_browser(
+            session.tokens.refresh_token.clone(),
+            Some(identity(&session.session))
+        ),
+        Err(TenantAuthError::InvalidSession)
+    );
+    store.0.lock().unwrap().sessions[0].status = SessionStatus::Revoked;
+    assert!(auth
+        .authenticate_self_security_browser(
+            session.tokens.refresh_token,
+            identity(&session.session)
+        )
+        .is_err());
+}
+
+#[test]
+fn self_security_restricted_identity_rejects_overlong_session_and_device_entry() {
+    let store = seed();
+    let policy = LoginTenantPolicy::Fixed {
+        tenant_id: "t1".into(),
+    };
+    let ordinary = long_browser_service(store.clone(), policy.clone());
+    let TenantLoginOutcome::Authenticated(session) = ordinary.browser_login(login()).unwrap()
+    else {
+        panic!()
+    };
+    let restricted = long_browser_service(store.clone(), policy.clone())
+        .into_restricted_browser(120)
+        .unwrap();
+    assert_eq!(
+        restricted.authenticate_self_security_browser(
+            session.tokens.refresh_token.clone(),
+            identity(&session.session)
+        ),
+        Err(TenantAuthError::InvalidSession)
+    );
+    let mut device = long_browser_service(store.clone(), policy);
+    device.entry.require_device_proof = true;
+    assert_eq!(
+        device.authenticate_self_security_browser(
+            session.tokens.refresh_token.clone(),
+            identity(&session.session)
+        ),
+        Err(TenantAuthError::InvalidSession)
+    );
+    assert_eq!(
+        store.0.lock().unwrap().sessions[0].status,
+        SessionStatus::Active
+    );
+}

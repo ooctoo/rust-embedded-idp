@@ -3,7 +3,11 @@ import { Alert, App, Button, Card, ConfigProvider, Empty, Form, Input, Space, Sp
 import zhCN from "antd/locale/zh_CN";
 import { ManagementClient, ManagementError, type TenantPage } from "./client";
 import { defaultRoute, routeHash } from "./navigation";
+import { AccountSecurityPanel, PasswordRecovery } from "../embedded/account-security";
+import type { AccountSecurityFeatures } from "../embedded/account-security-workflow";
 import "./styles.css";
+
+const disabledSecurity: AccountSecurityFeatures = Object.freeze({ enabled: false, recovery: false });
 
 const { Title, Paragraph, Text } = Typography;
 const ManagementShell = lazy(() => import("./shell").then(module => ({ default: module.ManagementShell })));
@@ -70,7 +74,8 @@ function TenantPicker({ client, busy, run, reportError }: {
   </Card>;
 }
 
-function Console({ client }: { client: ManagementClient }) {
+function Console({ client, accountSecurity }: { client: ManagementClient; accountSecurity: AccountSecurityFeatures }) {
+  const [securityView, setSecurityView] = useState<"self" | "recovery">();
   const state = useSyncExternalStore(client.subscribe, client.getSnapshot);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -138,9 +143,12 @@ function Console({ client }: { client: ManagementClient }) {
   </>;
   const verify = () => void run(async () => { await client.verifySession(); setVerifiedAt(new Date().toLocaleTimeString("zh-CN")); });
   return <div className="management-root">
-    {state.session && !state.selecting && verifiedKey === sessionKey ? <Suspense fallback={<div className="management-loading" role="status"><Spin /> 正在加载管理工作区…</div>}>
+    {securityView ? <main className="management-content">
+      {securityView === "self" ? <AccountSecurityPanel identity={client} features={accountSecurity} onClose={() => setSecurityView(undefined)} />
+        : <PasswordRecovery identity={client} features={accountSecurity} onClose={() => setSecurityView(undefined)} />}
+    </main> : state.session && !state.selecting && verifiedKey === sessionKey ? <Suspense fallback={<div className="management-loading" role="status"><Spin /> 正在加载管理工作区…</div>}>
       <ManagementShell key={sessionKey} client={client} busy={busy} verifiedAt={verifiedAt} notices={notices} verify={verify}
-        logout={() => void run(() => client.logout())} switchTenant={() => void run(() => client.beginSwitch())} />
+        openSecurity={() => setSecurityView("self")} logout={() => void run(() => client.logout())} switchTenant={() => void run(() => client.beginSwitch())} />
     </Suspense> : <>
       <header className="management-header"><div className="management-brand">IDP <span>身份管理控制台</span></div><Tag>{modeLabel}</Tag></header>
       <main className="management-main"><section className="management-panel" aria-label="管理认证" aria-busy={busy}>
@@ -165,6 +173,10 @@ function Console({ client }: { client: ManagementClient }) {
             </Form.Item>
             <Button type="primary" htmlType="submit" block size="large" loading={busy}>登录</Button>
           </Form>
+          <Space wrap>
+            {accountSecurity.recovery && <Button onClick={() => setSecurityView("recovery")}>找回密码</Button>}
+            {accountSecurity.enabled && <Button onClick={() => setSecurityView("self")}>核对安全操作结果</Button>}
+          </Space>
           <Paragraph type="secondary" className="management-note">{client.supportsRestore() ? "访问令牌仅保存在当前页面，刷新后会尝试恢复浏览器会话。" : "凭证仅保存在当前页面，刷新或到期后需重新登录。"}</Paragraph>
         </Card>}
       </section></main>
@@ -173,7 +185,7 @@ function Console({ client }: { client: ManagementClient }) {
   </div>;
 }
 
-export function ManagementApp({ client }: { client: ManagementClient }) {
+export function ManagementApp({ client, accountSecurity = disabledSecurity }: { client: ManagementClient; accountSecurity?: AccountSecurityFeatures }) {
   return <ConfigProvider locale={zhCN} theme={{ token: {
     colorPrimary: "#245cca", colorPrimaryHover: "#1e4da8", colorPrimaryActive: "#163b85",
     colorTextSecondary: "#58677c", colorTextDescription: "#58677c", colorTextPlaceholder: "#58677c",
@@ -181,6 +193,6 @@ export function ManagementApp({ client }: { client: ManagementClient }) {
     colorSuccess: "#17663c", colorWarning: "#8a4b00",
     borderRadius: 8, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif',
   } }}>
-    <App><Console client={client} /></App>
+    <App><Console client={client} accountSecurity={accountSecurity} /></App>
   </ConfigProvider>;
 }

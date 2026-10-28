@@ -1,4 +1,4 @@
-use crate::admin_ui::{admin_console_router, try_admin_console_router};
+use crate::admin_ui::{try_admin_console_router_with_security, AccountSecurityUiConfig};
 use crate::composition_config::AppConfig;
 use crate::config::{SeedClientConfig, SeedConfidentialClientConfig};
 use crate::email_sender::AppEmailSenderProvider;
@@ -18,6 +18,12 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const BUSINESS_AUDIENCE: &str = "embedded-idp-business";
 const MANAGEMENT_CLIENT: &str = "idp-management";
+
+#[derive(Clone)]
+struct RecoveryServices {
+    start: Arc<dyn RecoveryStartService>,
+    completion: Arc<dyn RecoveryCompletionService>,
+}
 
 /// Reference-host policy: provisioning is opt-in, restricted by the configured
 /// login policy and live tenant checks. Production hosts inject their own admission.
@@ -87,6 +93,7 @@ impl ScanTargetPresentationProvider for RegisteredDevicePresentation {
 pub struct AppComposition {
     pub router: Router,
     pub scan_cleanup: Vec<crate::scan_cleanup::ScanCleanupJob>,
+    pub security_runtime: Option<crate::security_runtime::SecurityRuntimeJob>,
 }
 fn signing_key(path: &str) -> Result<RsaSigningKeyConfig, String> {
     let file = std::fs::File::open(path).map_err(|_| {
@@ -116,14 +123,32 @@ fn signing_key(path: &str) -> Result<RsaSigningKeyConfig, String> {
 
 pub fn build_composition(config: &AppConfig) -> Result<AppComposition, String> {
     config.validate_for_startup()?;
+    if config
+        .account_security
+        .as_ref()
+        .is_some_and(|s| s.recovery_email)
+        && !config
+            .email_delivery
+            .as_ref()
+            .is_some_and(|e| e.mode == crate::config::EmailDeliveryMode::Smtp)
+    {
+        return Err(
+            "runtime.account_security.recovery_email requires runtime.email.mode=smtp".into(),
+        );
+    }
+    let password_work = PasswordWorkBudget::default();
+    let login_http = AnonymousLoginBudget::default();
+    let abuse = Arc::new(
+        InMemoryAbuseAdmission::new_random(config.abuse.clone()).map_err(|e| e.to_string())?,
+    );
     let mut admission_providers = std::collections::BTreeMap::new();
     for provider in &config.device_admission_providers {
         admission_providers.insert(
             provider.id.clone(),
-            Arc::new(crate::device_admission::FileAdmission::load(
-                &provider.id,
-                &provider.grants_file,
-            )?),
+            Arc::new(
+                crate::device_admission::FileAdmission::load(&provider.id, &provider.grants_file)?
+                    .with_password_work_budget(password_work.clone()),
+            ),
         );
     }
     let mut scan_ciphers = std::collections::BTreeMap::new();
@@ -207,6 +232,97 @@ pub fn build_composition(config: &AppConfig) -> Result<AppComposition, String> {
         .map_err(|_| "invalid database configuration")?;
     // Online startup never creates, migrates or repairs identity data.
     let store = PostgresAccessStore::new(adapter.clone(), mode).map_err(|_| "database is not ready: prepare Access schema and bootstrap an administrator in the selected mode")?;
+    let self_sessions = Arc::new(CoreSelfSessionService::new(
+        mode,
+        store.clone(),
+        SystemClock,
+    ));
+    let (session_revocation, password_change, recovery, security_runtime): (
+        Option<Arc<dyn SelfSessionRevocationService>>,
+        Option<Arc<dyn SelfPasswordChangeService>>,
+        Option<RecoveryServices>,
+        Option<crate::security_runtime::SecurityRuntimeJob>,
+    ) = match &config.account_security {
+        Some(security) => {
+            let crypto = security.load_crypto()?;
+            adapter
+                .check_security_runtime(mode, &security.authority)
+                .map_err(|_| {
+                    "security runtime is not ready; run explicit security plan/apply/check"
+                })?;
+            let change = CoreSelfPasswordChangeService::new(
+                mode,
+                store.clone(),
+                SystemClock,
+                crypto.clone(),
+                UuidV7IdGenerator,
+                config.embedded_idp.auth.clone(),
+                password_work.clone(),
+            )
+            .map_err(|_| "invalid account security configuration")?;
+            let recovery = if security.recovery_email {
+                Some(RecoveryServices {
+                    start: Arc::new(CoreRecoveryStartService::new(
+                        mode,
+                        store.clone(),
+                        SystemClock,
+                        crypto.clone(),
+                        UuidV7IdGenerator,
+                    )),
+                    completion: Arc::new(
+                        CoreRecoveryCompletionService::new(
+                            mode,
+                            store.clone(),
+                            SystemClock,
+                            crypto.clone(),
+                            UuidV7IdGenerator,
+                            config.embedded_idp.auth.clone(),
+                            password_work.clone(),
+                        )
+                        .map_err(|_| "invalid recovery configuration")?,
+                    ),
+                })
+            } else {
+                None
+            };
+            let outbox = Arc::new(CoreSecurityOutboxService::new(
+                mode,
+                store.clone(),
+                SystemClock,
+                crypto.clone(),
+                UuidV7IdGenerator,
+            ));
+            let sender = if security.recovery_email {
+                let email = config
+                    .email_delivery
+                    .clone()
+                    .ok_or("missing recovery email configuration")?;
+                let executable =
+                    std::env::current_exe().map_err(|_| "cannot locate security email helper")?;
+                Some(Arc::new(
+                    crate::security_email::ProcessSecurityEmailSender::new(email, executable),
+                ))
+            } else {
+                None
+            };
+            (
+                Some(Arc::new(CoreSelfSessionRevocationService::new(
+                    mode,
+                    store.clone(),
+                    SystemClock,
+                    crypto,
+                    UuidV7IdGenerator,
+                ))),
+                Some(Arc::new(change)),
+                recovery,
+                Some(crate::security_runtime::SecurityRuntimeJob {
+                    service: outbox,
+                    sender,
+                }),
+            )
+        }
+        None => (None, None, None, None),
+    };
     let catalog = PermissionCatalog::new(vec![]).map_err(|_| "invalid host permission catalog")?;
     store
         .check_readiness(&catalog)
@@ -246,7 +362,8 @@ pub fn build_composition(config: &AppConfig) -> Result<AppComposition, String> {
     let access_admin = Arc::new(admin());
     let accounts = Arc::new(
         CoreAccountSecurityService::new(admin(), config.embedded_idp.auth.clone())
-            .map_err(|_| "invalid account security configuration")?,
+            .map_err(|_| "invalid account security configuration")?
+            .with_password_work_budget(password_work.clone()),
     );
     let admin_routes = role_admin_router(mode, access_admin.clone())
         .merge(role_binding_admin_router(mode, access_admin.clone()))
@@ -265,7 +382,7 @@ pub fn build_composition(config: &AppConfig) -> Result<AppComposition, String> {
         .merge(tenant_session_admin_router(mode, access_admin))
         .merge(client_admin_router(Arc::new(CoreClientAdminService::new(
             admin(),
-            PhcClientSecretCodec,
+            BudgetedClientSecretCodec::new(PhcClientSecretCodec, password_work.clone()),
         ))));
     let management_auth = |browser: bool| {
         let auth = CoreManagementAuthenticationService::new(
@@ -285,7 +402,8 @@ pub fn build_composition(config: &AppConfig) -> Result<AppComposition, String> {
             SystemClock,
             UuidV7IdGenerator,
         )
-        .map_err(|_| "invalid management login configuration")?;
+        .map_err(|_| "invalid management login configuration")?
+        .with_password_work_budget(password_work.clone());
         match browser_lifetime.filter(|_| config.reference_business.is_none()) {
             Some(ttl) => auth
                 .with_restricted_browser_isolation(ttl)
@@ -294,8 +412,35 @@ pub fn build_composition(config: &AppConfig) -> Result<AppComposition, String> {
         }
     };
     let management = Arc::new(management_auth(false)?);
-    let mut management_routes = management_router(management.clone(), admin_routes);
+    let mut management_routes = management_router(management.clone(), admin_routes).merge(
+        management_self_session_router(management.clone(), self_sessions.clone()),
+    );
+    if let Some(service) = &session_revocation {
+        management_routes = management_routes.merge(management_self_session_revocation_router(
+            management.clone(),
+            service.clone(),
+        ));
+    }
+    if let Some(service) = &password_change {
+        management_routes = management_routes.merge(management_self_password_change_router(
+            management.clone(),
+            service.clone(),
+        ));
+    }
+    if let Some(recovery) = &recovery {
+        management_routes = management_routes.merge(management_password_recovery_router(
+            recovery.start.clone(),
+            recovery.completion.clone(),
+        ));
+    }
     if let Some(http) = &management_http {
+        if let Some(recovery) = &recovery {
+            management_routes = management_routes.merge(browser_password_recovery_router(
+                recovery.start.clone(),
+                recovery.completion.clone(),
+                http.clone(),
+            ));
+        }
         let browser_management_service: Arc<dyn BrowserSessionService> = match browser_lifetime {
             Some(ttl) => Arc::new(
                 management_auth(true)?
@@ -304,12 +449,47 @@ pub fn build_composition(config: &AppConfig) -> Result<AppComposition, String> {
             ),
             None => management,
         };
+        let security_identity: Arc<dyn SelfSecurityBrowserIdentityService> = match browser_lifetime
+        {
+            Some(ttl) => Arc::new(
+                management_auth(true)?
+                    .into_restricted_browser(ttl)
+                    .map_err(|_| "invalid management browser lifetime")?,
+            ),
+            None => Arc::new(management_auth(false)?),
+        };
+        if let Some(service) = &session_revocation {
+            management_routes = management_routes.merge(browser_self_session_revocation_router(
+                security_identity.clone(),
+                service.clone(),
+                http.clone(),
+            )?);
+        }
+        if let Some(service) = &password_change {
+            management_routes = management_routes.merge(browser_self_password_change_router(
+                security_identity.clone(),
+                service.clone(),
+                http.clone(),
+            )?);
+        }
+        management_routes = management_routes.merge(browser_self_session_router(
+            security_identity,
+            self_sessions.clone(),
+            http.clone(),
+        )?);
         management_routes = management_routes.merge(browser_session_router(
             browser_management_service,
             http.clone(),
         )?);
     }
-    let mut router = health_router(store.clone(), catalog.clone());
+    let mut router = health_router(
+        store.clone(),
+        catalog.clone(),
+        config
+            .account_security
+            .as_ref()
+            .map(|security| (adapter.clone(), mode, security.authority.clone())),
+    );
     router = if config.management.mount_prefix.is_empty() {
         router.merge(management_routes)
     } else {
@@ -325,11 +505,22 @@ pub fn build_composition(config: &AppConfig) -> Result<AppComposition, String> {
         } else {
             &config.management.mount_prefix
         };
-        let ui = if config.reference_business.is_some() {
-            admin_console_router(base_path, browser_config)
-        } else {
-            try_admin_console_router(base_path, api_base, browser_config)?
-        };
+        let ui = try_admin_console_router_with_security(
+            base_path,
+            if config.reference_business.is_some() {
+                "/api"
+            } else {
+                api_base
+            },
+            browser_config,
+            AccountSecurityUiConfig {
+                enabled: config.account_security.is_some(),
+                recovery: config
+                    .account_security
+                    .as_ref()
+                    .is_some_and(|security| security.recovery_email),
+            },
+        )?;
         router = router.merge(ui);
     }
     let Some(reference) = &config.reference_business else {
@@ -345,6 +536,10 @@ pub fn build_composition(config: &AppConfig) -> Result<AppComposition, String> {
                 &key,
                 &admission_providers,
                 &scan_ciphers,
+                &password_work,
+                session_revocation.clone(),
+                password_change.clone(),
+                recovery.clone(),
             )?;
             if let Some(job) = cleanup {
                 scan_cleanup.push(job);
@@ -383,8 +578,9 @@ pub fn build_composition(config: &AppConfig) -> Result<AppComposition, String> {
                 .merge(oidc_metadata_router(config, jwks, etag));
         }
         return Ok(AppComposition {
-            router,
+            router: with_abuse_admission(with_anonymous_login_budget(router, login_http), abuse),
             scan_cleanup,
+            security_runtime,
         });
     };
     // The old reference business composition remains opt-in through its legacy input.
@@ -411,6 +607,7 @@ pub fn build_composition(config: &AppConfig) -> Result<AppComposition, String> {
             SystemClock,
             UuidV7IdGenerator,
         )
+        .map(|auth| auth.with_password_work_budget(password_work.clone()))
         .map_err(|_| "invalid business login configuration".to_string())
     };
     let proofs = || {
@@ -471,7 +668,7 @@ pub fn build_composition(config: &AppConfig) -> Result<AppComposition, String> {
             config.embedded_idp.issuer.clone(),
             config.embedded_idp.oidc.clone(),
             "openid profile email".into(),
-            PhcClientSecretCodec,
+            BudgetedClientSecretCodec::new(PhcClientSecretCodec, password_work.clone()),
         )
         .map_err(|_| "invalid OIDC configuration".to_string())
     };
@@ -483,7 +680,8 @@ pub fn build_composition(config: &AppConfig) -> Result<AppComposition, String> {
         UuidV7IdGenerator,
         NumericVerificationCodeGenerator,
     )
-    .map_err(|_| "invalid registration configuration")?;
+    .map_err(|_| "invalid registration configuration")?
+    .with_password_work_budget(password_work.clone());
     let email_config = config
         .email_delivery
         .as_ref()
@@ -512,7 +710,43 @@ pub fn build_composition(config: &AppConfig) -> Result<AppComposition, String> {
         ),
         None => Arc::new(auth(false)?),
     };
-    let browser_business = browser_session_router(browser_business_service, business_http.clone())?;
+    let security_identity: Arc<dyn SelfSecurityBrowserIdentityService> = match browser_lifetime {
+        Some(ttl) => Arc::new(
+            auth(true)?
+                .into_restricted_browser(ttl)
+                .map_err(|_| "invalid browser lifetime")?,
+        ),
+        None => Arc::new(auth(false)?),
+    };
+    let mut browser_business =
+        browser_session_router(browser_business_service, business_http.clone())?.merge(
+            browser_self_session_router(
+                security_identity.clone(),
+                self_sessions.clone(),
+                business_http.clone(),
+            )?,
+        );
+    if let Some(service) = &session_revocation {
+        browser_business = browser_business.merge(browser_self_session_revocation_router(
+            security_identity.clone(),
+            service.clone(),
+            business_http.clone(),
+        )?);
+    }
+    if let Some(service) = &password_change {
+        browser_business = browser_business.merge(browser_self_password_change_router(
+            security_identity,
+            service.clone(),
+            business_http.clone(),
+        )?);
+    }
+    if let Some(recovery) = &recovery {
+        browser_business = browser_business.merge(browser_password_recovery_router(
+            recovery.start.clone(),
+            recovery.completion.clone(),
+            business_http.clone(),
+        ));
+    }
     let scan_service: Option<Arc<dyn TenantDeviceScanLoginService>> = match &reference.scan_login {
         None => None,
         Some(scan) => {
@@ -532,7 +766,8 @@ pub fn build_composition(config: &AppConfig) -> Result<AppComposition, String> {
                 SystemClock,
                 UuidV7IdGenerator,
             )
-            .map_err(|_| "invalid reference scan-login target authentication")?;
+            .map_err(|_| "invalid reference scan-login target authentication")?
+            .with_password_work_budget(password_work.clone());
             let cipher = RingScanResultCipher::new(
                 ScanResultKeyring::new(
                     scan.result_key_id.clone(),
@@ -589,10 +824,39 @@ pub fn build_composition(config: &AppConfig) -> Result<AppComposition, String> {
             .map_err(|_| "invalid OIDC routes")?,
     ))
     .merge(tenant_oidc_resource_router(Arc::new(oidc()?)));
-    let public = public.merge(tenant_self_router(
-        Arc::new(auth(false)?),
-        Arc::new(CoreAccessService::new(mode, catalog.clone(), store.clone())),
-    ));
+    let public = if let Some(service) = &session_revocation {
+        public.merge(self_session_revocation_router(
+            Arc::new(auth(false)?),
+            service.clone(),
+        ))
+    } else {
+        public
+    };
+    let public = if let Some(service) = &password_change {
+        public.merge(self_password_change_router(
+            Arc::new(auth(false)?),
+            service.clone(),
+        ))
+    } else {
+        public
+    };
+    let public = if let Some(recovery) = &recovery {
+        public.merge(password_recovery_router(
+            recovery.start.clone(),
+            recovery.completion.clone(),
+        ))
+    } else {
+        public
+    };
+    let public = public
+        .merge(self_session_router(
+            Arc::new(auth(false)?),
+            self_sessions.clone(),
+        ))
+        .merge(tenant_self_router(
+            Arc::new(auth(false)?),
+            Arc::new(CoreAccessService::new(mode, catalog.clone(), store.clone())),
+        ));
     let public = if let Some(service) = scan_service.clone() {
         let host = TrustedScanHostContext::new(
             "reference-host".into(),
@@ -627,10 +891,17 @@ pub fn build_composition(config: &AppConfig) -> Result<AppComposition, String> {
         public
     };
     Ok(AppComposition {
-        router: router
-            .merge(oidc_metadata_router(config, jwks, etag))
-            .merge(public)
-            .merge(browser_business),
+        router: with_abuse_admission(
+            with_anonymous_login_budget(
+                router
+                    .merge(oidc_metadata_router(config, jwks, etag))
+                    .merge(public)
+                    .merge(browser_business),
+                login_http,
+            ),
+            abuse,
+        ),
+        security_runtime,
         scan_cleanup: scan_service
             .into_iter()
             .map(|service| crate::scan_cleanup::ScanCleanupJob {
@@ -683,6 +954,10 @@ fn ordinary_business_routes(
         Arc<crate::device_admission::FileAdmission>,
     >,
     scan_ciphers: &std::collections::BTreeMap<String, Arc<RingScanResultCipher>>,
+    password_work: &PasswordWorkBudget,
+    session_revocation: Option<Arc<dyn SelfSessionRevocationService>>,
+    password_change: Option<Arc<dyn SelfPasswordChangeService>>,
+    recovery: Option<RecoveryServices>,
 ) -> Result<
     (
         Router,
@@ -691,6 +966,11 @@ fn ordinary_business_routes(
     ),
     String,
 > {
+    let self_sessions = Arc::new(CoreSelfSessionService::new(
+        config.tenancy_mode,
+        store.clone(),
+        SystemClock,
+    ));
     let browser_http = entry
         .browser
         .as_ref()
@@ -736,7 +1016,8 @@ fn ordinary_business_routes(
             SystemClock,
             UuidV7IdGenerator,
         )
-        .map_err(|_| "invalid business login configuration".to_string())?;
+        .map_err(|_| "invalid business login configuration".to_string())?
+        .with_password_work_budget(password_work.clone());
         match browser_ttl {
             Some(ttl) => auth
                 .with_restricted_browser_isolation(ttl)
@@ -802,7 +1083,7 @@ fn ordinary_business_routes(
         config.embedded_idp.issuer.clone(),
         config.embedded_idp.oidc.clone(),
         "openid profile email".into(),
-        PhcClientSecretCodec,
+        BudgetedClientSecretCodec::new(PhcClientSecretCodec, password_work.clone()),
     )
     .map_err(|_| "invalid business logout configuration")?;
     let oidc = if entry.oidc_enabled {
@@ -812,7 +1093,7 @@ fn ordinary_business_routes(
                 config.embedded_idp.issuer.clone(),
                 config.embedded_idp.oidc.clone(),
                 "openid profile email".into(),
-                PhcClientSecretCodec,
+                BudgetedClientSecretCodec::new(PhcClientSecretCodec, password_work.clone()),
             )
             .map(|s| s.with_required_s256_pkce())
             .map_err(|_| "invalid business OIDC configuration".to_string())
@@ -871,8 +1152,24 @@ fn ordinary_business_routes(
     } else {
         tenant_auth_router(service.clone()).merge(tenant_refresh_router(service.clone()))
     };
+    if let Some(revocation) = &session_revocation {
+        routes = routes.merge(self_session_revocation_router(
+            service.clone(),
+            revocation.clone(),
+        ));
+    }
+    if let Some(change) = &password_change {
+        routes = routes.merge(self_password_change_router(service.clone(), change.clone()));
+    }
+    if let Some(recovery) = &recovery {
+        routes = routes.merge(password_recovery_router(
+            recovery.start.clone(),
+            recovery.completion.clone(),
+        ));
+    }
     routes = routes
         .merge(tenant_logout_router(Arc::new(logout)))
+        .merge(self_session_router(service.clone(), self_sessions.clone()))
         .merge(tenant_self_router(
             service,
             Arc::new(CoreAccessService::new(
@@ -954,7 +1251,42 @@ fn ordinary_business_routes(
             ),
             None => Arc::new(auth(false)?),
         };
-        routes = routes.merge(browser_session_router(browser_service, http)?);
+        let security_identity: Arc<dyn SelfSecurityBrowserIdentityService> = match browser_ttl {
+            Some(ttl) => Arc::new(
+                auth(true)?
+                    .into_restricted_browser(ttl)
+                    .map_err(|_| "invalid browser lifetime")?,
+            ),
+            None => Arc::new(auth(false)?),
+        };
+        if let Some(revocation) = &session_revocation {
+            routes = routes.merge(browser_self_session_revocation_router(
+                security_identity.clone(),
+                revocation.clone(),
+                http.clone(),
+            )?);
+        }
+        if let Some(change) = &password_change {
+            routes = routes.merge(browser_self_password_change_router(
+                security_identity.clone(),
+                change.clone(),
+                http.clone(),
+            )?);
+        }
+        if let Some(recovery) = &recovery {
+            routes = routes.merge(browser_password_recovery_router(
+                recovery.start.clone(),
+                recovery.completion.clone(),
+                http.clone(),
+            ));
+        }
+        routes = routes
+            .merge(browser_self_session_router(
+                security_identity,
+                self_sessions.clone(),
+                http.clone(),
+            )?)
+            .merge(browser_session_router(browser_service, http)?);
     }
     if entry.registration_enabled {
         let mut registration_config = config.embedded_idp.auth.clone();
@@ -967,7 +1299,8 @@ fn ordinary_business_routes(
             UuidV7IdGenerator,
             NumericVerificationCodeGenerator,
         )
-        .map_err(|_| "invalid registration configuration")?;
+        .map_err(|_| "invalid registration configuration")?
+        .with_password_work_budget(password_work.clone());
         let email_config = config
             .email_delivery
             .as_ref()
@@ -988,7 +1321,11 @@ fn ordinary_business_routes(
     Ok((routes, oidc, cleanup))
 }
 
-fn health_router(store: PostgresAccessStore, catalog: PermissionCatalog) -> Router {
+fn health_router(
+    store: PostgresAccessStore,
+    catalog: PermissionCatalog,
+    security: Option<(PostgresStorageAdapter, TenancyMode, String)>,
+) -> Router {
     Router::new()
         .route("/healthz", get(|| async { Json(json!({"status":"ok"})) }))
         .route(
@@ -996,8 +1333,16 @@ fn health_router(store: PostgresAccessStore, catalog: PermissionCatalog) -> Rout
             get(move || {
                 let store = store.clone();
                 let catalog = catalog.clone();
+                let security = security.clone();
                 async move {
-                    match tokio::task::spawn_blocking(move || store.check_readiness(&catalog)).await
+                    match tokio::task::spawn_blocking(move || {
+                        store.check_readiness(&catalog)?;
+                        if let Some((adapter, mode, authority)) = security {
+                            adapter.check_security_runtime(mode, &authority)?;
+                        }
+                        Ok::<(), embedded_idp_core::StoreError>(())
+                    })
+                    .await
                     {
                         Ok(Ok(())) => (StatusCode::OK, Json(json!({"status":"ready"}))),
                         _ => (

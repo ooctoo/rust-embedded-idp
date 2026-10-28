@@ -165,6 +165,75 @@ fn tenant_code_keeps_scope_and_source_and_rolls_back_failed_issuance() {
     assert!(auth.authenticate(selected.tokens.access_token).is_ok());
 }
 
+#[test]
+fn confidential_code_exchange_budget_rejection_preserves_code_and_session_state() {
+    use crate::{BudgetedClientSecretCodec, PasswordWorkBudget};
+
+    let s = seed();
+    s.0.lock().unwrap().confidential_client = true;
+    let policy = LoginTenantPolicy::Fixed {
+        tenant_id: "t1".into(),
+    };
+    let auth = svc(policy.clone(), s.clone());
+    let TenantLoginOutcome::Authenticated(initial) = auth.login(login()).unwrap() else {
+        panic!()
+    };
+    let budget = PasswordWorkBudget::default();
+    let oidc = CoreTenantOidcService::new(
+        svc(policy, s.clone()),
+        "https://idp.example.test".into(),
+        OidcConfig {
+            authorization_code_ttl_secs: 60,
+            require_pkce_for_public_clients: true,
+        },
+        "openid profile".into(),
+        BudgetedClientSecretCodec::new(Secrets, budget.clone()),
+    )
+    .unwrap();
+    let actor = AccessActor {
+        tenant_id: "t1".into(),
+        subject_id: "a".into(),
+        session_id: initial.session.id,
+    };
+    let request = TenantAuthorizationRequest {
+        response_type: "code".into(),
+        client_id: "web".into(),
+        redirect_uri: "https://client.test/callback".into(),
+        scope: "openid".into(),
+        state: None,
+        nonce: None,
+        code_challenge: Some("a".repeat(43)),
+        code_challenge_method: Some(PkceChallengeMethod::Plain),
+    };
+    let grant = oidc.authorize(actor, request.clone()).unwrap();
+    let command = TenantCodeExchange {
+        grant_type: "authorization_code".into(),
+        client_id: "web".into(),
+        code: grant.code.clone(),
+        redirect_uri: request.redirect_uri,
+        client_secret: Some(SecretString::new("synthetic-secret")),
+        code_verifier: Some(SecretString::new("a".repeat(43))),
+    };
+    let permits: Vec<_> = (0..4).map(|_| budget.try_login().unwrap()).collect();
+    assert!(matches!(
+        oidc.exchange(command.clone()),
+        Err(TenantAuthError::Store(StoreError::Backend(message)))
+            if message == "password.work_unavailable"
+    ));
+    {
+        let data = s.0.lock().unwrap();
+        assert_eq!(data.sessions.len(), 1);
+        assert_eq!(data.authorizations.len(), 1);
+        assert!(data.authorizations[0].consumed_at.is_none());
+    }
+
+    drop(permits);
+    assert!(oidc.exchange(command).unwrap().id_token.is_some());
+    let data = s.0.lock().unwrap();
+    assert_eq!(data.sessions.len(), 2);
+    assert!(data.authorizations[0].consumed_at.is_some());
+}
+
 impl TenantOidcResourceTransaction for T<'_> {
     fn user_profile(
         &mut self,
@@ -284,6 +353,64 @@ fn resource_introspection_authenticates_inactive_tokens_and_logout_is_scoped_ato
         .refreshes
         .iter()
         .all(|r| r.revocation_reason == Some(RefreshTokenRevocationReason::Logout)));
+}
+
+#[test]
+fn confidential_resource_budget_rejection_does_not_revoke_session_or_refresh_family() {
+    use crate::{BudgetedClientSecretCodec, PasswordWorkBudget};
+
+    let s = seed();
+    s.0.lock().unwrap().confidential_client = true;
+    let auth = svc(
+        LoginTenantPolicy::Fixed {
+            tenant_id: "t1".into(),
+        },
+        s.clone(),
+    );
+    let TenantLoginOutcome::Authenticated(initial) = auth.login(login()).unwrap() else {
+        panic!()
+    };
+    let budget = PasswordWorkBudget::default();
+    let oidc = CoreTenantOidcService::new(
+        svc(
+            LoginTenantPolicy::Fixed {
+                tenant_id: "t1".into(),
+            },
+            s.clone(),
+        ),
+        "https://idp.example.test".into(),
+        OidcConfig {
+            authorization_code_ttl_secs: 60,
+            require_pkce_for_public_clients: true,
+        },
+        "openid profile email".into(),
+        BudgetedClientSecretCodec::new(Secrets, budget.clone()),
+    )
+    .unwrap();
+    let command = resource_request(initial.tokens.access_token.clone());
+    let permits: Vec<_> = (0..4).map(|_| budget.try_login().unwrap()).collect();
+    assert!(matches!(
+        oidc.revoke_token(command.clone()),
+        Err(TenantAuthError::Store(StoreError::Backend(message)))
+            if message == "password.work_unavailable"
+    ));
+    {
+        let data = s.0.lock().unwrap();
+        assert_eq!(data.sessions[0].status, SessionStatus::Active);
+        assert!(data
+            .refreshes
+            .iter()
+            .all(|record| record.revoked_at.is_none()));
+    }
+
+    drop(permits);
+    oidc.revoke_token(command).unwrap();
+    let data = s.0.lock().unwrap();
+    assert_eq!(data.sessions[0].status, SessionStatus::Revoked);
+    assert!(data
+        .refreshes
+        .iter()
+        .all(|record| record.revoked_at.is_some()));
 }
 #[test]
 fn userinfo_rechecks_identity_and_releases_only_scope_authorized_claims() {

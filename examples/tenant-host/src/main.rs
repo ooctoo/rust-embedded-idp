@@ -128,6 +128,7 @@ pub(crate) fn management_auth(
     .map_err(|_| "invalid management entry".into())
 }
 fn build_app(config: &Config) -> Result<Router, String> {
+    let password_work = embedded_idp_core::PasswordWorkBudget::default();
     fixtures::verify_marker(config)?;
     let store = config.store()?;
     let catalog = PermissionCatalog::new(vec![]).map_err(|_| "invalid catalog")?;
@@ -181,16 +182,20 @@ fn build_app(config: &Config) -> Result<Router, String> {
             }),
         );
     for entry in ["fixed", "choose"] {
-        let auth = Arc::new(business_auth(config, &store, &key, entry)?);
+        let auth = Arc::new(
+            business_auth(config, &store, &key, entry)?
+                .with_password_work_budget(password_work.clone()),
+        );
         let logout = CoreTenantOidcService::new(
-            business_auth(config, &store, &key, entry)?,
+            business_auth(config, &store, &key, entry)?
+                .with_password_work_budget(password_work.clone()),
             config.issuer.clone(),
             OidcConfig {
                 authorization_code_ttl_secs: 300,
                 require_pkce_for_public_clients: true,
             },
             "openid profile email".into(),
-            PhcClientSecretCodec,
+            BudgetedClientSecretCodec::new(PhcClientSecretCodec, password_work.clone()),
         )
         .map_err(|_| "invalid logout service")?;
         let http = BrowserSessionHttpConfig::new(
@@ -218,7 +223,9 @@ fn build_app(config: &Config) -> Result<Router, String> {
         app = app.nest(&format!("/{entry}"), routes);
     }
     if config.management_enabled {
-        let auth = Arc::new(management_auth(config, &store, &key)?);
+        let auth = Arc::new(
+            management_auth(config, &store, &key)?.with_password_work_budget(password_work.clone()),
+        );
         let admin = Arc::new(CoreAccessAdminService::new(
             TenancyMode::Enabled,
             catalog,
@@ -242,7 +249,14 @@ fn build_app(config: &Config) -> Result<Router, String> {
             .merge(browser_session_router(auth, http)?),
         );
     }
-    Ok(app)
+    let abuse = Arc::new(
+        InMemoryAbuseAdmission::new_random(AdmissionPolicy::default())
+            .map_err(|e| e.to_string())?,
+    );
+    Ok(with_abuse_admission(
+        with_anonymous_login_budget(app, AnonymousLoginBudget::default()),
+        abuse,
+    ))
 }
 async fn index() -> Response {
     static_file("index.html", "text/html; charset=utf-8").await
@@ -286,7 +300,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(async move {
                 let listener=tokio::net::TcpListener::bind(config.bind_addr).await?;
                 println!("A05 tenant host listening on {}",listener.local_addr()?);
-                axum::serve(listener,app).await
+                axum::serve(listener,app.into_make_service_with_connect_info::<std::net::SocketAddr>()).await
             })?;
         },
         Some(action)=>fixtures::run(&config,action,&args[1..])?,

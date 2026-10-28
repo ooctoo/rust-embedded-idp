@@ -844,3 +844,30 @@ mod audit;
 
 #[path = "access_admin/list_order.rs"]
 mod list_order;
+
+#[path = "access_admin/security_foundation.rs"]
+mod security_foundation;
+
+#[path = "access_admin/security_runtime.rs"]
+mod security_runtime;
+
+#[path = "access_admin/self_sessions.rs"]
+mod self_sessions;
+
+#[path = "access_admin/self_session_revocation.rs"]
+mod self_session_revocation;
+
+#[path = "access_admin/self_password_change.rs"]
+mod self_password_change;
+
+#[path = "access_admin/self_password_change_login_races.rs"]
+mod self_password_change_login_races;
+
+#[path = "access_admin/recovery_start.rs"]
+mod recovery_start;
+
+#[path = "access_admin/recovery_completion.rs"]
+mod recovery_completion;
+
+#[path = "access_admin/security_outbox.rs"]
+mod security_outbox;

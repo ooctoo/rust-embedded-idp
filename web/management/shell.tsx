@@ -22,9 +22,9 @@ function pageDialogOpen() {
     element.getClientRects().length > 0 && !element.closest(".management-navigation-drawer, .management-identity-dialog"));
 }
 
-export function ManagementShell({ client, busy, verifiedAt, notices, verify, logout, switchTenant }: {
+export function ManagementShell({ client, busy, verifiedAt, notices, verify, logout, switchTenant, openSecurity }: {
   client: ManagementClient; busy: boolean; verifiedAt?: string; notices: React.ReactNode;
-  verify: () => void; logout: () => void; switchTenant: () => void;
+  verify: () => void; logout: () => void; switchTenant: () => void; openSecurity?: () => void;
 }) {
   const { capabilities, session } = client.getSnapshot();
   const caps = capabilities!, identity = session!;
@@ -97,7 +97,8 @@ export function ManagementShell({ client, busy, verifiedAt, notices, verify, log
     <a href="#management-content" className="management-skip" onClick={event => { event.preventDefault(); heading.current?.focus(); }}>跳过导航</a>
     <header className="management-shell-header">
       <div className="management-shell-brand"><Button className="management-menu-toggle" aria-haspopup="dialog" aria-expanded={menuOpen} aria-controls={menuOpen ? "management-mobile-navigation" : undefined} onClick={() => setMenuOpen(true)}>菜单</Button><strong>IDP · 身份管理</strong></div>
-      <Space wrap><span>登录范围：{loginScope}</span><Button aria-haspopup="dialog" aria-expanded={identityOpen} onClick={() => setIdentityOpen(true)}>当前会话</Button>
+      <Space wrap><span>登录范围：{loginScope}</span>
+        {openSecurity && <Button disabled={busy} onClick={() => { if (canLeave()) openSecurity(); }}>我的安全</Button>}<Button aria-haspopup="dialog" aria-expanded={identityOpen} onClick={() => setIdentityOpen(true)}>当前会话</Button>
         {client.canChoose() && <Button disabled={busy} onClick={() => { if (canLeave()) switchTenant(); }}>切换登录租户</Button>}
         <Button disabled={busy} onClick={() => { if (canLeave()) logout(); }}>退出登录</Button></Space>
     </header>

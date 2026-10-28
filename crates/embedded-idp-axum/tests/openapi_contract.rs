@@ -2,8 +2,15 @@
 use axum::{
     body::{to_bytes, Body},
     http::Request,
+    Router,
 };
-use embedded_idp_axum::{openapi::business_document, tenant_auth_router};
+use embedded_idp_axum::{
+    openapi::{
+        business_document, business_profile, business_profile_with_account_security,
+        business_profile_with_recovery,
+    },
+    tenant_auth_router,
+};
 use embedded_idp_core::{access::*, SecretString};
 use serde_json::{json, Value};
 use std::{collections::BTreeSet, sync::Arc};
@@ -20,6 +27,14 @@ fn generated_contract_is_current_and_references_resolve() {
     );
     let value = serde_json::to_value(document).unwrap();
     assert_eq!(value["openapi"], "3.1.0");
+    for path in ["/auth/login", "/auth/browser/login", "/auth/register"] {
+        assert_eq!(
+            value["paths"][path]["post"]["responses"]["503"]["content"]["application/json"]
+                ["schema"]["$ref"],
+            "#/components/schemas/Error",
+            "conditional password work capacity response missing for {path}"
+        );
+    }
     let mut ids = BTreeSet::new();
     let inventory = include_str!("../../../docs/api/route-inventory.md");
     for (path, item) in value["paths"].as_object().unwrap() {
@@ -28,7 +43,7 @@ fn generated_contract_is_current_and_references_resolve() {
             assert!(ids.insert(op["operationId"].as_str().unwrap()));
         }
     }
-    assert_eq!(ids.len(), 17);
+    assert_eq!(ids.len(), 33);
     fn refs(v: &Value, root: &Value) {
         match v {
             Value::Object(map) => {
@@ -54,6 +69,338 @@ fn generated_contract_is_current_and_references_resolve() {
             .get("refresh_token")
             .is_none()
     );
+}
+
+#[test]
+fn password_change_contract_is_conditional_and_matches_http_error_boundary() {
+    let value = serde_json::to_value(business_document()).unwrap();
+    let paths = [
+        (
+            "/auth/security/password",
+            "businessSelfPasswordChange",
+            "SelfPasswordChange",
+        ),
+        (
+            "/auth/security/password/result",
+            "businessSelfPasswordChangeResult",
+            "SelfPasswordChangeResult",
+        ),
+        (
+            "/auth/browser/security/password",
+            "browserSelfPasswordChange",
+            "BrowserSelfPasswordChange",
+        ),
+        (
+            "/auth/browser/security/password/result",
+            "browserSelfPasswordChangeResult",
+            "SelfPasswordChangeResult",
+        ),
+    ];
+    for (path, id, request_schema) in paths {
+        let operation = &value["paths"][path]["post"];
+        assert_eq!(operation["operationId"], id);
+        assert_eq!(
+            operation["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+            format!("#/components/schemas/{request_schema}")
+        );
+        assert_eq!(
+            operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/SelfPasswordChangeCompleted"
+        );
+        for code in ["400", "401", "403", "409", "413", "500", "503"] {
+            assert_eq!(
+                operation["responses"][code]["content"]["application/json"]["schema"]["$ref"],
+                "#/components/schemas/Error",
+                "{path} {code}"
+            );
+            assert_eq!(
+                operation["responses"][code]["headers"]["Cache-Control"]["schema"]["enum"][0],
+                "no-store"
+            );
+        }
+        for code in ["415", "422"] {
+            assert!(
+                operation["responses"].get(code).is_none(),
+                "{path} must normalize JSON rejection to 400"
+            );
+        }
+        if path.contains("/browser/") {
+            for response in operation["responses"].as_object().unwrap().values() {
+                assert!(response["headers"].get("Set-Cookie").is_none());
+            }
+        }
+        assert!(operation["description"]
+            .as_str()
+            .unwrap()
+            .contains("none sets or clears cookies"));
+    }
+    let command = &value["components"]["schemas"]["SelfPasswordChange"];
+    assert_eq!(command["additionalProperties"], false);
+    assert_eq!(
+        command["required"],
+        json!([
+            "current_password",
+            "new_password",
+            "operation_id",
+            "receipt_secret"
+        ])
+    );
+    assert_eq!(
+        command["properties"]["operation_id"]["description"],
+        "Canonical lowercase non-nil UUID."
+    );
+    assert_eq!(command["properties"]["receipt_secret"]["minLength"], 43);
+    assert_eq!(command["properties"]["receipt_secret"]["maxLength"], 43);
+    let browser_command = &value["components"]["schemas"]["BrowserSelfPasswordChange"];
+    assert_eq!(
+        browser_command["properties"]["expected"]["$ref"],
+        "#/components/schemas/SelfSessionIdentity"
+    );
+    let result = &value["components"]["schemas"]["SelfPasswordChangeResult"];
+    assert_eq!(
+        result["required"],
+        json!(["operation_id", "receipt_secret"])
+    );
+    assert!(result["properties"].get("current_password").is_none());
+    assert!(result["properties"].get("new_password").is_none());
+
+    let legacy = serde_json::to_value(business_profile("/", false, true, false, "cookie")).unwrap();
+    assert!(legacy["paths"].get("/auth/security/password").is_none());
+    let security_without_browser = serde_json::to_value(business_profile_with_account_security(
+        "/", false, false, false, true, "cookie",
+    ))
+    .unwrap();
+    assert!(security_without_browser["paths"]
+        .get("/auth/security/password")
+        .is_some());
+    assert!(security_without_browser["paths"]
+        .get("/auth/security/password/result")
+        .is_some());
+    assert!(security_without_browser["paths"]
+        .get("/auth/browser/security/password")
+        .is_none());
+    let security_with_browser = serde_json::to_value(business_profile_with_account_security(
+        "/", false, true, false, true, "cookie",
+    ))
+    .unwrap();
+    assert!(security_with_browser["paths"]
+        .get("/auth/browser/security/password")
+        .is_some());
+    assert!(security_with_browser["paths"]
+        .get("/auth/browser/security/password/result")
+        .is_some());
+}
+
+#[test]
+fn self_session_contract_matches_http_routes_and_exact_projections() {
+    let document = business_document();
+    let value = serde_json::to_value(document).unwrap();
+    let business = &value["paths"]["/auth/security/sessions"]["get"];
+    assert_eq!(business["operationId"], "businessSelfSessions");
+    assert_eq!(business["security"], json!([{"Bearer":[]} ]));
+    assert_eq!(
+        business["parameters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|parameter| parameter["name"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["limit", "cursor"]
+    );
+    assert_eq!(business["parameters"][0]["schema"]["minimum"], 1);
+    assert_eq!(business["parameters"][0]["schema"]["maximum"], 50);
+    assert_eq!(business["parameters"][1]["schema"]["maxLength"], 1024);
+    assert!(business["description"]
+        .as_str()
+        .unwrap()
+        .contains("scope=null"));
+    assert!(business["description"]
+        .as_str()
+        .unwrap()
+        .contains("including delegated scope-bearing sessions"));
+
+    let browser = &value["paths"]["/auth/browser/security/sessions"]["post"];
+    assert_eq!(browser["operationId"], "browserSelfSessions");
+    assert_eq!(
+        browser["security"],
+        json!([{"Origin":[],"BrowserHeader":[],"RefreshCookie":[]}])
+    );
+    assert_eq!(
+        browser["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/SelfSessionRead"
+    );
+    assert_eq!(
+        value["components"]["schemas"]["SelfSessionRead"]["required"],
+        json!(["expected"])
+    );
+    assert_eq!(
+        value["components"]["schemas"]["SelfSessionRead"]["additionalProperties"],
+        false
+    );
+    assert_eq!(
+        value["components"]["schemas"]["SelfSessionRead"]["properties"]["limit"]["maximum"],
+        50
+    );
+    assert_eq!(
+        value["components"]["schemas"]["SelfSessionRead"]["properties"]["cursor"]["maxLength"],
+        1024
+    );
+
+    let item = &value["components"]["schemas"]["SelfSession"];
+    let item_fields = item["properties"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        item_fields,
+        BTreeSet::from([
+            "tenant_id",
+            "session_id",
+            "client_id",
+            "purpose",
+            "device_id",
+            "created_at",
+            "expires_at",
+            "status",
+            "current"
+        ])
+    );
+    assert_eq!(item["required"].as_array().unwrap().len(), 9);
+    assert_eq!(
+        item["properties"]["device_id"]["type"],
+        json!(["string", "null"])
+    );
+    for timestamp in ["created_at", "expires_at"] {
+        assert_eq!(item["properties"][timestamp]["type"], "integer");
+        assert_eq!(item["properties"][timestamp]["minimum"], 0);
+    }
+    assert_eq!(
+        value["components"]["schemas"]["SelfSessionPurpose"]["enum"],
+        json!(["business", "management"])
+    );
+    assert_eq!(
+        value["components"]["schemas"]["SelfSessionStatus"]["enum"],
+        json!(["active", "expired"])
+    );
+    assert!(value["components"]["schemas"]["SelfSession"]
+        .get("scope")
+        .is_none());
+    assert!(value["components"]["schemas"]["SelfSession"]
+        .get("refresh_token")
+        .is_none());
+
+    for operation in [business, browser] {
+        assert_eq!(
+            operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/SelfSessionPage"
+        );
+        for response in operation["responses"].as_object().unwrap().values() {
+            assert_eq!(
+                response["headers"]["Cache-Control"]["schema"]["enum"][0],
+                "no-store"
+            );
+        }
+    }
+    assert_eq!(
+        browser["responses"]["413"]["content"]["text/plain"]["schema"]["type"],
+        "string"
+    );
+    assert!(browser["responses"]["200"]["headers"]
+        .get("Set-Cookie")
+        .is_none());
+    assert!(value["paths"]
+        .get("/admin/auth/security/sessions")
+        .is_none());
+    assert!(value["paths"]
+        .get("/admin/auth/browser/security/sessions")
+        .is_none());
+
+    let bearer_source = include_str!("../src/self_sessions.rs");
+    assert!(bearer_source.contains("/auth/security/sessions"));
+    assert!(bearer_source.contains("/admin/auth/security/sessions"));
+    let browser_source = include_str!("../src/browser_session/self_sessions.rs");
+    assert!(browser_source.contains("/security/sessions"));
+    assert!(browser_source.contains("authenticate_self_security_browser"));
+    assert!(browser_source.contains("DefaultBodyLimit::max(AUTH_DEVICE_BODY_LIMIT_BYTES)"));
+    let inventory = include_str!("../../../docs/api/route-inventory.md");
+    let dedicated = include_str!("../../../docs/api/self-session-contract.md");
+    for route in [
+        "/auth/security/sessions",
+        "/auth/browser/security/sessions",
+        "/admin/auth/security/sessions",
+        "/admin/auth/browser/security/sessions",
+    ] {
+        assert!(
+            dedicated.contains(route),
+            "dedicated contract missing {route}"
+        );
+    }
+    assert!(inventory.contains("/admin/auth/security/sessions"));
+    assert!(inventory.contains("/admin/auth/browser/security/sessions"));
+}
+
+#[test]
+fn self_session_revocation_contract_projects_capability_results_and_no_cookie_mutation() {
+    let value = serde_json::to_value(business_document()).unwrap();
+    for (path, id, schema, security) in [
+        (
+            "/auth/security/sessions/revoke",
+            "businessRevokeSelfSession",
+            "SelfSessionRevoke",
+            json!([{"Bearer":[]} ]),
+        ),
+        (
+            "/auth/security/sessions/revoke/result",
+            "businessSelfSessionRevokeResult",
+            "SelfSessionRevokeResult",
+            json!([]),
+        ),
+        (
+            "/auth/browser/security/sessions/revoke",
+            "browserRevokeSelfSession",
+            "BrowserSelfSessionRevoke",
+            json!([{"Origin":[],"BrowserHeader":[],"RefreshCookie":[]} ]),
+        ),
+        (
+            "/auth/browser/security/sessions/revoke/result",
+            "browserSelfSessionRevokeResult",
+            "SelfSessionRevokeResult",
+            json!([{"Origin":[],"BrowserHeader":[]} ]),
+        ),
+    ] {
+        let op = &value["paths"][path]["post"];
+        assert_eq!(op["operationId"], id);
+        assert_eq!(op["security"], security);
+        assert_eq!(op["requestBody"]["required"], true);
+        assert_eq!(
+            op["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+            format!("#/components/schemas/{schema}")
+        );
+        assert_eq!(
+            op["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/SelfSessionRevokeCompleted"
+        );
+        assert_eq!(
+            op["responses"]["200"]["headers"]["Cache-Control"]["schema"]["enum"][0],
+            "no-store"
+        );
+        assert!(op["responses"]["200"]["headers"]
+            .get("Set-Cookie")
+            .is_none());
+    }
+    assert_eq!(
+        value["components"]["schemas"]["SelfSessionRevokeResult"]["additionalProperties"],
+        false
+    );
+    assert_eq!(
+        value["components"]["schemas"]["SelfSessionRevokeResult"]["required"],
+        json!(["operation_id", "receipt_secret"])
+    );
+    assert!(value["paths"]
+        .get("/admin/auth/security/sessions/revoke")
+        .is_none());
 }
 
 #[test]
@@ -115,6 +462,25 @@ fn shared_oidc_contract_is_current_complete_and_separate_from_business_entries()
         .get("device_provision_endpoint")
         .is_none());
     let token = &value["paths"]["/oidc/token"]["post"];
+    for path in ["/oidc/token", "/oidc/introspect", "/oidc/revoke"] {
+        let operation = &value["paths"][path]["post"];
+        assert_eq!(
+            operation["responses"]["503"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/OAuthError",
+            "conditional password work capacity response missing for {path}"
+        );
+        assert!(operation["responses"]["503"]["description"]
+            .as_str()
+            .unwrap()
+            .contains("Password work budget"));
+        assert!(operation["responses"]["503"]["headers"]
+            .get("WWW-Authenticate")
+            .is_none());
+        assert_eq!(
+            operation["responses"]["503"]["headers"]["Cache-Control"]["schema"]["enum"][0],
+            "no-store"
+        );
+    }
     assert!(token["description"]
         .as_str()
         .unwrap()
@@ -808,18 +1174,18 @@ fn profiles_keep_module_roots_and_apply_conditional_surfaces() {
     let fixed =
         serde_json::to_value(business_profile("/entry-a", false, false, false, "a")).unwrap();
     assert_eq!(fixed["servers"][0]["url"], "/entry-a");
-    assert_eq!(fixed["paths"].as_object().unwrap().len(), 6);
+    assert_eq!(fixed["paths"].as_object().unwrap().len(), 7);
     assert!(fixed["paths"].get("/auth/refresh").is_some());
     let choose =
         serde_json::to_value(business_profile("/entry-b", true, true, false, "entry_b")).unwrap();
-    assert_eq!(choose["paths"].as_object().unwrap().len(), 14);
+    assert_eq!(choose["paths"].as_object().unwrap().len(), 16);
     assert_eq!(
         choose["components"]["securitySchemes"]["RefreshCookie"]["name"],
         "entry_b"
     );
     let registered =
         serde_json::to_value(business_profile("/entry-c", false, true, true, "entry_c")).unwrap();
-    assert_eq!(registered["paths"].as_object().unwrap().len(), 14);
+    assert_eq!(registered["paths"].as_object().unwrap().len(), 16);
     assert!(registered["paths"].get("/auth/register").is_some());
     assert!(registered["paths"]
         .get("/auth/tenant-selection/complete")
@@ -827,6 +1193,170 @@ fn profiles_keep_module_roots_and_apply_conditional_surfaces() {
     assert!(registered["paths"]
         .get("/auth/browser/tenant-selection/complete")
         .is_some());
+    let secured = serde_json::to_value(
+        embedded_idp_axum::openapi::business_profile_with_account_security(
+            "/entry-d", false, true, false, true, "entry_d",
+        ),
+    )
+    .unwrap();
+    assert!(secured["paths"]
+        .get("/auth/security/sessions/revoke")
+        .is_some());
+    assert!(secured["paths"]
+        .get("/auth/browser/security/sessions/revoke")
+        .is_some());
+}
+
+#[test]
+fn password_recovery_contract_is_conditional_strict_and_anonymous() {
+    let document = serde_json::to_value(business_document()).unwrap();
+    let paths = [
+        "/auth/password-recovery/start",
+        "/auth/password-recovery/complete",
+        "/auth/password-recovery/result",
+        "/auth/browser/password-recovery/start",
+        "/auth/browser/password-recovery/complete",
+        "/auth/browser/password-recovery/result",
+    ];
+    let inventory = include_str!("../../../docs/api/route-inventory.md");
+    for path in paths {
+        assert!(inventory.contains(path), "inventory missing {path}");
+        let operation = &document["paths"][path]["post"];
+        assert!(operation["parameters"].is_null(), "query params at {path}");
+        assert_eq!(
+            operation["responses"]["200"]["headers"]["Cache-Control"]["schema"]["enum"],
+            json!(["no-store"])
+        );
+        assert!(operation["responses"]["200"]["headers"]
+            .get("Set-Cookie")
+            .is_none());
+        assert_eq!(
+            operation["responses"]["400"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/Error"
+        );
+        assert_eq!(
+            operation["responses"]["408"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/Error"
+        );
+        assert_eq!(
+            operation["responses"]["413"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/Error"
+        );
+        assert_eq!(
+            operation["responses"]["429"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/Error"
+        );
+        let unavailable_schema =
+            &operation["responses"]["503"]["content"]["application/json"]["schema"];
+        assert_eq!(
+            unavailable_schema["oneOf"],
+            json!([
+                {"$ref":"#/components/schemas/Error"},
+                {"$ref":"#/components/schemas/AnonymousWorkUnavailable"}
+            ])
+        );
+        assert!(matches_schema(
+            &json!({"error":{"code":"temporarily_unavailable"}}),
+            unavailable_schema,
+            &document
+        ));
+        assert!(matches_schema(
+            &json!({"code":"temporarily_unavailable","message":"unavailable"}),
+            unavailable_schema,
+            &document
+        ));
+        let body = operation["requestBody"]["content"]["application/json"]["schema"]["$ref"]
+            .as_str()
+            .unwrap();
+        let schema = document
+            .pointer(&format!("{}", body.strip_prefix('#').unwrap()))
+            .unwrap();
+        assert_eq!(schema["additionalProperties"], false);
+        if path.contains("/browser/") {
+            assert_eq!(
+                operation["security"],
+                json!([{"Origin":[],"BrowserHeader":[]}])
+            );
+            assert_eq!(
+                operation["responses"]["403"]["content"]["application/json"]["schema"]["$ref"],
+                "#/components/schemas/Error"
+            );
+        } else {
+            assert_eq!(operation["security"], json!([]));
+        }
+    }
+    assert_eq!(
+        document["components"]["schemas"]["PasswordRecoveryStart"]["required"],
+        json!(["email", "operation_id", "receipt_secret"])
+    );
+    assert_eq!(
+        document["components"]["schemas"]["PasswordRecoveryComplete"]["required"],
+        json!([
+            "handle",
+            "code",
+            "new_password",
+            "operation_id",
+            "receipt_secret"
+        ])
+    );
+    assert_eq!(
+        document["components"]["schemas"]["PasswordRecoveryResult"]["required"],
+        json!(["operation_id", "receipt_secret"])
+    );
+    let start_schema = &document["components"]["schemas"]["PasswordRecoveryStart"];
+    assert_eq!(start_schema["properties"]["email"]["format"], "email");
+    assert_eq!(start_schema["properties"]["email"]["maxLength"], 254);
+    assert!(start_schema["properties"]["operation_id"]["description"]
+        .as_str()
+        .unwrap()
+        .contains("all-zero UUID is rejected"));
+    assert_eq!(
+        document["components"]["schemas"]["PasswordRecoveryComplete"]["properties"]["code"]
+            ["pattern"],
+        "^[0-9]{6}$"
+    );
+
+    let profile = |account_security, recovery_email, browser| {
+        serde_json::to_value(business_profile_with_recovery(
+            "/host-prefix",
+            false,
+            browser,
+            false,
+            account_security,
+            recovery_email,
+            "host_cookie",
+        ))
+        .unwrap()
+    };
+    let old_profile = serde_json::to_value(business_profile_with_account_security(
+        "/legacy",
+        false,
+        true,
+        false,
+        true,
+        "legacy_cookie",
+    ))
+    .unwrap();
+    assert!(old_profile["paths"]
+        .get("/auth/password-recovery/start")
+        .is_none());
+    let disabled = profile(false, true, true);
+    let no_email = profile(true, false, true);
+    let email_no_browser = profile(true, true, false);
+    let all = profile(true, true, true);
+    for path in paths {
+        assert!(disabled["paths"].get(path).is_none());
+        assert!(no_email["paths"].get(path).is_none());
+    }
+    for path in &paths[..3] {
+        assert!(email_no_browser["paths"].get(*path).is_some());
+        assert!(all["paths"].get(*path).is_some());
+    }
+    for path in &paths[3..] {
+        assert!(email_no_browser["paths"].get(*path).is_none());
+        assert!(all["paths"].get(*path).is_some());
+    }
+    assert_eq!(all["servers"][0]["url"], "/host-prefix");
 }
 struct Lifecycle;
 impl TenantRefreshService for Lifecycle {
@@ -961,6 +1491,55 @@ fn ordinary_route_declarations_and_contract_catalog_do_not_drift() {
             };
             declared.insert((path, method.to_owned()));
         }
+    }
+    let self_sessions = include_str!("../src/self_sessions.rs");
+    assert!(self_sessions.contains("/auth/security/sessions"));
+    assert!(self_sessions.contains("/admin/auth/security/sessions"));
+    declared.insert(("/auth/security/sessions".to_owned(), "get".to_owned()));
+    let browser_self_sessions = include_str!("../src/browser_session/self_sessions.rs");
+    assert!(browser_self_sessions.contains("/security/sessions"));
+    declared.insert((
+        "/auth/browser/security/sessions".to_owned(),
+        "post".to_owned(),
+    ));
+    for path in [
+        "/auth/security/sessions/revoke",
+        "/auth/security/sessions/revoke/result",
+    ] {
+        declared.insert((path.to_owned(), "post".to_owned()));
+    }
+    for path in [
+        "/auth/browser/security/sessions/revoke",
+        "/auth/browser/security/sessions/revoke/result",
+    ] {
+        declared.insert((path.to_owned(), "post".to_owned()));
+    }
+    let self_password_change = include_str!("../src/self_password_change.rs");
+    assert!(self_password_change.contains("/auth/security/password"));
+    for path in ["/auth/security/password", "/auth/security/password/result"] {
+        declared.insert((path.to_owned(), "post".to_owned()));
+    }
+    let browser_self_password_change =
+        include_str!("../src/browser_session/self_password_change.rs");
+    assert!(browser_self_password_change.contains("/security/password"));
+    for path in [
+        "/auth/browser/security/password",
+        "/auth/browser/security/password/result",
+    ] {
+        declared.insert((path.to_owned(), "post".to_owned()));
+    }
+    let password_recovery = include_str!("../src/password_recovery.rs");
+    assert!(password_recovery.contains("/auth/password-recovery"));
+    assert!(password_recovery.contains("/admin/auth/password-recovery"));
+    for path in [
+        "/auth/password-recovery/start",
+        "/auth/password-recovery/complete",
+        "/auth/password-recovery/result",
+        "/auth/browser/password-recovery/start",
+        "/auth/browser/password-recovery/complete",
+        "/auth/browser/password-recovery/result",
+    ] {
+        declared.insert((path.to_owned(), "post".to_owned()));
     }
     let doc = serde_json::to_value(business_document()).unwrap();
     let documented = doc["paths"]
@@ -1324,6 +1903,9 @@ fn matches_schema(value: &Value, schema: &Value, doc: &Value) -> bool {
                 "format",
                 "minimum",
                 "maximum",
+                "minLength",
+                "maxLength",
+                "pattern",
                 "description",
                 "default"
             ]
@@ -1361,6 +1943,50 @@ fn matches_schema(value: &Value, schema: &Value, doc: &Value) -> bool {
             return false;
         }
     }
+    if let Some(text) = value.as_str() {
+        let length = text.chars().count();
+        if schema["minLength"]
+            .as_u64()
+            .is_some_and(|n| length < n as usize)
+            || schema["maxLength"]
+                .as_u64()
+                .is_some_and(|n| length > n as usize)
+        {
+            return false;
+        }
+        if let Some(pattern) = schema["pattern"].as_str() {
+            let valid = match pattern {
+                "^[A-Za-z0-9_-]{64}$" => {
+                    length == 64
+                        && text
+                            .bytes()
+                            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+                }
+                "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$" => {
+                    length == 43
+                        && text.len() == 43
+                        && text[..42]
+                            .bytes()
+                            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+                        && text.as_bytes()[42].is_ascii_alphanumeric()
+                        && b"AEIMQUYcgkosw048".contains(&text.as_bytes()[42])
+                }
+                "^[0-9]{6}$" => length == 6 && text.bytes().all(|b| b.is_ascii_digit()),
+                "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" => {
+                    length == 36
+                        && text != "00000000-0000-0000-0000-000000000000"
+                        && text.bytes().enumerate().all(|(index, byte)| match index {
+                            8 | 13 | 18 | 23 => byte == b'-',
+                            _ => byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase(),
+                        })
+                }
+                other => panic!("unchecked schema pattern {other}"),
+            };
+            if !valid {
+                return false;
+            }
+        }
+    }
     if let Some(object) = value.as_object() {
         if schema["required"].as_array().is_some_and(|keys| {
             keys.iter()
@@ -1392,6 +2018,9 @@ async fn check_wire(router: axum::Router, request: Request<Body>, expected: u16)
     let response = router.oneshot(request).await.unwrap();
     assert_eq!(response.status().as_u16(), expected, "{method} {path}");
     assert_eq!(response.headers()["cache-control"], "no-store");
+    if path.contains("password-recovery") {
+        assert!(response.headers().get("set-cookie").is_none());
+    }
     let contract = &doc["paths"][&path][&method]["responses"][expected.to_string()];
     assert!(
         !contract.is_null(),
@@ -1871,6 +2500,49 @@ impl TenantRefreshService for Successful {
         })
     }
 }
+impl SelfSessionService for Successful {
+    fn list_sessions(
+        &self,
+        _: AccessActor,
+        _: SelfSessionPageRequest,
+    ) -> Result<SelfSessionPage, AccessError> {
+        Ok(SelfSessionPage {
+            items: vec![],
+            next_cursor: None,
+        })
+    }
+}
+impl RecoveryStartService for Successful {
+    fn start_recovery(&self, _: RecoveryStartCommand) -> Result<RecoveryStartResult, AccessError> {
+        Ok(RecoveryStartResult {
+            handle: SecretString::new("a".repeat(64)),
+            expires_at: std::time::UNIX_EPOCH + std::time::Duration::from_secs(1234),
+        })
+    }
+}
+impl RecoveryCompletionService for Successful {
+    fn complete_recovery(&self, _: RecoveryCompleteCommand) -> Result<(), RecoveryCompleteError> {
+        Ok(())
+    }
+    fn recovery_completion_result(&self, _: SecurityReceiptQuery) -> Result<bool, AccessError> {
+        Ok(false)
+    }
+}
+impl SelfSecurityBrowserIdentityService for Successful {
+    fn self_security_browser_purpose(&self) -> embedded_idp_core::AccessTokenPurpose {
+        embedded_idp_core::AccessTokenPurpose::Business
+    }
+    fn self_security_browser_lifetime_secs(&self) -> Option<u64> {
+        None
+    }
+    fn authenticate_self_security_browser(
+        &self,
+        _: SecretString,
+        _: BrowserSessionIdentity,
+    ) -> Result<AccessActor, TenantAuthError> {
+        self.authenticate(SecretString::new("fixture"))
+    }
+}
 impl BrowserSessionService for Successful {
     fn browser_purpose(&self) -> embedded_idp_core::AccessTokenPurpose {
         embedded_idp_core::AccessTokenPurpose::Business
@@ -1989,6 +2661,7 @@ fn complete_router() -> axum::Router {
         .merge(tenant_refresh_router(service.clone()))
         .merge(tenant_logout_router(Arc::new(Lifecycle)))
         .merge(tenant_self_router(service.clone(), service.clone()))
+        .merge(password_recovery_router(service.clone(), service.clone()))
         .merge(
             tenant_registration_router(
                 service.clone(),
@@ -1999,6 +2672,17 @@ fn complete_router() -> axum::Router {
             )
             .unwrap(),
         )
+        .merge(browser_password_recovery_router(
+            service.clone(),
+            service.clone(),
+            BrowserSessionHttpConfig::new(
+                "https://entry.test",
+                "entry_refresh",
+                "/auth/browser",
+                embedded_idp_core::AccessTokenPurpose::Business,
+            )
+            .unwrap(),
+        ))
         .merge(
             browser_session_router(
                 service,
@@ -2092,6 +2776,42 @@ async fn every_operation_success_matches_recursive_wire_schema() {
             r#"{"tenant_id":"t1","email":"x@example.test"}"#,
             202,
         ),
+        (
+            "POST",
+            "/auth/password-recovery/start",
+            r#"{"email":"x@example.test","operation_id":"00000000-0000-0000-0000-000000000001","receipt_secret":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}"#,
+            200,
+        ),
+        (
+            "POST",
+            "/auth/password-recovery/complete",
+            r#"{"handle":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","code":"123456","new_password":"new-fixture-password","operation_id":"00000000-0000-0000-0000-000000000001","receipt_secret":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}"#,
+            200,
+        ),
+        (
+            "POST",
+            "/auth/password-recovery/result",
+            r#"{"operation_id":"00000000-0000-0000-0000-000000000001","receipt_secret":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}"#,
+            200,
+        ),
+        (
+            "POST",
+            "/auth/browser/password-recovery/start",
+            r#"{"email":"x@example.test","operation_id":"00000000-0000-0000-0000-000000000001","receipt_secret":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}"#,
+            200,
+        ),
+        (
+            "POST",
+            "/auth/browser/password-recovery/complete",
+            r#"{"handle":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","code":"123456","new_password":"new-fixture-password","operation_id":"00000000-0000-0000-0000-000000000001","receipt_secret":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}"#,
+            200,
+        ),
+        (
+            "POST",
+            "/auth/browser/password-recovery/result",
+            r#"{"operation_id":"00000000-0000-0000-0000-000000000001","receipt_secret":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}"#,
+            200,
+        ),
     ] {
         let mut request = Request::builder().method(method).uri(path).header(
             "content-type",
@@ -2101,7 +2821,7 @@ async fn every_operation_success_matches_recursive_wire_schema() {
                 "application/json"
             },
         );
-        if path != "/auth/logout" {
+        if path != "/auth/logout" && !path.contains("password-recovery") {
             request = request.header(
                 "authorization",
                 if path.contains("/tenant-selection/") {
@@ -2114,8 +2834,10 @@ async fn every_operation_success_matches_recursive_wire_schema() {
         if path.contains("/browser/") {
             request = request
                 .header("origin", "https://entry.test")
-                .header("x-embedded-idp-browser", "1")
-                .header("cookie", "entry_refresh=fixture");
+                .header("x-embedded-idp-browser", "1");
+            if !path.contains("password-recovery") {
+                request = request.header("cookie", "entry_refresh=fixture");
+            }
         }
         check_wire(
             router.clone(),
@@ -2194,21 +2916,37 @@ async fn every_profile_operation_matches_actual_conditional_router() {
                 let mut router = tenant_auth_router(auth.clone())
                     .merge(tenant_refresh_router(service.clone()))
                     .merge(tenant_logout_router(Arc::new(Lifecycle)))
-                    .merge(tenant_self_router(auth, service.clone()));
+                    .merge(tenant_self_router(auth.clone(), service.clone()))
+                    .merge(self_session_router(auth, service.clone()));
                 if browser {
-                    router = router.merge(
-                        browser_session_router(
-                            service.clone(),
-                            BrowserSessionHttpConfig::new(
-                                "https://entry.test",
-                                "entry_refresh",
-                                "/auth/browser",
-                                embedded_idp_core::AccessTokenPurpose::Business,
+                    router = router
+                        .merge(
+                            browser_session_router(
+                                service.clone(),
+                                BrowserSessionHttpConfig::new(
+                                    "https://entry.test",
+                                    "entry_refresh",
+                                    "/auth/browser",
+                                    embedded_idp_core::AccessTokenPurpose::Business,
+                                )
+                                .unwrap(),
                             )
                             .unwrap(),
                         )
-                        .unwrap(),
-                    );
+                        .merge(
+                            browser_self_session_router(
+                                service.clone(),
+                                service.clone(),
+                                BrowserSessionHttpConfig::new(
+                                    "https://entry.test",
+                                    "entry_refresh",
+                                    "/auth/browser",
+                                    embedded_idp_core::AccessTokenPurpose::Business,
+                                )
+                                .unwrap(),
+                            )
+                            .unwrap(),
+                        );
                 }
                 if registration {
                     router = router.merge(
@@ -2256,6 +2994,77 @@ async fn every_profile_operation_matches_actual_conditional_router() {
                         profile["paths"].get(path).is_some(),
                         "choose={choose} browser={browser} registration={registration}: {path}"
                     );
+                }
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn recovery_profile_paths_match_business_and_browser_router_mounts() {
+    use embedded_idp_axum::*;
+    for account_security in [false, true] {
+        for recovery_email in [false, true] {
+            for browser in [false, true] {
+                let service = Arc::new(Successful);
+                let mut router = Router::new();
+                if account_security && recovery_email {
+                    router =
+                        router.merge(password_recovery_router(service.clone(), service.clone()));
+                    if browser {
+                        router = router.merge(browser_password_recovery_router(
+                            service.clone(),
+                            service.clone(),
+                            BrowserSessionHttpConfig::new(
+                                "https://entry.test",
+                                "entry_refresh",
+                                "/auth/browser",
+                                embedded_idp_core::AccessTokenPurpose::Business,
+                            )
+                            .unwrap(),
+                        ));
+                    }
+                }
+                let profile = serde_json::to_value(business_profile_with_recovery(
+                    "/entry",
+                    false,
+                    browser,
+                    false,
+                    account_security,
+                    recovery_email,
+                    "entry_refresh",
+                ))
+                .unwrap();
+                let router = Router::new().nest("/entry", router);
+                for suffix in ["start", "complete", "result"] {
+                    for browser_path in [false, true] {
+                        let path = if browser_path {
+                            format!("/auth/browser/password-recovery/{suffix}")
+                        } else {
+                            format!("/auth/password-recovery/{suffix}")
+                        };
+                        let expected =
+                            account_security && recovery_email && (!browser_path || browser);
+                        assert_eq!(
+                            profile["paths"].get(&path).is_some(),
+                            expected,
+                            "profile recovery path {path}"
+                        );
+                        let response = router
+                            .clone()
+                            .oneshot(
+                                Request::get(format!("/entry{path}"))
+                                    .body(Body::empty())
+                                    .unwrap(),
+                            )
+                            .await
+                            .unwrap();
+                        assert_eq!(
+                            response.status() != 404,
+                            expected,
+                            "router recovery path {path}; account_security={account_security} recovery_email={recovery_email} browser={browser}"
+                        );
+                    }
                 }
             }
         }

@@ -188,10 +188,13 @@ impl<
                     self.hasher
                         .hash_client_secret(raw.expose_secret())
                         // Provider error text can contain secret material.
-                        .map_err(|_| {
-                            AccessError::Store(StoreError::Backend(
-                                "client secret hashing failed".into(),
-                            ))
+                        .map_err(|error| {
+                            let message = if error.is_work_unavailable() {
+                                "password.work_unavailable"
+                            } else {
+                                "client secret hashing failed"
+                            };
+                            AccessError::Store(StoreError::Backend(message.into()))
                         })?,
                 ),
                 None => before.as_ref().and_then(|c| c.client_secret_hash.clone()),

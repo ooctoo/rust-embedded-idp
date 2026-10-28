@@ -8,7 +8,9 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use embedded_idp_core::{access::*, ClientSecretVerifier, PhcClientSecretCodec};
+use embedded_idp_core::{
+    access::*, ClientSecretVerifier, PasswordWorkBudget, PhcClientSecretCodec,
+};
 use serde::Deserialize;
 use std::{
     collections::BTreeMap,
@@ -16,9 +18,6 @@ use std::{
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-
-// Bound memory/CPU across all configured providers before dispatching Argon2.
-static KDF_BUDGET: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(4);
 
 const HEADER: &str = "x-embedded-idp-device-admission";
 #[derive(Deserialize)]
@@ -34,6 +33,7 @@ struct Grant {
 }
 pub(crate) struct FileAdmission {
     grants: BTreeMap<String, Grant>,
+    password_work: PasswordWorkBudget,
 }
 impl FileAdmission {
     pub fn load(provider: &str, path: &str) -> Result<Self, String> {
@@ -76,7 +76,14 @@ impl FileAdmission {
                 return Err("duplicate admission grant".into());
             }
         }
-        Ok(Self { grants: result })
+        Ok(Self {
+            grants: result,
+            password_work: PasswordWorkBudget::default(),
+        })
+    }
+    pub fn with_password_work_budget(mut self, budget: PasswordWorkBudget) -> Self {
+        self.password_work = budget;
+        self
     }
     fn authenticate(
         &self,
@@ -184,7 +191,7 @@ pub(crate) async fn inject(
     let Some(credential) = credential else {
         return denied();
     };
-    let Ok(permit) = KDF_BUDGET.try_acquire() else {
+    let Ok(permit) = state.provider.password_work.try_login() else {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             [("cache-control", "no-store")],
@@ -350,6 +357,7 @@ mod tests {
     #[tokio::test]
     async fn middleware_rejects_duplicate_credentials_and_injects_only_after_authentication() {
         let (provider, credential, _) = fixture();
+        let budget = provider.password_work.clone();
         let route = Router::new()
             .route(
                 "/devices/provision",
@@ -390,7 +398,7 @@ mod tests {
                 .unwrap();
             assert_eq!(response.status().as_u16(), expected);
         }
-        let permit = KDF_BUDGET.acquire_many(4).await.unwrap();
+        let permit: Vec<_> = (0..4).map(|_| budget.try_login().unwrap()).collect();
         let response = router
             .oneshot(
                 axum::http::Request::builder()

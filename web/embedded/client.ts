@@ -1,4 +1,5 @@
 import { BrowserSessionCoordinator, assertBrowserOrigin, developmentBrowserMode, privateNetworkHttp, type BrowserClientConfig } from "./browser-session";
+import type { AccountSecurityOperation, SecurityIdentity } from "./account-security-client";
 
 export type LoginCapabilities =
   | { tenancy_enabled: false; login_tenant_policy: "fixed"; fixed_tenant_id: "0" }
@@ -71,6 +72,17 @@ const record = (value: unknown): Record<string, unknown> => {
   return value as Record<string, unknown>;
 };
 const invalidResponse = () => new IdentityError("身份服务返回了无效数据，请重新登录。");
+function responseCode(value: unknown): string | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const item = value as Record<string, unknown>;
+  const code = item.code ?? (typeof item.error === "string" ? item.error :
+    item.error && typeof item.error === "object" && !Array.isArray(item.error) ? (item.error as Record<string, unknown>).code : undefined);
+  return typeof code === "string" ? code : undefined;
+}
+function sameSecurityIdentity(session: IdentitySession, expected: SecurityIdentity) {
+  return session.tenant_id === expected.tenant_id && session.account_id === expected.account_id &&
+    session.session_id === expected.session_id && session.client_id === expected.client_id;
+}
 
 function sessionFrom(value: unknown): IdentitySession {
   const session = record(value);
@@ -122,6 +134,68 @@ export class EmbeddedIdentityClient {
   /** Normalized entry address; contains no credentials. Used to bind device journals. */
   get deviceBaseUrl() { return this.base || "/"; }
 
+  get accountSecurityScope() {
+    return JSON.stringify({ purpose: "business", mode: this.development ? "development_login" : this.isCookieMode() ? "cookie" : "token", base: this.base || "/" });
+  }
+
+  forgetAccountSecuritySession(expected: SecurityIdentity) {
+    if (this.credentials && sameSecurityIdentity(this.credentials.session, expected)) this.clear();
+  }
+
+  async requestAccountSecurity(operation: AccountSecurityOperation, body: Record<string, unknown>, expected?: SecurityIdentity): Promise<unknown> {
+    const identityBound = operation === "sessions" || operation === "revoke" || operation === "password";
+    const method = operation === "sessions" ? "GET" : "POST";
+    const paths: Record<AccountSecurityOperation, string> = {
+      sessions: "/auth/security/sessions", revoke: "/auth/security/sessions/revoke", password: "/auth/security/password",
+      "revoke-result": "/auth/security/sessions/revoke/result", "password-result": "/auth/security/password/result",
+      "recovery-start": "/auth/password-recovery/start", "recovery-complete": "/auth/password-recovery/complete",
+      "recovery-result": "/auth/password-recovery/result",
+    };
+    const browserPaths: Record<AccountSecurityOperation, string> = {
+      sessions: "/security/sessions", revoke: "/security/sessions/revoke", password: "/security/password",
+      "revoke-result": "/security/sessions/revoke/result", "password-result": "/security/password/result",
+      "recovery-start": "/password-recovery/start", "recovery-complete": "/password-recovery/complete",
+      "recovery-result": "/password-recovery/result",
+    };
+    if (!Object.hasOwn(paths, operation)) throw new IdentityError("请求无效，请重新操作。", 400);
+    const path = paths[operation];
+    if (!identityBound) {
+      const value = this.isCookieMode() ? await this.browserRequest(browserPaths[operation], body) :
+        await this.request(path, "POST", JSON.stringify(body));
+      return value;
+    }
+
+    const revision = this.revision;
+    if (!expected || !this.credentials || !sameSecurityIdentity(this.credentials.session, expected)) {
+      throw new IdentityError("操作已取消。", 0, "security_session_changed");
+    }
+    if (this.isCookieMode()) {
+      return this.browserOperation(async () => {
+        this.browser?.check(); this.current(revision); this.assertSecurityIdentity(expected);
+        try {
+          const value = await this.browserRequest(browserPaths[operation], { ...body, expected });
+          this.current(revision); this.assertSecurityIdentity(expected);
+          return value;
+        } catch (error) { this.securityFailure(error, revision, expected); throw error; }
+      });
+    }
+
+    const credentials = await this.access();
+    this.current(revision); this.assertSecurityIdentity(expected);
+    const url = operation === "sessions" ? `${path}?limit=50${typeof body.cursor === "string" ? `&cursor=${encodeURIComponent(body.cursor)}` : ""}` : path;
+    try {
+      const value = await this.request(url, method, method === "GET" ? undefined : JSON.stringify(body), `Bearer ${credentials.tokens.access_token}`);
+      this.current(revision); this.assertSecurityIdentity(expected);
+      return value;
+    } catch (error) { this.securityFailure(error, revision, expected); throw error; }
+  }
+
+  private assertSecurityIdentity(expected: SecurityIdentity) {
+    if (!this.credentials || !sameSecurityIdentity(this.credentials.session, expected)) throw new IdentityError("操作已取消。", 0, "security_session_changed");
+  }
+  private securityFailure(error: unknown, revision: number, expected: SecurityIdentity) {
+    if (revision === this.revision && error instanceof IdentityError && error.status === 401 && error.code === "invalid_session") this.forgetAccountSecuritySession(expected);
+  }
   getSnapshot = () => this.snapshot;
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   private publish() {
@@ -151,7 +225,8 @@ export class EmbeddedIdentityClient {
     if (!response.ok) {
       const messages: Record<number, string> = { 400: "请求无效，请重新操作。", 401: "凭证无效或已过期，请重新登录。",
         403: "当前身份无权执行此操作。", 404: "身份入口不可用，请检查宿主接入。", 409: "数据已变化，请重新加载核对。", 429: "操作过于频繁，请稍后重试。" };
-      throw new IdentityError(messages[response.status] ?? "身份服务暂时不可用，请稍后重试。", response.status);
+      const failure = await response.json().catch(() => undefined);
+      throw new IdentityError(messages[response.status] ?? "身份服务暂时不可用，请稍后重试。", response.status, responseCode(failure));
     }
     if (response.status === 204 || response.status === 200 && path === "/auth/logout") return undefined;
     try { return await response.json(); } catch { throw invalidResponse(); }
@@ -174,8 +249,7 @@ export class EmbeddedIdentityClient {
     if (!response.ok) {
       const messages: Record<number, string> = { 400: "请求无效，请重新操作。", 401: "凭证无效或已过期，请重新登录。", 403: "当前身份无权执行此操作。", 409: "浏览器会话已被其他页面替换，请重新加载。", 429: "操作过于频繁，请稍后重试。" };
       const failure = await response.json().catch(() => ({}));
-      const code = typeof failure?.code === "string" ? failure.code : typeof failure?.error === "string" ? failure.error : undefined;
-      throw new IdentityError(messages[response.status] ?? "身份服务暂时不可用，请稍后重试。", response.status, code);
+      throw new IdentityError(messages[response.status] ?? "身份服务暂时不可用，请稍后重试。", response.status, responseCode(failure));
     }
     if (response.status === 204) return undefined;
     try { return await response.json(); } catch { throw invalidResponse(); }

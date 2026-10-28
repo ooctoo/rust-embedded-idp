@@ -1837,3 +1837,64 @@ test("cookie logout during refresh suppresses the old write and settles activity
   assert.deepEqual(client.getMutationSnapshot(), { pending: 0, revision: 1 });
   assert.equal(calls.filter(call => call.path.endsWith("/admin/clients/upsert")).length, 0);
 });
+
+test("management account security bridge uses fixed routes and tracks only mutations", async t => {
+  const calls = [];
+  const { client } = setup(t, async (path, init) => {
+    calls.push({ path, init });
+    if (path === "/capabilities") return json(fixed);
+    if (path === "/login") return json(authenticated());
+    if (path === "/security/password") return json({ completed: true });
+    if (path === "/password-recovery/start") return json({ handle: "h".repeat(64), expires_at_unix_secs: 100 });
+    throw new Error(path);
+  });
+  await client.loadCapabilities(); await client.login("admin@example.test", "password");
+  const owner = client.getSnapshot().session;
+  assert.equal(client.accountSecurityScope, JSON.stringify({ purpose: "management", mode: "token", base: "/host/idp" }));
+  await client.requestAccountSecurity("recovery-start", { email: "user@example.test" });
+  assert.equal(calls.at(-1).path, "/password-recovery/start");
+  assert.equal(calls.at(-1).init.headers.Authorization, undefined);
+  assert.deepEqual(client.getMutationSnapshot(), { pending: 0, revision: 0 });
+  await client.requestAccountSecurity("password", { current_password: "old", new_password: "new" }, owner);
+  assert.equal(calls.at(-1).path, "/security/password");
+  assert.equal(calls.at(-1).init.headers.Authorization, "Bearer synthetic-access");
+  assert.deepEqual(client.getMutationSnapshot(), { pending: 0, revision: 1 });
+  assert.deepEqual(client.getSnapshot().session, owner);
+  client.forgetAccountSecuritySession({ ...owner, session_id: "new-session" });
+  assert.deepEqual(client.getSnapshot().session, owner);
+  client.forgetAccountSecuritySession(owner);
+  assert.equal(client.getSnapshot().session, undefined);
+});
+
+test("management development Cookie recovery remains anonymous and carries nested error code", async t => {
+  insecureEnvironment(t);
+  const calls = [];
+  t.mock.method(globalThis, "fetch", async (url, init) => {
+    const path = new URL(url, "http://192.168.31.159:8080").pathname.replace("/host/idp", "");
+    calls.push({ path, init });
+    if (path.endsWith("/capabilities")) return json(fixed);
+    if (path.endsWith("/login")) { const value = authenticated(); delete value.tokens.refresh_token; return json(value); }
+    if (path.endsWith("/admin/auth/browser/password-recovery/result")) return json({ completed: false });
+    if (path.endsWith("/admin/auth/browser/password-recovery/start")) return json({ error: { code: "invalid_recovery" } }, 401);
+    throw new Error(path);
+  });
+  const client = developmentClient();
+  await client.loadCapabilities(); await client.login("admin@example.test", "password");
+  const owner = client.getSnapshot().session;
+  await client.requestAccountSecurity("recovery-result", { operation_id: "op" });
+  assert.equal(calls.at(-1).init.headers.Authorization, undefined);
+  assert.equal(client.getSnapshot().session, owner);
+  await assert.rejects(client.requestAccountSecurity("recovery-start", { email: "x@example.test" }), error => error.code === "invalid_recovery");
+  assert.equal(calls.some(call => call.path.endsWith("/refresh")), false);
+  assert.deepEqual(client.getMutationSnapshot(), { pending: 0, revision: 0 });
+});
+
+test("management account security bridge rejects inherited operation names before transport", async t => {
+  let calls = 0;
+  t.mock.method(globalThis, "fetch", async () => { calls++; return json({}); });
+  const client = new ManagementClient("/host/idp");
+  for (const operation of ["constructor", "toString"]) {
+    await assert.rejects(client.requestAccountSecurity(operation, {}), error => error.status === 400);
+  }
+  assert.equal(calls, 0);
+});

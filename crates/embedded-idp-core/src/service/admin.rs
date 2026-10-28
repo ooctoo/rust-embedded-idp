@@ -309,7 +309,13 @@ fn build_client_for_upsert(
             Some(raw_secret) => Some(
                 client_secret_hasher
                     .hash_client_secret(raw_secret)
-                    .map_err(|error| StoreError::Backend(format!("client_secret:{error:?}")))?,
+                    .map_err(|error| {
+                        if error.is_work_unavailable() {
+                            StoreError::Backend("password.work_unavailable".into())
+                        } else {
+                            StoreError::Backend(format!("client_secret:{error:?}"))
+                        }
+                    })?,
             ),
             None => existing.and_then(|client| client.client_secret_hash),
         },
@@ -1155,6 +1161,42 @@ mod tests {
 
         assert_eq!(result.client.client_id, "web-app");
         assert!(result.client.client_secret_configured);
+    }
+
+    #[test]
+    fn legacy_client_upsert_preserves_only_the_exact_budget_marker() {
+        struct ErrorHasher(&'static str);
+        impl ClientSecretHasher for ErrorHasher {
+            fn hash_client_secret(&self, _: &str) -> Result<String, ClientSecretError> {
+                Err(ClientSecretError::HasherRejected(self.0.into()))
+            }
+        }
+        let command = UpsertClientCommand {
+            client_id: "web-app".into(),
+            client_name: "Web App".into(),
+            redirect_uris: vec!["https://example.com/callback".into()],
+            client_type: OidcClientType::ConfidentialWeb,
+            pkce_required: false,
+            client_secret: Some("secret".into()),
+        };
+        assert_eq!(
+            build_client_for_upsert(
+                None,
+                command.clone(),
+                &ErrorHasher("password.work_unavailable")
+            ),
+            Err(StoreError::Backend("password.work_unavailable".into()))
+        );
+        assert_eq!(
+            build_client_for_upsert(
+                None,
+                command,
+                &ErrorHasher("password.work_unavailable details")
+            ),
+            Err(StoreError::Backend(
+                "client_secret:HasherRejected(\"password.work_unavailable details\")".into()
+            ))
+        );
     }
 
     #[test]

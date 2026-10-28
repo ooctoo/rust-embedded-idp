@@ -656,10 +656,31 @@ fn device_admin_rechecks_tenant_grants_and_actor_device_authority() {
     );
     db.adapter.connect().unwrap().batch_execute(&format!("update {s}.access_permissions set enabled=true where resource_type='idp.tenant' and action='devices.manage'")).unwrap();
     let mut c = db.adapter.connect().unwrap();
-    for sql in [format!("update {s}.device_proof_keys set status='retired',retired_at_epoch=1000 where tenant_id='t1'"),format!("update {s}.account_device_bindings set status='suspended' where tenant_id='t1'")] {
+    for sql in [
+        format!(
+            "update {s}.device_proof_keys set status='retired',retired_at_epoch=1000 where tenant_id='t1'"
+        ),
+        format!("update {s}.account_device_bindings set status='suspended' where tenant_id='t1'"),
+    ] {
         c.batch_execute(&sql).unwrap();
-        assert_eq!(db.service().get_device(context.clone(),"t1".into(),id.to_string()),Err(AccessError::Forbidden));
-        assert_eq!(db.service().execute(context.clone(),db.command(AccessAdminMutation::SetDeviceStatus{device_id:id.to_string(),status:DeviceStatus::Disabled,expected_version:1,operation_id:Uuid::now_v7().to_string(),reason:"test".into()})),Err(AccessError::Forbidden));
+        assert_eq!(
+            db.service()
+                .get_device(context.clone(), "t1".into(), id.to_string()),
+            Err(AccessError::Forbidden)
+        );
+        assert_eq!(
+            db.service().execute(
+                context.clone(),
+                db.command(AccessAdminMutation::SetDeviceStatus {
+                    device_id: id.to_string(),
+                    status: DeviceStatus::Disabled,
+                    expected_version: 1,
+                    operation_id: Uuid::now_v7().to_string(),
+                    reason: "test".into()
+                })
+            ),
+            Err(AccessError::Forbidden)
+        );
         c.batch_execute(&format!("update {s}.device_proof_keys set status='active',retired_at_epoch=null where tenant_id='t1'; update {s}.account_device_bindings set status='active' where tenant_id='t1'")).unwrap();
     }
     mutate(&db, id, DeviceStatus::Disabled, DeviceStatus::Active).unwrap();
@@ -783,7 +804,10 @@ fn device_filters_preserve_active_bindings_tenant_scope_and_pagination_in_both_m
         }
         drop(c);
         let router = app(&db, Some(db.context(db.actor_session.to_string())));
-        let query = format!("account_id={}&client_id=live-admin-client&status=active&registered_after_unix_secs=1000&registered_before_unix_secs=1000", db.member);
+        let query = format!(
+            "account_id={}&client_id=live-admin-client&status=active&registered_after_unix_secs=1000&registered_before_unix_secs=1000",
+            db.member
+        );
         let result = send(
             &router,
             "GET",

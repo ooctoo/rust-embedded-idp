@@ -183,6 +183,15 @@ fn invalid_tenant() -> Response {
 }
 fn registration_error(error: TenantRegistrationError) -> Response {
     let (status, code, message) = match error {
+        TenantRegistrationError::Store(StoreError::Backend(ref message))
+            if message == "password.work_unavailable" =>
+        {
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "temporarily_unavailable",
+                "registration is temporarily unavailable",
+            )
+        }
         TenantRegistrationError::InvalidContract(_) => (
             StatusCode::BAD_REQUEST,
             "invalid_registration",
@@ -231,6 +240,59 @@ mod tests {
     use axum::{body::Body, http::Request};
     use embedded_idp_email::{EmailSendError, VerificationEmailRequest};
     use tower::ServiceExt;
+    #[tokio::test]
+    async fn password_budget_failure_is_unavailable_without_backend_details() {
+        struct Full;
+        impl TenantRegistrationService for Full {
+            fn tenancy_mode(&self) -> TenancyMode {
+                TenancyMode::Disabled
+            }
+            fn register_account(
+                &self,
+                _: RegisterTenantAccountCommand,
+            ) -> Result<TenantRegistrationResult, TenantRegistrationError> {
+                Err(TenantRegistrationError::Store(StoreError::Backend(
+                    "password.work_unavailable".into(),
+                )))
+            }
+            fn verify_email(
+                &self,
+                _: VerifyTenantEmailCommand,
+            ) -> Result<TenantEmailVerificationResult, TenantRegistrationError> {
+                unreachable!()
+            }
+            fn resend_verification(
+                &self,
+                _: ResendTenantVerificationCommand,
+            ) -> Result<Option<TenantRegistrationResult>, TenantRegistrationError> {
+                unreachable!()
+            }
+        }
+        let app = tenant_registration_router(
+            Arc::new(Full),
+            LoginTenantPolicy::Fixed {
+                tenant_id: "0".into(),
+            },
+            Arc::new(Unreachable),
+        )
+        .unwrap();
+        let response = app.oneshot(Request::builder().method("POST").uri("/auth/register").header("content-type", "application/json").body(Body::from(r#"{"tenant_id":"0","email":"user@example.test","password":"good-password"}"#)).unwrap()).await.unwrap();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(response.headers()["cache-control"], "no-store");
+        let body = axum::body::to_bytes(response.into_body(), 4096)
+            .await
+            .unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(value["code"], "temporarily_unavailable");
+        assert!(!String::from_utf8_lossy(&body).contains("password.work"));
+        assert_eq!(
+            registration_error(TenantRegistrationError::Store(StoreError::Backend(
+                "other failure".into(),
+            )))
+            .status(),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+    }
     struct Unreachable;
     impl TenantRegistrationService for Unreachable {
         fn tenancy_mode(&self) -> TenancyMode {

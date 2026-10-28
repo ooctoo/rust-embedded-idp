@@ -571,7 +571,9 @@ fn admin_access_lists_optionally_filter_business_and_page_tied_permissions() {
         let second = send_with_business(
             &router,
             "GET",
-            &format!("/admin/access/permissions?resource_type=shared&limit=1&sort_order={sort_order}&cursor={cursor}"),
+            &format!(
+                "/admin/access/permissions?resource_type=shared&limit=1&sort_order={sort_order}&cursor={cursor}"
+            ),
             Some(tenant),
             "",
             None,

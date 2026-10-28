@@ -122,13 +122,25 @@ fn diagnostic_http_matches_host_decisions_and_audits_caller_target_and_result() 
             "deny"
         );
         for sql in [
-            format!("update {s}.access_permissions set enabled=false where resource_type='report' and action='read'"),
+            format!(
+                "update {s}.access_permissions set enabled=false where resource_type='report' and action='read'"
+            ),
             format!("update {s}.access_roles set status='disabled' where id='{role}'"),
-            format!("update {s}.access_memberships set status='suspended' where tenant_id='{}' and account_id='{}'",db.target(),db.member),
-            format!("update {s}.accounts set status='disabled' where id='{}'",db.member),
+            format!(
+                "update {s}.access_memberships set status='suspended' where tenant_id='{}' and account_id='{}'",
+                db.target(),
+                db.member
+            ),
+            format!(
+                "update {s}.accounts set status='disabled' where id='{}'",
+                db.member
+            ),
         ] {
             c.batch_execute(&sql).unwrap();
-            assert_eq!(check(&router,Some(db.target()),&body(&db,Some("r1"))).1["decision"],"deny");
+            assert_eq!(
+                check(&router, Some(db.target()), &body(&db, Some("r1"))).1["decision"],
+                "deny"
+            );
             c.batch_execute(&format!("update {s}.access_permissions set enabled=true where resource_type='report'; update {s}.access_roles set status='active' where id='{role}'; update {s}.access_memberships set status='active' where tenant_id='{}' and account_id='{}'; update {s}.accounts set status='active' where id='{}'",db.target(),db.member,db.member)).unwrap();
         }
         let count: i64 = c
