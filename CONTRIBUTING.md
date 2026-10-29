@@ -64,6 +64,15 @@ For optional live Postgres coverage, set
 scripts/run_live_postgres_checks.sh disabled
 ```
 
+Use a disposable PostgreSQL instance for this suite. Schema-initialization tests
+create random login roles as well as random schemas, verify restricted-role
+behavior, and explicitly remove their resources. The supplied test connection
+needs database `CREATE` and role-management privileges; ordinary application
+credentials are not sufficient. Tests never grant these capabilities to the
+application role or alter shared PUBLIC privileges. The CI integration entry
+below supplies its own disposable administrative connection without loading the
+development database configuration.
+
 ## CI quality lanes
 
 Ordinary CI preserves build/static checks and UT in `check`, then runs independent
