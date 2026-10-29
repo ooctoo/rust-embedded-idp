@@ -63,6 +63,8 @@ pnpm --dir web build
 
 `key-init` 只在密钥不存在时创建 `.local/idp-signing-key.der`，不会覆盖。`db-init` 在目标 schema 中创建本分支的 `tenant_v6` IdP 对象，允许保留不冲突的宿主对象；重复执行只核对同模式的现有结构和状态，不清除数据，也不创建管理员。对象重名、旧版或不兼容的 IdP 结构会被拒绝；启动不会自动迁移旧 schema。
 
+支持数据库管理员预建 schema，并向初始化账号授予该 schema 的 `USAGE`、`CREATE` 权限；账号无需数据库级 `CREATE` 或 schema 所有权。已有 schema 不再执行创建 schema 的语句，首次建表会在同一事务内校验结构后提交；schema 缺失时仍按账号权限创建。本地开发脚本保留固定 schema 名称，自定义名称使用[直接初始化入口](docs/standalone-app-v1.md#initialize-an-administrator-provisioned-schema)或宿主注入配置。对象权限与在线角色授权由部署方管理，详见[设计与实施方案](docs/precreated-schema-initialization-design.md)。
+
 每个模式需单独执行一次**离线管理员初始化**，邮箱由你指定，密码只能通过标准输入传入，不能放进命令参数或 `.env`。下面是在 zsh/bash 中输入不回显密码的示例：
 
 ```sh

@@ -218,21 +218,43 @@ fn schema_facts(
 }
 
 impl PostgresStorageAdapter {
-    /// Explicit initialization in a schema without conflicting IdP objects.
-    /// Never migrates, resets or rewrites existing objects or permissions.
+    /// Explicit initialization beside non-conflicting host objects. An existing
+    /// schema only requires schema-local creation privileges, not database CREATE
+    /// or schema ownership. An absent schema is created with the caller's rights.
+    /// Never migrates, resets or rewrites existing objects or permissions. A lost
+    /// commit acknowledgement requires checking/retrying the identical target.
     pub fn initialize_access_schema(
         &self,
         mode: TenancyMode,
         catalog: &PermissionCatalog,
     ) -> Result<AccessSchemaFacts, StoreError> {
-        let mut client = self.connect()?;
-        let mut tx = client.transaction().map_err(access_db_error)?;
         let schema = self.schema_name();
+        // Skipping CREATE SCHEMA must not bypass its reserved-name protection.
+        if schema.starts_with("pg_") {
+            return Err(StoreError::Backend(
+                "reserved postgres schema cannot be initialized".into(),
+            ));
+        }
+        let mut client = self.connect()?;
+        // A waiter must observe the initializer that committed while it waited
+        // on the advisory lock, regardless of the connection's default isolation.
+        let mut tx = client
+            .build_transaction()
+            .isolation_level(postgres::IsolationLevel::ReadCommitted)
+            .start()
+            .map_err(access_db_error)?;
         tx.query_one(
             "select pg_advisory_xact_lock(hashtext($1))",
             &[&format!("{schema}:embedded-idp-migration")],
         )
         .map_err(access_db_error)?;
+        let schema_exists: bool = tx
+            .query_one(
+                "select exists(select 1 from pg_catalog.pg_namespace where nspname=$1)",
+                &[&schema],
+            )
+            .map_err(access_db_error)?
+            .get(0);
         let state = format!("{schema}.access_state");
         let exists: bool = tx
             .query_one("select to_regclass($1) is not null", &[&state])
@@ -252,8 +274,10 @@ impl PostgresStorageAdapter {
             return Err(StoreError::Conflict("access.schema_object_conflict"));
         }
         // schema is validated by PgStorageConfig; no business input enters SQL text.
-        tx.batch_execute(&format!("create schema if not exists {schema}"))
-            .map_err(access_db_error)?;
+        if !schema_exists {
+            tx.batch_execute(&format!("create schema if not exists {schema}"))
+                .map_err(access_db_error)?;
+        }
         tx.batch_execute(&DDL.replace("__SCHEMA__", schema))
             .map_err(access_db_error)?;
         tx.execute(&format!("insert into {schema}.access_state(singleton,tenancy_mode,module_version) values(true,$1,$2)"), &[&mode_name(mode), &ACCESS_SCHEMA_VERSION]).map_err(access_db_error)?;
@@ -264,6 +288,9 @@ impl PostgresStorageAdapter {
             }
             tx.execute(&format!("insert into {schema}.access_permissions(tenant_id,business_id,resource_type,action,category,description,enabled,archived,version) values('0',$1,$2,$3,$4,$5,$6,$7,$8)"), &[&definition.key.business_id, &definition.key.resource_type, &definition.key.action, &category_name(definition.category), &definition.description, &definition.enabled, &definition.archived, &(definition.version as i64)]).map_err(access_db_error)?;
         }
+        // PostgreSQL may silently choose alternate constraint/index names in a
+        // shared schema. Do not commit a layout that the next inspection rejects.
+        validate_layout(&mut tx, schema)?;
         let facts = schema_facts(&mut tx, schema, mode)?;
         tx.commit().map_err(access_db_error)?;
         Ok(facts)

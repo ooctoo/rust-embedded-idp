@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 mod scan_login_migration;
 mod scan_login_origin_closure_migration;
+mod schema_initialization;
 
 fn catalog() -> PermissionCatalog {
     PermissionCatalog::new(

@@ -72,6 +72,60 @@ restore the fixed platform settings to return to platform management. Disabled
 mode has one domain (`0`) and no tenant-management UI. The local profiles share
 the PostgreSQL connection from `.env` but use separate schemas and ports.
 
+## Initialize an administrator-provisioned schema
+
+A database administrator may create the schema under their own role and grant
+`USAGE, CREATE` on that schema to the initialization role. The latter needs
+database connection access and the existing trusted PL/pgSQL language; it does
+not need database-level `CREATE`, database ownership or schema ownership.
+`initialize_access_schema` skips `CREATE SCHEMA` when the schema exists. For an
+absent schema it retains the existing creation path and its database privilege
+requirement. Names beginning with `pg_` are rejected before connecting.
+
+The local `dev_env.sh` loader continues to require
+`embedded_idp_disabled_v2` / `embedded_idp_enabled_v2`. An arbitrary custom name
+uses the direct initialization entry or the embedding host's typed configuration:
+
+```sh
+# Supply EMBEDDED_IDP_APP_PG_URI and TLS settings through trusted private configuration.
+EMBEDDED_IDP_APP_PG_SCHEMA=idp_identity \
+EMBEDDED_IDP_APP_TENANCY_MODE=enabled \
+cargo run --locked -p embedded-idp-storage-postgres \
+  --example bootstrap_local_postgres -- --access-schema
+```
+
+This direct entry reads the process environment; it does not load `.env` files.
+Use the same database, schema and mode for the subsequent direct
+`embedded-idp-app bootstrap-admin` command and online process. Do not use
+`--schema-only` or the legacy migration entry to initialize current Access tables.
+The host examples also prepare business tables and own fixture markers; their
+complete `db-init` commands do not inherit this restricted-role guarantee.
+
+First initialization creates the current `tenant_v6` objects, system domain and
+trusted permission catalog in one transaction, validates the layout before
+commit, and leaves administrator bootstrap incomplete. Existing host objects,
+owners and ACLs are preserved. A conflict or detected layout failure rolls back
+the new objects; no existing object is replaced. Repeated initialization checks
+the existing structure and mode without rewriting data, and needs existing-object
+read permissions but no schema `CREATE`. The checks are the existing layout
+checks, not an exhaustive schema or permission audit.
+
+Objects belong to the effective initialization role. A separate online role needs
+explicit access to the required IdP objects; schema `USAGE` alone is insufficient.
+Avoid blanket grants on all tables in a shared schema. Defaults for new objects
+come from their creating role, and the module does not alter default ACLs or grant
+permissions. Revoking schema `CREATE` does not remove ownership rights over
+objects the same role already owns. Keep the schema owner, schema creators and
+search path trusted, and avoid concurrent administrative DDL during initialization.
+
+If a connection fails during commit or the success acknowledgement is lost, the
+result may already have committed. Restore connectivity and explicitly retry the
+identical database/schema/mode/catalog operation; it will validate committed
+state or initialize after rollback. Do not delete/recreate the schema or assume
+a nonzero exit means rollback. Administrator provisioning, grants and later
+bootstrap/business-table preparation are separate transactions. See the
+[design and recovery boundaries](precreated-schema-initialization-design.md).
+
 ## Signing key
 
 The reference host requires an RSA key of at least 3072 bits in unencrypted

@@ -113,6 +113,41 @@ online transactions and new Access operations use the pool.
 The host reads its own runtime configuration (including database URI, schema,
 TLS, pool, issuer, signing keys and client policy) and injects typed values;
 `EMBEDDED_IDP_APP_*` names belong to the reference app, not the module API.
+An administrator may precreate the target schema and grant the offline
+initialization role schema-local `USAGE, CREATE`. `initialize_access_schema`
+skips `CREATE SCHEMA` for an existing target, so it does not require database-level
+`CREATE` or schema ownership in that case. An absent target still follows the
+existing schema-creation path. Initialization rejects the reserved `pg_` prefix,
+uses an explicit `READ COMMITTED` transaction with the existing migration lock,
+and checks the new layout before commit. DDL, system-domain/catalog seeds and
+their validation commit together; no version or migration change is required.
+
+Preexisting host objects are preserved. Name conflicts are handled by the
+existing relation precheck, PostgreSQL DDL rules and final layout check, including
+automatic constraint-name changes; no object is replaced. Existing schemas still
+use the same partial layout/version/mode checks, without repair or catalog
+rewrites. A repeated call requires the existing-object read permissions but no
+schema `CREATE`. An inaccessible schema or table is an error, never an instruction
+to create or authorize a replacement.
+
+New objects belong to the effective initialization role and use that role's
+default ACLs. The module does not change ownership, grants or default privileges.
+Separate online roles need explicit IdP object access for both direct queries and
+trigger bodies; schema `USAGE` and read-only readiness alone do not prove write
+permissions. Avoid blanket shared-schema grants. Using the object-owner role
+online retains its ownership rights even after revoking schema `CREATE`.
+Schema owners, creators and search-path configuration remain trusted deployment
+boundaries; the advisory lock cannot protect against external administrative DDL.
+
+Confirmed precommit failures roll back this initialization transaction. A lost
+commit acknowledgement leaves the outcome unknown: reconnect and explicitly
+retry the identical target/mode/catalog, allowing the existing lock and
+idempotent checks to resolve it. Do not automatically drop objects or infer
+rollback from `StoreError::Backend`. Earlier provisioning/grants and subsequent
+bootstrap, optional audit preparation or example business-table initialization
+are separate transactions. See the [initialization design](precreated-schema-initialization-design.md)
+for entry-point restrictions and verification scope.
+
 The same database configuration is needed by offline initialization and each
 running process. The offline host first calls `initialize_access_schema`,
 then `CoreAccessBootstrapService::initialize` using that adapter. The host supplies
