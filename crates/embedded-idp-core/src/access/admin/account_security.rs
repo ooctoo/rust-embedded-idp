@@ -22,6 +22,11 @@ pub struct AdminSetAccountPassword {
     pub account_id: String,
     pub new_password: SecretString,
 }
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AdminSetAccountDisplayName {
+    pub account_id: String,
+    pub display_name: String,
+}
 /// Exactly one initial administrator source; secrets never enter AccessChange/audit.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InitialTenantAdministrator {
@@ -65,6 +70,14 @@ pub trait AccountSecurityService: Send + Sync {
         context: AccessAdminContext,
         command: AdminSetAccountPassword,
     ) -> Result<AccessAuditEvent, AccessError>;
+    /// Change the shared account display name under platform management authority.
+    fn set_account_display_name(
+        &self,
+        _context: AccessAdminContext,
+        _command: AdminSetAccountDisplayName,
+    ) -> Result<AccessAuditEvent, AccessError> {
+        Err(AccessError::FeatureDisabled)
+    }
 }
 pub struct CoreAccountSecurityService<S, C, I> {
     admin: CoreAccessAdminService<S, C, I>,
@@ -210,6 +223,35 @@ impl<S: AccessAdminStore, C: Clock + Send + Sync, I: IdGenerator + Send + Sync>
             self.audit(tx, context, before.clone(), before, true, now)
         })
     }
+
+    fn set_account_display_name(
+        &self,
+        context: AccessAdminContext,
+        command: AdminSetAccountDisplayName,
+    ) -> Result<AccessAuditEvent, AccessError> {
+        validate_id(&command.account_id, 128, "account_id")?;
+        validate_display_name(&command.display_name)?;
+        self.admin.store.admin_transaction(|tx| {
+            let now = self.authorize(tx, &context, Some(&command.account_id))?;
+            let mut after = self.account(tx, &command.account_id)?;
+            if after.status == AccountIdentityStatus::Closed {
+                return Err(AccessError::Conflict("account_closed"));
+            }
+            let before = after.display_name.replace(command.display_name);
+            let event = AccessAuditEvent {
+                id: self.admin.new_id("audit")?,
+                occurred_at: now,
+                context,
+                tenant_id: SYSTEM_TENANT_ID.into(),
+                target_business_id: None,
+                operation: "account.display_name",
+                change: AccessChange::AccountDisplayName { before, after },
+            };
+            tx.apply_change(&event.change, now)?;
+            tx.append_audit(&event)?;
+            Ok(event)
+        })
+    }
 }
 impl<S: AccessAdminStore, C: Clock, I: IdGenerator> CoreAccountSecurityService<S, C, I> {
     fn password(&self, password: &SecretString) -> Result<(), AccessError> {
@@ -221,17 +263,15 @@ impl<S: AccessAdminStore, C: Clock, I: IdGenerator> CoreAccountSecurityService<S
         tx: &mut impl AccessAdminTransaction,
         context: &AccessAdminContext,
         subject: Option<&str>,
-    ) -> Result<(), AccessError> {
-        self.admin
-            .authorize_management(
-                tx,
-                context,
-                SYSTEM_TENANT_ID,
-                AccessAdminOperation::ManageAccountSecurity,
-                true,
-                subject,
-            )
-            .map(|_| ())
+    ) -> Result<SystemTime, AccessError> {
+        self.admin.authorize_management(
+            tx,
+            context,
+            SYSTEM_TENANT_ID,
+            AccessAdminOperation::ManageAccountSecurity,
+            true,
+            subject,
+        )
     }
     fn account(
         &self,
@@ -310,10 +350,14 @@ fn validate_account_profile(email: &str, display_name: &Option<String>) -> Resul
     if !is_valid_email(email) || email.len() > 254 || email.chars().any(char::is_control) {
         return Err(AccessError::InvalidInput("email"));
     }
-    if display_name
-        .as_ref()
-        .is_some_and(|s| s.trim().is_empty() || s.len() > 256 || s.chars().any(char::is_control))
-    {
+    if let Some(display_name) = display_name {
+        validate_display_name(display_name)?;
+    }
+    Ok(())
+}
+
+fn validate_display_name(name: &str) -> Result<(), AccessError> {
+    if name.trim().is_empty() || name.len() > 256 || name.chars().any(char::is_control) {
         return Err(AccessError::InvalidInput("display_name"));
     }
     Ok(())

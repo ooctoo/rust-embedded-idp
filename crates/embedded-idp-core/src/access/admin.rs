@@ -200,6 +200,10 @@ pub enum AccessChange {
         after: AccessAccountRecord,
         password_changed: bool,
     },
+    AccountDisplayName {
+        before: Option<String>,
+        after: AccessAccountRecord,
+    },
     Client {
         before: Option<crate::AdminClientRecord>,
         after: crate::AdminClientRecord,

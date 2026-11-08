@@ -964,6 +964,15 @@ impl AccessAdminTransaction for Tx {
             | AccessChange::AccountSecurity { .. } => {
                 unreachable!("client writes use their secret-bearing primitive")
             }
+            AccessChange::AccountDisplayName { after, .. } => {
+                let row = self
+                    .data
+                    .account_records
+                    .iter_mut()
+                    .find(|r| r.account_id == after.account_id)
+                    .unwrap();
+                row.display_name.clone_from(&after.display_name);
+            }
             AccessChange::Session { before, after } => {
                 *self
                     .data
@@ -3520,6 +3529,53 @@ fn security_service() -> (CoreAccountSecurityService<Store, FixedClock, SeqIds>,
         CoreAccountSecurityService::new(admin, security_config()).unwrap(),
         store,
     )
+}
+#[test]
+fn display_name_change_requires_platform_authority_and_atomic_audit() {
+    let (svc, store) = security_service();
+    let platform = ctx("0", "u1", "s0");
+    let command = AdminSetAccountDisplayName {
+        account_id: "u2".into(),
+        display_name: "张三".into(),
+    };
+    assert_eq!(
+        svc.set_account_display_name(ctx("t1", "u1", "s1"), command.clone()),
+        Err(AccessError::Forbidden)
+    );
+    for invalid in [" \t".into(), "x\0y".into(), "名".repeat(86)] {
+        assert_eq!(
+            svc.set_account_display_name(
+                platform.clone(),
+                AdminSetAccountDisplayName {
+                    display_name: invalid,
+                    ..command.clone()
+                },
+            ),
+            Err(AccessError::InvalidInput("display_name"))
+        );
+    }
+    let original = store.0.lock().unwrap().account_records[1].clone();
+    store.0.lock().unwrap().fail_audit = true;
+    assert!(svc
+        .set_account_display_name(platform.clone(), command.clone())
+        .is_err());
+    assert_eq!(store.0.lock().unwrap().account_records[1], original);
+
+    store.0.lock().unwrap().fail_audit = false;
+    let event = svc.set_account_display_name(platform, command).unwrap();
+    let mut updated = original;
+    updated.display_name = Some("张三".into());
+    assert_eq!(event.operation, "account.display_name");
+    assert_eq!(
+        event.change,
+        AccessChange::AccountDisplayName {
+            before: None,
+            after: updated.clone()
+        }
+    );
+    let data = store.0.lock().unwrap();
+    assert_eq!(data.account_records[1], updated);
+    assert_eq!(data.audits.last(), Some(&event));
 }
 #[test]
 fn account_security_creation_requires_platform_permissions_and_initial_membership() {

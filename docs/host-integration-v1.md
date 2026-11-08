@@ -1436,6 +1436,7 @@ suspension remains a separate, tenant-scoped action.
 | POST `/admin/platform/accounts` | Required tenant_id, email, password; optional display_name |
 | POST `/admin/platform/accounts/:account_id/status` | status (active/disabled) and expected_status |
 | POST `/admin/platform/accounts/:account_id/password` | new_password |
+| POST `/admin/platform/accounts/:account_id/display-name` | Required display_name string |
 
 The header identifies platform scope: omit it or supply exactly one value 0.
 Creation chooses its initial tenant explicitly in the body. Enabled requires a real,
@@ -1445,6 +1446,13 @@ the authorized operator is responsible for verifying the identity. It creates an
 active account and exactly one active membership together, grants no role and issues
 no session/token. Duplicate email returns a conflict and never attaches the existing
 identity to another tenant. Use the audited member-binding operation for that case.
+
+Hosts can also call `AccountSecurityService::set_account_display_name` directly.
+The operation sets the shared `display_name` in both tenancy modes. Names must
+contain a non-whitespace character, fit within 256 UTF-8 bytes, and contain no
+control characters. An unknown account returns 404 and a closed account returns
+409. The write and `account.display_name` audit event commit in one transaction.
+The response returns the account projection and audit ID.
 
 Activation can explicitly activate a pending-verification identity or reactivate a
 disabled one; at least one non-removed membership must remain. Closed identities

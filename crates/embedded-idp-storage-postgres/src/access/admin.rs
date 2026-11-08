@@ -973,6 +973,19 @@ impl AccessAdminTransaction for PostgresAccessAdminTransaction<'_> {
             | AccessChange::AccountCreated { .. }
             | AccessChange::AccountSecurity { .. }
             | AccessChange::DeviceReceipt(_) => return Err(invalid()),
+            AccessChange::AccountDisplayName { before, after } => {
+                changed(
+                    self.tx
+                        .execute(
+                            &format!(
+                                "update {s}.accounts set display_name=$2 where id=$1 \
+                                 and display_name is not distinct from $3"
+                            ),
+                            &[&uuid(&after.account_id)?, &after.display_name, before],
+                        )
+                        .map_err(access_db_error)?,
+                )?;
+            }
             AccessChange::Session { before, .. } => {
                 self.revoke_session_scope(&before.tenant_id, Some(&before.id), None, now)?;
             }
@@ -1444,6 +1457,9 @@ fn change_json(change: &AccessChange) -> Result<Value, StoreError> {
             password_changed,
         } => {
             json!({"kind":"account.security","before":account(before)?,"after":account(after)?,"password_changed":password_changed})
+        }
+        AccessChange::AccountDisplayName { before, after } => {
+            json!({"kind":"account.display_name","account_id":after.account_id,"before":{"display_name":before},"after":{"display_name":after.display_name}})
         }
         AccessChange::Client {
             before,
