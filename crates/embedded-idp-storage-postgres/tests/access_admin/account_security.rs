@@ -56,6 +56,61 @@ fn credentials(db: &Db, id: Uuid) -> Vec<i64> {
 }
 #[test]
 #[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
+fn platform_display_name_route_updates_shared_profile_and_audits_without_revocation() {
+    for mode in [TenancyMode::Disabled, TenancyMode::Enabled] {
+        let db = Db::new(mode);
+        let router = app(&db, Some(db.context(db.actor_session.to_string())));
+        let path = format!("/admin/platform/accounts/{}/display-name", db.member);
+        let body = r#"{"display_name":"张三"}"#;
+        assert_eq!(
+            send(&app(&db, None), "POST", &path, None, body).0,
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            send(&router, "POST", &path, Some("t1"), body).0,
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            send(&router, "POST", &path, None, r#"{"display_name":null}"#).0,
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+        let missing_path = format!("/admin/platform/accounts/{}/display-name", Uuid::now_v7());
+        assert_eq!(
+            send(&router, "POST", &missing_path, None, body).0,
+            StatusCode::NOT_FOUND
+        );
+
+        let before_security = status(&db, db.member);
+        let before_credentials = credentials(&db, db.member);
+        assert!(before_credentials[0] > 0);
+        let (code, result) = send(&router, "POST", &path, None, body);
+        assert_eq!(code, StatusCode::OK, "{result}");
+        assert_eq!(result["account"]["display_name"], "张三");
+        assert_eq!(result["account"]["email"], "member@example.test");
+        assert!(result["account"]["membership"].is_null());
+
+        let detail_path = format!("/admin/platform/accounts/{}", db.member);
+        let (code, persisted) = send(&router, "GET", &detail_path, None, "");
+        assert_eq!(code, StatusCode::OK);
+        assert_eq!(persisted, result["account"]);
+        assert_eq!(status(&db, db.member), before_security);
+        assert_eq!(credentials(&db, db.member), before_credentials);
+
+        let id = Uuid::parse_str(result["audit_id"].as_str().unwrap()).unwrap();
+        let schema = db.schema();
+        let row = db.adapter.connect().unwrap().query_one(
+            &format!("select operation, change_json::text from {schema}.access_audit_events where id=$1"),
+            &[&id],
+        ).unwrap();
+        assert_eq!(row.get::<_, String>(0), "account.display_name");
+        assert_eq!(
+            serde_json::from_str::<Value>(&row.get::<_, String>(1)).unwrap(),
+            json!({"kind":"account.display_name","account_id":db.member.to_string(),"before":{"display_name":null},"after":{"display_name":"张三"}})
+        );
+    }
+}
+#[test]
+#[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
 fn account_security_create_is_atomic_requires_a_tenant_and_never_returns_passwords() {
     for mode in [TenancyMode::Disabled, TenancyMode::Enabled] {
         let db = Db::new(mode);

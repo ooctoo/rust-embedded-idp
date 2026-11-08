@@ -24,6 +24,10 @@ pub fn account_security_admin_router(service: Arc<dyn AccountSecurityService>) -
             "/admin/platform/accounts/:account_id/password",
             post(password),
         )
+        .route(
+            "/admin/platform/accounts/:account_id/display-name",
+            post(display_name),
+        )
         .with_state(service)
         .layer(DefaultBodyLimit::max(16384))
         .layer(middleware::from_fn(no_store))
@@ -47,11 +51,17 @@ struct SetStatus {
 struct Password {
     new_password: String,
 }
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DisplayName {
+    display_name: String,
+}
 fn response(result: Result<AccessAuditEvent, AccessError>) -> Response {
     match result {
         Ok(event) => match event.change {
             AccessChange::AccountCreated { after }
-            | AccessChange::AccountSecurity { after, .. } => {
+            | AccessChange::AccountSecurity { after, .. }
+            | AccessChange::AccountDisplayName { after, .. } => {
                 Json(json!({"account":account(after),"audit_id":event.id})).into_response()
             }
             _ => error(AccessError::InvalidStoreResponse),
@@ -127,6 +137,30 @@ async fn password(
                 AdminSetAccountPassword {
                     account_id,
                     new_password: SecretString::new(body.new_password),
+                },
+            )
+        })
+        .await,
+    )
+}
+async fn display_name(
+    State(service): State<Arc<dyn AccountSecurityService>>,
+    context: Option<Extension<AccessAdminContext>>,
+    headers: HeaderMap,
+    Path(account_id): Path<String>,
+    Json(body): Json<DisplayName>,
+) -> Response {
+    let context = match platform_context(context, &headers) {
+        Ok(c) => c,
+        Err(e) => return e,
+    };
+    response(
+        call(move || {
+            service.set_account_display_name(
+                context,
+                AdminSetAccountDisplayName {
+                    account_id,
+                    display_name: body.display_name,
                 },
             )
         })
