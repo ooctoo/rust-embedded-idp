@@ -96,8 +96,6 @@ jobs:
       - name: Install locked browser tools
         timeout-minutes: 8
         run: |
-          # Avoid the runner's Azure mirror, whose DNS failures block Playwright dependencies.
-          sudo sed -i 's|mirror+file:/etc/apt/apt-mirrors.txt|https://archive.ubuntu.com/ubuntu/|g' /etc/apt/sources.list.d/ubuntu.sources
           pnpm --dir scripts/n2-ci install --frozen-lockfile --ignore-scripts --config.engine-strict=true
           pnpm --dir scripts/n2-ci exec playwright install --with-deps --no-shell chromium
       - name: Build reference host and fixture preparation tool
