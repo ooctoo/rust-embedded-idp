@@ -3,7 +3,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use base64ct::{Base64, Base64UrlUnpadded, Encoding};
 use embedded_idp_core::{
     AccessTokenIssuer, AccessTokenValidator, IdTokenClaims, IdTokenIssuer, OidcMetadataService,
-    TokenIssuer,
+    ScopedAccessTokenIssuer, TokenIssuer,
 };
 use embedded_idp_security::{
     JwtConfigurationError, ProductionJwtConfig, Rs256JwtService, RsaPublicKeyConfig,
@@ -48,6 +48,154 @@ fn jwt_part(token: &str, index: usize) -> Value {
     let encoded = token.split('.').nth(index).unwrap();
     let bytes = Base64UrlUnpadded::decode_vec(encoded).unwrap();
     serde_json::from_slice(&bytes).unwrap()
+}
+
+#[test]
+fn configured_access_lifetimes_apply_to_tokens_and_session_bundles() {
+    for ttl in [300, 1800] {
+        let mut cfg = config();
+        cfg.access_token_ttl_secs = ttl;
+        let service = service(cfg, key_one());
+        let access = service
+            .issue_access_token("t1", "session", "account", "web", now())
+            .unwrap();
+        let bundle = service
+            .issue_session_tokens("t1", "session", "account", "web", 7, now())
+            .unwrap();
+        assert_eq!(access.expires_at, now() + Duration::from_secs(ttl));
+        assert_eq!(bundle.access_expires_at, access.expires_at);
+        assert_eq!(bundle.refresh_token_version, 7);
+        assert_eq!(
+            bundle.refresh_expires_at,
+            now() + Duration::from_secs(86_400)
+        );
+        for token in [&access.token, &bundle.access_token] {
+            assert_eq!(jwt_part(token.expose_secret(), 1)["exp"], NOW_SECS + ttl);
+            assert_eq!(
+                service
+                    .validate_access_token(token.expose_secret(), now())
+                    .unwrap()
+                    .unwrap()
+                    .expires_at,
+                access.expires_at
+            );
+        }
+    }
+}
+
+#[test]
+fn bounded_access_tokens_use_the_earlier_deadline_and_issuer_policy() {
+    let service = service(config(), key_one());
+    let issued_at = now() + Duration::from_millis(250);
+    for (deadline_offset, expected_seconds) in [(120_750, 120), (300_750, 300), (900_750, 300)] {
+        let deadline = now() + Duration::from_millis(deadline_offset);
+        let access = service
+            .issue_access_token_with_expiry("t1", "session", "account", "web", issued_at, deadline)
+            .unwrap();
+        let bundle = service
+            .issue_session_tokens_with_access_expiry(
+                "t1", "session", "account", "web", 2, issued_at, deadline,
+            )
+            .unwrap();
+        let expected = now() + Duration::from_secs(expected_seconds);
+        assert_eq!(access.expires_at, expected);
+        assert_eq!(bundle.access_expires_at, expected);
+        assert_eq!(
+            bundle.refresh_expires_at,
+            issued_at + Duration::from_secs(86_400)
+        );
+        assert_eq!(
+            jwt_part(access.token.expose_secret(), 1)["exp"],
+            NOW_SECS + expected_seconds
+        );
+        assert_eq!(
+            service
+                .validate_access_token(access.token.expose_secret(), issued_at)
+                .unwrap()
+                .unwrap()
+                .expires_at,
+            expected
+        );
+    }
+}
+
+#[test]
+fn bounded_scoped_tokens_preserve_identity_scope_and_management_purpose() {
+    let service = Rs256JwtService::new_management(config(), key_one(), vec![]).unwrap();
+    let access = service
+        .issue_scoped_access_token_with_expiry(
+            "t1",
+            "session",
+            "account",
+            "web",
+            now(),
+            "profile",
+            now() + Duration::from_secs(1),
+        )
+        .unwrap();
+    let validated = service
+        .validate_access_token(access.token.expose_secret(), now())
+        .unwrap()
+        .unwrap();
+    assert_eq!(validated.tenant_id, "t1");
+    assert_eq!(validated.session_id, "session");
+    assert_eq!(validated.subject_account_id, "account");
+    assert_eq!(validated.client_id, "web");
+    assert_eq!(validated.scope.as_deref(), Some("profile"));
+    assert_eq!(
+        validated.purpose,
+        embedded_idp_core::AccessTokenPurpose::Management
+    );
+    assert_eq!(validated.expires_at, now() + Duration::from_secs(1));
+    assert!(service
+        .issue_scoped_access_token_with_expiry(
+            "t1",
+            "session",
+            "account",
+            "web",
+            now(),
+            "admin",
+            now() + Duration::from_secs(1)
+        )
+        .is_err());
+}
+
+#[test]
+fn bounded_issuance_rejects_elapsed_and_unrepresentable_lifetimes() {
+    let service = service(config(), key_one());
+    let issued_at = now() + Duration::from_millis(250);
+    for deadline in [
+        UNIX_EPOCH - Duration::from_secs(1),
+        now(),
+        issued_at,
+        now() + Duration::from_millis(999),
+    ] {
+        assert!(service
+            .issue_access_token_with_expiry("t1", "session", "account", "web", issued_at, deadline)
+            .is_err());
+        assert!(service
+            .issue_session_tokens_with_access_expiry(
+                "t1", "session", "account", "web", 1, issued_at, deadline
+            )
+            .is_err());
+    }
+    let mut cfg = config();
+    cfg.access_token_ttl_secs = u64::MAX - 1;
+    cfg.refresh_token_ttl_secs = u64::MAX;
+    let oversized = Rs256JwtService::new(cfg, key_one(), vec![]).unwrap();
+    assert!(oversized
+        .issue_access_token("t1", "session", "account", "web", now())
+        .is_err());
+    assert!(oversized
+        .issue_access_token_with_expiry(
+            "t1",
+            "session",
+            "account",
+            "web",
+            now(),
+            now() + Duration::from_secs(120)
+        )
+        .is_err());
 }
 
 #[test]

@@ -202,6 +202,76 @@ fn expected() -> &'static str {
 }
 
 #[tokio::test]
+async fn terminal_cookie_response_preserves_expiry_and_rounds_positive_subsecond_lifetime() {
+    let config = BrowserSessionHttpConfig::new(
+        "https://idp.example",
+        "business_cookie",
+        "/auth/browser",
+        AccessTokenPurpose::Business,
+    )
+    .unwrap();
+    let base = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let now = base + Duration::from_millis(750);
+    let mut result = Fake::new(AccessTokenPurpose::Business).authenticated("tenant-a");
+    result.tokens.access_expires_at = base + Duration::from_secs(1);
+    result.tokens.refresh_expires_at = result.tokens.access_expires_at;
+    result.session.expires_at = result.tokens.access_expires_at;
+
+    let response = authenticated(&config, result, now);
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(cookie(&response).contains("Max-Age=1;"));
+    let actual = body(response).await;
+    assert_eq!(
+        actual["tokens"]["access_expires_at_unix_secs"],
+        1_700_000_001_u64
+    );
+    assert_eq!(
+        actual["tokens"]["refresh_expires_at_unix_secs"],
+        1_700_000_001_u64
+    );
+    assert_eq!(actual["session"]["expires_at_unix_secs"], 1_700_000_001_u64);
+}
+
+#[test]
+fn expired_response_clears_cookie_but_malformed_refresh_remains_server_error() {
+    let config = BrowserSessionHttpConfig::new(
+        "https://idp.example",
+        "business_cookie",
+        "/auth/browser",
+        AccessTokenPurpose::Business,
+    )
+    .unwrap();
+    let now = SystemTime::now();
+    for expired_access in [true, false] {
+        for expiry in [now, now - Duration::from_secs(1)] {
+            let mut result = Fake::new(AccessTokenPurpose::Business).authenticated("tenant-a");
+            if expired_access {
+                result.tokens.access_expires_at = expiry;
+            } else {
+                result.tokens.refresh_expires_at = expiry;
+            }
+            let response = authenticated(&config, result, now);
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+            assert!(cookie(&response).contains("Max-Age=0;"));
+            assert_eq!(
+                response
+                    .headers()
+                    .get_all(header::SET_COOKIE)
+                    .iter()
+                    .count(),
+                1
+            );
+        }
+    }
+    let mut result = Fake::new(AccessTokenPurpose::Business).authenticated("tenant-a");
+    result.tokens.refresh_token = SecretString::new("invalid;cookie");
+    result.tokens.access_expires_at = now;
+    let response = authenticated(&config, result, now);
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(!response.headers().contains_key(header::SET_COOKIE));
+}
+
+#[tokio::test]
 async fn browser_flow_hides_refresh_and_sets_scoped_cookie() {
     let fake = Fake::new(AccessTokenPurpose::Business);
     let calls = fake.calls.clone();

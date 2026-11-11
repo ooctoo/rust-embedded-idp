@@ -84,6 +84,41 @@ pub trait TokenIssuer {
         refresh_token_version: u64,
         issued_at: SystemTime,
     ) -> Result<IssuedTokenBundle, TokenError>;
+
+    /// Issue within the caller's authorized deadline. Custom issuers must override
+    /// this method to shorten the signed lifetime when their default exceeds it.
+    /// The default preserves existing implementations and rejects overlong output.
+    #[allow(clippy::too_many_arguments)]
+    fn issue_session_tokens_with_access_expiry(
+        &self,
+        tenant_id: &str,
+        session_id: &str,
+        account_id: &str,
+        client_id: &str,
+        refresh_token_version: u64,
+        issued_at: SystemTime,
+        expires_at: SystemTime,
+    ) -> Result<IssuedTokenBundle, TokenError> {
+        if expires_at <= issued_at {
+            return Err(TokenError::IssuerRejected(
+                "access deadline has elapsed".into(),
+            ));
+        }
+        let result = self.issue_session_tokens(
+            tenant_id,
+            session_id,
+            account_id,
+            client_id,
+            refresh_token_version,
+            issued_at,
+        )?;
+        if result.access_expires_at <= issued_at || result.access_expires_at > expires_at {
+            return Err(TokenError::IssuerRejected(
+                "access expiry exceeds authorized deadline".into(),
+            ));
+        }
+        Ok(result)
+    }
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -111,6 +146,34 @@ pub trait AccessTokenIssuer {
         client_id: &str,
         issued_at: SystemTime,
     ) -> Result<IssuedAccessToken, TokenError>;
+
+    /// Issue within the caller's authorized deadline. Custom issuers must override
+    /// this method to shorten the signed lifetime when their default exceeds it.
+    /// The default preserves existing implementations and rejects overlong output.
+    #[allow(clippy::too_many_arguments)]
+    fn issue_access_token_with_expiry(
+        &self,
+        tenant_id: &str,
+        session_id: &str,
+        account_id: &str,
+        client_id: &str,
+        issued_at: SystemTime,
+        expires_at: SystemTime,
+    ) -> Result<IssuedAccessToken, TokenError> {
+        if expires_at <= issued_at {
+            return Err(TokenError::IssuerRejected(
+                "access deadline has elapsed".into(),
+            ));
+        }
+        let result =
+            self.issue_access_token(tenant_id, session_id, account_id, client_id, issued_at)?;
+        if result.expires_at <= issued_at || result.expires_at > expires_at {
+            return Err(TokenError::IssuerRejected(
+                "access expiry exceeds authorized deadline".into(),
+            ));
+        }
+        Ok(result)
+    }
 }
 
 /// Explicit delegated scope, used by OIDC and retained on refresh. Implementations
@@ -125,6 +188,36 @@ pub trait ScopedAccessTokenIssuer: AccessTokenIssuer {
         issued_at: SystemTime,
         scope: &str,
     ) -> Result<IssuedAccessToken, TokenError>;
+
+    /// Issue within the caller's authorized deadline. Custom issuers must override
+    /// this method to shorten the signed lifetime when their default exceeds it.
+    /// The default preserves existing implementations and rejects overlong output.
+    #[allow(clippy::too_many_arguments)]
+    fn issue_scoped_access_token_with_expiry(
+        &self,
+        tenant_id: &str,
+        session_id: &str,
+        account_id: &str,
+        client_id: &str,
+        issued_at: SystemTime,
+        scope: &str,
+        expires_at: SystemTime,
+    ) -> Result<IssuedAccessToken, TokenError> {
+        if expires_at <= issued_at {
+            return Err(TokenError::IssuerRejected(
+                "access deadline has elapsed".into(),
+            ));
+        }
+        let result = self.issue_scoped_access_token(
+            tenant_id, session_id, account_id, client_id, issued_at, scope,
+        )?;
+        if result.expires_at <= issued_at || result.expires_at > expires_at {
+            return Err(TokenError::IssuerRejected(
+                "access expiry exceeds authorized deadline".into(),
+            ));
+        }
+        Ok(result)
+    }
 }
 /// RFC 6749 scope-token syntax; canonical sets have one space and stable order.
 pub fn normalize_oauth_scope(scope: &str) -> Result<String, TokenError> {

@@ -369,3 +369,90 @@ fn member_revocation_committed_while_refresh_waits_prevents_issuance() {
     assert_eq!(state(&db, &initial.session), ("active".into(), 1));
     assert_eq!(count(&db, "refresh_tokens"), 1);
 }
+
+#[test]
+#[ignore = "requires explicit EMBEDDED_IDP_TEST_PG_CONNECTION_URI"]
+fn host_access_lifetime_and_terminal_refresh_use_signed_persisted_deadlines() {
+    for (mode, tenant) in [(TenancyMode::Disabled, "0"), (TenancyMode::Enabled, "t1")] {
+        let db = Db::new(mode);
+        prepare(&db);
+        for ttl in [300, 1800] {
+            let svc = auth_with_ttl(
+                &db,
+                LoginTenantPolicy::Fixed {
+                    tenant_id: tenant.into(),
+                },
+                "lifetime",
+                false,
+                false,
+                ttl,
+            );
+            let first = password_session(svc.login(password()).unwrap());
+            assert_eq!(
+                first.tokens.access_expires_at,
+                TestClock.now() + Duration::from_secs(ttl)
+            );
+            let TenantRefreshOutcome::Rotated { tokens, .. } =
+                svc.rotate_refresh(first.tokens.refresh_token).unwrap()
+            else {
+                panic!()
+            };
+            assert_eq!(
+                tokens.access_token.expires_at,
+                TestClock.now() + Duration::from_secs(ttl)
+            );
+            assert!(svc.authenticate(tokens.access_token.token).is_ok());
+        }
+        for scope in [None, Some("openid")] {
+            let svc = auth(
+                &db,
+                LoginTenantPolicy::Fixed {
+                    tenant_id: tenant.into(),
+                },
+                "lifetime",
+                false,
+                false,
+            );
+            let first = password_session(svc.login(password()).unwrap());
+            let id = Uuid::parse_str(&first.session.id).unwrap();
+            let mut connection = db.adapter.connect().unwrap();
+            // Simulate an existing session restored from whole-second persistence.
+            connection
+                .execute(
+                    &format!(
+                        "update {}.auth_sessions set expires_at_epoch=130, scope=$2 where id=$1",
+                        db.schema()
+                    ),
+                    &[&id, &scope],
+                )
+                .unwrap();
+            connection
+                .execute(
+                    &format!(
+                        "update {}.refresh_tokens set expires_at_epoch=130 where session_id=$1",
+                        db.schema()
+                    ),
+                    &[&id],
+                )
+                .unwrap();
+            let TenantRefreshOutcome::Rotated { session, tokens } =
+                svc.rotate_refresh(first.tokens.refresh_token).unwrap()
+            else {
+                panic!()
+            };
+            assert_eq!(session.expires_at, UNIX_EPOCH + Duration::from_secs(130));
+            assert_eq!(tokens.access_token.expires_at, session.expires_at);
+            assert_eq!(tokens.refresh_expires_at, session.expires_at);
+            assert!(svc.authenticate(tokens.access_token.token).is_ok());
+            let row = connection.query_one(&format!("select expires_at_epoch, refresh_token_version from {}.auth_sessions where id=$1", db.schema()), &[&id]).unwrap();
+            assert_eq!(row.get::<_, i64>(0), 130);
+            assert_eq!(row.get::<_, i64>(1), 2);
+            let digest = Sha256RefreshTokenDigester
+                .digest_refresh_token(tokens.refresh_token.expose_secret())
+                .unwrap();
+            let row = connection.query_one(&format!("select expires_at_epoch, token_version from {}.refresh_tokens where session_id=$1 and token_digest=$2", db.schema()), &[&id, &&digest[..]]).unwrap();
+            assert_eq!(row.get::<_, i64>(0), 130);
+            assert_eq!(row.get::<_, i64>(1), 2);
+        }
+    }
+}

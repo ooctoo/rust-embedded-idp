@@ -276,21 +276,31 @@ fn browser_error(error: TenantAuthError) -> Response {
         other => map_tenant_auth_error(other),
     }
 }
-fn authenticated(config: &BrowserSessionHttpConfig, result: TenantLoginSession) -> Response {
+fn authenticated(
+    config: &BrowserSessionHttpConfig,
+    result: TenantLoginSession,
+    now: SystemTime,
+) -> Response {
     let raw = result.tokens.refresh_token.expose_secret();
-    let max_age = result
-        .tokens
-        .refresh_expires_at
-        .duration_since(SystemTime::now())
-        .unwrap_or_default()
-        .as_secs();
-    if !valid_token(raw) || max_age == 0 {
+    if !valid_token(raw) {
         return tenant_error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "internal_error",
             "invalid browser token bundle",
         );
     }
+    if result.tokens.access_expires_at <= now || result.tokens.refresh_expires_at <= now {
+        return config.clear(browser_error(TenantAuthError::InvalidRefresh));
+    }
+    let remaining = result
+        .tokens
+        .refresh_expires_at
+        .duration_since(now)
+        .unwrap();
+    // Cookie precision is whole seconds. The Core deadline remains authoritative.
+    let max_age = remaining
+        .as_secs()
+        .saturating_add(u64::from(remaining.subsec_nanos() != 0));
     let cookie = config.cookie(raw, max_age);
     let s = result.session;
     let mut response = Json(json!({"status":"authenticated", "session": {
@@ -313,7 +323,9 @@ async fn login(State(state): State<BrowserState>, Json(body): Json<LoginRequest>
     })
     .await
     {
-        Ok(TenantLoginOutcome::Authenticated(result)) => authenticated(&state.config, result),
+        Ok(TenantLoginOutcome::Authenticated(result)) => {
+            authenticated(&state.config, result, SystemTime::now())
+        }
         Ok(TenantLoginOutcome::SelectionRequired(ticket)) => {
             Json(ticket_response(ticket)).into_response()
         }
@@ -335,7 +347,7 @@ async fn select(
     })
     .await
     {
-        Ok(result) => authenticated(&state.config, result),
+        Ok(result) => authenticated(&state.config, result, SystemTime::now()),
         Err(error) => browser_error(error),
     }
 }
@@ -423,6 +435,7 @@ async fn restore(
                     refresh_token_version: tokens.refresh_token_version,
                 },
             },
+            SystemTime::now(),
         ),
         Ok(TenantRefreshOutcome::ReuseDetected { .. }) => tenant_error(
             StatusCode::UNAUTHORIZED,
@@ -431,7 +444,9 @@ async fn restore(
         ),
         Err(error) => browser_error(error),
     };
-    if response.status() == StatusCode::UNAUTHORIZED {
+    if response.status() == StatusCode::UNAUTHORIZED
+        && !response.headers().contains_key(header::SET_COOKIE)
+    {
         state.config.clear(response)
     } else {
         response

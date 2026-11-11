@@ -112,6 +112,7 @@ test("cookie mode restores without page refresh tokens and serializes shared ses
 });
 
 test("business queued refresh rechecks storage and recovers after a preflight failure", async t => {
+  t.mock.timers.enable({ apis: ["Date"], now: 1_700_000_000_000 });
   cookieEnvironment(t);
   let refreshes = 0;
   const client = new EmbeddedIdentityClient("/idp", async url => {
@@ -120,6 +121,7 @@ test("business queued refresh rechecks storage and recovers after a preflight fa
     const value = authenticated("0", refreshes ? 3600 : 10); delete value.tokens.refresh_token; return json(value);
   }, { mode: "cookie" });
   await client.loadCapabilities(); await client.login("user@example.test", "synthetic-password");
+  t.mock.timers.tick(10_000);
   let signalQueued, releaseQueue;
   const queued = new Promise(resolve => { signalQueued = resolve; });
   const gate = new Promise(resolve => { releaseQueue = resolve; });
@@ -138,6 +140,7 @@ test("business queued refresh rechecks storage and recovers after a preflight fa
 });
 
 test("expired Cookie access tokens refresh under one shared Web Lock", async t => {
+  t.mock.timers.enable({ apis: ["Date"], now: 1_700_000_000_000 });
   cookieEnvironment(t);
   let active = 0, maximum = 0, refreshCalls = 0, releaseRefresh, signalRefresh;
   const refreshGate = new Promise(resolve => { releaseRefresh = resolve; });
@@ -157,6 +160,7 @@ test("expired Cookie access tokens refresh under one shared Web Lock", async t =
   const first = new EmbeddedIdentityClient("/idp", handler, { mode: "cookie" });
   const second = new EmbeddedIdentityClient("/idp/.", handler, { mode: "cookie" });
   await first.loadCapabilities(); await second.loadCapabilities(); await first.login("user@example.test", "password"); await second.restore();
+  t.mock.timers.tick(10_000);
   const pending = Promise.all([first.accessToken(), second.accessToken()]); await refreshStarted; releaseRefresh(); await pending;
   assert.equal(maximum, 1);
   assert.equal(refreshCalls, 2);
@@ -251,6 +255,7 @@ test("cookie coordination rejects stale tenant refreshes, keeps delayed events f
 });
 
 test("cookie logout clears local identity before an in-flight refresh completes", async t => {
+  t.mock.timers.enable({ apis: ["Date"], now: 1_700_000_000_000 });
   cookieEnvironment(t);
   let resolveRefresh;
   const refresh = new Promise(resolve => { resolveRefresh = resolve; });
@@ -266,6 +271,7 @@ test("cookie logout clears local identity before an in-flight refresh completes"
   };
   const client = new EmbeddedIdentityClient("/idp", handler, { mode: "cookie" });
   await client.loadCapabilities(); await client.login("user@example.test", "password");
+  t.mock.timers.tick(10_000);
   const pending = client.accessToken(); await started;
   const logout = client.logout();
   assert.equal(client.getSnapshot().session, undefined);
@@ -336,7 +342,8 @@ test("my roles use the business session and reject another tenant's roles", asyn
   await assert.rejects(instance.listMyRoles("f_01"));
 });
 
-test("one refresh serves concurrent checks and an uncertain refresh clears local credentials", async () => {
+test("one refresh serves concurrent checks and an uncertain refresh clears local credentials", async t => {
+  t.mock.timers.enable({ apis: ["Date"], now: 1_700_000_000_000 });
   let resolveRefresh;
   const pending = new Promise(resolve => { resolveRefresh = resolve; });
   const { instance, calls } = client(call => {
@@ -348,6 +355,7 @@ test("one refresh serves concurrent checks and an uncertain refresh clears local
   });
   await instance.loadCapabilities();
   await instance.login("user@example.test", "password");
+  t.mock.timers.tick(10_000);
   const checks = [instance.verifySession(), instance.verifySession()];
   resolveRefresh(json(authenticated("0", 3600, "-new")));
   await Promise.all(checks);
@@ -362,12 +370,14 @@ test("one refresh serves concurrent checks and an uncertain refresh clears local
   });
   await bad.instance.loadCapabilities();
   await bad.instance.login("user@example.test", "password");
+  t.mock.timers.tick(10_000);
   await assert.rejects(bad.instance.verifySession());
   assert.equal(bad.instance.getSnapshot().session, undefined);
   assert.equal(bad.calls.filter(call => call.path === "/auth/refresh").length, 1);
 });
 
-test("logout prevents a pending refresh from returning an access token", async () => {
+test("logout prevents a pending refresh from returning an access token", async t => {
+  t.mock.timers.enable({ apis: ["Date"], now: 1_700_000_000_000 });
   let resolveRefresh;
   const pending = new Promise(resolve => { resolveRefresh = resolve; });
   const { instance } = client(call => {
@@ -379,6 +389,7 @@ test("logout prevents a pending refresh from returning an access token", async (
   });
   await instance.loadCapabilities();
   await instance.login("user@example.test", "password");
+  t.mock.timers.tick(10_000);
   const token = instance.accessToken();
   await instance.logout();
   resolveRefresh(json(authenticated("0", 3600, "-new")));
@@ -527,3 +538,64 @@ test("development tenant selection completes through Cookie endpoint without Web
   assert.equal(calls.at(-1).init.headers.Authorization, "TenantSelection synthetic-ticket");
   assert.equal(calls.at(-1).init.credentials, "same-origin");
 });
+
+for (const mode of ["token", "cookie"]) {
+  test(`embedded ${mode} refresh deadline is fixed at half a short token lifetime`, async t => {
+    t.mock.timers.enable({ apis: ["Date"], now: 1_700_000_000_000 });
+    if (mode === "cookie") cookieEnvironment(t);
+    let refreshes = 0;
+    const handler = async url => {
+      if (String(url).endsWith("/capabilities")) return json(fixed);
+      if (String(url).endsWith("/session")) return json(identity());
+      if (String(url).endsWith("/refresh")) refreshes++;
+      const value = authenticated("0", 10, `-${refreshes}`);
+      if (mode === "cookie") delete value.tokens.refresh_token;
+      return json(value);
+    };
+    const instance = new EmbeddedIdentityClient("/idp", handler, { mode });
+    await instance.loadCapabilities();
+    await instance.login("user@example.test", "synthetic-password");
+    await instance.accessToken();
+    t.mock.timers.tick(4_999);
+    await instance.accessToken();
+    assert.equal(refreshes, 0);
+    t.mock.timers.tick(1);
+    await instance.accessToken();
+    assert.equal(refreshes, 1);
+    await instance.accessToken();
+    assert.equal(refreshes, 1);
+    t.mock.timers.tick(5_000);
+    await instance.accessToken();
+    assert.equal(refreshes, 2);
+  });
+
+  test(`embedded ${mode} uses a terminal access token until the session deadline`, async t => {
+    t.mock.timers.enable({ apis: ["Date"], now: 1_700_000_000_000 });
+    if (mode === "cookie") cookieEnvironment(t);
+    let refreshes = 0;
+    const handler = async url => {
+      if (String(url).endsWith("/capabilities")) return json(fixed);
+      if (String(url).endsWith("/session")) return json(identity());
+      if (String(url).endsWith("/refresh")) { refreshes++; return json({ error: "invalid_session" }, 401); }
+      const value = authenticated("0", 20);
+      value.session.expires_at_unix_secs = value.tokens.access_expires_at_unix_secs;
+      value.tokens.refresh_expires_at_unix_secs = value.session.expires_at_unix_secs;
+      if (mode === "cookie") delete value.tokens.refresh_token;
+      return json(value);
+    };
+    const instance = new EmbeddedIdentityClient("/idp", handler, { mode });
+    await instance.loadCapabilities();
+    await instance.login("user@example.test", "synthetic-password");
+    await instance.accessToken();
+    t.mock.timers.tick(10_000);
+    await instance.accessToken();
+    t.mock.timers.tick(9_999);
+    await instance.accessToken();
+    await instance.accessToken();
+    assert.equal(refreshes, 0);
+    t.mock.timers.tick(1);
+    await assert.rejects(instance.accessToken());
+    assert.equal(refreshes, 1);
+    assert.equal(instance.getSnapshot().session, undefined);
+  });
+}
