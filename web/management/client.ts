@@ -14,6 +14,7 @@ export interface Session {
 }
 
 interface Credentials {
+  refreshAt: number;
   session: Session;
   tokens: {
     access_token: string;
@@ -508,7 +509,16 @@ export class ManagementClient {
       const c = this.state.capabilities;
       if (!c || (c.login_tenant_policy === "fixed" && session.tenant_id !== c.fixed_tenant_id) ||
           (c.login_tenant_policy === "choose_after_authentication" && session.tenant_id === "0")) throw invalidResponse();
-      this.credentials = { session, tokens: tokens as unknown as Credentials["tokens"] };
+      const now = Date.now() / 1000;
+      const accessExpiresAt = tokens.access_expires_at_unix_secs as number;
+      const sessionExpiresAt = object(result.session).expires_at_unix_secs;
+      if (sessionExpiresAt !== undefined && (typeof sessionExpiresAt !== "number" ||
+          !Number.isSafeInteger(sessionExpiresAt) || sessionExpiresAt < accessExpiresAt)) throw invalidResponse();
+      const refreshAt = sessionExpiresAt === accessExpiresAt
+        ? accessExpiresAt
+        : accessExpiresAt - Math.min(30, (accessExpiresAt - now) / 2);
+      this.credentials = { session, tokens: tokens as unknown as Credentials["tokens"],
+        refreshAt };
       this.selection = undefined;
     }
     this.publish();
@@ -583,7 +593,7 @@ export class ManagementClient {
     if (this.browser) {
       this.browser.check();
       if (this.refreshing) return this.refreshing;
-      if (credentials.tokens.access_expires_at_unix_secs > Date.now() / 1000 + 30) return credentials;
+      if (credentials.refreshAt > Date.now() / 1000) return credentials;
       const revision = this.revision;
       const expected = this.expectedSession();
       const pending = this.browser.run(async () => {
@@ -606,7 +616,7 @@ export class ManagementClient {
       finally { if (this.refreshing === pending) this.refreshing = undefined; }
     }
     if (this.refreshing) return this.refreshing;
-    if (credentials.tokens.access_expires_at_unix_secs > Date.now() / 1000 + 30) return credentials;
+    if (credentials.refreshAt > Date.now() / 1000) return credentials;
     const revision = this.revision;
     const pending = (async () => {
       try {

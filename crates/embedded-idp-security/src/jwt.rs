@@ -125,6 +125,12 @@ impl std::fmt::Debug for Rs256JwtService {
 }
 
 impl Rs256JwtService {
+    fn configured_access_expiry(&self, issued_at: SystemTime) -> Result<SystemTime, TokenError> {
+        issued_at
+            .checked_add(Duration::from_secs(self.config.access_token_ttl_secs))
+            .ok_or_else(|| TokenError::IssuerRejected("access expiry overflow".into()))
+    }
+
     fn access_token_use(&self) -> &'static str {
         match self.purpose {
             AccessTokenPurpose::Business => "access",
@@ -338,6 +344,26 @@ impl AccessTokenIssuer for Rs256JwtService {
             &self.config.scope,
         )
     }
+
+    fn issue_access_token_with_expiry(
+        &self,
+        tenant_id: &str,
+        session_id: &str,
+        account_id: &str,
+        client_id: &str,
+        issued_at: SystemTime,
+        expires_at: SystemTime,
+    ) -> Result<IssuedAccessToken, TokenError> {
+        self.issue_scoped_access_token_with_expiry(
+            tenant_id,
+            session_id,
+            account_id,
+            client_id,
+            issued_at,
+            &self.config.scope,
+            expires_at,
+        )
+    }
 }
 impl ScopedAccessTokenIssuer for Rs256JwtService {
     fn issue_scoped_access_token(
@@ -348,6 +374,27 @@ impl ScopedAccessTokenIssuer for Rs256JwtService {
         client_id: &str,
         issued_at: SystemTime,
         scope: &str,
+    ) -> Result<IssuedAccessToken, TokenError> {
+        self.issue_scoped_access_token_with_expiry(
+            tenant_id,
+            session_id,
+            account_id,
+            client_id,
+            issued_at,
+            scope,
+            self.configured_access_expiry(issued_at)?,
+        )
+    }
+
+    fn issue_scoped_access_token_with_expiry(
+        &self,
+        tenant_id: &str,
+        session_id: &str,
+        account_id: &str,
+        client_id: &str,
+        issued_at: SystemTime,
+        scope: &str,
+        expires_at: SystemTime,
     ) -> Result<IssuedAccessToken, TokenError> {
         if !scope_allowed(scope, &self.config.scope) {
             return Err(TokenError::IssuerRejected(
@@ -364,15 +411,20 @@ impl ScopedAccessTokenIssuer for Rs256JwtService {
             ));
         }
         let iat = unix_secs(issued_at)?;
-        let expires_at = issued_at
-            .checked_add(Duration::from_secs(self.config.access_token_ttl_secs))
-            .ok_or_else(|| TokenError::IssuerRejected("access expiry overflow".to_string()))?;
+        let exp = unix_secs(expires_at.min(self.configured_access_expiry(issued_at)?))?;
+        let expires_at = from_unix_secs(exp)
+            .ok_or_else(|| TokenError::IssuerRejected("access expiry overflow".into()))?;
+        if exp <= iat || expires_at <= issued_at {
+            return Err(TokenError::IssuerRejected(
+                "access expiry is not in the future".into(),
+            ));
+        }
         let claims = AccessClaims {
             tenant_id: tenant_id.to_string(),
             iss: self.config.issuer.clone(),
             sub: account_id.to_string(),
             aud: self.config.audience.clone(),
-            exp: unix_secs(expires_at)?,
+            exp,
             iat,
             nbf: iat,
             jti: random_jti()?,
@@ -475,8 +527,35 @@ impl TokenIssuer for Rs256JwtService {
         refresh_token_version: u64,
         issued_at: SystemTime,
     ) -> Result<IssuedTokenBundle, TokenError> {
-        let access =
-            self.issue_access_token(tenant_id, session_id, account_id, client_id, issued_at)?;
+        self.issue_session_tokens_with_access_expiry(
+            tenant_id,
+            session_id,
+            account_id,
+            client_id,
+            refresh_token_version,
+            issued_at,
+            self.configured_access_expiry(issued_at)?,
+        )
+    }
+
+    fn issue_session_tokens_with_access_expiry(
+        &self,
+        tenant_id: &str,
+        session_id: &str,
+        account_id: &str,
+        client_id: &str,
+        refresh_token_version: u64,
+        issued_at: SystemTime,
+        access_expires_at: SystemTime,
+    ) -> Result<IssuedTokenBundle, TokenError> {
+        let access = self.issue_access_token_with_expiry(
+            tenant_id,
+            session_id,
+            account_id,
+            client_id,
+            issued_at,
+            access_expires_at,
+        )?;
         let refresh = crate::SecureRefreshTokenGenerator.generate_refresh_token()?;
         let refresh_expires_at = issued_at
             .checked_add(Duration::from_secs(self.config.refresh_token_ttl_secs))

@@ -365,14 +365,15 @@ where
                 Some(code.scope.clone()),
                 source.authenticated_at,
                 self.auth.ids.next_id("sess"),
-                |session| {
-                    let access = self.auth.tokens.issue_scoped_access_token(
+                |session, access_expiry| {
+                    let access = self.auth.tokens.issue_scoped_access_token_with_expiry(
                         &code.tenant_id,
                         &session.id,
                         &account.id,
                         &client.client_id,
                         now,
                         &code.scope,
+                        access_expiry,
                     )?;
                     Ok(IssuedTokenBundle {
                         access_token: access.token,

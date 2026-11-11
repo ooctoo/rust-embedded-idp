@@ -56,12 +56,13 @@ fn tokens(
     entry: &str,
     management: bool,
 ) -> Result<Rs256JwtService, String> {
+    let auth = config.auth();
     let jwt = ProductionJwtConfig {
         issuer: config.issuer.clone(),
         audience: format!("tenant-host-{entry}"),
         scope: "openid profile email".into(),
-        access_token_ttl_secs: 900,
-        refresh_token_ttl_secs: 86400,
+        access_token_ttl_secs: auth.access_token_ttl_secs,
+        refresh_token_ttl_secs: auth.refresh_token_ttl_secs,
         clock_skew_secs: 0,
     };
     (if management {

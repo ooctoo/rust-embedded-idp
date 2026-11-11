@@ -489,15 +489,16 @@ where
                 scope.clone(),
                 authenticated_at,
                 session_id,
-                |session| {
+                |session, access_expiry| {
                     if let Some(scope) = scope {
-                        let access = self.tokens.issue_scoped_access_token(
+                        let access = self.tokens.issue_scoped_access_token_with_expiry(
                             &tenant_id,
                             &session.id,
                             &record.account_id,
                             &session.client_id,
                             now,
                             &scope,
+                            access_expiry,
                         )?;
                         Ok(IssuedTokenBundle {
                             access_token: access.token,
@@ -513,13 +514,14 @@ where
                             refresh_token_version: 1,
                         })
                     } else {
-                        self.tokens.issue_session_tokens(
+                        self.tokens.issue_session_tokens_with_access_expiry(
                             &tenant_id,
                             &session.id,
                             &record.account_id,
                             &session.client_id,
                             1,
                             now,
+                            access_expiry,
                         )
                     }
                 },
@@ -560,14 +562,15 @@ where
             None,
             now,
             session_id,
-            |session| {
-                self.tokens.issue_session_tokens(
+            |session, access_expiry| {
+                self.tokens.issue_session_tokens_with_access_expiry(
                     tenant,
                     &session.id,
                     account,
                     &session.client_id,
                     1,
                     now,
+                    access_expiry,
                 )
             },
         )
@@ -582,7 +585,7 @@ where
         scope: Option<String>,
         authenticated_at: SystemTime,
         session_id: String,
-        issue: impl FnOnce(&TenantSession) -> Result<IssuedTokenBundle, TokenError>,
+        issue: impl FnOnce(&TenantSession, SystemTime) -> Result<IssuedTokenBundle, TokenError>,
     ) -> Result<TenantLoginSession, TenantAuthError> {
         self.issue_session_using_status(
             tx,
@@ -608,7 +611,7 @@ where
         authenticated_at: SystemTime,
         session_id: String,
         status: SessionStatus,
-        issue: impl FnOnce(&TenantSession) -> Result<IssuedTokenBundle, TokenError>,
+        issue: impl FnOnce(&TenantSession, SystemTime) -> Result<IssuedTokenBundle, TokenError>,
     ) -> Result<TenantLoginSession, TenantAuthError> {
         if self.entry.require_device_proof && device_id.is_none() {
             return Err(TenantAuthError::DeviceProofRequired);
@@ -629,8 +632,17 @@ where
                 .ok_or(AccessError::InvalidInput("session_expiry"))?,
             refresh_token_version: 1,
         };
-        let tokens = issue(&session)?;
-        self.validate_issued_access(&tokens.access_token, &session)?;
+        let access_expiry = now
+            .checked_add(Duration::from_secs(self.config.access_token_ttl_secs))
+            .ok_or(AccessError::InvalidInput("access_expiry"))?
+            .min(session.expires_at);
+        let mut tokens = issue(&session, access_expiry)?;
+        tokens.access_expires_at = self.validate_issued_access(
+            &tokens.access_token,
+            &session,
+            tokens.access_expires_at,
+            access_expiry,
+        )?;
         if tokens.refresh_token_version != 1
             || tokens.access_token.expose_secret().is_empty()
             || tokens.access_expires_at <= now
@@ -644,6 +656,10 @@ where
         let digest = self
             .digester
             .digest_refresh_token(tokens.refresh_token.expose_secret())?;
+        let checked_at = self.clock.now();
+        if tokens.access_expires_at <= checked_at || tokens.refresh_expires_at <= checked_at {
+            return Err(TenantAuthError::InvalidSession);
+        }
         tx.insert_session(
             &session,
             &self.ids.next_id("rtok"),
@@ -680,23 +696,25 @@ where
             authenticated_at,
             session_id,
             SessionStatus::Pending,
-            |session| {
-                let mut tokens = self.tokens.issue_session_tokens(
+            |session, access_expiry| {
+                let mut tokens = self.tokens.issue_session_tokens_with_access_expiry(
                     tenant,
                     &session.id,
                     account,
                     &session.client_id,
                     1,
                     now,
+                    access_expiry,
                 )?;
                 if let Some(scope) = scope {
-                    let access = self.tokens.issue_scoped_access_token(
+                    let access = self.tokens.issue_scoped_access_token_with_expiry(
                         tenant,
                         &session.id,
                         account,
                         &session.client_id,
                         now,
                         &scope,
+                        access_expiry,
                     )?;
                     tokens.access_token = access.token;
                     tokens.access_expires_at = access.expires_at;
@@ -871,7 +889,9 @@ where
         &self,
         raw: &SecretString,
         session: &TenantSession,
-    ) -> Result<(), TenantAuthError> {
+        reported_expiry: SystemTime,
+        expiry_limit: SystemTime,
+    ) -> Result<SystemTime, TenantAuthError> {
         let token = self.validate_token(raw)?;
         if token.tenant_id != session.tenant_id
             || token.session_id != session.id
@@ -880,7 +900,28 @@ where
         {
             return Err(TenantAuthError::InvalidSession);
         }
-        Ok(())
+        if token.expires_at > expiry_limit
+            || reported_expiry > expiry_limit
+            || token
+                .expires_at
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .ok()
+                .map(|d| d.as_secs())
+                != reported_expiry
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .ok()
+                    .map(|d| d.as_secs())
+            || session
+                .scope
+                .as_ref()
+                .is_some_and(|scope| token.scope.as_ref() != Some(scope))
+        {
+            return Err(TokenError::IssuerRejected(
+                "invalid issued access token expiry or scope".into(),
+            )
+            .into());
+        }
+        Ok(token.expires_at)
     }
     fn locked_token_session(
         &self,

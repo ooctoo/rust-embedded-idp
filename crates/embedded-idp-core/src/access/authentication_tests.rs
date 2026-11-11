@@ -1,5 +1,6 @@
 mod browser;
 mod management;
+mod token_lifetime;
 use super::*;
 use crate::{digest_refresh_token, service::password::hash_password, *};
 use std::{
@@ -73,6 +74,24 @@ impl RefreshTokenDigester for Dg {
 }
 #[derive(Clone, Copy)]
 struct Tok;
+fn test_access_token(
+    t: &str,
+    s: &str,
+    a: &str,
+    c: &str,
+    issued: SystemTime,
+    expiry: SystemTime,
+    scope: Option<&str>,
+) -> SecretString {
+    let issued = issued.duration_since(UNIX_EPOCH).unwrap().as_secs();
+    let expiry = expiry.duration_since(UNIX_EPOCH).unwrap().as_secs();
+    let mut raw = format!("{t}/{s}/{a}/{c}/{issued}/{expiry}");
+    if let Some(scope) = scope {
+        raw.push('/');
+        raw.push_str(scope);
+    }
+    SecretString::new(raw)
+}
 impl TokenIssuer for Tok {
     fn issue_session_tokens(
         &self,
@@ -84,12 +103,29 @@ impl TokenIssuer for Tok {
         n: SystemTime,
     ) -> Result<IssuedTokenBundle, TokenError> {
         Ok(IssuedTokenBundle {
-            access_token: SecretString::new(format!("{t}/{s}/{a}/{c}")),
+            access_token: self.issue_access_token(t, s, a, c, n)?.token,
             refresh_token: SecretString::new(format!("refresh-{s}")),
             access_expires_at: n + Duration::from_secs(60),
             refresh_expires_at: n + Duration::from_secs(120),
             refresh_token_version: 1,
         })
+    }
+    fn issue_session_tokens_with_access_expiry(
+        &self,
+        t: &str,
+        s: &str,
+        a: &str,
+        c: &str,
+        v: u64,
+        n: SystemTime,
+        expiry: SystemTime,
+    ) -> Result<IssuedTokenBundle, TokenError> {
+        let mut tokens = self.issue_session_tokens(t, s, a, c, v, n)?;
+        tokens.access_token = test_access_token(t, s, a, c, n, expiry, None);
+        tokens.access_expires_at = expiry;
+        tokens.refresh_expires_at =
+            (expiry + Duration::from_secs(60)).max(tokens.refresh_expires_at);
+        Ok(tokens)
     }
 }
 impl AccessTokenIssuer for Tok {
@@ -102,8 +138,22 @@ impl AccessTokenIssuer for Tok {
         n: SystemTime,
     ) -> Result<IssuedAccessToken, TokenError> {
         Ok(IssuedAccessToken {
-            token: SecretString::new(format!("{t}/{s}/{a}/{c}")),
+            token: test_access_token(t, s, a, c, n, n + Duration::from_secs(60), None),
             expires_at: n + Duration::from_secs(60),
+        })
+    }
+    fn issue_access_token_with_expiry(
+        &self,
+        t: &str,
+        s: &str,
+        a: &str,
+        c: &str,
+        n: SystemTime,
+        expiry: SystemTime,
+    ) -> Result<IssuedAccessToken, TokenError> {
+        Ok(IssuedAccessToken {
+            token: test_access_token(t, s, a, c, n, expiry, None),
+            expires_at: expiry,
         })
     }
 }
@@ -118,8 +168,23 @@ impl ScopedAccessTokenIssuer for Tok {
         scope: &str,
     ) -> Result<IssuedAccessToken, TokenError> {
         Ok(IssuedAccessToken {
-            token: SecretString::new(format!("{t}/{s}/{a}/{c}/{scope}")),
+            token: test_access_token(t, s, a, c, n, n + Duration::from_secs(60), Some(scope)),
             expires_at: n + Duration::from_secs(60),
+        })
+    }
+    fn issue_scoped_access_token_with_expiry(
+        &self,
+        t: &str,
+        s: &str,
+        a: &str,
+        c: &str,
+        n: SystemTime,
+        scope: &str,
+        expiry: SystemTime,
+    ) -> Result<IssuedAccessToken, TokenError> {
+        Ok(IssuedAccessToken {
+            token: test_access_token(t, s, a, c, n, expiry, Some(scope)),
+            expires_at: expiry,
         })
     }
 }
@@ -208,10 +273,10 @@ impl AccessTokenValidator for Tok {
     fn validate_access_token(
         &self,
         raw: &str,
-        n: SystemTime,
+        _n: SystemTime,
     ) -> Result<Option<ValidatedAccessToken>, TokenError> {
         let p: Vec<_> = raw.split('/').collect();
-        if p.len() != 4 && p.len() != 5 {
+        if p.len() != 6 && p.len() != 7 {
             return Ok(None);
         };
         Ok(Some(ValidatedAccessToken {
@@ -221,9 +286,9 @@ impl AccessTokenValidator for Tok {
             subject_account_id: p[2].into(),
             client_id: p[3].into(),
             token: SecretString::new(raw),
-            scope: p.get(4).map(|s| s.to_string()),
-            issued_at: n,
-            expires_at: n + Duration::from_secs(30),
+            scope: p.get(6).map(|s| s.to_string()),
+            issued_at: UNIX_EPOCH + Duration::from_secs(p[4].parse().unwrap()),
+            expires_at: UNIX_EPOCH + Duration::from_secs(p[5].parse().unwrap()),
         }))
     }
 }
@@ -1713,7 +1778,7 @@ pub(super) mod device_proofs {
             Err(TenantAuthError::DeviceProofRequired)
         );
         let initial = s.0.lock().unwrap().clone();
-        for case in 0..13 {
+        for case in 0..12 {
             let mut changed = initial.clone();
             match case {
                 0 => changed.accounts.get_mut("a").unwrap().active = false,
@@ -1732,10 +1797,7 @@ pub(super) mod device_proofs {
                 9 => changed.proof_keys[0].status = DeviceProofKeyStatus::Retired,
                 10 => changed.fail_insert = true,
                 11 => changed.fail_consume = true,
-                _ => {
-                    changed.sessions[0].expires_at = C.now() + Duration::from_secs(30);
-                    changed.refreshes[0].expires_at = changed.sessions[0].expires_at;
-                }
+                _ => unreachable!(),
             }
             let expected = changed.clone();
             *s.0.lock().unwrap() = changed;
@@ -1749,11 +1811,25 @@ pub(super) mod device_proofs {
             assert_eq!(data.sessions, expected.sessions);
             assert!(data.proof_challenges == expected.proof_challenges);
         }
-        *s.0.lock().unwrap() = initial;
-        assert!(matches!(
-            auth.rotate_refresh_with_proof(command, &devices),
-            Ok(TenantRefreshOutcome::Rotated { .. })
-        ));
+        let mut terminal = initial;
+        terminal.sessions[0].expires_at = C.now() + Duration::from_secs(30);
+        terminal.refreshes[0].expires_at = terminal.sessions[0].expires_at;
+        *s.0.lock().unwrap() = terminal;
+        let TenantRefreshOutcome::Rotated { session, tokens } =
+            auth.rotate_refresh_with_proof(command, &devices).unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(tokens.access_token.expires_at, session.expires_at);
+        assert_eq!(tokens.refresh_expires_at, session.expires_at);
+        assert_eq!(session.refresh_token_version, 2);
+        assert!(s
+            .0
+            .lock()
+            .unwrap()
+            .proof_challenges
+            .iter()
+            .all(|c| c.consumed_at.is_some()));
     }
     #[test]
     fn proof_replay_is_not_refresh_reuse_and_reuse_revocation_must_commit() {

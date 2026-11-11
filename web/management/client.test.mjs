@@ -105,6 +105,7 @@ test("management cookie mode restores without refresh tokens and keeps path name
 });
 
 test("management queued refresh rechecks storage and recovers after a preflight failure", async t => {
+  t.mock.timers.enable({ apis: ["Date"], now: 1_700_000_000_000 });
   cookieEnvironment(t);
   let refreshes = 0;
   t.mock.method(globalThis, "fetch", async url => {
@@ -115,6 +116,7 @@ test("management queued refresh rechecks storage and recovers after a preflight 
   });
   const client = new ManagementClient("/host/idp", { mode: "cookie" });
   await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
+  t.mock.timers.tick(10_000);
   const queued = deferred(), release = deferred(), request = navigator.locks.request;
   t.mock.method(navigator.locks, "request", async (...args) => { queued.resolve(); await release.promise; return request(...args); });
   const pending = client.verifySession();
@@ -173,6 +175,7 @@ test("choose pagination uses selection ticket only; switch can cancel to source 
 });
 
 test("concurrent session checks rotate refresh once and use only the new access token", async t => {
+  t.mock.timers.enable({ apis: ["Date"], now: 1_700_000_000_000 });
   const refresh = deferred();
   const started = deferred();
   const { client, calls } = setup(t, path => {
@@ -183,6 +186,7 @@ test("concurrent session checks rotate refresh once and use only the new access 
   });
   await client.loadCapabilities();
   await client.login("admin@example.test", "synthetic-password");
+  t.mock.timers.tick(10_000);
   const first = client.verifySession();
   const second = client.verifySession();
   await started.promise;
@@ -194,6 +198,7 @@ test("concurrent session checks rotate refresh once and use only the new access 
 });
 
 test("lost refresh response clears credentials and is never retried", async t => {
+  t.mock.timers.enable({ apis: ["Date"], now: 1_700_000_000_000 });
   const { client, calls } = setup(t, path => {
     if (path === "/capabilities") return json(fixed);
     if (path === "/login") return json(authenticated("0", 10));
@@ -201,6 +206,7 @@ test("lost refresh response clears credentials and is never retried", async t =>
   });
   await client.loadCapabilities();
   await client.login("admin@example.test", "synthetic-password");
+  t.mock.timers.tick(10_000);
   await assert.rejects(client.verifySession(), e => !e.message.includes("secret"));
   assert.equal(client.getSnapshot().session, undefined);
   await assert.rejects(client.verifySession());
@@ -208,6 +214,7 @@ test("lost refresh response clears credentials and is never retried", async t =>
 });
 
 test("logout prevents a late refresh from restoring the session", async t => {
+  t.mock.timers.enable({ apis: ["Date"], now: 1_700_000_000_000 });
   const refresh = deferred();
   const started = deferred();
   const { client } = setup(t, path => {
@@ -218,6 +225,7 @@ test("logout prevents a late refresh from restoring the session", async t => {
   });
   await client.loadCapabilities();
   await client.login("admin@example.test", "synthetic-password");
+  t.mock.timers.tick(10_000);
   const pending = assert.rejects(client.verifySession());
   await started.promise;
   await client.logout();
@@ -1724,6 +1732,7 @@ test("navigation write activity settles failed and invalid responses without ret
 });
 
 test("navigation write activity covers a shared token refresh and sends one request after it", async t => {
+  t.mock.timers.enable({ apis: ["Date"], now: 1_700_000_000_000 });
   const refresh = deferred();
   const refreshStarted = deferred();
   const writeStarted = deferred();
@@ -1735,6 +1744,7 @@ test("navigation write activity covers a shared token refresh and sends one requ
     throw new Error(path);
   });
   await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
+  t.mock.timers.tick(10_000);
   const input = { client_id: "desktop-client", client_name: "Desktop", redirect_uris: ["http://127.0.0.1/callback"], client_type: "public_desktop", pkce_required: true };
   const pending = client.upsertClient(input);
   await refreshStarted.promise;
@@ -1749,6 +1759,7 @@ test("navigation write activity covers a shared token refresh and sends one requ
 });
 
 test("cookie write activity waits for refresh and suppresses stale writes after refresh failure", async t => {
+  t.mock.timers.enable({ apis: ["Date"], now: 1_700_000_000_000 });
   const environment = cookieEnvironment(t);
   const refresh = deferred();
   const refreshStarted = deferred();
@@ -1766,6 +1777,7 @@ test("cookie write activity waits for refresh and suppresses stale writes after 
   });
   const client = new ManagementClient("/host/idp", { mode: "cookie" });
   await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
+  t.mock.timers.tick(10_000);
   const input = { client_id: "desktop-client", client_name: "Desktop", redirect_uris: ["http://127.0.0.1/callback"], client_type: "public_desktop", pkce_required: true };
   const pending = client.upsertClient(input);
   await refreshStarted.promise;
@@ -1777,6 +1789,7 @@ test("cookie write activity waits for refresh and suppresses stale writes after 
 });
 
 test("cookie write activity shares one refresh across writes and settles both requests", async t => {
+  t.mock.timers.enable({ apis: ["Date"], now: 1_700_000_000_000 });
   cookieEnvironment(t);
   const refresh = deferred();
   const refreshStarted = deferred();
@@ -1795,6 +1808,7 @@ test("cookie write activity shares one refresh across writes and settles both re
   });
   const client = new ManagementClient("/host/idp", { mode: "cookie" });
   await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
+  t.mock.timers.tick(10_000);
   const first = client.upsertClient(input), second = client.upsertClient(input);
   await refreshStarted.promise;
   assert.deepEqual(client.getMutationSnapshot(), { pending: 2, revision: 2 });
@@ -1807,6 +1821,7 @@ test("cookie write activity shares one refresh across writes and settles both re
 });
 
 test("cookie logout during refresh suppresses the old write and settles activity", async t => {
+  t.mock.timers.enable({ apis: ["Date"], now: 1_700_000_000_000 });
   cookieEnvironment(t);
   const refresh = deferred();
   const refreshStarted = deferred();
@@ -1826,6 +1841,7 @@ test("cookie logout during refresh suppresses the old write and settles activity
   });
   const client = new ManagementClient("/host/idp", { mode: "cookie" });
   await client.loadCapabilities(); await client.login("admin@example.test", "synthetic-password");
+  t.mock.timers.tick(10_000);
   const pending = client.upsertClient(input);
   await refreshStarted.promise;
   assert.deepEqual(client.getMutationSnapshot(), { pending: 1, revision: 1 });
@@ -1837,3 +1853,66 @@ test("cookie logout during refresh suppresses the old write and settles activity
   assert.deepEqual(client.getMutationSnapshot(), { pending: 0, revision: 1 });
   assert.equal(calls.filter(call => call.path.endsWith("/admin/clients/upsert")).length, 0);
 });
+
+for (const mode of ["token", "cookie"]) {
+  test(`management ${mode} refresh deadline is fixed at half a short token lifetime`, async t => {
+    t.mock.timers.enable({ apis: ["Date"], now: 1_700_000_000_000 });
+    if (mode === "cookie") cookieEnvironment(t);
+    let refreshes = 0;
+    const handler = async url => {
+      if (String(url).endsWith("/capabilities")) return json(fixed);
+      if (String(url).endsWith("/session")) return json(identity());
+      if (String(url).endsWith("/refresh")) refreshes++;
+      const value = authenticated("0", 10, `-${refreshes}`);
+      if (mode === "cookie") delete value.tokens.refresh_token;
+      return json(value);
+    };
+    t.mock.method(globalThis, "fetch", handler);
+    const instance = new ManagementClient("/host/idp", { mode });
+    await instance.loadCapabilities();
+    await instance.login("user@example.test", "synthetic-password");
+    await instance.verifySession();
+    t.mock.timers.tick(4_999);
+    await instance.verifySession();
+    assert.equal(refreshes, 0);
+    t.mock.timers.tick(1);
+    await instance.verifySession();
+    assert.equal(refreshes, 1);
+    await instance.verifySession();
+    assert.equal(refreshes, 1);
+    t.mock.timers.tick(5_000);
+    await instance.verifySession();
+    assert.equal(refreshes, 2);
+  });
+
+  test(`management ${mode} uses a terminal access token until the session deadline`, async t => {
+    t.mock.timers.enable({ apis: ["Date"], now: 1_700_000_000_000 });
+    if (mode === "cookie") cookieEnvironment(t);
+    let refreshes = 0;
+    const handler = async url => {
+      if (String(url).endsWith("/capabilities")) return json(fixed);
+      if (String(url).endsWith("/session")) return json(identity());
+      if (String(url).endsWith("/refresh")) { refreshes++; return json({ error: "invalid_session" }, 401); }
+      const value = authenticated("0", 20);
+      value.session.expires_at_unix_secs = value.tokens.access_expires_at_unix_secs;
+      value.tokens.refresh_expires_at_unix_secs = value.session.expires_at_unix_secs;
+      if (mode === "cookie") delete value.tokens.refresh_token;
+      return json(value);
+    };
+    t.mock.method(globalThis, "fetch", handler);
+    const instance = new ManagementClient("/host/idp", { mode });
+    await instance.loadCapabilities();
+    await instance.login("user@example.test", "synthetic-password");
+    await instance.verifySession();
+    t.mock.timers.tick(10_000);
+    await instance.verifySession();
+    t.mock.timers.tick(9_999);
+    await instance.verifySession();
+    await instance.verifySession();
+    assert.equal(refreshes, 0);
+    t.mock.timers.tick(1);
+    await assert.rejects(instance.verifySession());
+    assert.equal(refreshes, 1);
+    assert.equal(instance.getSnapshot().session, undefined);
+  });
+}

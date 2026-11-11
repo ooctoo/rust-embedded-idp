@@ -42,6 +42,8 @@ bootstrap-admin 的stdin是一行管理员密码。seed-fixtures 的stdin是严�
 
 可设置 `TENANT_HOST_MANAGEMENT=false` 关闭管理UI/API；离线bootstrap和fixture准备仍使用独立管理身份。完整Web构建可独立运行 `./examples/tenant-host/run.sh build-web`，生成dist不会提交。
 
+`TENANT_HOST_ACCESS_TOKEN_TTL_SECS` 在宿主组装时设置访问令牌时效，默认 900 秒，允许 1–86399 秒。宿主从同一份 `AuthConfig` 向 Core 和 RS256 签发器传递时效，业务与管理入口均使用该值。刷新令牌配置为 86400 秒，会话配置为 604800 秒。会话末段签发的访问令牌会缩短至会话截止时间。配置变更在重新启动后用于新签发，已有令牌按原有过期时间验证。
+
 ## React与无UI接入
 
 示例使用仓库本地 React19 与 `@embedded-idp/react` 构建产物入口、单独 `/admin` 子入口（build-web先构建嵌入包）；包未发布npm。EmbeddedAuth复用原有Cookie协调、租户选择和本人角色；新增可选 `beforeSessionChange: () => boolean | Promise<boolean>`，在切租户/退出前确认宿主草稿，返回false不执行身份操作，默认行为兼容。它不拦截其他标签页或服务端导致的失效；凭据撤销不能被草稿阻止。

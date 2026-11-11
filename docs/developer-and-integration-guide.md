@@ -152,3 +152,58 @@ production controls.
 ## Business authorization upgrade
 
 Access v3 requires an explicit business identifier for permissions, roles and authorization checks. Existing v2 data requires a stopped-service mapping migration; see [the business authorization design](business-domain-authorization-design-v1.md). Schema directory names do not determine the Access version. Do not rerun bootstrap or silently recreate an existing database. The current reference runtime is tenant_v6; follow the [scan-login upgrade procedure](device-scan-login-upgrade.md) after the earlier business and device lifecycle migrations.
+
+## Host-configured access token lifetime
+
+The embedding host supplies the access lifetime when constructing its services.
+Use one trusted value for `AuthConfig.access_token_ttl_secs` and
+`ProductionJwtConfig.access_token_ttl_secs`. The Core value bounds every current
+tenant-aware login, tenant selection, OIDC code exchange, pending scan issuance,
+and refresh. The RS256 issuer also enforces its configured lifetime, so a smaller
+issuer value produces a shorter token. Configure both from the same host setting
+when the requested lifetime should apply in full.
+
+The reference application's default is 900 seconds. Its existing environment
+setting is `EMBEDDED_IDP_APP_ACCESS_TOKEN_TTL_SECS`, and its composition-file
+setting is `runtime.auth.access_token_ttl_secs`. The independent tenant-host
+example uses `TENANT_HOST_ACCESS_TOKEN_TTL_SECS`. Each host owns configuration
+loading. The module accepts typed configuration at construction.
+
+Configuration requires `0 < access TTL < refresh TTL <= session TTL`. RS256 also
+requires `clock_skew_secs < access_token_ttl_secs`. Existing JWTs retain their
+signed expiration when a host is reconstructed with a new configuration. Existing
+sessions retain their stored absolute deadline. At refresh, the next refresh
+expiry is the earlier of `now + refresh TTL` and that deadline, and access expiry
+is bounded by both `now + access TTL` and the next refresh expiry. A session with
+120 seconds left can therefore refresh under a 900-second access policy, receiving
+an access token that expires at the session deadline. Access and refresh may
+expire together in this final interval.
+
+Custom signing adapters should implement all three bounded methods on the
+existing issuer traits, and wrapper adapters should forward them.
+
+- `TokenIssuer::issue_session_tokens_with_access_expiry`
+- `AccessTokenIssuer::issue_access_token_with_expiry`
+- `ScopedAccessTokenIssuer::issue_scoped_access_token_with_expiry`
+
+The deadline is supplied by trusted Core state. An adapter signs an expiry at or
+before it and reports the actual signed expiry. Delegated scope and identity must
+be preserved. The default trait implementations call the existing methods and
+reject overlong output. They preserve source compatibility, while shortening at
+the end of a session requires the adapter to implement the bounded methods.
+`Rs256JwtService` implements all three. Its returned expiry and JWT `exp` are the
+same whole-second timestamp. Core verifies the reported and validated expiry at
+second precision and rejects output exceeding its deadline.
+
+The Web clients derive a fixed refresh time when accepting each token, using at
+most 30 seconds or half its remaining lifetime as the advance interval. When an
+access token reaches the session deadline, clients use it until expiration.
+Cookie lifetime rounds a positive fractional second upward while server-side
+session and refresh deadlines remain authoritative. Expired responses are handled
+as expired sessions. Network transit can still consume the final available time.
+
+Very short lifetimes also constrain scan delivery. The existing recovery window
+ends at least one second before access expiry, and issuance fails if no recovery
+window remains. Hosts should select a lifetime that permits their actual delivery
+and acknowledgement flow. Restricted development-browser mode continues to use
+its dedicated bounded login lifetime and rejects restore and refresh.

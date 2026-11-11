@@ -219,28 +219,46 @@ where
             let next_digest = self
                 .digester
                 .digest_refresh_token(next_raw.expose_secret())?;
-            let access = match &session.scope {
-                Some(scope) => self.tokens.issue_scoped_access_token(
+            let expiry = now
+                .checked_add(Duration::from_secs(self.config.refresh_token_ttl_secs))
+                .ok_or(AccessError::InvalidInput("refresh_expiry"))?
+                .min(session.expires_at);
+            let access_expiry = now
+                .checked_add(Duration::from_secs(self.config.access_token_ttl_secs))
+                .ok_or(AccessError::InvalidInput("access_expiry"))?
+                .min(expiry);
+            let encoded_expiry = access_expiry
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .map_err(|_| AccessError::InvalidInput("access_expiry"))?
+                .as_secs();
+            if SystemTime::UNIX_EPOCH + Duration::from_secs(encoded_expiry) <= now {
+                return Err(TenantAuthError::InvalidRefresh);
+            }
+            let mut access = match &session.scope {
+                Some(scope) => self.tokens.issue_scoped_access_token_with_expiry(
                     &session.tenant_id,
                     &session.id,
                     &account.id,
                     &session.client_id,
                     now,
                     scope,
+                    access_expiry,
                 )?,
-                None => self.tokens.issue_access_token(
+                None => self.tokens.issue_access_token_with_expiry(
                     &session.tenant_id,
                     &session.id,
                     &account.id,
                     &session.client_id,
                     now,
+                    access_expiry,
                 )?,
             };
-            let expiry = now
-                .checked_add(Duration::from_secs(self.config.refresh_token_ttl_secs))
-                .ok_or(AccessError::InvalidInput("refresh_expiry"))?
-                .min(session.expires_at);
-            self.validate_issued_access(&access.token, &session)?;
+            access.expires_at = self.validate_issued_access(
+                &access.token,
+                &session,
+                access.expires_at,
+                access_expiry,
+            )?;
             if access.token.expose_secret().is_empty()
                 || access.expires_at <= now
                 || access.expires_at > expiry
@@ -262,6 +280,13 @@ where
                 revoked_at: None,
                 revocation_reason: None,
             };
+            let checked_at = self.clock.now();
+            if access.expires_at <= checked_at
+                || refresh.expires_at <= checked_at
+                || session.expires_at <= checked_at
+            {
+                return Err(TenantAuthError::InvalidRefresh);
+            }
             tx.rotate_refresh_records(&session, &refresh, &next)?;
             Ok(TenantRefreshOutcome::Rotated {
                 session: TenantSession {

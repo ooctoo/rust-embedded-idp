@@ -326,6 +326,23 @@ mod authentication {
             self.jwt
                 .issue_session_tokens(tenant, session, account, client, version, now)
         }
+        fn issue_session_tokens_with_access_expiry(
+            &self,
+            tenant: &str,
+            session: &str,
+            account: &str,
+            client: &str,
+            version: u64,
+            now: SystemTime,
+            expires_at: SystemTime,
+        ) -> Result<IssuedTokenBundle, TokenError> {
+            if self.fail_issue {
+                return Err(TokenError::IssuerRejected("test issuance failure".into()));
+            }
+            self.jwt.issue_session_tokens_with_access_expiry(
+                tenant, session, account, client, version, now, expires_at,
+            )
+        }
     }
     impl embedded_idp_core::AccessTokenIssuer for SignedTokens {
         fn issue_access_token(
@@ -344,6 +361,21 @@ mod authentication {
             self.jwt
                 .issue_access_token(tenant, session, account, client, now)
         }
+        fn issue_access_token_with_expiry(
+            &self,
+            tenant: &str,
+            session: &str,
+            account: &str,
+            client: &str,
+            now: SystemTime,
+            expires_at: SystemTime,
+        ) -> Result<embedded_idp_core::IssuedAccessToken, TokenError> {
+            if self.fail_issue {
+                return Err(TokenError::IssuerRejected("test issuance failure".into()));
+            }
+            self.jwt
+                .issue_access_token_with_expiry(tenant, session, account, client, now, expires_at)
+        }
     }
     impl embedded_idp_core::ScopedAccessTokenIssuer for SignedTokens {
         fn issue_scoped_access_token(
@@ -356,6 +388,23 @@ mod authentication {
             scope: &str,
         ) -> Result<embedded_idp_core::IssuedAccessToken, TokenError> {
             self.jwt.issue_scoped_access_token(t, s, a, c, n, scope)
+        }
+        fn issue_scoped_access_token_with_expiry(
+            &self,
+            tenant: &str,
+            session: &str,
+            account: &str,
+            client: &str,
+            now: SystemTime,
+            scope: &str,
+            expires_at: SystemTime,
+        ) -> Result<embedded_idp_core::IssuedAccessToken, TokenError> {
+            if self.fail_issue {
+                return Err(TokenError::IssuerRejected("test issuance failure".into()));
+            }
+            self.jwt.issue_scoped_access_token_with_expiry(
+                tenant, session, account, client, now, scope, expires_at,
+            )
         }
     }
     impl embedded_idp_core::IdTokenIssuer for SignedTokens {
@@ -395,6 +444,16 @@ mod authentication {
         proof: bool,
         fail_issue: bool,
     ) -> Auth {
+        auth_with_ttl(db, policy, entry, proof, fail_issue, 60)
+    }
+    fn auth_with_ttl(
+        db: &Db,
+        policy: LoginTenantPolicy,
+        entry: &str,
+        proof: bool,
+        fail_issue: bool,
+        access_ttl: u64,
+    ) -> Auth {
         let key = RsaSigningKeyConfig::from_private_key_der(
             Base64::decode_vec(
                 include_str!("../../embedded-idp-security/tests/fixtures/rsa_3072_key_1.pk8.b64")
@@ -408,8 +467,8 @@ mod authentication {
                 issuer: "https://idp.example.test".into(),
                 audience: "test-api".into(),
                 scope: "openid".into(),
-                access_token_ttl_secs: 60,
-                refresh_token_ttl_secs: 600,
+                access_token_ttl_secs: access_ttl,
+                refresh_token_ttl_secs: (access_ttl + 60).max(600),
                 clock_skew_secs: 0,
             },
             key,
@@ -420,9 +479,9 @@ mod authentication {
             db.mode,
             AuthConfig {
                 allow_local_registration: true,
-                access_token_ttl_secs: 60,
-                refresh_token_ttl_secs: 600,
-                session_ttl_secs: 600,
+                access_token_ttl_secs: access_ttl,
+                refresh_token_ttl_secs: (access_ttl + 60).max(600),
+                session_ttl_secs: (access_ttl + 60).max(600),
                 verification_code_ttl_secs: 60,
                 password_min_length: 8,
                 password_max_length: 128,

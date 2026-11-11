@@ -14,6 +14,7 @@ pub struct Config {
     pub business_schema: String,
     pub signing_key_file: String,
     pub management_enabled: bool,
+    auth: AuthConfig,
 }
 pub fn valid_schema(s: &str) -> bool {
     s.starts_with("a05_")
@@ -80,6 +81,7 @@ impl Config {
             "false" => false,
             _ => return Err("TENANT_HOST_MANAGEMENT must be true or false".into()),
         };
+        let auth = auth_config(&value("TENANT_HOST_ACCESS_TOKEN_TTL_SECS", "900"))?;
         Ok(Self {
             bind_addr,
             issuer: value("TENANT_HOST_ISSUER", "http://localhost/tenant-host"),
@@ -88,6 +90,7 @@ impl Config {
             business_uri,
             business_schema,
             management_enabled,
+            auth,
             signing_key_file: value(
                 "TENANT_HOST_SIGNING_KEY_FILE",
                 "examples/tenant-host/.local/signing-key.der",
@@ -95,15 +98,7 @@ impl Config {
         })
     }
     pub fn auth(&self) -> AuthConfig {
-        AuthConfig {
-            allow_local_registration: false,
-            access_token_ttl_secs: 900,
-            refresh_token_ttl_secs: 86400,
-            session_ttl_secs: 604800,
-            verification_code_ttl_secs: 900,
-            password_min_length: 12,
-            password_max_length: 128,
-        }
+        self.auth.clone()
     }
     pub fn adapter(&self) -> Result<PostgresStorageAdapter, String> {
         PostgresStorageAdapter::new(self.idp.clone())
@@ -114,9 +109,41 @@ impl Config {
             .map_err(|_| "IdP schema is not ready".into())
     }
 }
+fn auth_config(access_ttl: &str) -> Result<AuthConfig, String> {
+    let access_token_ttl_secs = access_ttl
+        .parse::<u64>()
+        .map_err(|_| "TENANT_HOST_ACCESS_TOKEN_TTL_SECS must be an integer")?;
+    let config = AuthConfig {
+        allow_local_registration: false,
+        access_token_ttl_secs,
+        refresh_token_ttl_secs: 86400,
+        session_ttl_secs: 604800,
+        verification_code_ttl_secs: 900,
+        password_min_length: 12,
+        password_max_length: 128,
+    };
+    if config.access_token_ttl_secs == 0
+        || config.access_token_ttl_secs >= config.refresh_token_ttl_secs
+    {
+        return Err("TENANT_HOST_ACCESS_TOKEN_TTL_SECS must be 1..86399".into());
+    }
+    Ok(config)
+}
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn access_ttl_accepts_shorter_and_longer_host_values_and_rejects_invalid_values() {
+        for secs in [1, 300, 900, 1800, 86399] {
+            let auth = auth_config(&secs.to_string()).unwrap();
+            assert_eq!(auth.access_token_ttl_secs, secs);
+            assert!(auth.access_token_ttl_secs < auth.refresh_token_ttl_secs);
+            assert!(auth.refresh_token_ttl_secs <= auth.session_ttl_secs);
+        }
+        for value in ["", "0", "-1", "300.5", "86400", "18446744073709551616"] {
+            assert!(auth_config(value).is_err(), "{value}");
+        }
+    }
     #[test]
     fn isolation_configuration_rejects_remote_and_unsafe_scopes() {
         for s in ["", "public", "a05_a;drop", "a05_X", "a05_a.b"] {
